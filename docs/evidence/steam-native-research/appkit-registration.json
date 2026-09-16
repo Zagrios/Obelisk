@@ -1,0 +1,14 @@
+[
+  {
+    "control": "restricted",
+    "exit": 86,
+    "output": "",
+    "passed": true
+  },
+  {
+    "control": "ui-registration-allowed",
+    "exit": 0,
+    "output": "appkit.registered=1\n",
+    "passed": true
+  }
+]

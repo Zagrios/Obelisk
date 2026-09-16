@@ -1,0 +1,4 @@
+[crates.forge_bridge.bindings.swift]
+module_name = "ForgeBridge"
+ffi_module_name = "ForgeBridgeFFI"
+generate_module_map = true

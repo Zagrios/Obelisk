@@ -1,0 +1,9 @@
+/target/
+/build/
+/.tools/
+.DS_Store
+*.xcuserstate
+xcuserdata/
+.swiftpm/
+.build/
+/apps/macos/Config/Signing.local.xcconfig

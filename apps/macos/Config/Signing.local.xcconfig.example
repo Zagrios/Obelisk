@@ -1,0 +1,5 @@
+// Copy to Signing.local.xcconfig, then select an existing identity shown by:
+// security find-identity -v -p codesigning
+// Use the same certificate for Debug and Release during local development.
+CODE_SIGN_IDENTITY = Apple Development
+DEVELOPMENT_TEAM = YOUR_TEAM_ID

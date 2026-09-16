@@ -1,0 +1,54 @@
+[workspace]
+members = [
+    "crates/forge-core",
+    "crates/forge-bridge",
+    "crates/steam-runtime",
+    "crates/storefronts/steam-kit",
+    "crates/storefronts/epic-kit",
+    "crates/storefronts/gog-kit",
+]
+resolver = "3"
+exclude = ["crates/steam-native"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+publish = false
+
+[workspace.dependencies]
+forge-core = { path = "crates/forge-core" }
+steam-runtime = { path = "crates/steam-runtime" }
+steam-kit = { path = "crates/storefronts/steam-kit" }
+epic-kit = { path = "crates/storefronts/epic-kit" }
+gog-kit = { path = "crates/storefronts/gog-kit" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tempfile = "3"
+uuid = { version = "1", features = ["v4"] }
+uniffi = { version = "=0.32.1" }
+tokio = { version = "1", features = ["rt-multi-thread", "time", "sync", "macros", "net"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "form", "query"] }
+prost = "0.14"
+bytes = "1"
+base64 = "0.23"
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+rsa = { version = "0.9", default-features = false, features = ["std", "u64_digit", "getrandom"] }
+aes = "0.9"
+cbc = { version = "0.2", features = ["alloc", "block-padding"] }
+sha1 = "0.11"
+crc32fast = "1"
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+lzma-rs = "0.3"
+ruzstd = "0.9"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = "warn"
+
+[profile.release]
+lto = "thin"
+strip = "debuginfo"

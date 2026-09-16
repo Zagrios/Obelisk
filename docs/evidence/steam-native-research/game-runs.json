@@ -1,0 +1,199 @@
+[
+  {
+    "pid": 33968,
+    "exit": -15,
+    "timeout": false,
+    "elapsed": 7.038922459,
+    "before": [
+      "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver"
+    ],
+    "after": [
+      "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver"
+    ],
+    "events": [
+      {
+        "elapsed": 0,
+        "processes": [
+          "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver"
+        ]
+      },
+      {
+        "elapsed": 0.042,
+        "processes": [
+          "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver",
+          "33968 33925 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/run-20260916-195312-231021-auth-game/runtime/native-host"
+        ]
+      },
+      {
+        "elapsed": 6.267,
+        "processes": [
+          "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver",
+          "33968 33925 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/run-20260916-195312-231021-auth-game/runtime/native-host",
+          "34589 33925 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/run-20260916-195312-231021-auth-game/runtime/discovery-launcher"
+        ]
+      },
+      {
+        "elapsed": 6.51,
+        "processes": [
+          "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver",
+          "33968 33925 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/run-20260916-195312-231021-auth-game/runtime/native-host",
+          "34589 33925 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/run-20260916-195312-231021-auth-game/runtime/discovery-launcher",
+          "34592 34589 /Users/mathieu/Library/Application Support/com.zagrios.forge/Games/Steam/steam-1030300-macos/Hollow Knight Silksong.app/Contents/MacOS/Hollow Knight Silksong"
+        ]
+      },
+      {
+        "elapsed": 6.984,
+        "processes": [
+          "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver",
+          "33968 33925 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/run-20260916-195312-231021-auth-game/runtime/native-host",
+          "34589 33925 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/run-20260916-195312-231021-auth-game/runtime/discovery-launcher"
+        ]
+      }
+    ],
+    "network": "outbound Internet allowed",
+    "credentials": "private pipe from user-approved Keychain read",
+    "native_log_lines_discarded": 193,
+    "host_stopped_for_negative_control": false,
+    "host_stopped_after_peer_exit": true,
+    "game_pid": 34592,
+    "game_stopped_by_probe": false,
+    "sdk_pid": 34589,
+    "sdk_exit": 9,
+    "scope": "native authentication experiment",
+    "observations": {
+      "global_user_created": true,
+      "host_callbacks_observed": true,
+      "peer_pipe_created": false,
+      "peer_authenticated_user_attached": false,
+      "server_connected_callback": true,
+      "steamworks_initialized": false,
+      "authenticated_identity_verified": true,
+      "licensed_app_ticket_available": true,
+      "steamworks_round_trip_verified": false,
+      "host_loss_observed_by_sdk": false,
+      "game_unity_engine_initialized": false,
+      "game_steam_init_failed_logged": false,
+      "game_steam_init_succeeded_logged": false
+    },
+    "run": "run-20260916-195312-231021-auth-game",
+    "game_diagnostics": [
+      "discovery.consumer pid=34592",
+      "discovery versions=0 paths=0 rejected=0 consumer_finished=1"
+    ],
+    "game_source": {
+      "bundle": "/Users/mathieu/Library/Application Support/com.zagrios.forge/Games/Steam/steam-1030300-macos/Hollow Knight Silksong.app",
+      "executable": "/Users/mathieu/Library/Application Support/com.zagrios.forge/Games/Steam/steam-1030300-macos/Hollow Knight Silksong.app/Contents/MacOS/Hollow Knight Silksong",
+      "executable_sha256": "289c5fbc6243db8c30c33dfd33190ae2d9f30dca73598fec68d6ea7c7bdfad95",
+      "api_sha256": "fef6bd7a0bb606e8f3556eee203bd04c5590525add592158b788c8af5c109ba6",
+      "architectures": {
+        "exit": 0,
+        "output": "x86_64 arm64\n"
+      }
+    },
+    "steam_api_return_value_not_instrumented_in_game": true
+  },
+  {
+    "pid": 36166,
+    "exit": -15,
+    "timeout": false,
+    "elapsed": 50.362969292,
+    "before": [
+      "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver"
+    ],
+    "after": [
+      "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver"
+    ],
+    "events": [
+      {
+        "elapsed": 0,
+        "processes": [
+          "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver"
+        ]
+      },
+      {
+        "elapsed": 0.042,
+        "processes": [
+          "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver",
+          "36166 36112 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/run-20260916-195642-740892-auth-game/runtime/native-host"
+        ]
+      },
+      {
+        "elapsed": 5.222,
+        "processes": [
+          "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver",
+          "36166 36112 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/run-20260916-195642-740892-auth-game/runtime/native-host",
+          "36253 36112 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/run-20260916-195642-740892-auth-game/runtime/discovery-launcher"
+        ]
+      },
+      {
+        "elapsed": 5.41,
+        "processes": [
+          "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver",
+          "36166 36112 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/run-20260916-195642-740892-auth-game/runtime/native-host",
+          "36253 36112 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/run-20260916-195642-740892-auth-game/runtime/discovery-launcher",
+          "36256 36253 /Users/mathieu/Library/Application Support/com.zagrios.forge/Games/Steam/steam-1030300-macos/Hollow Knight Silksong.app/Contents/MacOS/Hollow Knight Silksong"
+        ]
+      },
+      {
+        "elapsed": 50.305,
+        "processes": [
+          "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver",
+          "36166 36112 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/run-20260916-195642-740892-auth-game/runtime/native-host"
+        ]
+      }
+    ],
+    "network": "outbound Internet allowed",
+    "credentials": "private pipe from user-approved Keychain read",
+    "native_log_lines_discarded": 315,
+    "host_stopped_for_negative_control": false,
+    "host_stopped_after_peer_exit": true,
+    "game_pid": 36256,
+    "game_stopped_by_probe": true,
+    "sdk_pid": 36253,
+    "sdk_exit": 9,
+    "scope": "native authentication experiment",
+    "observations": {
+      "global_user_created": true,
+      "host_callbacks_observed": true,
+      "peer_pipe_created": false,
+      "peer_authenticated_user_attached": false,
+      "server_connected_callback": true,
+      "steamworks_initialized": false,
+      "authenticated_identity_verified": true,
+      "licensed_app_ticket_available": true,
+      "steamworks_round_trip_verified": false,
+      "host_loss_observed_by_sdk": false,
+      "game_unity_engine_initialized": true,
+      "game_steam_init_failed_logged": false,
+      "game_steam_init_succeeded_logged": false
+    },
+    "run": "run-20260916-195642-740892-auth-game",
+    "game_diagnostics": [
+      "discovery.consumer pid=36256",
+      "game.unity_engine_initialized=1",
+      "discovery.request id=104 size=32 opcode=100001",
+      "discovery.request id=104 size=32 opcode=14",
+      "discovery.request id=104 size=32 opcode=100001",
+      "discovery.request id=104 size=32 opcode=14",
+      "discovery versions=2 paths=2 rejected=0 consumer_finished=1"
+    ],
+    "game_source": {
+      "bundle": "/Users/mathieu/Library/Application Support/com.zagrios.forge/Games/Steam/steam-1030300-macos/Hollow Knight Silksong.app",
+      "executable": "/Users/mathieu/Library/Application Support/com.zagrios.forge/Games/Steam/steam-1030300-macos/Hollow Knight Silksong.app/Contents/MacOS/Hollow Knight Silksong",
+      "executable_sha256": "289c5fbc6243db8c30c33dfd33190ae2d9f30dca73598fec68d6ea7c7bdfad95",
+      "api_sha256": "fef6bd7a0bb606e8f3556eee203bd04c5590525add592158b788c8af5c109ba6",
+      "architectures": {
+        "exit": 0,
+        "output": "x86_64 arm64\n"
+      }
+    },
+    "visual_verification": {
+      "pid": 36256,
+      "lsof_exit": 1,
+      "loaded_paths": [],
+      "main_menu_visually_verified": true,
+      "gameplay_started": false
+    },
+    "steam_api_return_value_not_instrumented_in_game": true
+  }
+]

@@ -1,0 +1,19 @@
+[package]
+name = "forge-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+tokio.workspace = true
+futures-util.workspace = true
+sha1.workspace = true
+
+[lints]
+workspace = true

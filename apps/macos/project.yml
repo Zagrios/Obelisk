@@ -1,0 +1,70 @@
+name: Forge
+options:
+  minimumXcodeGenVersion: 2.46.0
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+  developmentLanguage: en
+configFiles:
+  Debug: Config/Signing.xcconfig
+  Release: Config/Signing.xcconfig
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    ARCHS: $(NATIVE_ARCH_ACTUAL)
+    ONLY_ACTIVE_ARCH: YES
+    SWIFT_STRICT_CONCURRENCY: complete
+targets:
+  Forge:
+    type: application
+    platform: macOS
+    sources:
+      - path: Forge
+        excludes:
+          - "Bridge/Generated/*.h"
+          - "Bridge/Generated/*.modulemap"
+    configFiles:
+      Debug: Config/App.xcconfig
+      Release: Config/App.xcconfig
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDevelopmentRegion: en
+        SWIFT_EMIT_LOC_STRINGS: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: ""
+        INFOPLIST_KEY_NSHighResolutionCapable: YES
+        ENABLE_APP_SANDBOX: NO
+        SWIFT_INCLUDE_PATHS: "$(SRCROOT)/Forge/Bridge/Generated"
+        HEADER_SEARCH_PATHS: "$(SRCROOT)/Forge/Bridge/Generated"
+        LIBRARY_SEARCH_PATHS: "$(SRCROOT)/../../build/rust/$(CONFIGURATION)"
+        OTHER_LDFLAGS: "$(inherited) -lforge_bridge -framework Security -framework SystemConfiguration -liconv"
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
+    preBuildScripts:
+      - name: Build Rust and generate Swift bindings
+        script: '"$SRCROOT/../../scripts/build-rust.sh"'
+        basedOnDependencyAnalysis: false
+      - name: Build and sign native Steam helper
+        script: '"$SRCROOT/../../scripts/build-steam-native.sh"'
+        basedOnDependencyAnalysis: false
+  ForgeTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: ForgeTests
+    dependencies:
+      - target: Forge
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.zagrios.forge.tests
+        SWIFT_INCLUDE_PATHS: "$(SRCROOT)/Forge/Bridge/Generated"
+schemes:
+  Forge:
+    build:
+      targets:
+        Forge: all
+    test:
+      targets:
+        - ForgeTests

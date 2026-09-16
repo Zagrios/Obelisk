@@ -1,0 +1,571 @@
+{
+  "time_utc": "2026-09-16T17:05:28.428759+00:00",
+  "source": "<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS",
+  "system": {
+    "exit": 0,
+    "output": "ProductName:\t\tmacOS\nProductVersion:\t\t27.0\nBuildVersion:\t\t26A428\n"
+  },
+  "optional_runtime_loads_observed": [
+    "libSDL3.dylib",
+    "libvideo.dylib"
+  ],
+  "reference_only_not_executed": [
+    "steam_osx",
+    "ipcserver"
+  ],
+  "package_version": "1788652215",
+  "bundle_version": "6.1",
+  "manifest_sha256": "8b7c2b2159efc9949abd88883aec99a5295e6177ee2f0715308684f8ef0225f8",
+  "files": {
+    "steamclient.dylib": {
+      "sha256": "035722a42c74989fa38c7efe0d735fdb38444e1102c92246652b5d913d019840",
+      "bytes": 52232096,
+      "architectures": {
+        "exit": 0,
+        "output": "x86_64 arm64\n"
+      },
+      "dependencies": {
+        "exit": 0,
+        "output": "<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/steamclient.dylib:\n\t@loader_path/steamclient.dylib (compatibility version 1.0.0, current version 1.0.0)\n\t@loader_path/libtier0_s.dylib (compatibility version 1.0.0, current version 1.0.0)\n\t@loader_path/libvstdlib_s.dylib (compatibility version 1.0.0, current version 1.0.0)\n\t@loader_path/libaudio.dylib (compatibility version 1.0.0, current version 1.0.0)\n\t/usr/lib/libz.1.dylib (compatibility version 1.0.0, current version 1.2.12)\n\t/System/Library/Frameworks/CoreServices.framework/Versions/A/CoreServices (compatibility version 1.0.0, current version 1226.0.0)\n\t/System/Library/Frameworks/IOKit.framework/Versions/A/IOKit (compatibility version 1.0.0, current version 275.0.0)\n\t/System/Library/Frameworks/DiskArbitration.framework/Versions/A/DiskArbitration (compatibility version 1.0.0, current version 1.0.0)\n\t/System/Library/Frameworks/Foundation.framework/Versions/C/Foundation (compatibility version 300.0.0, current version 4201.0.0)\n\t/System/Library/Frameworks/SystemConfiguration.framework/Versions/A/SystemConfiguration (compatibility version 1.0.0, current version 1385.60.3)\n\t/System/Library/Frameworks/Carbon.framework/Versions/A/Carbon (compatibility version 2.0.0, current version 170.0.0)\n\t/System/Library/Frameworks/AppKit.framework/Versions/C/AppKit (compatibility version 45.0.0, current version 2685.30.107)\n\t/System/Library/Frameworks/OpenAL.framework/Versions/A/OpenAL (compatibility version 1.0.0, current version 1.0.0)\n\t/System/Library/Frameworks/CoreAudio.framework/Versions/A/CoreAudio (compatibility version 1.0.0, current version 1.0.0)\n\t/System/Library/Frameworks/Security.framework/Versions/A/Security (compatibility version 1.0.0, current version 61901.60.40)\n\t/System/Library/Frameworks/OpenGL.framework/Versions/A/OpenGL (compatibility version 1.0.0, current version 1.0.0)\n\t/System/Library/Frameworks/IOBluetooth.framework/Versions/A/IOBluetooth (compatibility version 1.0.0, current version 1.0.0)\n\t/usr/lib/libc++.1.dylib (compatibility version 1.0.0, current version 2000.67.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1356.0.0)\n\t/System/Library/Frameworks/ApplicationServices.framework/Versions/A/ApplicationServices (compatibility version 1.0.0, current version 66.0.0)\n\t/System/Library/Frameworks/CFNetwork.framework/Versions/A/CFNetwork (compatibility version 1.0.0, current version 3860.255.31)\n\t/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (compatibility version 150.0.0, current version 4201.0.0)\n\t/System/Library/Frameworks/CoreGraphics.framework/Versions/A/CoreGraphics (compatibility version 64.0.0, current version 1965.2.3)\n\t/usr/lib/libobjc.A.dylib (compatibility version 1.0.0, current version 228.0.0)\n"
+      },
+      "signature": {
+        "exit": 0,
+        "output": "Executable=<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/steamclient.dylib\nIdentifier=com.valvesoftware.steam\nFormat=Mach-O universal (x86_64 arm64)\nCodeDirectory v=20400 size=49851 flags=0x0(none) hashes=1552+2 location=embedded\nVersionPlatform=1\nVersionMin=720896\nVersionSDK=1704448\nHash type=sha256 size=32\nCandidateCDHash sha256=0417eed8b7a9c0c2156d069212c63ffd21b95c21\nCandidateCDHashFull sha256=0417eed8b7a9c0c2156d069212c63ffd21b95c219732a0bcf586e7a795871b7b\nHash choices=sha256\nCMSDigest=0417eed8b7a9c0c2156d069212c63ffd21b95c219732a0bcf586e7a795871b7b\nCMSDigestType=2\nExecutable Segment base=0\nExecutable Segment limit=23576576\nExecutable Segment flags=0x0\nPage size=16384\nCDHash=0417eed8b7a9c0c2156d069212c63ffd21b95c21\nSignature size=9074\nAuthority=Developer ID Application: Valve Corporation (MXGJJ98X76)\nAuthority=Developer ID Certification Authority\nAuthority=Apple Root CA\nTimestamp=3 Sep 2026 at 03:33:08\nInfo.plist=not bound\nTeamIdentifier=MXGJJ98X76\nSealed Resources=none\nInternal requirements count=1 size=180\nTotal signatures=1\nChosen signature=1\n"
+      },
+      "signature_verification": {
+        "exit": 1,
+        "output": "<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/steamclient.dylib: An internal error has occurred.\n"
+      },
+      "arm64_signature_verification": {
+        "exit": 0,
+        "output": ""
+      },
+      "version_uuid_rpath_commands": "     cmd LC_UUID\n cmdsize 24\n    uuid 04729490-2658-3363-BD8D-746421F10435\nLoad command 9\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n    minos 11.0\n      sdk 26.2\n   ntools 1\n     tool 3"
+    },
+    "steamservice.dylib": {
+      "sha256": "0df15bc6b433d6ae7b2aabdf349f263d55ea22f68562d4e8369dc8a8bb5b8830",
+      "bytes": 10009360,
+      "architectures": {
+        "exit": 0,
+        "output": "x86_64 arm64\n"
+      },
+      "dependencies": {
+        "exit": 0,
+        "output": "<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/steamservice.dylib:\n\t@loader_path/steamservice.dylib (compatibility version 1.0.0, current version 1.0.0)\n\t/System/Library/Frameworks/Foundation.framework/Versions/C/Foundation (compatibility version 300.0.0, current version 4201.0.0)\n\t/System/Library/Frameworks/CoreServices.framework/Versions/A/CoreServices (compatibility version 1.0.0, current version 1226.0.0)\n\t/System/Library/Frameworks/SystemConfiguration.framework/Versions/A/SystemConfiguration (compatibility version 1.0.0, current version 1385.60.3)\n\t/System/Library/Frameworks/Security.framework/Versions/A/Security (compatibility version 1.0.0, current version 61901.60.40)\n\t/System/Library/Frameworks/IOKit.framework/Versions/A/IOKit (compatibility version 1.0.0, current version 275.0.0)\n\t/System/Library/Frameworks/DiskArbitration.framework/Versions/A/DiskArbitration (compatibility version 1.0.0, current version 1.0.0)\n\t/usr/lib/libc++.1.dylib (compatibility version 1.0.0, current version 2000.67.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1356.0.0)\n\t/System/Library/Frameworks/CFNetwork.framework/Versions/A/CFNetwork (compatibility version 1.0.0, current version 3860.255.31)\n\t/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (compatibility version 150.0.0, current version 4201.0.0)\n\t/usr/lib/libobjc.A.dylib (compatibility version 1.0.0, current version 228.0.0)\n"
+      },
+      "signature": {
+        "exit": 0,
+        "output": "Executable=<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/steamservice.dylib\nIdentifier=com.valvesoftware.steam\nFormat=Mach-O universal (x86_64 arm64)\nCodeDirectory v=20400 size=9179 flags=0x0(none) hashes=281+2 location=embedded\nVersionPlatform=1\nVersionMin=720896\nVersionSDK=1704448\nHash type=sha256 size=32\nCandidateCDHash sha256=86651a59d4682f82892cb662267d798042d70543\nCandidateCDHashFull sha256=86651a59d4682f82892cb662267d798042d70543f1459c4d24405f05e7b4611f\nHash choices=sha256\nCMSDigest=86651a59d4682f82892cb662267d798042d70543f1459c4d24405f05e7b4611f\nCMSDigestType=2\nExecutable Segment base=0\nExecutable Segment limit=4308992\nExecutable Segment flags=0x0\nPage size=16384\nCDHash=86651a59d4682f82892cb662267d798042d70543\nSignature size=9075\nAuthority=Developer ID Application: Valve Corporation (MXGJJ98X76)\nAuthority=Developer ID Certification Authority\nAuthority=Apple Root CA\nTimestamp=3 Sep 2026 at 03:32:58\nInfo.plist=not bound\nTeamIdentifier=MXGJJ98X76\nSealed Resources=none\nInternal requirements count=1 size=180\nTotal signatures=1\nChosen signature=1\n"
+      },
+      "signature_verification": {
+        "exit": 0,
+        "output": ""
+      },
+      "arm64_signature_verification": {
+        "exit": 0,
+        "output": ""
+      },
+      "version_uuid_rpath_commands": "     cmd LC_UUID\n cmdsize 24\n    uuid 4E596E4F-F667-3A92-BB25-8B2D9A46DDFB\nLoad command 9\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n    minos 11.0\n      sdk 26.2\n   ntools 1\n     tool 3"
+    },
+    "ipcserver": {
+      "sha256": "fbecbe64401d5a61ce3b5ea4a4b1d07cb5f3d636f4beae021568020773b69bdf",
+      "bytes": 136080,
+      "architectures": {
+        "exit": 0,
+        "output": "x86_64 arm64\n"
+      },
+      "dependencies": {
+        "exit": 0,
+        "output": "<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver:\n\t/System/Library/Frameworks/Foundation.framework/Versions/C/Foundation (compatibility version 300.0.0, current version 4201.0.0)\n\t/System/Library/Frameworks/CoreServices.framework/Versions/A/CoreServices (compatibility version 1.0.0, current version 1226.0.0)\n\t/usr/lib/libc++.1.dylib (compatibility version 1.0.0, current version 2000.67.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1356.0.0)\n"
+      },
+      "signature": {
+        "exit": 0,
+        "output": "Executable=<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver\nIdentifier=com.valvesoftware.steam\nFormat=Mach-O universal (x86_64 arm64)\nCodeDirectory v=20400 size=315 flags=0x0(none) hashes=4+2 location=embedded\nVersionPlatform=1\nVersionMin=720896\nVersionSDK=1704448\nHash type=sha256 size=32\nCandidateCDHash sha256=fb3204dce272481bc74747329fcc0073b16b874b\nCandidateCDHashFull sha256=fb3204dce272481bc74747329fcc0073b16b874bff55fef57efef3d617fdc12a\nHash choices=sha256\nCMSDigest=fb3204dce272481bc74747329fcc0073b16b874bff55fef57efef3d617fdc12a\nCMSDigestType=2\nExecutable Segment base=0\nExecutable Segment limit=16384\nExecutable Segment flags=0x1\nPage size=16384\nCDHash=fb3204dce272481bc74747329fcc0073b16b874b\nSignature size=9075\nAuthority=Developer ID Application: Valve Corporation (MXGJJ98X76)\nAuthority=Developer ID Certification Authority\nAuthority=Apple Root CA\nTimestamp=3 Sep 2026 at 03:31:34\nInfo.plist=not bound\nTeamIdentifier=MXGJJ98X76\nSealed Resources=none\nInternal requirements count=1 size=180\nTotal signatures=1\nChosen signature=1\n"
+      },
+      "signature_verification": {
+        "exit": 0,
+        "output": ""
+      },
+      "arm64_signature_verification": {
+        "exit": 0,
+        "output": ""
+      },
+      "version_uuid_rpath_commands": "     cmd LC_UUID\n cmdsize 24\n    uuid E4D69967-19F2-3318-9427-F21F8EDA03E1\nLoad command 10\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n    minos 11.0\n      sdk 26.2\n   ntools 1\n     tool 3"
+    },
+    "steam_osx": {
+      "sha256": "f7485ef75bcbdd1a1ca833ae7300153e34011cb4d4f53e35fae9a0b843200902",
+      "bytes": 8612544,
+      "architectures": {
+        "exit": 0,
+        "output": "x86_64 arm64\n"
+      },
+      "dependencies": {
+        "exit": 0,
+        "output": "<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/steam_osx:\n\t/usr/lib/libiconv.2.dylib (compatibility version 7.0.0, current version 7.0.0)\n\t/System/Library/Frameworks/CoreServices.framework/Versions/A/CoreServices (compatibility version 1.0.0, current version 1226.0.0)\n\t/System/Library/Frameworks/IOKit.framework/Versions/A/IOKit (compatibility version 1.0.0, current version 275.0.0)\n\t/System/Library/Frameworks/DiskArbitration.framework/Versions/A/DiskArbitration (compatibility version 1.0.0, current version 1.0.0)\n\t/System/Library/Frameworks/Foundation.framework/Versions/C/Foundation (compatibility version 300.0.0, current version 4201.0.0)\n\t/System/Library/Frameworks/SystemConfiguration.framework/Versions/A/SystemConfiguration (compatibility version 1.0.0, current version 1385.60.3)\n\t/System/Library/Frameworks/Cocoa.framework/Versions/A/Cocoa (compatibility version 1.0.0, current version 24.0.0)\n\t/System/Library/Frameworks/Security.framework/Versions/A/Security (compatibility version 1.0.0, current version 61901.60.40)\n\t/System/Library/Frameworks/AppKit.framework/Versions/C/AppKit (compatibility version 45.0.0, current version 2685.30.107)\n\t/usr/lib/libc++.1.dylib (compatibility version 1.0.0, current version 2000.67.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1356.0.0)\n\t/System/Library/Frameworks/CFNetwork.framework/Versions/A/CFNetwork (compatibility version 1.0.0, current version 3860.255.31)\n\t/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (compatibility version 150.0.0, current version 4201.0.0)\n\t/System/Library/Frameworks/CoreGraphics.framework/Versions/A/CoreGraphics (compatibility version 64.0.0, current version 1965.2.3)\n\t/usr/lib/libobjc.A.dylib (compatibility version 1.0.0, current version 228.0.0)\n"
+      },
+      "signature": {
+        "exit": 0,
+        "output": "Executable=<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/steam_osx\nIdentifier=com.valvesoftware.steam\nFormat=app bundle with Mach-O universal (x86_64 arm64)\nCodeDirectory v=20400 size=8123 flags=0x0(none) hashes=243+7 location=embedded\nVersionPlatform=1\nVersionMin=720896\nVersionSDK=1704448\nHash type=sha256 size=32\nCandidateCDHash sha256=e13b2caf4f8dff903b07f180acfde6e62a8b2c98\nCandidateCDHashFull sha256=e13b2caf4f8dff903b07f180acfde6e62a8b2c9868bc568fda3287bc0bf4496d\nHash choices=sha256\nCMSDigest=e13b2caf4f8dff903b07f180acfde6e62a8b2c9868bc568fda3287bc0bf4496d\nCMSDigestType=2\nExecutable Segment base=0\nExecutable Segment limit=3637248\nExecutable Segment flags=0x1\nPage size=16384\nCDHash=e13b2caf4f8dff903b07f180acfde6e62a8b2c98\nSignature size=9074\nAuthority=Developer ID Application: Valve Corporation (MXGJJ98X76)\nAuthority=Developer ID Certification Authority\nAuthority=Apple Root CA\nTimestamp=3 Sep 2026 at 03:33:00\nInfo.plist=not bound\nTeamIdentifier=MXGJJ98X76\nSealed Resources=none\nInternal requirements count=1 size=180\nTotal signatures=1\nChosen signature=1\n"
+      },
+      "signature_verification": {
+        "exit": 1,
+        "output": "<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/steam_osx: code has no resources but signature indicates they must be present\n"
+      },
+      "arm64_signature_verification": {
+        "exit": 1,
+        "output": "<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/steam_osx: code has no resources but signature indicates they must be present\n"
+      },
+      "version_uuid_rpath_commands": "     cmd LC_UUID\n cmdsize 24\n    uuid BB9B20FA-5BFE-332F-9887-D119B64D8B6E\nLoad command 10\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n    minos 11.0\n      sdk 26.2\n   ntools 1\n     tool 3"
+    },
+    "libSDL3.dylib": {
+      "sha256": "56fad2994d5c1c618862459d3aaa6e7c6048a83f1a4dc3e3ef543edf2272dfed",
+      "bytes": 4560800,
+      "architectures": {
+        "exit": 0,
+        "output": "x86_64 arm64\n"
+      },
+      "dependencies": {
+        "exit": 0,
+        "output": "<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libSDL3.dylib:\n\t@loader_path/libSDL3.dylib (compatibility version 1.0.0, current version 1.0.0)\n\t/usr/lib/libiconv.2.dylib (compatibility version 7.0.0, current version 7.0.0)\n\t/System/Library/Frameworks/AudioToolbox.framework/Versions/A/AudioToolbox (compatibility version 1.0.0, current version 1000.0.0)\n\t/System/Library/Frameworks/Carbon.framework/Versions/A/Carbon (compatibility version 2.0.0, current version 170.0.0)\n\t/System/Library/Frameworks/Cocoa.framework/Versions/A/Cocoa (compatibility version 1.0.0, current version 24.0.0)\n\t/System/Library/Frameworks/CoreAudio.framework/Versions/A/CoreAudio (compatibility version 1.0.0, current version 1.0.0)\n\t/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (compatibility version 150.0.0, current version 4201.0.0)\n\t/System/Library/Frameworks/CoreHaptics.framework/Versions/A/CoreHaptics (compatibility version 1.0.0, current version 1.0.0)\n\t/System/Library/Frameworks/CoreVideo.framework/Versions/A/CoreVideo (compatibility version 1.2.0, current version 726.2.0)\n\t/System/Library/Frameworks/ForceFeedback.framework/Versions/A/ForceFeedback (compatibility version 1.0.0, current version 1.0.2)\n\t/System/Library/Frameworks/GameController.framework/Versions/A/GameController (compatibility version 1.0.0, current version 13.2.8)\n\t/System/Library/Frameworks/IOKit.framework/Versions/A/IOKit (compatibility version 1.0.0, current version 275.0.0)\n\t/System/Library/Frameworks/Metal.framework/Versions/A/Metal (compatibility version 1.0.0, current version 370.64.2)\n\t/System/Library/Frameworks/QuartzCore.framework/Versions/A/QuartzCore (compatibility version 1.2.0, current version 1193.49.3)\n\t/System/Library/Frameworks/Security.framework/Versions/A/Security (compatibility version 1.0.0, current version 61901.60.40)\n\t/System/Library/Frameworks/UniformTypeIdentifiers.framework/Versions/A/UniformTypeIdentifiers (compatibility version 1.0.0, current version 709.0.0, weak)\n\t/System/Library/Frameworks/UserNotifications.framework/Versions/A/UserNotifications (compatibility version 1.0.0, current version 1.0.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1356.0.0)\n\t/System/Library/Frameworks/AppKit.framework/Versions/C/AppKit (compatibility version 45.0.0, current version 2685.30.107)\n\t/System/Library/Frameworks/CoreGraphics.framework/Versions/A/CoreGraphics (compatibility version 64.0.0, current version 1965.2.3)\n\t/System/Library/Frameworks/CoreServices.framework/Versions/A/CoreServices (compatibility version 1.0.0, current version 1226.0.0)\n\t/System/Library/Frameworks/Foundation.framework/Versions/C/Foundation (compatibility version 300.0.0, current version 4201.0.0)\n\t/usr/lib/libobjc.A.dylib (compatibility version 1.0.0, current version 228.0.0)\n"
+      },
+      "signature": {
+        "exit": 0,
+        "output": "Executable=<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libSDL3.dylib\nIdentifier=com.valvesoftware.steam\nFormat=Mach-O universal (x86_64 arm64)\nCodeDirectory v=20500 size=4451 flags=0x10000(runtime) hashes=133+2 location=embedded\nVersionPlatform=1\nVersionMin=720896\nVersionSDK=1704448\nHash type=sha256 size=32\nCandidateCDHash sha256=69dacbf7b7b2a8e03d4d32d80e6a2fb03a850518\nCandidateCDHashFull sha256=69dacbf7b7b2a8e03d4d32d80e6a2fb03a8505181cba5e82ddbb7b7d1205485e\nHash choices=sha256\nCMSDigest=69dacbf7b7b2a8e03d4d32d80e6a2fb03a8505181cba5e82ddbb7b7d1205485e\nCMSDigestType=2\nExecutable Segment base=0\nExecutable Segment limit=1949696\nExecutable Segment flags=0x0\nPage size=16384\nCDHash=69dacbf7b7b2a8e03d4d32d80e6a2fb03a850518\nSignature size=9075\nAuthority=Developer ID Application: Valve Corporation (MXGJJ98X76)\nAuthority=Developer ID Certification Authority\nAuthority=Apple Root CA\nTimestamp=3 Sep 2026 at 03:31:35\nInfo.plist=not bound\nTeamIdentifier=MXGJJ98X76\nRuntime Version=26.2.0\nSealed Resources=none\nInternal requirements count=1 size=180\nTotal signatures=1\nChosen signature=1\n"
+      },
+      "signature_verification": {
+        "exit": 0,
+        "output": ""
+      },
+      "arm64_signature_verification": {
+        "exit": 0,
+        "output": ""
+      },
+      "version_uuid_rpath_commands": "     cmd LC_UUID\n cmdsize 24\n    uuid 205F6B39-6778-3BAE-AFA2-EB47B7435ADB\nLoad command 9\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n    minos 11.0\n      sdk 26.2\n   ntools 1\n     tool 3"
+    },
+    "libvideo.dylib": {
+      "sha256": "9726aa2a8e121789ce2a694434e4a9ce9b995cb36876adc5bebd8e4804bc5843",
+      "bytes": 13233552,
+      "architectures": {
+        "exit": 0,
+        "output": "x86_64 arm64\n"
+      },
+      "dependencies": {
+        "exit": 0,
+        "output": "<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libvideo.dylib:\n\t@loader_path/libvideo.dylib (compatibility version 1.0.0, current version 1.0.0)\n\t@loader_path/libavcodec.62.dylib (compatibility version 62.0.0, current version 62.28.102)\n\t@loader_path/libavfilter.11.dylib (compatibility version 11.0.0, current version 11.14.102)\n\t@loader_path/libavformat.62.dylib (compatibility version 62.0.0, current version 62.12.102)\n\t@loader_path/libavutil.60.dylib (compatibility version 60.0.0, current version 60.26.102)\n\t@loader_path/libogg.0.dylib (compatibility version 9.0.0, current version 9.5.0)\n\t@loader_path/libswresample.6.dylib (compatibility version 6.0.0, current version 6.3.102)\n\t@loader_path/libswscale.9.dylib (compatibility version 9.0.0, current version 9.5.102)\n\t@loader_path/libvorbis.0.dylib (compatibility version 5.0.0, current version 5.9.0)\n\t@loader_path/libvorbisenc.2.dylib (compatibility version 3.0.0, current version 3.12.0)\n\t@loader_path/libvorbisfile.3.dylib (compatibility version 7.0.0, current version 7.8.0)\n\t/System/Library/Frameworks/Cocoa.framework/Versions/A/Cocoa (compatibility version 1.0.0, current version 24.0.0)\n\t/System/Library/Frameworks/SystemConfiguration.framework/Versions/A/SystemConfiguration (compatibility version 1.0.0, current version 1385.60.3)\n\t/System/Library/Frameworks/Security.framework/Versions/A/Security (compatibility version 1.0.0, current version 61901.60.40)\n\t/System/Library/Frameworks/CoreServices.framework/Versions/A/CoreServices (compatibility version 1.0.0, current version 1226.0.0)\n\t/System/Library/Frameworks/IOKit.framework/Versions/A/IOKit (compatibility version 1.0.0, current version 275.0.0)\n\t/System/Library/Frameworks/DiskArbitration.framework/Versions/A/DiskArbitration (compatibility version 1.0.0, current version 1.0.0)\n\t/System/Library/Frameworks/Foundation.framework/Versions/C/Foundation (compatibility version 300.0.0, current version 4201.0.0)\n\t/usr/lib/libc++.1.dylib (compatibility version 1.0.0, current version 2000.67.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1356.0.0)\n\t/System/Library/Frameworks/CFNetwork.framework/Versions/A/CFNetwork (compatibility version 1.0.0, current version 3860.255.31)\n\t/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (compatibility version 150.0.0, current version 4201.0.0)\n\t/usr/lib/libobjc.A.dylib (compatibility version 1.0.0, current version 228.0.0)\n"
+      },
+      "signature": {
+        "exit": 0,
+        "output": "Executable=<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libvideo.dylib\nIdentifier=com.valvesoftware.steam\nFormat=Mach-O universal (x86_64 arm64)\nCodeDirectory v=20400 size=12155 flags=0x0(none) hashes=374+2 location=embedded\nVersionPlatform=1\nVersionMin=720896\nVersionSDK=1704448\nHash type=sha256 size=32\nCandidateCDHash sha256=a6af08bb5bc54f53e4ee60e9846658d572be1206\nCandidateCDHashFull sha256=a6af08bb5bc54f53e4ee60e9846658d572be120602bb4aaf5cf71256757b0ea4\nHash choices=sha256\nCMSDigest=a6af08bb5bc54f53e4ee60e9846658d572be120602bb4aaf5cf71256757b0ea4\nCMSDigestType=2\nExecutable Segment base=0\nExecutable Segment limit=5668864\nExecutable Segment flags=0x0\nPage size=16384\nCDHash=a6af08bb5bc54f53e4ee60e9846658d572be1206\nSignature size=9075\nAuthority=Developer ID Application: Valve Corporation (MXGJJ98X76)\nAuthority=Developer ID Certification Authority\nAuthority=Apple Root CA\nTimestamp=3 Sep 2026 at 03:32:59\nInfo.plist=not bound\nTeamIdentifier=MXGJJ98X76\nSealed Resources=none\nInternal requirements count=1 size=180\nTotal signatures=1\nChosen signature=1\n"
+      },
+      "signature_verification": {
+        "exit": 0,
+        "output": ""
+      },
+      "arm64_signature_verification": {
+        "exit": 0,
+        "output": ""
+      },
+      "version_uuid_rpath_commands": "     cmd LC_UUID\n cmdsize 24\n    uuid 0AC30261-1D89-36D5-A3BD-391D8120AD02\nLoad command 9\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n    minos 11.0\n      sdk 26.2\n   ntools 1\n     tool 3"
+    },
+    "libtier0_s.dylib": {
+      "sha256": "1ba6133697243e4622bf7ba9390338718e0ecf06fc9282d95e4cfe3fce3bd524",
+      "bytes": 422336,
+      "architectures": {
+        "exit": 0,
+        "output": "x86_64 arm64\n"
+      },
+      "dependencies": {
+        "exit": 0,
+        "output": "<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libtier0_s.dylib:\n\t@loader_path/libtier0_s.dylib (compatibility version 1.0.0, current version 1.0.0)\n\t@loader_path/crashhandler.dylib (compatibility version 1.0.0, current version 1.0.0)\n\t/System/Library/Frameworks/Foundation.framework/Versions/C/Foundation (compatibility version 300.0.0, current version 4201.0.0)\n\t/usr/lib/libc++.1.dylib (compatibility version 1.0.0, current version 2000.67.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1356.0.0)\n\t/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (compatibility version 150.0.0, current version 4201.0.0)\n"
+      },
+      "signature": {
+        "exit": 0,
+        "output": "Executable=<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libtier0_s.dylib\nIdentifier=com.valvesoftware.steam\nFormat=Mach-O universal (x86_64 arm64)\nCodeDirectory v=20400 size=571 flags=0x0(none) hashes=12+2 location=embedded\nVersionPlatform=1\nVersionMin=720896\nVersionSDK=1704448\nHash type=sha256 size=32\nCandidateCDHash sha256=eef1dba27ac82343d17fe5e3e5b0acb9988290fe\nCandidateCDHashFull sha256=eef1dba27ac82343d17fe5e3e5b0acb9988290feb445037327d0c35fb2e50ce3\nHash choices=sha256\nCMSDigest=eef1dba27ac82343d17fe5e3e5b0acb9988290feb445037327d0c35fb2e50ce3\nCMSDigestType=2\nExecutable Segment base=0\nExecutable Segment limit=114688\nExecutable Segment flags=0x0\nPage size=16384\nCDHash=eef1dba27ac82343d17fe5e3e5b0acb9988290fe\nSignature size=9074\nAuthority=Developer ID Application: Valve Corporation (MXGJJ98X76)\nAuthority=Developer ID Certification Authority\nAuthority=Apple Root CA\nTimestamp=3 Sep 2026 at 03:32:36\nInfo.plist=not bound\nTeamIdentifier=MXGJJ98X76\nSealed Resources=none\nInternal requirements count=1 size=180\nTotal signatures=1\nChosen signature=1\n"
+      },
+      "signature_verification": {
+        "exit": 0,
+        "output": ""
+      },
+      "arm64_signature_verification": {
+        "exit": 0,
+        "output": ""
+      },
+      "version_uuid_rpath_commands": "     cmd LC_UUID\n cmdsize 24\n    uuid 54365CF9-4CDD-3F42-94B9-5AAE7279DB41\nLoad command 9\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n    minos 11.0\n      sdk 26.2\n   ntools 1\n     tool 3"
+    },
+    "libvstdlib_s.dylib": {
+      "sha256": "5df96f8204026b2e76c006372d9ca2bee9cf9634baf21fc20f4595545ee996ad",
+      "bytes": 538416,
+      "architectures": {
+        "exit": 0,
+        "output": "x86_64 arm64\n"
+      },
+      "dependencies": {
+        "exit": 0,
+        "output": "<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libvstdlib_s.dylib:\n\t@loader_path/libvstdlib_s.dylib (compatibility version 1.0.0, current version 1.0.0)\n\t@loader_path/libtier0_s.dylib (compatibility version 1.0.0, current version 1.0.0)\n\t/usr/lib/libiconv.2.dylib (compatibility version 7.0.0, current version 7.0.0)\n\t/System/Library/Frameworks/CoreServices.framework/Versions/A/CoreServices (compatibility version 1.0.0, current version 1226.0.0)\n\t/System/Library/Frameworks/IOKit.framework/Versions/A/IOKit (compatibility version 1.0.0, current version 275.0.0)\n\t/System/Library/Frameworks/DiskArbitration.framework/Versions/A/DiskArbitration (compatibility version 1.0.0, current version 1.0.0)\n\t/System/Library/Frameworks/Foundation.framework/Versions/C/Foundation (compatibility version 300.0.0, current version 4201.0.0)\n\t/usr/lib/libc++.1.dylib (compatibility version 1.0.0, current version 2000.67.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1356.0.0)\n\t/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (compatibility version 150.0.0, current version 4201.0.0)\n\t/usr/lib/libobjc.A.dylib (compatibility version 1.0.0, current version 228.0.0)\n"
+      },
+      "signature": {
+        "exit": 0,
+        "output": "Executable=<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libvstdlib_s.dylib\nIdentifier=com.valvesoftware.steam\nFormat=Mach-O universal (x86_64 arm64)\nCodeDirectory v=20400 size=699 flags=0x0(none) hashes=16+2 location=embedded\nVersionPlatform=1\nVersionMin=720896\nVersionSDK=1704448\nHash type=sha256 size=32\nCandidateCDHash sha256=02d7cead101e7e5ccceeffea55f9f0d3023e35ba\nCandidateCDHashFull sha256=02d7cead101e7e5ccceeffea55f9f0d3023e35ba892bfdea27f7a8113a32006c\nHash choices=sha256\nCMSDigest=02d7cead101e7e5ccceeffea55f9f0d3023e35ba892bfdea27f7a8113a32006c\nCMSDigestType=2\nExecutable Segment base=0\nExecutable Segment limit=196608\nExecutable Segment flags=0x0\nPage size=16384\nCDHash=02d7cead101e7e5ccceeffea55f9f0d3023e35ba\nSignature size=9074\nAuthority=Developer ID Application: Valve Corporation (MXGJJ98X76)\nAuthority=Developer ID Certification Authority\nAuthority=Apple Root CA\nTimestamp=3 Sep 2026 at 03:32:38\nInfo.plist=not bound\nTeamIdentifier=MXGJJ98X76\nSealed Resources=none\nInternal requirements count=1 size=180\nTotal signatures=1\nChosen signature=1\n"
+      },
+      "signature_verification": {
+        "exit": 0,
+        "output": ""
+      },
+      "arm64_signature_verification": {
+        "exit": 0,
+        "output": ""
+      },
+      "version_uuid_rpath_commands": "     cmd LC_UUID\n cmdsize 24\n    uuid 0F46066E-9568-3EC1-B816-163DD579E32F\nLoad command 9\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n    minos 11.0\n      sdk 26.2\n   ntools 1\n     tool 3"
+    },
+    "libaudio.dylib": {
+      "sha256": "8beaaa14d68c3a8a1c359dd1673163126113a156fd1a90f155975e1cce5614a0",
+      "bytes": 254464,
+      "architectures": {
+        "exit": 0,
+        "output": "x86_64 arm64\n"
+      },
+      "dependencies": {
+        "exit": 0,
+        "output": "<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libaudio.dylib:\n\t@loader_path/libaudio.dylib (compatibility version 1.0.0, current version 1.0.0)\n\t@loader_path/libtier0_s.dylib (compatibility version 1.0.0, current version 1.0.0)\n\t@loader_path/libvstdlib_s.dylib (compatibility version 1.0.0, current version 1.0.0)\n\t/System/Library/Frameworks/CoreServices.framework/Versions/A/CoreServices (compatibility version 1.0.0, current version 1226.0.0)\n\t/System/Library/Frameworks/IOKit.framework/Versions/A/IOKit (compatibility version 1.0.0, current version 275.0.0)\n\t/System/Library/Frameworks/DiskArbitration.framework/Versions/A/DiskArbitration (compatibility version 1.0.0, current version 1.0.0)\n\t/System/Library/Frameworks/Foundation.framework/Versions/C/Foundation (compatibility version 300.0.0, current version 4201.0.0)\n\t/usr/lib/libc++.1.dylib (compatibility version 1.0.0, current version 2000.67.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1356.0.0)\n\t/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (compatibility version 150.0.0, current version 4201.0.0)\n\t/usr/lib/libobjc.A.dylib (compatibility version 1.0.0, current version 228.0.0)\n"
+      },
+      "signature": {
+        "exit": 0,
+        "output": "Executable=<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libaudio.dylib\nIdentifier=com.valvesoftware.steam\nFormat=Mach-O universal (x86_64 arm64)\nCodeDirectory v=20400 size=411 flags=0x0(none) hashes=7+2 location=embedded\nVersionPlatform=1\nVersionMin=720896\nVersionSDK=1704448\nHash type=sha256 size=32\nCandidateCDHash sha256=eb8d19f2e9d8eab1e5a57ab267f645a3c1cc89f7\nCandidateCDHashFull sha256=eb8d19f2e9d8eab1e5a57ab267f645a3c1cc89f73ca57d289e26c607bbf82754\nHash choices=sha256\nCMSDigest=eb8d19f2e9d8eab1e5a57ab267f645a3c1cc89f73ca57d289e26c607bbf82754\nCMSDigestType=2\nExecutable Segment base=0\nExecutable Segment limit=65536\nExecutable Segment flags=0x0\nPage size=16384\nCDHash=eb8d19f2e9d8eab1e5a57ab267f645a3c1cc89f7\nSignature size=9074\nAuthority=Developer ID Application: Valve Corporation (MXGJJ98X76)\nAuthority=Developer ID Certification Authority\nAuthority=Apple Root CA\nTimestamp=3 Sep 2026 at 03:32:39\nInfo.plist=not bound\nTeamIdentifier=MXGJJ98X76\nSealed Resources=none\nInternal requirements count=1 size=180\nTotal signatures=1\nChosen signature=1\n"
+      },
+      "signature_verification": {
+        "exit": 0,
+        "output": ""
+      },
+      "arm64_signature_verification": {
+        "exit": 0,
+        "output": ""
+      },
+      "version_uuid_rpath_commands": "     cmd LC_UUID\n cmdsize 24\n    uuid 54276F19-2C38-3B8C-A437-F55F53C88CE9\nLoad command 9\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n    minos 11.0\n      sdk 26.2\n   ntools 1\n     tool 3"
+    },
+    "libavcodec.62.dylib": {
+      "sha256": "f4beb1c6e9fe309aee6697c42b74af4fe5a4752dcd6b26b2633b5e8bf8b975c5",
+      "bytes": 10703712,
+      "architectures": {
+        "exit": 0,
+        "output": "x86_64 arm64\n"
+      },
+      "dependencies": {
+        "exit": 0,
+        "output": "<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libavcodec.62.dylib:\n\t@loader_path/libavcodec.62.dylib (compatibility version 62.0.0, current version 62.28.102)\n\t@loader_path/libavutil.60.dylib (compatibility version 60.0.0, current version 60.26.102)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1336.61.1)\n\t/usr/lib/libiconv.2.dylib (compatibility version 7.0.0, current version 7.0.0)\n\t/System/Library/Frameworks/AudioToolbox.framework/Versions/A/AudioToolbox (compatibility version 1.0.0, current version 1000.0.0)\n\t/System/Library/Frameworks/VideoToolbox.framework/Versions/A/VideoToolbox (compatibility version 1.0.0, current version 1.0.0)\n\t/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (compatibility version 150.0.0, current version 2202.0.0)\n\t/System/Library/Frameworks/CoreMedia.framework/Versions/A/CoreMedia (compatibility version 1.0.0, current version 1.0.0)\n\t/System/Library/Frameworks/CoreVideo.framework/Versions/A/CoreVideo (compatibility version 1.2.0, current version 1.5.0)\n\t/System/Library/Frameworks/CoreServices.framework/Versions/A/CoreServices (compatibility version 1.0.0, current version 1226.0.0)\n"
+      },
+      "signature": {
+        "exit": 0,
+        "output": "Executable=<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libavcodec.62.dylib\nIdentifier=libavcodec.62.dylib\nFormat=Mach-O universal (x86_64 arm64)\nCodeDirectory v=20400 size=29388 flags=0x20002(adhoc,linker-signed) hashes=915+0 location=embedded\nVersionPlatform=1\nVersionMin=720896\nVersionSDK=918016\nHash type=sha256 size=32\nCandidateCDHash sha256=1dc783e5599de9c2cb5a358413dbdb35d2177095\nCandidateCDHashFull sha256=1dc783e5599de9c2cb5a358413dbdb35d217709543e3dfc7c17f194896c34fba\nHash choices=sha256\nCMSDigest=1dc783e5599de9c2cb5a358413dbdb35d217709543e3dfc7c17f194896c34fba\nCMSDigestType=2\nExecutable Segment base=0\nExecutable Segment limit=3571712\nExecutable Segment flags=0x0\nPage size=4096\nCDHash=1dc783e5599de9c2cb5a358413dbdb35d2177095\nSignature=adhoc\nInfo.plist=not bound\nTeamIdentifier=not set\nSealed Resources=none\nInternal requirements=none\n"
+      },
+      "signature_verification": {
+        "exit": 1,
+        "output": "<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libavcodec.62.dylib: code object is not signed at all\n"
+      },
+      "arm64_signature_verification": {
+        "exit": 0,
+        "output": ""
+      },
+      "version_uuid_rpath_commands": "     cmd LC_UUID\n cmdsize 24\n    uuid 85CA1A09-D189-3735-B66C-B53D51E94D46\nLoad command 9\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n    minos 11.0\n      sdk 14.2\n   ntools 1\n     tool 3"
+    },
+    "libavfilter.11.dylib": {
+      "sha256": "c922340c0bb1bd6748c255580f33a143310f3fb59cba60ad6cfc297539779d67",
+      "bytes": 418376,
+      "architectures": {
+        "exit": 0,
+        "output": "x86_64 arm64\n"
+      },
+      "dependencies": {
+        "exit": 0,
+        "output": "<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libavfilter.11.dylib:\n\t@loader_path/libavfilter.11.dylib (compatibility version 11.0.0, current version 11.14.102)\n\t@loader_path/libswscale.9.dylib (compatibility version 9.0.0, current version 9.5.102)\n\t@loader_path/libavutil.60.dylib (compatibility version 60.0.0, current version 60.26.102)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1336.61.1)\n\t/System/Library/Frameworks/VideoToolbox.framework/Versions/A/VideoToolbox (compatibility version 1.0.0, current version 1.0.0)\n\t/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (compatibility version 150.0.0, current version 2202.0.0)\n\t/System/Library/Frameworks/CoreMedia.framework/Versions/A/CoreMedia (compatibility version 1.0.0, current version 1.0.0)\n\t/System/Library/Frameworks/CoreVideo.framework/Versions/A/CoreVideo (compatibility version 1.2.0, current version 1.5.0)\n\t/System/Library/Frameworks/CoreServices.framework/Versions/A/CoreServices (compatibility version 1.0.0, current version 1226.0.0)\n"
+      },
+      "signature": {
+        "exit": 0,
+        "output": "Executable=<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libavfilter.11.dylib\nIdentifier=libavfilter.11.dylib\nFormat=Mach-O universal (x86_64 arm64)\nCodeDirectory v=20400 size=1709 flags=0x20002(adhoc,linker-signed) hashes=50+0 location=embedded\nVersionPlatform=1\nVersionMin=720896\nVersionSDK=918016\nHash type=sha256 size=32\nCandidateCDHash sha256=7c622185f2ba6d20065115c16b1f24b0f73b3976\nCandidateCDHashFull sha256=7c622185f2ba6d20065115c16b1f24b0f73b3976f2c800b3f2ac5e16fe281c8e\nHash choices=sha256\nCMSDigest=7c622185f2ba6d20065115c16b1f24b0f73b3976f2c800b3f2ac5e16fe281c8e\nCMSDigestType=2\nExecutable Segment base=0\nExecutable Segment limit=147456\nExecutable Segment flags=0x0\nPage size=4096\nCDHash=7c622185f2ba6d20065115c16b1f24b0f73b3976\nSignature=adhoc\nInfo.plist=not bound\nTeamIdentifier=not set\nSealed Resources=none\nInternal requirements=none\n"
+      },
+      "signature_verification": {
+        "exit": 1,
+        "output": "<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libavfilter.11.dylib: code object is not signed at all\n"
+      },
+      "arm64_signature_verification": {
+        "exit": 0,
+        "output": ""
+      },
+      "version_uuid_rpath_commands": "     cmd LC_UUID\n cmdsize 24\n    uuid 4E315088-608C-3C29-A864-9B46E1DCBE94\nLoad command 9\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n    minos 11.0\n      sdk 14.2\n   ntools 1\n     tool 3"
+    },
+    "libavformat.62.dylib": {
+      "sha256": "de01856658dc432185dde46407d330ede609660bce382cdc57373d810f453a63",
+      "bytes": 2065016,
+      "architectures": {
+        "exit": 0,
+        "output": "x86_64 arm64\n"
+      },
+      "dependencies": {
+        "exit": 0,
+        "output": "<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libavformat.62.dylib:\n\t@loader_path/libavformat.62.dylib (compatibility version 62.0.0, current version 62.12.102)\n\t@loader_path/libavcodec.62.dylib (compatibility version 62.0.0, current version 62.28.102)\n\t@loader_path/libavutil.60.dylib (compatibility version 60.0.0, current version 60.26.102)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1336.61.1)\n\t/usr/lib/libbz2.1.0.dylib (compatibility version 1.0.0, current version 1.0.8)\n\t/usr/lib/libiconv.2.dylib (compatibility version 7.0.0, current version 7.0.0)\n\t/System/Library/Frameworks/AudioToolbox.framework/Versions/A/AudioToolbox (compatibility version 1.0.0, current version 1000.0.0)\n\t/System/Library/Frameworks/VideoToolbox.framework/Versions/A/VideoToolbox (compatibility version 1.0.0, current version 1.0.0)\n\t/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (compatibility version 150.0.0, current version 2202.0.0)\n\t/System/Library/Frameworks/CoreMedia.framework/Versions/A/CoreMedia (compatibility version 1.0.0, current version 1.0.0)\n\t/System/Library/Frameworks/CoreVideo.framework/Versions/A/CoreVideo (compatibility version 1.2.0, current version 1.5.0)\n\t/System/Library/Frameworks/CoreServices.framework/Versions/A/CoreServices (compatibility version 1.0.0, current version 1226.0.0)\n"
+      },
+      "signature": {
+        "exit": 0,
+        "output": "Executable=<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libavformat.62.dylib\nIdentifier=libavformat.62.dylib\nFormat=Mach-O universal (x86_64 arm64)\nCodeDirectory v=20400 size=8141 flags=0x20002(adhoc,linker-signed) hashes=251+0 location=embedded\nVersionPlatform=1\nVersionMin=720896\nVersionSDK=918016\nHash type=sha256 size=32\nCandidateCDHash sha256=d39e2eb3011c270f96fc587dad5513d8498f2124\nCandidateCDHashFull sha256=d39e2eb3011c270f96fc587dad5513d8498f21247fca865d298d89d606a08446\nHash choices=sha256\nCMSDigest=d39e2eb3011c270f96fc587dad5513d8498f21247fca865d298d89d606a08446\nCMSDigestType=2\nExecutable Segment base=0\nExecutable Segment limit=901120\nExecutable Segment flags=0x0\nPage size=4096\nCDHash=d39e2eb3011c270f96fc587dad5513d8498f2124\nSignature=adhoc\nInfo.plist=not bound\nTeamIdentifier=not set\nSealed Resources=none\nInternal requirements=none\n"
+      },
+      "signature_verification": {
+        "exit": 1,
+        "output": "<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libavformat.62.dylib: code object is not signed at all\n"
+      },
+      "arm64_signature_verification": {
+        "exit": 0,
+        "output": ""
+      },
+      "version_uuid_rpath_commands": "     cmd LC_UUID\n cmdsize 24\n    uuid 52405201-223E-3940-B3E3-F9C47DB16C4B\nLoad command 9\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n    minos 11.0\n      sdk 14.2\n   ntools 1\n     tool 3"
+    },
+    "libavutil.60.dylib": {
+      "sha256": "87d2342aa397940ef48b93a7ab4b8a80f7c0a8adc17cdfdcc221941277b24b29",
+      "bytes": 1613248,
+      "architectures": {
+        "exit": 0,
+        "output": "x86_64 arm64\n"
+      },
+      "dependencies": {
+        "exit": 0,
+        "output": "<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libavutil.60.dylib:\n\t@loader_path/libavutil.60.dylib (compatibility version 60.0.0, current version 60.26.102)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1336.61.1)\n\t/System/Library/Frameworks/VideoToolbox.framework/Versions/A/VideoToolbox (compatibility version 1.0.0, current version 1.0.0)\n\t/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (compatibility version 150.0.0, current version 2202.0.0)\n\t/System/Library/Frameworks/CoreMedia.framework/Versions/A/CoreMedia (compatibility version 1.0.0, current version 1.0.0)\n\t/System/Library/Frameworks/CoreVideo.framework/Versions/A/CoreVideo (compatibility version 1.2.0, current version 1.5.0)\n\t/System/Library/Frameworks/CoreServices.framework/Versions/A/CoreServices (compatibility version 1.0.0, current version 1226.0.0)\n"
+      },
+      "signature": {
+        "exit": 0,
+        "output": "Executable=<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libavutil.60.dylib\nIdentifier=libavutil.60.dylib\nFormat=Mach-O universal (x86_64 arm64)\nCodeDirectory v=20400 size=5899 flags=0x20002(adhoc,linker-signed) hashes=181+0 location=embedded\nVersionPlatform=1\nVersionMin=720896\nVersionSDK=918016\nHash type=sha256 size=32\nCandidateCDHash sha256=5a9daa770358b92277ab7792af3ad1c75b2c8e5b\nCandidateCDHashFull sha256=5a9daa770358b92277ab7792af3ad1c75b2c8e5b5233c81d718273c93fb8f5b4\nHash choices=sha256\nCMSDigest=5a9daa770358b92277ab7792af3ad1c75b2c8e5b5233c81d718273c93fb8f5b4\nCMSDigestType=2\nExecutable Segment base=0\nExecutable Segment limit=589824\nExecutable Segment flags=0x0\nPage size=4096\nCDHash=5a9daa770358b92277ab7792af3ad1c75b2c8e5b\nSignature=adhoc\nInfo.plist=not bound\nTeamIdentifier=not set\nSealed Resources=none\nInternal requirements=none\n"
+      },
+      "signature_verification": {
+        "exit": 1,
+        "output": "<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libavutil.60.dylib: code object is not signed at all\n"
+      },
+      "arm64_signature_verification": {
+        "exit": 0,
+        "output": ""
+      },
+      "version_uuid_rpath_commands": "     cmd LC_UUID\n cmdsize 24\n    uuid 08BFF361-10F1-34C9-8867-2DFEE1E80B89\nLoad command 9\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n    minos 11.0\n      sdk 14.2\n   ntools 1\n     tool 3"
+    },
+    "libogg.0.dylib": {
+      "sha256": "9c472dbbde83665941bc40f287276099ba217813071624861ddb4b1209a1acbe",
+      "bytes": 152144,
+      "architectures": {
+        "exit": 0,
+        "output": "x86_64 arm64\n"
+      },
+      "dependencies": {
+        "exit": 0,
+        "output": "<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libogg.0.dylib:\n\t@loader_path/libogg.0.dylib (compatibility version 9.0.0, current version 9.5.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1336.61.1)\n"
+      },
+      "signature": {
+        "exit": 0,
+        "output": "Executable=<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libogg.0.dylib\nIdentifier=libogg.0.dylib\nFormat=Mach-O universal (x86_64 arm64)\nCodeDirectory v=20400 size=647 flags=0x20002(adhoc,linker-signed) hashes=17+0 location=embedded\nVersionPlatform=1\nVersionMin=720896\nVersionSDK=918016\nHash type=sha256 size=32\nCandidateCDHash sha256=019001fc78f344a6b0ecec22b04e2993071b5b04\nCandidateCDHashFull sha256=019001fc78f344a6b0ecec22b04e2993071b5b04eb926782aedf749d5fc84220\nHash choices=sha256\nCMSDigest=019001fc78f344a6b0ecec22b04e2993071b5b04eb926782aedf749d5fc84220\nCMSDigestType=2\nExecutable Segment base=0\nExecutable Segment limit=32768\nExecutable Segment flags=0x0\nPage size=4096\nCDHash=019001fc78f344a6b0ecec22b04e2993071b5b04\nSignature=adhoc\nInfo.plist=not bound\nTeamIdentifier=not set\nSealed Resources=none\nInternal requirements=none\n"
+      },
+      "signature_verification": {
+        "exit": 1,
+        "output": "<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libogg.0.dylib: code object is not signed at all\n"
+      },
+      "arm64_signature_verification": {
+        "exit": 0,
+        "output": ""
+      },
+      "version_uuid_rpath_commands": "     cmd LC_UUID\n cmdsize 24\n    uuid CBAAE18C-001A-31E3-B5ED-CB23F9F30E95\nLoad command 9\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n    minos 11.0\n      sdk 14.2\n   ntools 1\n     tool 3"
+    },
+    "libswresample.6.dylib": {
+      "sha256": "e1cac391bd4bf58dd82266c60207251957418074393428ce4ec9a693cda1dea6",
+      "bytes": 284152,
+      "architectures": {
+        "exit": 0,
+        "output": "x86_64 arm64\n"
+      },
+      "dependencies": {
+        "exit": 0,
+        "output": "<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libswresample.6.dylib:\n\t@loader_path/libswresample.6.dylib (compatibility version 6.0.0, current version 6.3.102)\n\t@loader_path/libavutil.60.dylib (compatibility version 60.0.0, current version 60.26.102)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1336.61.1)\n\t/System/Library/Frameworks/VideoToolbox.framework/Versions/A/VideoToolbox (compatibility version 1.0.0, current version 1.0.0)\n\t/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (compatibility version 150.0.0, current version 2202.0.0)\n\t/System/Library/Frameworks/CoreMedia.framework/Versions/A/CoreMedia (compatibility version 1.0.0, current version 1.0.0)\n\t/System/Library/Frameworks/CoreVideo.framework/Versions/A/CoreVideo (compatibility version 1.2.0, current version 1.5.0)\n\t/System/Library/Frameworks/CoreServices.framework/Versions/A/CoreServices (compatibility version 1.0.0, current version 1226.0.0)\n"
+      },
+      "signature": {
+        "exit": 0,
+        "output": "Executable=<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libswresample.6.dylib\nIdentifier=libswresample.6.dylib\nFormat=Mach-O universal (x86_64 arm64)\nCodeDirectory v=20400 size=1070 flags=0x20002(adhoc,linker-signed) hashes=30+0 location=embedded\nVersionPlatform=1\nVersionMin=720896\nVersionSDK=918016\nHash type=sha256 size=32\nCandidateCDHash sha256=4d871d20df9564465c6389d003a65c2e9d54734b\nCandidateCDHashFull sha256=4d871d20df9564465c6389d003a65c2e9d54734b74685777f3d4bf29a565f591\nHash choices=sha256\nCMSDigest=4d871d20df9564465c6389d003a65c2e9d54734b74685777f3d4bf29a565f591\nCMSDigestType=2\nExecutable Segment base=0\nExecutable Segment limit=81920\nExecutable Segment flags=0x0\nPage size=4096\nCDHash=4d871d20df9564465c6389d003a65c2e9d54734b\nSignature=adhoc\nInfo.plist=not bound\nTeamIdentifier=not set\nSealed Resources=none\nInternal requirements=none\n"
+      },
+      "signature_verification": {
+        "exit": 1,
+        "output": "<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libswresample.6.dylib: code object is not signed at all\n"
+      },
+      "arm64_signature_verification": {
+        "exit": 0,
+        "output": ""
+      },
+      "version_uuid_rpath_commands": "     cmd LC_UUID\n cmdsize 24\n    uuid 79C1FA3E-D540-302E-8DA4-8E59406614AB\nLoad command 9\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n    minos 11.0\n      sdk 14.2\n   ntools 1\n     tool 3"
+    },
+    "libswscale.9.dylib": {
+      "sha256": "64623785f339662a62303ad2911b311793726ac8f23710d8cb9eeea2201dbd83",
+      "bytes": 2459680,
+      "architectures": {
+        "exit": 0,
+        "output": "x86_64 arm64\n"
+      },
+      "dependencies": {
+        "exit": 0,
+        "output": "<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libswscale.9.dylib:\n\t@loader_path/libswscale.9.dylib (compatibility version 9.0.0, current version 9.5.102)\n\t@loader_path/libavutil.60.dylib (compatibility version 60.0.0, current version 60.26.102)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1336.61.1)\n\t/System/Library/Frameworks/VideoToolbox.framework/Versions/A/VideoToolbox (compatibility version 1.0.0, current version 1.0.0)\n\t/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (compatibility version 150.0.0, current version 2202.0.0)\n\t/System/Library/Frameworks/CoreMedia.framework/Versions/A/CoreMedia (compatibility version 1.0.0, current version 1.0.0)\n\t/System/Library/Frameworks/CoreVideo.framework/Versions/A/CoreVideo (compatibility version 1.2.0, current version 1.5.0)\n\t/System/Library/Frameworks/CoreServices.framework/Versions/A/CoreServices (compatibility version 1.0.0, current version 1226.0.0)\n"
+      },
+      "signature": {
+        "exit": 0,
+        "output": "Executable=<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libswscale.9.dylib\nIdentifier=libswscale.9.dylib\nFormat=Mach-O universal (x86_64 arm64)\nCodeDirectory v=20400 size=8011 flags=0x20002(adhoc,linker-signed) hashes=247+0 location=embedded\nVersionPlatform=1\nVersionMin=720896\nVersionSDK=918016\nHash type=sha256 size=32\nCandidateCDHash sha256=940a4fa9b097a07d56f683061adb169deb04b91c\nCandidateCDHashFull sha256=940a4fa9b097a07d56f683061adb169deb04b91c4a1925e27377d812df694295\nHash choices=sha256\nCMSDigest=940a4fa9b097a07d56f683061adb169deb04b91c4a1925e27377d812df694295\nCMSDigestType=2\nExecutable Segment base=0\nExecutable Segment limit=950272\nExecutable Segment flags=0x0\nPage size=4096\nCDHash=940a4fa9b097a07d56f683061adb169deb04b91c\nSignature=adhoc\nInfo.plist=not bound\nTeamIdentifier=not set\nSealed Resources=none\nInternal requirements=none\n"
+      },
+      "signature_verification": {
+        "exit": 1,
+        "output": "<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libswscale.9.dylib: code object is not signed at all\n"
+      },
+      "arm64_signature_verification": {
+        "exit": 0,
+        "output": ""
+      },
+      "version_uuid_rpath_commands": "     cmd LC_UUID\n cmdsize 24\n    uuid 23DEC063-B982-3FF6-8579-8C4C3F9453AE\nLoad command 9\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n    minos 11.0\n      sdk 14.2\n   ntools 1\n     tool 3"
+    },
+    "libvorbis.0.dylib": {
+      "sha256": "97796e1ebff812e645e0968da4c01ee863e7d23ea00eafe905ad7e05ca9a0ef6",
+      "bytes": 485792,
+      "architectures": {
+        "exit": 0,
+        "output": "x86_64 arm64\n"
+      },
+      "dependencies": {
+        "exit": 0,
+        "output": "<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libvorbis.0.dylib:\n\t@loader_path/libvorbis.0.dylib (compatibility version 5.0.0, current version 5.9.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1336.61.1)\n\t@loader_path/libogg.0.dylib (compatibility version 9.0.0, current version 9.5.0)\n"
+      },
+      "signature": {
+        "exit": 0,
+        "output": "Executable=<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libvorbis.0.dylib\nIdentifier=libvorbis.0.dylib\nFormat=Mach-O universal (x86_64 arm64)\nCodeDirectory v=20400 size=1866 flags=0x20002(adhoc,linker-signed) hashes=55+0 location=embedded\nVersionPlatform=1\nVersionMin=720896\nVersionSDK=918016\nHash type=sha256 size=32\nCandidateCDHash sha256=92cd2889f3e1705e4e9266a4ca2ff8942a201d39\nCandidateCDHashFull sha256=92cd2889f3e1705e4e9266a4ca2ff8942a201d39955258e6e480480ea76d5b86\nHash choices=sha256\nCMSDigest=92cd2889f3e1705e4e9266a4ca2ff8942a201d39955258e6e480480ea76d5b86\nCMSDigestType=2\nExecutable Segment base=0\nExecutable Segment limit=180224\nExecutable Segment flags=0x0\nPage size=4096\nCDHash=92cd2889f3e1705e4e9266a4ca2ff8942a201d39\nSignature=adhoc\nInfo.plist=not bound\nTeamIdentifier=not set\nSealed Resources=none\nInternal requirements=none\n"
+      },
+      "signature_verification": {
+        "exit": 1,
+        "output": "<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libvorbis.0.dylib: code object is not signed at all\n"
+      },
+      "arm64_signature_verification": {
+        "exit": 0,
+        "output": ""
+      },
+      "version_uuid_rpath_commands": "     cmd LC_UUID\n cmdsize 24\n    uuid 9FB344AA-0D9B-3DE6-BDAC-2099BA3089DB\nLoad command 9\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n    minos 11.0\n      sdk 14.2\n   ntools 1\n     tool 3"
+    },
+    "libvorbisenc.2.dylib": {
+      "sha256": "d97636f7861708f91653177df583b79f2d0c8138636211afbc57c98e2715d6e8",
+      "bytes": 1254456,
+      "architectures": {
+        "exit": 0,
+        "output": "x86_64 arm64\n"
+      },
+      "dependencies": {
+        "exit": 0,
+        "output": "<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libvorbisenc.2.dylib:\n\t@loader_path/libvorbisenc.2.dylib (compatibility version 3.0.0, current version 3.12.0)\n\t@loader_path/libvorbis.0.dylib (compatibility version 5.0.0, current version 5.9.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1336.61.1)\n\t@loader_path/libogg.0.dylib (compatibility version 9.0.0, current version 9.5.0)\n"
+      },
+      "signature": {
+        "exit": 0,
+        "output": "Executable=<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libvorbisenc.2.dylib\nIdentifier=libvorbisenc.2.dylib\nFormat=Mach-O universal (x86_64 arm64)\nCodeDirectory v=20400 size=4909 flags=0x20002(adhoc,linker-signed) hashes=150+0 location=embedded\nVersionPlatform=1\nVersionMin=720896\nVersionSDK=918016\nHash type=sha256 size=32\nCandidateCDHash sha256=115745fd7d81bc501120d5eabfaf3d49cb71ce40\nCandidateCDHashFull sha256=115745fd7d81bc501120d5eabfaf3d49cb71ce40153a3d049e74d8916e8fd55b\nHash choices=sha256\nCMSDigest=115745fd7d81bc501120d5eabfaf3d49cb71ce40153a3d049e74d8916e8fd55b\nCMSDigestType=2\nExecutable Segment base=0\nExecutable Segment limit=491520\nExecutable Segment flags=0x0\nPage size=4096\nCDHash=115745fd7d81bc501120d5eabfaf3d49cb71ce40\nSignature=adhoc\nInfo.plist=not bound\nTeamIdentifier=not set\nSealed Resources=none\nInternal requirements=none\n"
+      },
+      "signature_verification": {
+        "exit": 1,
+        "output": "<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libvorbisenc.2.dylib: code object is not signed at all\n"
+      },
+      "arm64_signature_verification": {
+        "exit": 0,
+        "output": ""
+      },
+      "version_uuid_rpath_commands": "     cmd LC_UUID\n cmdsize 24\n    uuid D716004E-5A7E-3954-AE0F-27980880A4DC\nLoad command 9\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n    minos 11.0\n      sdk 14.2\n   ntools 1\n     tool 3"
+    },
+    "libvorbisfile.3.dylib": {
+      "sha256": "25eb9293f101b034750fd6bfcfa360d8d90d5d7a45d6ece5b5c03e853eeb2dc5",
+      "bytes": 153704,
+      "architectures": {
+        "exit": 0,
+        "output": "x86_64 arm64\n"
+      },
+      "dependencies": {
+        "exit": 0,
+        "output": "<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libvorbisfile.3.dylib:\n\t@loader_path/libvorbisfile.3.dylib (compatibility version 7.0.0, current version 7.8.0)\n\t@loader_path/libvorbis.0.dylib (compatibility version 5.0.0, current version 5.9.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1336.61.1)\n\t@loader_path/libogg.0.dylib (compatibility version 9.0.0, current version 9.5.0)\n"
+      },
+      "signature": {
+        "exit": 0,
+        "output": "Executable=<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libvorbisfile.3.dylib\nIdentifier=libvorbisfile.3.dylib\nFormat=Mach-O universal (x86_64 arm64)\nCodeDirectory v=20400 size=686 flags=0x20002(adhoc,linker-signed) hashes=18+0 location=embedded\nVersionPlatform=1\nVersionMin=720896\nVersionSDK=918016\nHash type=sha256 size=32\nCandidateCDHash sha256=5da7853af7e7ebc5f1172e816f43df8148f910c6\nCandidateCDHashFull sha256=5da7853af7e7ebc5f1172e816f43df8148f910c6e511bd0dd222e832601ee939\nHash choices=sha256\nCMSDigest=5da7853af7e7ebc5f1172e816f43df8148f910c6e511bd0dd222e832601ee939\nCMSDigestType=2\nExecutable Segment base=0\nExecutable Segment limit=32768\nExecutable Segment flags=0x0\nPage size=4096\nCDHash=5da7853af7e7ebc5f1172e816f43df8148f910c6\nSignature=adhoc\nInfo.plist=not bound\nTeamIdentifier=not set\nSealed Resources=none\nInternal requirements=none\n"
+      },
+      "signature_verification": {
+        "exit": 1,
+        "output": "<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/libvorbisfile.3.dylib: code object is not signed at all\n"
+      },
+      "arm64_signature_verification": {
+        "exit": 0,
+        "output": ""
+      },
+      "version_uuid_rpath_commands": "     cmd LC_UUID\n cmdsize 24\n    uuid C3317066-C88B-30FE-A3FA-9E45FA1D91FB\nLoad command 9\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n    minos 11.0\n      sdk 14.2\n   ntools 1\n     tool 3"
+    },
+    "crashhandler.dylib": {
+      "sha256": "5c5bc64af2522b7db15594dc95dc9992c0b526a9f932b1af1d129cfd615b1cee",
+      "bytes": 323968,
+      "architectures": {
+        "exit": 0,
+        "output": "x86_64 arm64\n"
+      },
+      "dependencies": {
+        "exit": 0,
+        "output": "<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/crashhandler.dylib:\n\t@loader_path/crashhandler.dylib (compatibility version 1.0.0, current version 1.0.0)\n\t/usr/lib/libiconv.2.dylib (compatibility version 7.0.0, current version 7.0.0)\n\t/System/Library/Frameworks/CoreServices.framework/Versions/A/CoreServices (compatibility version 1.0.0, current version 1226.0.0)\n\t/System/Library/Frameworks/IOKit.framework/Versions/A/IOKit (compatibility version 1.0.0, current version 275.0.0)\n\t/System/Library/Frameworks/DiskArbitration.framework/Versions/A/DiskArbitration (compatibility version 1.0.0, current version 1.0.0)\n\t/System/Library/Frameworks/Foundation.framework/Versions/C/Foundation (compatibility version 300.0.0, current version 4201.0.0)\n\t@loader_path/Frameworks/Breakpad.framework/Versions/A/Breakpad (compatibility version 1.0.0, current version 1.0.0)\n\t/usr/lib/libc++.1.dylib (compatibility version 1.0.0, current version 2000.67.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1356.0.0)\n\t/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (compatibility version 150.0.0, current version 4201.0.0)\n\t/usr/lib/libobjc.A.dylib (compatibility version 1.0.0, current version 228.0.0)\n"
+      },
+      "signature": {
+        "exit": 0,
+        "output": "Executable=<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/crashhandler.dylib\nIdentifier=com.valvesoftware.steam\nFormat=Mach-O universal (x86_64 arm64)\nCodeDirectory v=20400 size=475 flags=0x0(none) hashes=9+2 location=embedded\nVersionPlatform=1\nVersionMin=720896\nVersionSDK=1704448\nHash type=sha256 size=32\nCandidateCDHash sha256=581df13879caa553bdc8dc66fe7cfc78f53e8acc\nCandidateCDHashFull sha256=581df13879caa553bdc8dc66fe7cfc78f53e8accf3601bf664537cb89fcedb19\nHash choices=sha256\nCMSDigest=581df13879caa553bdc8dc66fe7cfc78f53e8accf3601bf664537cb89fcedb19\nCMSDigestType=2\nExecutable Segment base=0\nExecutable Segment limit=98304\nExecutable Segment flags=0x0\nPage size=16384\nCDHash=581df13879caa553bdc8dc66fe7cfc78f53e8acc\nSignature size=9074\nAuthority=Developer ID Application: Valve Corporation (MXGJJ98X76)\nAuthority=Developer ID Certification Authority\nAuthority=Apple Root CA\nTimestamp=3 Sep 2026 at 03:32:26\nInfo.plist=not bound\nTeamIdentifier=MXGJJ98X76\nSealed Resources=none\nInternal requirements count=1 size=180\nTotal signatures=1\nChosen signature=1\n"
+      },
+      "signature_verification": {
+        "exit": 0,
+        "output": ""
+      },
+      "arm64_signature_verification": {
+        "exit": 0,
+        "output": ""
+      },
+      "version_uuid_rpath_commands": "     cmd LC_UUID\n cmdsize 24\n    uuid C3B9DDAA-F0B5-36FC-AA15-34AD8BB86FCC\nLoad command 9\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n    minos 11.0\n      sdk 26.2\n   ntools 1\n     tool 3"
+    },
+    "Frameworks/Breakpad.framework/Versions/A/Breakpad": {
+      "sha256": "bca3dbe21864b3ecdd86c003042f2fe42c52b0af716f8ec3bb14039bd64de5e4",
+      "bytes": 351312,
+      "architectures": {
+        "exit": 0,
+        "output": "i386 x86_64 arm64\n"
+      },
+      "dependencies": {
+        "exit": 0,
+        "output": "<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/Frameworks/Breakpad.framework/Versions/A/Breakpad:\n\t@loader_path/Frameworks/Breakpad.framework/Versions/A/Breakpad (compatibility version 1.0.0, current version 1.0.0)\n\t@loader_path/Resources/breakpadUtilities.dylib (compatibility version 1.0.0, current version 1.0.0)\n\t/System/Library/Frameworks/Cocoa.framework/Versions/A/Cocoa (compatibility version 1.0.0, current version 23.0.0)\n\t/usr/lib/libc++.1.dylib (compatibility version 1.0.0, current version 904.4.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1292.60.1)\n\t/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (compatibility version 150.0.0, current version 1770.255.0)\n\t/System/Library/Frameworks/Foundation.framework/Versions/C/Foundation (compatibility version 300.0.0, current version 1770.255.0)\n\t/usr/lib/libobjc.A.dylib (compatibility version 1.0.0, current version 228.0.0)\n"
+      },
+      "signature": {
+        "exit": 0,
+        "output": "Executable=<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/Frameworks/Breakpad.framework/Versions/A/Breakpad\nIdentifier=com.googlecode.google-breakpad\nFormat=bundle with Mach-O universal (i386 x86_64 arm64)\nCodeDirectory v=20400 size=450 flags=0x0(none) hashes=7+3 location=embedded\nVersionPlatform=1\nVersionMin=720896\nVersionSDK=721152\nHash type=sha256 size=32\nCandidateCDHash sha1=603d9e1d2d279ebae646fa7256192e3aa7f631f0\nCandidateCDHashFull sha1=603d9e1d2d279ebae646fa7256192e3aa7f631f0\nCandidateCDHash sha256=bb42a4f4e46560308378126fd731983db1f10264\nCandidateCDHashFull sha256=bb42a4f4e46560308378126fd731983db1f102642538515496b7cc8d2ca5f57d\nHash choices=sha1,sha256\nCMSDigest=945f2ecc58c3d50f33f85d49169434ca804099201bd75f232bd208a83170d2ee\nCMSDigestType=2\nExecutable Segment base=0\nExecutable Segment limit=32768\nExecutable Segment flags=0x0\nPage size=16384\nCDHash=bb42a4f4e46560308378126fd731983db1f10264\nSignature size=9156\nAuthority=Developer ID Application: Valve Corporation (MXGJJ98X76)\nAuthority=Developer ID Certification Authority\nAuthority=Apple Root CA\nTimestamp=3 Jul 2026 at 02:02:20\nInfo.plist entries=19\nTeamIdentifier=MXGJJ98X76\nSealed Resources version=2 rules=13 files=36\nInternal requirements count=1 size=180\nTotal signatures=1\nChosen signature=1\n"
+      },
+      "signature_verification": {
+        "exit": 1,
+        "output": "<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/Frameworks/Breakpad.framework/Versions/A/Breakpad: a sealed resource is missing or invalid\n"
+      },
+      "arm64_signature_verification": {
+        "exit": 1,
+        "output": "<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/Frameworks/Breakpad.framework/Versions/A/Breakpad: a sealed resource is missing or invalid\n"
+      },
+      "version_uuid_rpath_commands": "     cmd LC_UUID\n cmdsize 24\n    uuid EB859872-955A-315D-9CE1-87FB57F7C4CD\nLoad command 9\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n    minos 11.0\n      sdk 11.1\n   ntools 1\n     tool 3"
+    },
+    "Frameworks/Breakpad.framework/Versions/A/Resources/breakpadUtilities.dylib": {
+      "sha256": "a354ca72885b36bd22ad00a8723a9a768b5bf91ca7c7786736fea512c744d4b2",
+      "bytes": 489760,
+      "architectures": {
+        "exit": 0,
+        "output": "i386 x86_64 arm64\n"
+      },
+      "dependencies": {
+        "exit": 0,
+        "output": "<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/Frameworks/Breakpad.framework/Versions/A/Resources/breakpadUtilities.dylib:\n\t@executable_path/../Frameworks/Breakpad.framework/Resources/breakpadUtilities.dylib (compatibility version 1.0.0, current version 1.0.0)\n\t/System/Library/Frameworks/Foundation.framework/Versions/C/Foundation (compatibility version 300.0.0, current version 1770.255.0)\n\t/System/Library/Frameworks/Carbon.framework/Versions/A/Carbon (compatibility version 2.0.0, current version 164.0.0)\n\t/usr/lib/libc++.1.dylib (compatibility version 1.0.0, current version 904.4.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1292.60.1)\n\t/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (compatibility version 150.0.0, current version 1770.255.0)\n"
+      },
+      "signature": {
+        "exit": 0,
+        "output": "Executable=<home>/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/Frameworks/Breakpad.framework/Versions/A/Resources/breakpadUtilities.dylib\nIdentifier=breakpadUtilities\nFormat=Mach-O universal (i386 x86_64 arm64)\nCodeDirectory v=20200 size=1393 flags=0x0(none) hashes=39+2 location=embedded\nVersionPlatform=1\nVersionMin=720896\nVersionSDK=721152\nHash type=sha256 size=32\nCandidateCDHash sha1=167e9f9487bb141cd69b3509ce504d6ec7c33049\nCandidateCDHashFull sha1=167e9f9487bb141cd69b3509ce504d6ec7c33049\nCandidateCDHash sha256=becefe47531bd41f017f32579bc0633bab297f02\nCandidateCDHashFull sha256=becefe47531bd41f017f32579bc0633bab297f0217e0c7d5e816b4e307586c93\nHash choices=sha1,sha256\nCMSDigest=d4749c302231c290066e18f40d623640102fd4d9bc80e710df376f245bb63959\nCMSDigestType=2\nPage size=4096\nCDHash=becefe47531bd41f017f32579bc0633bab297f02\nSignature size=9085\nAuthority=Developer ID Application: Valve Corporation (MXGJJ98X76)\nAuthority=Developer ID Certification Authority\nAuthority=Apple Root CA\nTimestamp=7 Aug 2021 at 12:56:51\nInfo.plist=not bound\nTeamIdentifier=MXGJJ98X76\nSealed Resources=none\nInternal requirements count=1 size=180\nTotal signatures=1\nChosen signature=1\n"
+      },
+      "signature_verification": {
+        "exit": 0,
+        "output": ""
+      },
+      "arm64_signature_verification": {
+        "exit": 0,
+        "output": ""
+      },
+      "version_uuid_rpath_commands": "     cmd LC_UUID\n cmdsize 24\n    uuid F81B68A1-E8E8-3F7C-8E42-BE3C57699FC9\nLoad command 9\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n    minos 11.0\n      sdk 11.1\n   ntools 1\n     tool 3"
+    }
+  }
+}

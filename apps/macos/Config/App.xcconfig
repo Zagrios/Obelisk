@@ -1,0 +1,8 @@
+// Display identity can change without moving the user's library.
+PRODUCT_NAME = Forge
+PRODUCT_BUNDLE_IDENTIFIER = com.zagrios.forge
+MARKETING_VERSION = 0.1.0
+CURRENT_PROJECT_VERSION = 1
+INFOPLIST_KEY_CFBundleDisplayName = Forge
+INFOPLIST_KEY_LSApplicationCategoryType = public.app-category.games
+

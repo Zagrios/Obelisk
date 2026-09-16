@@ -1,0 +1,6 @@
+{
+  "test": "sandbox denies unlisted executable /usr/bin/true",
+  "exit": 71,
+  "stderr": "sandbox-exec: execvp() of '/usr/bin/true' failed: Operation not permitted",
+  "passed": true
+}

@@ -1,0 +1,37 @@
+{
+  "cpp_arm64_strict_compilation": [
+    "host.cpp",
+    "steamworks_probe.cpp",
+    "discovery_launcher.cpp",
+    "discovery_adapter.cpp",
+    "discovery_diagnostic.cpp",
+    "appkit_registration_probe.mm"
+  ],
+  "swift_warnings_as_errors": "passed",
+  "python_syntax": "passed",
+  "evidence_json": "passed",
+  "local_document_links": "passed",
+  "source_whitespace": "passed",
+  "sdk_authenticated_round_trip": "passed twice; latest run-20260916-195820-253790-auth-sdk",
+  "sdk_host_loss_control": "passed twice; SDK exit 0",
+  "appkit_regression": "restricted GUI exits86; permitted GUI exits0",
+  "game_main_menu": "visually verified run-20260916-195642-740892-auth-game; no gameplay",
+  "game_sdk_return_value": "not instrumented; separate consumer supplies SDK proof",
+  "production_tests": "not run; no production edits by this investigation",
+  "source_sha256": {
+    "experiments/steam-native-host/discovery_adapter.cpp": "a9ada57f8be8d50b2b25ce81fd590e921bb30825bc62ac92a97c4a3453eef6f7",
+    "experiments/steam-native-host/steamworks_probe.cpp": "ad5a30437b1543e679aa07c71857f5c3931d2ec2305d6a6bcf9f8e83779a366e",
+    "experiments/steam-native-host/discovery_launcher.cpp": "0b0483ffef1e6ba842174c2321514ea9b38ed8781a10dcc5aeade53e66e88469",
+    "experiments/steam-native-host/host.cpp": "9ea28361ccc742f03a5c183684ca6afe836ac996a52d84fb370834756ed202b0",
+    "experiments/steam-native-host/discovery_diagnostic.cpp": "d51741cd90e579aaeb869bef68b3ce41a1026723ea2b6ab401b131c52c79d5b0",
+    "experiments/steam-native-host/internal_abi.hpp": "8cc9c8a17a12d0e14a9e8ea1d1b69f8159134358dabd8adb024d6e9358c1ae5c",
+    "experiments/steam-native-host/appkit_registration_probe.mm": "09c3c12efe8cef7c8f1509fb75d727e5a8b6e2183cc32926814f5c0a48307748",
+    "experiments/steam-native-host/read_credentials.swift": "2504920ed0b2004796b84cc6f82b05b6918b2a7612c12f4ba8517b8cd5ecde43",
+    "experiments/steam-native-host/verify_appkit_sandbox.py": "bf00040115d0e6a916c62b1b13f89a29d8847f64dc920c59113f5d24a18af5f2",
+    "experiments/steam-native-host/probe.py": "e42136ed84c2c9830bb503990db9e41ef0dfb0320fe8ff0ed9028e749ef86297",
+    "experiments/steam-native-host/analyze.py": "d23441a8f75f593080547ec10d2e64537fddc1bf8111306b42146ad789aae7c1",
+    "experiments/steam-native-host/README.md": "47f4a800ee3c088b04e307c65f0c99e6e416adb8ea5fed15357de723ea4378c7",
+    "docs/research-steam-native-host.md": "63a22edf8cebb7c66d74d85ca60de03bad88761ccd9e37115c0b17660c534dc0",
+    "docs/research-steam-native-sources.md": "9ea87933753390181f036451325c7251028abadadb3009e8d5c1e97976cb99f1"
+  }
+}

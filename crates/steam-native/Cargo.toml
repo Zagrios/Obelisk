@@ -1,0 +1,27 @@
+[package]
+name = "forge-steam-native"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+publish = false
+
+# Unsafe native ABI calls run exclusively in an auxiliary process.
+[workspace]
+members = ["adapter"]
+resolver = "3"
+
+[dependencies]
+libc = "0.2"
+sha2 = "0.10"
+zeroize = "1"
+serde_json = "1"
+steam-runtime = { path = "../steam-runtime" }
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[lints.clippy]
+undocumented_unsafe_blocks = "deny"
+
+[profile.release]
+panic = "abort"

@@ -1,0 +1,554 @@
+{
+  "implementation": "Rust",
+  "date": "2026-09-16",
+  "rustc": "1.98.1",
+  "cargo": {
+    "debug_build": "passed",
+    "release_build": "passed",
+    "unit_tests": 4,
+    "unit_test_failures": 0,
+    "clippy": "passed with -D warnings",
+    "fmt": "passed"
+  },
+  "production_workspace_changed": false,
+  "production_launch_integration": false,
+  "legacy_sources_removed": [
+    "C++",
+    "Objective-C++",
+    "Python",
+    "Swift"
+  ],
+  "native_dependencies": "Unmodified Valve binaries and Apple frameworks remain external",
+  "abi_map": "All 259 slots match historical JSON semantically",
+  "unrecognized_client_hash": "rejected before dlopen",
+  "offline_runs": [
+    {
+      "after": [
+        "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver"
+      ],
+      "before": [
+        "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver"
+      ],
+      "credentials": "not read",
+      "elapsed": 2.52673,
+      "events": [
+        {
+          "elapsed": 0,
+          "processes": [
+            "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver"
+          ]
+        },
+        {
+          "elapsed": 0.034270291,
+          "processes": [
+            "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver",
+            "43372 43161 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/run-rust-1789584377-231870000-factory/runtime/native-host"
+          ]
+        },
+        {
+          "elapsed": 2.471351458,
+          "processes": [
+            "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver",
+            "43372 43161 (native-host)"
+          ]
+        }
+      ],
+      "exit": 0,
+      "game_pid": null,
+      "game_stopped_by_probe": false,
+      "host_stopped_after_peer_exit": false,
+      "host_stopped_for_negative_control": false,
+      "implementation": "rust",
+      "mode": "factory",
+      "native_log_lines_discarded": 0,
+      "network": "loopback and Unix sockets only",
+      "observations": {
+        "authenticated_identity_verified": false,
+        "discovery_transport_verified": false,
+        "game_steam_init_failed_logged": false,
+        "game_steam_init_succeeded_logged": false,
+        "game_unity_engine_initialized": false,
+        "global_user_created": false,
+        "host_callbacks_observed": false,
+        "host_loss_observed_by_sdk": false,
+        "licensed_app_ticket_available": false,
+        "peer_authenticated_user_attached": false,
+        "peer_pipe_created": false,
+        "server_connected_callback": false,
+        "steamworks_initialized": false,
+        "steamworks_round_trip_verified": false
+      },
+      "passed": true,
+      "pid": 43372,
+      "sdk_exit": null,
+      "sdk_pid": null,
+      "timeout": false
+    },
+    {
+      "after": [
+        "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver"
+      ],
+      "before": [
+        "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver"
+      ],
+      "credentials": "not read",
+      "elapsed": 2.404016542,
+      "events": [
+        {
+          "elapsed": 0,
+          "processes": [
+            "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver"
+          ]
+        },
+        {
+          "elapsed": 0.032580208,
+          "processes": [
+            "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver",
+            "43682 43673 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/run-rust-1789584383-430566000-global/runtime/native-host"
+          ]
+        },
+        {
+          "elapsed": 2.348646083,
+          "processes": [
+            "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver",
+            "43682 43673 (native-host)"
+          ]
+        }
+      ],
+      "exit": 0,
+      "game_pid": null,
+      "game_stopped_by_probe": false,
+      "host_stopped_after_peer_exit": false,
+      "host_stopped_for_negative_control": false,
+      "implementation": "rust",
+      "mode": "global",
+      "native_log_lines_discarded": 0,
+      "network": "loopback and Unix sockets only",
+      "observations": {
+        "authenticated_identity_verified": false,
+        "discovery_transport_verified": false,
+        "game_steam_init_failed_logged": false,
+        "game_steam_init_succeeded_logged": false,
+        "game_unity_engine_initialized": false,
+        "global_user_created": true,
+        "host_callbacks_observed": false,
+        "host_loss_observed_by_sdk": false,
+        "licensed_app_ticket_available": false,
+        "peer_authenticated_user_attached": false,
+        "peer_pipe_created": false,
+        "server_connected_callback": false,
+        "steamworks_initialized": false,
+        "steamworks_round_trip_verified": false
+      },
+      "passed": true,
+      "pid": 43682,
+      "sdk_exit": null,
+      "sdk_pid": null,
+      "timeout": false
+    },
+    {
+      "after": [
+        "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver"
+      ],
+      "before": [
+        "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver"
+      ],
+      "credentials": "not read",
+      "elapsed": 4.105587875,
+      "events": [
+        {
+          "elapsed": 0,
+          "processes": [
+            "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver"
+          ]
+        },
+        {
+          "elapsed": 0.032214334,
+          "processes": [
+            "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver",
+            "43917 43908 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/run-rust-1789584389-297120000-ipc/runtime/native-host"
+          ]
+        },
+        {
+          "elapsed": 2.435092667,
+          "processes": [
+            "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver",
+            "43917 43908 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/run-rust-1789584389-297120000-ipc/runtime/native-host",
+            "44135 43908 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/run-rust-1789584389-297120000-ipc/runtime/native-host"
+          ]
+        }
+      ],
+      "exit": -15,
+      "game_pid": null,
+      "game_stopped_by_probe": false,
+      "host_stopped_after_peer_exit": true,
+      "host_stopped_for_negative_control": false,
+      "implementation": "rust",
+      "mode": "ipc",
+      "native_log_lines_discarded": 0,
+      "network": "loopback and Unix sockets only",
+      "observations": {
+        "authenticated_identity_verified": false,
+        "discovery_transport_verified": false,
+        "game_steam_init_failed_logged": false,
+        "game_steam_init_succeeded_logged": false,
+        "game_unity_engine_initialized": false,
+        "global_user_created": true,
+        "host_callbacks_observed": true,
+        "host_loss_observed_by_sdk": false,
+        "licensed_app_ticket_available": false,
+        "peer_authenticated_user_attached": false,
+        "peer_pipe_created": true,
+        "server_connected_callback": false,
+        "steamworks_initialized": false,
+        "steamworks_round_trip_verified": false
+      },
+      "passed": true,
+      "pid": 43917,
+      "sdk_exit": 0,
+      "sdk_pid": 44135,
+      "timeout": false
+    },
+    {
+      "after": [
+        "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver"
+      ],
+      "before": [
+        "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver"
+      ],
+      "credentials": "not read",
+      "elapsed": 3.005513791,
+      "events": [
+        {
+          "elapsed": 0,
+          "processes": [
+            "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver"
+          ]
+        },
+        {
+          "elapsed": 0.03415825,
+          "processes": [
+            "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver",
+            "44305 44296 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/run-rust-1789584396-873018000-discovery/runtime/native-host"
+          ]
+        },
+        {
+          "elapsed": 2.44503275,
+          "processes": [
+            "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver",
+            "44305 44296 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/run-rust-1789584396-873018000-discovery/runtime/native-host",
+            "44541 44296 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/run-rust-1789584396-873018000-discovery/runtime/discovery-launcher"
+          ]
+        },
+        {
+          "elapsed": 2.634887458,
+          "processes": [
+            "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver",
+            "44305 44296 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/run-rust-1789584396-873018000-discovery/runtime/native-host",
+            "44541 44296 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/run-rust-1789584396-873018000-discovery/runtime/discovery-launcher",
+            "44558 44541 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/run-rust-1789584396-873018000-discovery/runtime/discovery-diagnostic"
+          ]
+        },
+        {
+          "elapsed": 2.9203161250000003,
+          "processes": [
+            "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver",
+            "44305 44296 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/run-rust-1789584396-873018000-discovery/runtime/native-host",
+            "44541 44296 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/run-rust-1789584396-873018000-discovery/runtime/discovery-launcher"
+          ]
+        }
+      ],
+      "exit": -15,
+      "game_pid": null,
+      "game_stopped_by_probe": false,
+      "host_stopped_after_peer_exit": true,
+      "host_stopped_for_negative_control": false,
+      "implementation": "rust",
+      "mode": "discovery",
+      "native_log_lines_discarded": 0,
+      "network": "loopback and Unix sockets only",
+      "observations": {
+        "authenticated_identity_verified": false,
+        "discovery_transport_verified": true,
+        "game_steam_init_failed_logged": false,
+        "game_steam_init_succeeded_logged": false,
+        "game_unity_engine_initialized": false,
+        "global_user_created": true,
+        "host_callbacks_observed": true,
+        "host_loss_observed_by_sdk": false,
+        "licensed_app_ticket_available": false,
+        "peer_authenticated_user_attached": false,
+        "peer_pipe_created": false,
+        "server_connected_callback": false,
+        "steamworks_initialized": false,
+        "steamworks_round_trip_verified": false
+      },
+      "passed": true,
+      "pid": 44305,
+      "sdk_exit": 0,
+      "sdk_pid": 44541,
+      "timeout": false
+    },
+    {
+      "after": [
+        "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver"
+      ],
+      "before": [
+        "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver"
+      ],
+      "credentials": "not read",
+      "elapsed": 2.17771375,
+      "events": [
+        {
+          "elapsed": 0,
+          "processes": [
+            "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver"
+          ]
+        },
+        {
+          "elapsed": 0.035602083,
+          "processes": [
+            "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver",
+            "44635 44602 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/run-rust-1789584403-394208000-sdk/runtime/steamworks-probe"
+          ]
+        },
+        {
+          "elapsed": 2.122443708,
+          "processes": [
+            "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver",
+            "44635 44602 (steamworks-probe)"
+          ]
+        }
+      ],
+      "exit": 1,
+      "game_pid": null,
+      "game_stopped_by_probe": false,
+      "host_stopped_after_peer_exit": false,
+      "host_stopped_for_negative_control": false,
+      "implementation": "rust",
+      "mode": "sdk",
+      "native_log_lines_discarded": 0,
+      "network": "loopback and Unix sockets only",
+      "observations": {
+        "authenticated_identity_verified": false,
+        "discovery_transport_verified": false,
+        "game_steam_init_failed_logged": false,
+        "game_steam_init_succeeded_logged": false,
+        "game_unity_engine_initialized": false,
+        "global_user_created": false,
+        "host_callbacks_observed": false,
+        "host_loss_observed_by_sdk": false,
+        "licensed_app_ticket_available": false,
+        "peer_authenticated_user_attached": false,
+        "peer_pipe_created": false,
+        "server_connected_callback": false,
+        "steamworks_initialized": false,
+        "steamworks_round_trip_verified": false
+      },
+      "passed": true,
+      "pid": 44635,
+      "sdk_exit": null,
+      "sdk_pid": null,
+      "timeout": false
+    },
+    {
+      "after": [
+        "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver"
+      ],
+      "before": [
+        "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver"
+      ],
+      "credentials": "not read",
+      "elapsed": 4.336654292,
+      "events": [
+        {
+          "elapsed": 0,
+          "processes": [
+            "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver"
+          ]
+        },
+        {
+          "elapsed": 0.032497667,
+          "processes": [
+            "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver",
+            "44845 44836 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/run-rust-1789584409-074274000-attach/runtime/native-host"
+          ]
+        },
+        {
+          "elapsed": 2.554676625,
+          "processes": [
+            "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver",
+            "44845 44836 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/run-rust-1789584409-074274000-attach/runtime/native-host",
+            "45071 44836 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/run-rust-1789584409-074274000-attach/runtime/steamworks-probe"
+          ]
+        },
+        {
+          "elapsed": 4.2514418339999995,
+          "processes": [
+            "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver",
+            "44845 44836 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/run-rust-1789584409-074274000-attach/runtime/native-host",
+            "45071 44836 (steamworks-probe)"
+          ]
+        }
+      ],
+      "exit": -15,
+      "game_pid": null,
+      "game_stopped_by_probe": false,
+      "host_stopped_after_peer_exit": true,
+      "host_stopped_for_negative_control": false,
+      "implementation": "rust",
+      "mode": "attach",
+      "native_log_lines_discarded": 0,
+      "network": "loopback and Unix sockets only",
+      "observations": {
+        "authenticated_identity_verified": false,
+        "discovery_transport_verified": false,
+        "game_steam_init_failed_logged": false,
+        "game_steam_init_succeeded_logged": false,
+        "game_unity_engine_initialized": false,
+        "global_user_created": true,
+        "host_callbacks_observed": true,
+        "host_loss_observed_by_sdk": false,
+        "licensed_app_ticket_available": false,
+        "peer_authenticated_user_attached": false,
+        "peer_pipe_created": false,
+        "server_connected_callback": false,
+        "steamworks_initialized": false,
+        "steamworks_round_trip_verified": false
+      },
+      "passed": true,
+      "pid": 44845,
+      "sdk_exit": 1,
+      "sdk_pid": 45071,
+      "timeout": false
+    },
+    {
+      "after": [
+        "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver"
+      ],
+      "before": [
+        "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver"
+      ],
+      "credentials": "not read",
+      "elapsed": 1.673612333,
+      "events": [
+        {
+          "elapsed": 0,
+          "processes": [
+            "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver"
+          ]
+        },
+        {
+          "elapsed": 0.035497791,
+          "processes": [
+            "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver",
+            "45256 45247 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/run-rust-1789584431-631049000-discovery/runtime/native-host"
+          ]
+        },
+        {
+          "elapsed": 1.028236541,
+          "processes": [
+            "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver",
+            "45256 45247 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/run-rust-1789584431-631049000-discovery/runtime/native-host",
+            "45358 45247 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/run-rust-1789584431-631049000-discovery/runtime/discovery-launcher"
+          ]
+        },
+        {
+          "elapsed": 1.308981625,
+          "processes": [
+            "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver",
+            "45256 45247 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/run-rust-1789584431-631049000-discovery/runtime/native-host",
+            "45358 45247 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/run-rust-1789584431-631049000-discovery/runtime/discovery-launcher",
+            "45383 45358 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/run-rust-1789584431-631049000-discovery/runtime/discovery-diagnostic"
+          ]
+        },
+        {
+          "elapsed": 1.5884994159999999,
+          "processes": [
+            "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver",
+            "45256 45247 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/run-rust-1789584431-631049000-discovery/runtime/native-host",
+            "45358 45247 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/run-rust-1789584431-631049000-discovery/runtime/discovery-launcher"
+          ]
+        }
+      ],
+      "exit": -15,
+      "game_pid": null,
+      "game_stopped_by_probe": false,
+      "host_stopped_after_peer_exit": true,
+      "host_stopped_for_negative_control": false,
+      "implementation": "rust",
+      "mode": "discovery",
+      "native_log_lines_discarded": 0,
+      "network": "loopback and Unix sockets only",
+      "observations": {
+        "authenticated_identity_verified": false,
+        "discovery_transport_verified": true,
+        "game_steam_init_failed_logged": false,
+        "game_steam_init_succeeded_logged": false,
+        "game_unity_engine_initialized": false,
+        "global_user_created": true,
+        "host_callbacks_observed": true,
+        "host_loss_observed_by_sdk": false,
+        "licensed_app_ticket_available": false,
+        "peer_authenticated_user_attached": false,
+        "peer_pipe_created": false,
+        "server_connected_callback": false,
+        "steamworks_initialized": false,
+        "steamworks_round_trip_verified": false
+      },
+      "passed": true,
+      "pid": 45256,
+      "sdk_exit": 0,
+      "sdk_pid": 45358,
+      "timeout": false
+    }
+  ],
+  "offline_sdk_modes": "sdk and attach are expected missing-discovery failures, not initialized Steamworks",
+  "release_discovery": "last offline run uses release binaries and optimized adapter",
+  "appkit_controls": [
+    {
+      "control": "restricted",
+      "exit": 86,
+      "passed": true,
+      "registered": false
+    },
+    {
+      "control": "ui-registration-allowed",
+      "exit": 0,
+      "passed": true,
+      "registered": true
+    }
+  ],
+  "credential_check": {
+    "authentication_ui_allowed": false,
+    "credentials_saved": false,
+    "expected_fields_present": false,
+    "network_authentication_attempted": false,
+    "status": "Keychain read unavailable without interaction: status=-25293; no login attempted"
+  },
+  "first_credential_check": "Read succeeded before legacy Keychain UI was disabled; not a Steam authentication test",
+  "authenticated_rust_steamworks": "not revalidated: noninteractive Keychain returned -25293 before native login",
+  "rust_game_smoke_test": "not run; historical C++ game evidence does not validate Rust",
+  "processes_left_running": false,
+  "source_sha256": {
+    "experiments/steam-native-host/src/abi.rs": "b7618b2c0cdfc16bb2f2ac129be85c8a4ccef21c9b9519abb5c97a7e375e4f43",
+    "experiments/steam-native-host/src/mach.rs": "bcd85418ce5378e1b0abb0868c5dafe0d2526b3680256df2c83c66133dc1d473",
+    "experiments/steam-native-host/src/lib.rs": "ffdb2d8e1b16fac83acd852df90ef4d693e62069c6935e24b9b8fca43b0b8630",
+    "experiments/steam-native-host/src/credentials.rs": "a425a34d73272eef4ad97e6851ba9bdf4ad95db54258f000b3fbe53afc677fca",
+    "experiments/steam-native-host/src/runner/inspection.rs": "95a43a63c8ea4f05e7600b4c3f301773f2f83b80ca50b828927fdda86bb8ddaa",
+    "experiments/steam-native-host/src/runner/sandbox.rs": "099b7efa5586e8e2bfb9a59fd1e85b5762b10fdf8aa7f24faf1016c309957745",
+    "experiments/steam-native-host/src/runner/process.rs": "8c9e42dabe9b8d8210c11a8e371b71ce6109507d7be5aef80cebeb9229dd514b",
+    "experiments/steam-native-host/src/runner/mod.rs": "0f48c3f2693acff5c9c0325c36095099ee33b683c82fb5cb02711d7002e64d84",
+    "experiments/steam-native-host/src/bin/probe.rs": "4e78689597f0de402404690125519c807659693724e58b34c1b74c66b4b499f4",
+    "experiments/steam-native-host/src/bin/discovery-diagnostic.rs": "48a4413f0aaf7b5e6d82b244d08a2f1f3efe32cb94c1c04585eea53d875dae54",
+    "experiments/steam-native-host/src/bin/appkit-registration-probe.rs": "275be0b55ec204a484b327f44efa01a6d53b98bb17bf883643cbdd2a6f39f26e",
+    "experiments/steam-native-host/src/bin/steamworks-probe.rs": "0b4fb21159a5edbc403fa84e85d1bf3b9bf64b8f72744901aa216a0ccee48337",
+    "experiments/steam-native-host/src/bin/native-host.rs": "6a646271d610570e5e98828113b5d4b8e85297789896ce02cb8f54015bbb8506",
+    "experiments/steam-native-host/src/bin/discovery-launcher.rs": "6c7218603bb3d939cd30605e6c2d5ae29acbad015391cd60f836cd0889277c28",
+    "experiments/steam-native-host/src/native.rs": "dc6e27195f6bc20b86622916aacd890e3dc4f0820917ec9143ff7fb2213f7d72",
+    "experiments/steam-native-host/adapter/src/lib.rs": "9c9487798b8808cf166bdb0671bb2fecc696610c71859cf5d07946336958a80f",
+    "experiments/steam-native-host/adapter/Cargo.toml": "1ec26199ce3f305539fd28a8a4bc7c331c393cda55b3e83024fe60da107f75d0",
+    "experiments/steam-native-host/Cargo.lock": "3247bb95e4b044fecbc40ef68e1ce55ace002fcf42e63102861f10a6938b3d4f",
+    "experiments/steam-native-host/Cargo.toml": "b8beb9717eb25c35ddda3f6d59e05817583c0e85ffe58b0b236f192823114852"
+  }
+}

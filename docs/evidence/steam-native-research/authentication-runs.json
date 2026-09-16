@@ -1,0 +1,297 @@
+[
+  {
+    "pid": 32057,
+    "exit": 0,
+    "timeout": false,
+    "elapsed": 4.095276833,
+    "before": [
+      "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver"
+    ],
+    "after": [
+      "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver"
+    ],
+    "events": [
+      {
+        "elapsed": 0,
+        "processes": [
+          "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver"
+        ]
+      },
+      {
+        "elapsed": 0.044,
+        "processes": [
+          "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver",
+          "32057 32011 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/native-host"
+        ]
+      }
+    ],
+    "network": "outbound Internet allowed",
+    "credentials": "private pipe from user-approved Keychain read",
+    "native_log_lines_discarded": 171,
+    "sdk_pid": null,
+    "sdk_exit": null,
+    "scope": "native authentication experiment",
+    "observations": {
+      "global_user_created": true,
+      "host_callbacks_observed": true,
+      "peer_pipe_created": false,
+      "steamworks_initialized": false,
+      "authenticated_identity_verified": true
+    },
+    "run": "run-20260916-193227-381815-auth",
+    "host_diagnostics": [
+      "pid=32057 ppid=32011 arch=arm64 translated=0 mode=auth",
+      "dlopen=ok",
+      "create_global.begin",
+      "create_global.result user=1 pipe=1",
+      "connected=0 logged_on=0",
+      "token.submitted identity_matches=1",
+      "logon.request_result=1",
+      "host.ready",
+      "callback id=1060046 bytes=1",
+      "callback id=1040021 bytes=1",
+      "callback id=1010055 bytes=1",
+      "callback id=1040011 bytes=260",
+      "callback id=1040011 bytes=260",
+      "callback id=1040011 bytes=260",
+      "callback id=1020055 bytes=75",
+      "callback id=1040011 bytes=260",
+      "callback id=1040011 bytes=260",
+      "callback id=1260019 bytes=260",
+      "callback id=1260013 bytes=1",
+      "callback id=1020106 bytes=4",
+      "callback id=1270022 bytes=1",
+      "auth.state=1 connected=0 logged_on=0 identity_matches=1",
+      "callback id=1250004 bytes=8",
+      "callback id=1270036 bytes=1",
+      "callback id=1040043 bytes=16",
+      "callback id=1040011 bytes=260",
+      "callback id=1040011 bytes=260",
+      "auth.state=1 connected=0 logged_on=0 identity_matches=1",
+      "auth.state=1 connected=0 logged_on=0 identity_matches=1",
+      "callback id=1020102 bytes=1",
+      "callback id=1040003 bytes=4",
+      "callback id=101 bytes=1",
+      "callback id=1100027 bytes=1",
+      "callback id=1020065 bytes=256",
+      "callback id=304 bytes=12",
+      "callback id=701 bytes=1",
+      "callback id=1020015 bytes=1",
+      "callback id=1020015 bytes=1",
+      "callback id=1020019 bytes=12",
+      "callback id=1020048 bytes=1",
+      "callback id=1020087 bytes=16",
+      "callback id=1040011 bytes=260",
+      "callback id=1020099 bytes=1",
+      "callback id=1020028 bytes=8",
+      "callback id=1020087 bytes=16",
+      "auth.state=4 connected=1 logged_on=1 identity_matches=1",
+      "auth.verified",
+      "host.observation_complete",
+      "probe.complete"
+    ]
+  },
+  {
+    "pid": 32169,
+    "exit": 0,
+    "timeout": false,
+    "elapsed": 14.932100792,
+    "before": [
+      "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver"
+    ],
+    "after": [
+      "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver",
+      "32346 59415 /tmp/forge-steam-sources/private-xpc"
+    ],
+    "events": [
+      {
+        "elapsed": 0,
+        "processes": [
+          "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver"
+        ]
+      },
+      {
+        "elapsed": 0.041,
+        "processes": [
+          "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver",
+          "32169 32143 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/native-host"
+        ]
+      },
+      {
+        "elapsed": 0.881,
+        "processes": [
+          "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver",
+          "32169 32143 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/native-host",
+          "32192 59415 /tmp/forge-steam-sources/private-xpc"
+        ]
+      },
+      {
+        "elapsed": 0.973,
+        "processes": [
+          "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver",
+          "32169 32143 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/native-host"
+        ]
+      },
+      {
+        "elapsed": 14.781,
+        "processes": [
+          "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver",
+          "32169 32143 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/native-host",
+          "32346 59415 /tmp/forge-steam-sources/private-xpc"
+        ]
+      },
+      {
+        "elapsed": 14.877,
+        "processes": [
+          "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver",
+          "32169 32143 (native-host)",
+          "32346 59415 /tmp/forge-steam-sources/private-xpc"
+        ]
+      }
+    ],
+    "network": "outbound Internet allowed",
+    "credentials": "private pipe from user-approved Keychain read",
+    "native_log_lines_discarded": 231,
+    "sdk_pid": 32235,
+    "sdk_exit": 0,
+    "scope": "native authentication experiment",
+    "observations": {
+      "global_user_created": true,
+      "host_callbacks_observed": true,
+      "peer_pipe_created": true,
+      "peer_authenticated_user_attached": false,
+      "server_connected_callback": true,
+      "steamworks_initialized": false,
+      "authenticated_identity_verified": true
+    },
+    "run": "run-20260916-193404-441613-auth-ipc",
+    "host_diagnostics": [
+      "See ignored build directory; duplicate callbacks omitted from compact evidence."
+    ]
+  },
+  {
+    "pid": 32489,
+    "exit": 0,
+    "timeout": false,
+    "elapsed": 13.807518542,
+    "before": [
+      "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver"
+    ],
+    "after": [
+      "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver"
+    ],
+    "events": [
+      {
+        "elapsed": 0,
+        "processes": [
+          "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver"
+        ]
+      },
+      {
+        "elapsed": 0.04,
+        "processes": [
+          "3550     1 /Users/mathieu/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver",
+          "32489 32460 /Users/mathieu/Documents/Github/Zagrios/forge/build/steam-native-research/native-host"
+        ]
+      }
+    ],
+    "network": "outbound Internet allowed",
+    "credentials": "private pipe from user-approved Keychain read",
+    "native_log_lines_discarded": 301,
+    "sdk_pid": 32558,
+    "sdk_exit": 0,
+    "scope": "native authentication experiment",
+    "observations": {
+      "global_user_created": true,
+      "host_callbacks_observed": true,
+      "peer_pipe_created": true,
+      "peer_authenticated_user_attached": true,
+      "server_connected_callback": true,
+      "steamworks_initialized": false,
+      "authenticated_identity_verified": true,
+      "licensed_app_ticket_available": true
+    },
+    "run": "run-20260916-193659-720920-auth-ipc",
+    "host_diagnostics": [
+      "pid=32489 ppid=32460 arch=arm64 translated=0 mode=auth",
+      "dlopen=ok",
+      "create_global.begin",
+      "create_global.result user=1 pipe=1",
+      "connected=0 logged_on=0",
+      "token.submitted identity_matches=1",
+      "logon.request_result=1",
+      "host.ready",
+      "callback id=1060046 bytes=1",
+      "callback id=1040021 bytes=1",
+      "callback id=1010055 bytes=1",
+      "callback id=1040011 bytes=260",
+      "callback id=1020055 bytes=75",
+      "callback id=1260019 bytes=260",
+      "callback id=1260013 bytes=1",
+      "callback id=1020106 bytes=4",
+      "auth.state=1 connected=0 logged_on=0 identity_matches=1",
+      "callback id=1270022 bytes=1",
+      "callback id=1250004 bytes=8",
+      "callback id=1040043 bytes=16",
+      "callback id=1270036 bytes=1",
+      "callback id=1020102 bytes=1",
+      "auth.state=3 connected=1 logged_on=0 identity_matches=1",
+      "callback id=1040003 bytes=4",
+      "callback id=101 bytes=1",
+      "callback id=1100027 bytes=1",
+      "callback id=1020065 bytes=256",
+      "callback id=304 bytes=12",
+      "callback id=701 bytes=1",
+      "callback id=1020015 bytes=1",
+      "callback id=1020019 bytes=12",
+      "callback id=1020048 bytes=1",
+      "callback id=1020087 bytes=16",
+      "callback id=1020099 bytes=1",
+      "callback id=1020028 bytes=8",
+      "callback id=1040052 bytes=4",
+      "callback id=1270017 bytes=20",
+      "callback id=1270001 bytes=4",
+      "auth.state=4 connected=1 logged_on=1 identity_matches=1",
+      "auth.verified",
+      "ownership.request_accepted=1",
+      "ownership.app=1030300 subscribed=0 ticket_bytes=0",
+      "callback id=1270003 bytes=12",
+      "auth.state=4 connected=1 logged_on=1 identity_matches=1",
+      "ownership.app=1030300 subscribed=0 ticket_bytes=0",
+      "callback id=125 bytes=1",
+      "callback id=1020094 bytes=280",
+      "callback id=1020073 bytes=1",
+      "auth.state=4 connected=1 logged_on=1 identity_matches=1",
+      "ownership.app=1030300 subscribed=1 ticket_bytes=178",
+      "ownership.ready",
+      "callback id=1020109 bytes=8",
+      "callback id=1040044 bytes=784",
+      "callback id=1020030 bytes=20",
+      "callback id=1270006 bytes=16",
+      "callback id=1020070 bytes=8",
+      "callback id=1270009 bytes=144",
+      "callback id=1020046 bytes=4",
+      "auth.state=4 connected=1 logged_on=1 identity_matches=1",
+      "ownership.app=1030300 subscribed=1 ticket_bytes=178",
+      "callback id=1250003 bytes=288",
+      "callback id=1250001 bytes=12",
+      "auth.state=4 connected=1 logged_on=1 identity_matches=1",
+      "ownership.app=1030300 subscribed=1 ticket_bytes=178",
+      "auth.state=4 connected=1 logged_on=1 identity_matches=1",
+      "ownership.app=1030300 subscribed=1 ticket_bytes=178",
+      "auth.state=4 connected=1 logged_on=1 identity_matches=1",
+      "ownership.app=1030300 subscribed=1 ticket_bytes=178",
+      "auth.state=4 connected=1 logged_on=1 identity_matches=1",
+      "ownership.app=1030300 subscribed=1 ticket_bytes=178",
+      "auth.state=4 connected=1 logged_on=1 identity_matches=1",
+      "ownership.app=1030300 subscribed=1 ticket_bytes=178",
+      "auth.state=4 connected=1 logged_on=1 identity_matches=1",
+      "ownership.app=1030300 subscribed=1 ticket_bytes=178",
+      "auth.state=4 connected=1 logged_on=1 identity_matches=1",
+      "ownership.app=1030300 subscribed=1 ticket_bytes=178",
+      "callback.total=730",
+      "host.observation_complete",
+      "probe.complete"
+    ]
+  }
+]

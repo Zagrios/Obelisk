@@ -1,0 +1,2091 @@
+{
+  "sha256": "035722a42c74989fa38c7efe0d735fdb38444e1102c92246652b5d913d019840",
+  "vtable": "0x173fe80",
+  "architecture": "arm64",
+  "method_names_are_static_clues_not_signature_proofs": true,
+  "slots": [
+    {
+      "slot": 0,
+      "offset": "0x890f08",
+      "strings": []
+    },
+    {
+      "slot": 1,
+      "offset": "0x890f10",
+      "strings": [
+        "IClientUser",
+        "LogOn"
+      ]
+    },
+    {
+      "slot": 2,
+      "offset": "0x89108c",
+      "strings": [
+        "IClientUser",
+        "InvalidateCredentials"
+      ]
+    },
+    {
+      "slot": 3,
+      "offset": "0x891228",
+      "strings": [
+        "IClientUser",
+        "LogOff"
+      ]
+    },
+    {
+      "slot": 4,
+      "offset": "0x891370",
+      "strings": [
+        "BLoggedOn",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 5,
+      "offset": "0x8914dc",
+      "strings": [
+        "GetLogonState",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 6,
+      "offset": "0x891648",
+      "strings": [
+        "BConnected",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 7,
+      "offset": "0x8917b4",
+      "strings": [
+        "BInitiateReconnect",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 8,
+      "offset": "0x891920",
+      "strings": [
+        "EConnect",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 9,
+      "offset": "0x891a8c",
+      "strings": [
+        "BTryingToLogin",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 10,
+      "offset": "0x891bf8",
+      "strings": [
+        "GetSteamID",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 11,
+      "offset": "0x891d5c",
+      "strings": [
+        "GetClientInstanceID",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 12,
+      "offset": "0x891ec8",
+      "strings": [
+        "GetUserCountry",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 13,
+      "offset": "0x892030",
+      "strings": [
+        "IClientUser",
+        "IsVACBanned"
+      ]
+    },
+    {
+      "slot": 14,
+      "offset": "0x8921b4",
+      "strings": [
+        "IClientUser",
+        "SetEmail"
+      ]
+    },
+    {
+      "slot": 15,
+      "offset": "0x892330",
+      "strings": [
+        "IClientUser",
+        "SetConfigString"
+      ]
+    },
+    {
+      "slot": 16,
+      "offset": "0x8924dc",
+      "strings": [
+        "GetConfigString",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 17,
+      "offset": "0x8926b8",
+      "strings": [
+        "IClientUser",
+        "SetConfigInt"
+      ]
+    },
+    {
+      "slot": 18,
+      "offset": "0x89286c",
+      "strings": [
+        "GetConfigInt",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 19,
+      "offset": "0x892a28",
+      "strings": [
+        "IClientUser",
+        "SetConfigBinaryBlob"
+      ]
+    },
+    {
+      "slot": 20,
+      "offset": "0x892bd4",
+      "strings": [
+        "GetConfigBinaryBlob",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 21,
+      "offset": "0x892d8c",
+      "strings": [
+        "DeleteConfigKey",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 22,
+      "offset": "0x892f28",
+      "strings": [
+        "GetConfigStoreKeyName",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 23,
+      "offset": "0x893104",
+      "strings": [
+        "IClientUser",
+        "InitiateGameConnection"
+      ]
+    },
+    {
+      "slot": 24,
+      "offset": "0x89333c",
+      "strings": [
+        "IClientUser",
+        "InitiateGameConnectionOld"
+      ]
+    },
+    {
+      "slot": 25,
+      "offset": "0x8935a0",
+      "strings": [
+        "IClientUser",
+        "TerminateGameConnection"
+      ]
+    },
+    {
+      "slot": 26,
+      "offset": "0x893720",
+      "strings": [
+        "IClientUser",
+        "TerminateGame"
+      ]
+    },
+    {
+      "slot": 27,
+      "offset": "0x8938c8",
+      "strings": [
+        "IClientUser",
+        "SetSelfAsChatDestination"
+      ]
+    },
+    {
+      "slot": 28,
+      "offset": "0x893a28",
+      "strings": [
+        "IClientUser",
+        "IsPrimaryChatDestination"
+      ]
+    },
+    {
+      "slot": 29,
+      "offset": "0x893b94",
+      "strings": [
+        "IClientUser",
+        "RequestLegacyCDKey"
+      ]
+    },
+    {
+      "slot": 30,
+      "offset": "0x893cf4",
+      "strings": [
+        "AckGuestPass",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 31,
+      "offset": "0x893e70",
+      "strings": [
+        "IClientUser",
+        "RedeemGuestPass"
+      ]
+    },
+    {
+      "slot": 32,
+      "offset": "0x893fec",
+      "strings": [
+        "GetGuestPassToGiveCount",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 33,
+      "offset": "0x894158",
+      "strings": [
+        "GetGuestPassToRedeemCount",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 34,
+      "offset": "0x8942c4",
+      "strings": [
+        "GetGuestPassToGiveInfo",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 35,
+      "offset": "0x894544",
+      "strings": [
+        "GetGuestPassToGiveOut",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 36,
+      "offset": "0x8946c8",
+      "strings": [
+        "GetGuestPassToRedeem",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 37,
+      "offset": "0x89484c",
+      "strings": [
+        "GetGuestPassToRedeemInfo",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 38,
+      "offset": "0x894a9c",
+      "strings": [
+        "GetGuestPassToRedeemSenderName",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 39,
+      "offset": "0x894c68",
+      "strings": [
+        "GetNumAppsInGuestPassesToRedeem",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 40,
+      "offset": "0x894dd4",
+      "strings": [
+        "GetAppsInGuestPassesToRedeem",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 41,
+      "offset": "0x894f94",
+      "strings": [
+        "GetCountUserNotifications",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 42,
+      "offset": "0x895100",
+      "strings": [
+        "GetCountUserNotification",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 43,
+      "offset": "0x895284",
+      "strings": [
+        "IClientUser",
+        "RequestStoreAuthURL"
+      ]
+    },
+    {
+      "slot": 44,
+      "offset": "0x895400",
+      "strings": [
+        "IClientUser",
+        "SetLanguage"
+      ]
+    },
+    {
+      "slot": 45,
+      "offset": "0x89557c",
+      "strings": [
+        "IClientUser",
+        "TrackAppUsageEvent"
+      ]
+    },
+    {
+      "slot": 46,
+      "offset": "0x895710",
+      "strings": [
+        "IClientUser",
+        "RaiseConnectionPriority"
+      ]
+    },
+    {
+      "slot": 47,
+      "offset": "0x8958b4",
+      "strings": [
+        "IClientUser",
+        "ResetConnectionPriority"
+      ]
+    },
+    {
+      "slot": 48,
+      "offset": "0x895a14",
+      "strings": [
+        "GetDesiredNetQOSLevel",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 49,
+      "offset": "0x895b80",
+      "strings": [
+        "BHasCachedCredentials",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 50,
+      "offset": "0x895cfc",
+      "strings": [
+        "IClientUser",
+        "SetAccountNameForCachedCredentialLogin"
+      ]
+    },
+    {
+      "slot": 51,
+      "offset": "0x895e98",
+      "strings": [
+        "DestroyCachedCredentials",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 52,
+      "offset": "0x896010",
+      "strings": [
+        "GetCurrentWebAuthToken",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 53,
+      "offset": "0x8961c4",
+      "strings": [
+        "IClientUser",
+        "RequestWebAuthToken"
+      ]
+    },
+    {
+      "slot": 54,
+      "offset": "0x896330",
+      "strings": [
+        "IClientUser",
+        "SetLoginInformation"
+      ]
+    },
+    {
+      "slot": 55,
+      "offset": "0x8964b8",
+      "strings": [
+        "IClientUser",
+        "SetTwoFactorCode"
+      ]
+    },
+    {
+      "slot": 56,
+      "offset": "0x896610",
+      "strings": [
+        "IClientUser",
+        "SetLoginToken"
+      ]
+    },
+    {
+      "slot": 57,
+      "offset": "0x896780",
+      "strings": [
+        "GetLoginTokenID",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 58,
+      "offset": "0x8968ec",
+      "strings": [
+        "ClearAllLoginInformation",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 59,
+      "offset": "0x896a34",
+      "strings": [
+        "BEnableEmbeddedClient",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 60,
+      "offset": "0x896bb8",
+      "strings": [
+        "IClientUser",
+        "ResetEmbeddedClient"
+      ]
+    },
+    {
+      "slot": 61,
+      "offset": "0x896d18",
+      "strings": [
+        "BHasEmbeddedClientToken",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 62,
+      "offset": "0x896e9c",
+      "strings": [
+        "IClientUser",
+        "RequestEmbeddedClientToken"
+      ]
+    },
+    {
+      "slot": 63,
+      "offset": "0x896ffc",
+      "strings": [
+        "AuthorizeNewDevice",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 64,
+      "offset": "0x89718c",
+      "strings": [
+        "GetLanguage",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 65,
+      "offset": "0x897340",
+      "strings": [
+        "IClientUser",
+        "TrackSteamUsageEvent"
+      ]
+    },
+    {
+      "slot": 66,
+      "offset": "0x8974d4",
+      "strings": [
+        "IClientUser",
+        "SetComputerInUse"
+      ]
+    },
+    {
+      "slot": 67,
+      "offset": "0x897634",
+      "strings": [
+        "BIsGameRunning",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 68,
+      "offset": "0x8977bc",
+      "strings": [
+        "BIsGameWindowReady",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 69,
+      "offset": "0x897944",
+      "strings": [
+        "BUpdateAppOwnershipTicket",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 70,
+      "offset": "0x897ae8",
+      "strings": [
+        "GetCustomBinariesState",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 71,
+      "offset": "0x897cb8",
+      "strings": [
+        "IClientUser",
+        "RequestCustomBinaries"
+      ]
+    },
+    {
+      "slot": 72,
+      "offset": "0x897eb0",
+      "strings": [
+        "IClientUser",
+        "SetCellID"
+      ]
+    },
+    {
+      "slot": 73,
+      "offset": "0x898010",
+      "strings": [
+        "GetCellList",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 74,
+      "offset": "0x8981a0",
+      "strings": [
+        "B",
+        "GetUserBaseFolder",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 75,
+      "offset": "0x898514",
+      "strings": [
+        "GetUserDataFolder",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 76,
+      "offset": "0x8986e4",
+      "strings": [
+        "GetUserConfigFolder",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 77,
+      "offset": "0x898898",
+      "strings": [
+        "GetAccountName",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 78,
+      "offset": "0x898a4c",
+      "strings": [
+        "GetAccountName",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 79,
+      "offset": "0x898c10",
+      "strings": [
+        "IClientUser",
+        "IsPasswordRemembered"
+      ]
+    },
+    {
+      "slot": 80,
+      "offset": "0x898d7c",
+      "strings": [
+        "IClientUser",
+        "IsSiteLicenseAssociationPending"
+      ]
+    },
+    {
+      "slot": 81,
+      "offset": "0x898ee8",
+      "strings": [
+        "CheckoutSiteLicenseSeat",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 82,
+      "offset": "0x899048",
+      "strings": [
+        "GetAvailableSeats",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 83,
+      "offset": "0x8991a8",
+      "strings": [
+        "GetAssociatedSiteName",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 84,
+      "offset": "0x899310",
+      "strings": [
+        "BIsRunningInCafe",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 85,
+      "offset": "0x89947c",
+      "strings": [
+        "BAllowCachedCredentialsInCafe",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 86,
+      "offset": "0x8995e8",
+      "strings": [
+        "IClientUser",
+        "RequiresLegacyCDKey"
+      ]
+    },
+    {
+      "slot": 87,
+      "offset": "0x899794",
+      "strings": [
+        "GetLegacyCDKey",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 88,
+      "offset": "0x899960",
+      "strings": [
+        "IClientUser",
+        "SetLegacyCDKey"
+      ]
+    },
+    {
+      "slot": 89,
+      "offset": "0x899afc",
+      "strings": [
+        "IClientUser",
+        "WriteLegacyCDKey"
+      ]
+    },
+    {
+      "slot": 90,
+      "offset": "0x899c80",
+      "strings": [
+        "IClientUser",
+        "RemoveLegacyCDKey"
+      ]
+    },
+    {
+      "slot": 91,
+      "offset": "0x899de0",
+      "strings": [
+        "IClientUser",
+        "RequestLegacyCDKeyFromApp"
+      ]
+    },
+    {
+      "slot": 92,
+      "offset": "0x899f78",
+      "strings": [
+        "BIsAnyGameRunning",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 93,
+      "offset": "0x89a0e4",
+      "strings": [
+        "GetSteamGuardDetails",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 94,
+      "offset": "0x89a22c",
+      "strings": [
+        "GetTwoFactorDetails",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 95,
+      "offset": "0x89a374",
+      "strings": [
+        "BHasTwoFactor",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 96,
+      "offset": "0x89a4e0",
+      "strings": [
+        "GetEmail",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 97,
+      "offset": "0x89a6b0",
+      "strings": [
+        "IClientUser",
+        "Test_FakeConnectionTimeout"
+      ]
+    },
+    {
+      "slot": 98,
+      "offset": "0x89a7f8",
+      "strings": [
+        "IClientUser",
+        "RunInstallScript"
+      ]
+    },
+    {
+      "slot": 99,
+      "offset": "0x89a99c",
+      "strings": [
+        "IClientUser",
+        "IsInstallScriptRunning"
+      ]
+    },
+    {
+      "slot": 100,
+      "offset": "0x89ab08",
+      "strings": [
+        "GetInstallScriptState",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 101,
+      "offset": "0x89acfc",
+      "strings": [
+        "IClientUser",
+        "StopInstallScript"
+      ]
+    },
+    {
+      "slot": 102,
+      "offset": "0x89ae80",
+      "strings": [
+        "IClientUser",
+        "ResetInstallScript"
+      ]
+    },
+    {
+      "slot": 103,
+      "offset": "0x89b004",
+      "strings": [
+        "GetAppOwnershipTicketLength",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 104,
+      "offset": "0x89b188",
+      "strings": [
+        "GetAppOwnershipTicketData",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 105,
+      "offset": "0x89b354",
+      "strings": [
+        "GetAppOwnershipTicketExtendedData",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 106,
+      "offset": "0x89b5a0",
+      "strings": [
+        "GetMarketingMessageCount",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 107,
+      "offset": "0x89b70c",
+      "strings": [
+        "GetMarketingMessage",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 108,
+      "offset": "0x89b918",
+      "strings": [
+        "IClientUser",
+        "MarkMarketingMessageSeen"
+      ]
+    },
+    {
+      "slot": 109,
+      "offset": "0x89ba78",
+      "strings": [
+        "CheckForPendingMarketingMessages",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 110,
+      "offset": "0x89bbe4",
+      "strings": [
+        "GetAuthSessionTicket",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 111,
+      "offset": "0x89bdb4",
+      "strings": [
+        "GetAuthSessionTicketV2",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 112,
+      "offset": "0x89bf94",
+      "strings": [
+        "GetAuthSessionTicketV3",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 113,
+      "offset": "0x89c174",
+      "strings": [
+        "GetAuthTicketForWebApi",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 114,
+      "offset": "0x89c2f0",
+      "strings": [
+        "GetAuthSessionTicketForGameID",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 115,
+      "offset": "0x89c4ec",
+      "strings": [
+        "BeginAuthSession",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 116,
+      "offset": "0x89c69c",
+      "strings": [
+        "EndAuthSession",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 117,
+      "offset": "0x89c7f4",
+      "strings": [
+        "CancelAuthTicket",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 118,
+      "offset": "0x89c954",
+      "strings": [
+        "IClientUser",
+        "IsUserSubscribedAppInTicket"
+      ]
+    },
+    {
+      "slot": 119,
+      "offset": "0x89caf0",
+      "strings": [
+        "AdvertiseGame",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 120,
+      "offset": "0x89cca4",
+      "strings": [
+        "IClientUser",
+        "RequestEncryptedAppTicket"
+      ]
+    },
+    {
+      "slot": 121,
+      "offset": "0x89ce44",
+      "strings": [
+        "GetEncryptedAppTicket",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 122,
+      "offset": "0x89d028",
+      "strings": [
+        "GetGameBadgeLevel",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 123,
+      "offset": "0x89d1cc",
+      "strings": [
+        "GetPlayerSteamLevel",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 124,
+      "offset": "0x89d338",
+      "strings": [
+        "IClientUser",
+        "SetAccountLimited"
+      ]
+    },
+    {
+      "slot": 125,
+      "offset": "0x89d498",
+      "strings": [
+        "BIsAccountLimited",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 126,
+      "offset": "0x89d604",
+      "strings": [
+        "IClientUser",
+        "SetAccountCommunityBanned"
+      ]
+    },
+    {
+      "slot": 127,
+      "offset": "0x89d764",
+      "strings": [
+        "BIsAccountCommunityBanned",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 128,
+      "offset": "0x89d8d0",
+      "strings": [
+        "IClientUser",
+        "SetLimitedAccountCanInviteFriends"
+      ]
+    },
+    {
+      "slot": 129,
+      "offset": "0x89da30",
+      "strings": [
+        "BLimitedAccountCanInviteFriends",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 130,
+      "offset": "0x89db9c",
+      "strings": [
+        "BGameConnectTokensAvailable",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 131,
+      "offset": "0x89dd08",
+      "strings": [
+        "IClientUser",
+        "NumGamesRunning"
+      ]
+    },
+    {
+      "slot": 132,
+      "offset": "0x89de74",
+      "strings": [
+        "GetRunningGameID",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 133,
+      "offset": "0x89dffc",
+      "strings": [
+        "GetRunningGamePID",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 134,
+      "offset": "0x89e180",
+      "strings": [
+        "IClientUser",
+        "RaiseWindowForGame"
+      ]
+    },
+    {
+      "slot": 135,
+      "offset": "0x89e308",
+      "strings": [
+        "GetAccountSecurityPolicyFlags",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 136,
+      "offset": "0x89e474",
+      "strings": [
+        "BSupportUser",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 137,
+      "offset": "0x89e5e0",
+      "strings": [
+        "BNeedsSSANextSteamLogon",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 138,
+      "offset": "0x89e74c",
+      "strings": [
+        "ClearNeedsSSANextSteamLogon",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 139,
+      "offset": "0x89e894",
+      "strings": [
+        "BIsAppOverlayEnabled",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 140,
+      "offset": "0x89ea1c",
+      "strings": [
+        "BOverlayIgnoreChildProcesses",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 141,
+      "offset": "0x89eba4",
+      "strings": [
+        "IClientUser",
+        "SetOverlayState"
+      ]
+    },
+    {
+      "slot": 142,
+      "offset": "0x89ed28",
+      "strings": [
+        "IClientUser",
+        "NotifyOverlaySettingsChanged"
+      ]
+    },
+    {
+      "slot": 143,
+      "offset": "0x89ee70",
+      "strings": [
+        "BIsBehindNAT",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 144,
+      "offset": "0x89efdc",
+      "strings": [
+        "GetMicroTxnAppID",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 145,
+      "offset": "0x89f160",
+      "strings": [
+        "GetMicroTxnOrderID",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 146,
+      "offset": "0x89f2e4",
+      "strings": [
+        "BGetMicroTxnPrice",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 147,
+      "offset": "0x89f4f4",
+      "strings": [
+        "GetMicroTxnSteamRealm",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 148,
+      "offset": "0x89f678",
+      "strings": [
+        "GetMicroTxnLineItemCount",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 149,
+      "offset": "0x89f7fc",
+      "strings": [
+        "BGetMicroTxnLineItem",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 150,
+      "offset": "0x89fa8c",
+      "strings": [
+        "BIsSandboxMicroTxn",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 151,
+      "offset": "0x89fc38",
+      "strings": [
+        "BMicroTxnRequiresCachedPmtMethod",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 152,
+      "offset": "0x89fde4",
+      "strings": [
+        "AuthorizeMicroTxn",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 153,
+      "offset": "0x89ff88",
+      "strings": [
+        "BGetWalletBalance",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 154,
+      "offset": "0x8a015c",
+      "strings": [
+        "IClientUser",
+        "RequestMicroTxnInfo"
+      ]
+    },
+    {
+      "slot": 155,
+      "offset": "0x8a02e0",
+      "strings": [
+        "BMicroTxnRefundable",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 156,
+      "offset": "0x8a0464",
+      "strings": [
+        "BGetAppMinutesPlayed",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 157,
+      "offset": "0x8a0634",
+      "strings": [
+        "GetAppLastPlayedTime",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 158,
+      "offset": "0x8a07b8",
+      "strings": [
+        "GetAppUpdateDisabledSecondsRemaining",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 159,
+      "offset": "0x8a093c",
+      "strings": [
+        "BGetGuideURL",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 160,
+      "offset": "0x8a0b08",
+      "strings": [
+        "BPromptToChangePassword",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 161,
+      "offset": "0x8a0c74",
+      "strings": [
+        "BAccountExtraSecurity",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 162,
+      "offset": "0x8a0de0",
+      "strings": [
+        "BAccountShouldShowLockUI",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 163,
+      "offset": "0x8a0f4c",
+      "strings": [
+        "GetCountAuthedComputers",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 164,
+      "offset": "0x8a10b8",
+      "strings": [
+        "GetSteamGuardEnabledTime",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 165,
+      "offset": "0x8a1224",
+      "strings": [
+        "IClientUser",
+        "SetPhoneIsVerified"
+      ]
+    },
+    {
+      "slot": 166,
+      "offset": "0x8a1384",
+      "strings": [
+        "BIsPhoneVerified",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 167,
+      "offset": "0x8a14f0",
+      "strings": [
+        "IClientUser",
+        "SetPhoneIsIdentifying"
+      ]
+    },
+    {
+      "slot": 168,
+      "offset": "0x8a1650",
+      "strings": [
+        "BIsPhoneIdentifying",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 169,
+      "offset": "0x8a17bc",
+      "strings": [
+        "IClientUser",
+        "SetPhoneIsRequiringVerification"
+      ]
+    },
+    {
+      "slot": 170,
+      "offset": "0x8a191c",
+      "strings": [
+        "BIsPhoneRequiringVerification",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 171,
+      "offset": "0x8a1a88",
+      "strings": [
+        "IClientUser",
+        "Set2ndFactorAuthCode"
+      ]
+    },
+    {
+      "slot": 172,
+      "offset": "0x8a1c00",
+      "strings": [
+        "IClientUser",
+        "SetUserMachineName"
+      ]
+    },
+    {
+      "slot": 173,
+      "offset": "0x8a1d58",
+      "strings": [
+        "GetUserMachineName",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 174,
+      "offset": "0x8a1f0c",
+      "strings": [
+        "GetEmailDomainFromLogonFailure",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 175,
+      "offset": "0x8a20c0",
+      "strings": [
+        "GetAgreementSessionUrl",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 176,
+      "offset": "0x8a2228",
+      "strings": [
+        "GetDurationControl",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 177,
+      "offset": "0x8a2394",
+      "strings": [
+        "GetDurationControlForApp",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 178,
+      "offset": "0x8a2518",
+      "strings": [
+        "BSetDurationControlOnlineState",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 179,
+      "offset": "0x8a269c",
+      "strings": [
+        "BSetDurationControlOnlineStateForApp",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 180,
+      "offset": "0x8a2840",
+      "strings": [
+        "BGetDurationControlExtendedResults",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 181,
+      "offset": "0x8a2a10",
+      "strings": [
+        "BIsSubscribedApp",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 182,
+      "offset": "0x8a2b94",
+      "strings": [
+        "GetSubscribedApps",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 183,
+      "offset": "0x8a2d6c",
+      "strings": [
+        "AckSystemIM",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 184,
+      "offset": "0x8a2ecc",
+      "strings": [
+        "IClientUser",
+        "RequestSpecialSurvey"
+      ]
+    },
+    {
+      "slot": 185,
+      "offset": "0x8a3050",
+      "strings": [
+        "IClientUser",
+        "SendSpecialSurveyResponse"
+      ]
+    },
+    {
+      "slot": 186,
+      "offset": "0x8a3208",
+      "strings": [
+        "IClientUser",
+        "RequestNotifications"
+      ]
+    },
+    {
+      "slot": 187,
+      "offset": "0x8a3350",
+      "strings": [
+        "GetAppOwnershipInfo",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 188,
+      "offset": "0x8a353c",
+      "strings": [
+        "IClientUser",
+        "SendGameWebCallback"
+      ]
+    },
+    {
+      "slot": 189,
+      "offset": "0x8a36b4",
+      "strings": [
+        "BIsStreamingUIToRemoteDevice",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 190,
+      "offset": "0x8a3820",
+      "strings": [
+        "BIsCurrentlyNVStreaming",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 191,
+      "offset": "0x8a398c",
+      "strings": [
+        "IClientUser",
+        "OnBigPictureForStreamingStartResult"
+      ]
+    },
+    {
+      "slot": 192,
+      "offset": "0x8a3b28",
+      "strings": [
+        "IClientUser",
+        "OnBigPictureForStreamingDone"
+      ]
+    },
+    {
+      "slot": 193,
+      "offset": "0x8a3c70",
+      "strings": [
+        "IClientUser",
+        "OnBigPictureForStreamingRestarting"
+      ]
+    },
+    {
+      "slot": 194,
+      "offset": "0x8a3db8",
+      "strings": [
+        "IClientUser",
+        "StopStreaming"
+      ]
+    },
+    {
+      "slot": 195,
+      "offset": "0x8a3f18",
+      "strings": [
+        "GetAllAccountFlags",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 196,
+      "offset": "0x8a4084",
+      "strings": [
+        "IClientUser",
+        "LockParentalLock"
+      ]
+    },
+    {
+      "slot": 197,
+      "offset": "0x8a41cc",
+      "strings": [
+        "IClientUser",
+        "UnlockParentalLock"
+      ]
+    },
+    {
+      "slot": 198,
+      "offset": "0x8a4348",
+      "strings": [
+        "BIsParentalLockEnabled",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 199,
+      "offset": "0x8a44b4",
+      "strings": [
+        "BIsParentalLockLocked",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 200,
+      "offset": "0x8a4620",
+      "strings": [
+        "BIsAppBlocked",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 201,
+      "offset": "0x8a47a4",
+      "strings": [
+        "BIsAppInBlockList",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 202,
+      "offset": "0x8a4928",
+      "strings": [
+        "BIsFeatureBlocked",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 203,
+      "offset": "0x8a4aac",
+      "strings": [
+        "BIsFeatureInBlockList",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 204,
+      "offset": "0x8a4c30",
+      "strings": [
+        "GetParentalUnlockTime",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 205,
+      "offset": "0x8a4d9c",
+      "strings": [
+        "BGetRecoveryEmail",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 206,
+      "offset": "0x8a4f50",
+      "strings": [
+        "BIsLockFromSiteLicense",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 207,
+      "offset": "0x8a50bc",
+      "strings": [
+        "EIsParentalPlaytimeBlocked",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 208,
+      "offset": "0x8a5228",
+      "strings": [
+        "BGetSerializedParentalSettings",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 209,
+      "offset": "0x8a53b8",
+      "strings": [
+        "BGetParentalWebToken",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 210,
+      "offset": "0x8a5568",
+      "strings": [
+        "GetCommunityPreference",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 211,
+      "offset": "0x8a56ec",
+      "strings": [
+        "IClientUser",
+        "SetCommunityPreference"
+      ]
+    },
+    {
+      "slot": 212,
+      "offset": "0x8a586c",
+      "strings": [
+        "GetTextFilterSetting",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 213,
+      "offset": "0x8a59d8",
+      "strings": [
+        "BTextFilterIgnoresFriends",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 214,
+      "offset": "0x8a5b44",
+      "strings": [
+        "CanLogonOffline",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 215,
+      "offset": "0x8a5cb0",
+      "strings": [
+        "IClientUser",
+        "LogOnOffline"
+      ]
+    },
+    {
+      "slot": 216,
+      "offset": "0x8a5e34",
+      "strings": [
+        "IClientUser",
+        "ValidateOfflineLogonTicket"
+      ]
+    },
+    {
+      "slot": 217,
+      "offset": "0x8a5fb0",
+      "strings": [
+        "BGetOfflineLogonTicket",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 218,
+      "offset": "0x8a6150",
+      "strings": [
+        "IClientUser",
+        "UploadLocalClientLogs"
+      ]
+    },
+    {
+      "slot": 219,
+      "offset": "0x8a62bc",
+      "strings": [
+        "IClientUser",
+        "SetAsyncNotificationEnabled"
+      ]
+    },
+    {
+      "slot": 220,
+      "offset": "0x8a643c",
+      "strings": [
+        "BIsOtherSessionPlaying",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 221,
+      "offset": "0x8a65d0",
+      "strings": [
+        "BKickOtherPlayingSession",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 222,
+      "offset": "0x8a673c",
+      "strings": [
+        "BIsAccountLockedDown",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 223,
+      "offset": "0x8a68a8",
+      "strings": [
+        "IClientUser",
+        "RequestAccountLinkInfo"
+      ]
+    },
+    {
+      "slot": 224,
+      "offset": "0x8a6a14",
+      "strings": [
+        "IClientUser",
+        "RequestSurveySchedule"
+      ]
+    },
+    {
+      "slot": 225,
+      "offset": "0x8a6b5c",
+      "strings": [
+        "IClientUser",
+        "RequestNewSteamAnnouncementState"
+      ]
+    },
+    {
+      "slot": 226,
+      "offset": "0x8a6ca4",
+      "strings": [
+        "IClientUser",
+        "UpdateSteamAnnouncementLastRead"
+      ]
+    },
+    {
+      "slot": 227,
+      "offset": "0x8a6e24",
+      "strings": [
+        "GetMarketEligibility",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 228,
+      "offset": "0x8a6f90",
+      "strings": [
+        "IClientUser",
+        "UpdateGameVrDllState"
+      ]
+    },
+    {
+      "slot": 229,
+      "offset": "0x8a712c",
+      "strings": [
+        "IClientUser",
+        "KillVRTheaterPancakeGame"
+      ]
+    },
+    {
+      "slot": 230,
+      "offset": "0x8a7290",
+      "strings": [
+        "IClientUser",
+        "SetVRIsHMDAwake"
+      ]
+    },
+    {
+      "slot": 231,
+      "offset": "0x8a73f0",
+      "strings": [
+        "BIsAnyGameOrServiceAppRunning",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 232,
+      "offset": "0x8a755c",
+      "strings": [
+        "/opt/buildbot/buildworker/steam_rel_client_osx/build/src/clientdll/interfacemap_client.h",
+        "BGetAppPlaytimeMap",
+        "IClientUser",
+        "m_bInProcessPipe"
+      ]
+    },
+    {
+      "slot": 233,
+      "offset": "0x8a772c",
+      "strings": [
+        "/opt/buildbot/buildworker/steam_rel_client_osx/build/src/clientdll/interfacemap_client.h",
+        "BGetAppsLastPlayedMap",
+        "IClientUser",
+        "m_bInProcessPipe"
+      ]
+    },
+    {
+      "slot": 234,
+      "offset": "0x8a78fc",
+      "strings": [
+        "IClientUser",
+        "SendSteamServiceStatusUpdate"
+      ]
+    },
+    {
+      "slot": 235,
+      "offset": "0x8a7a7c",
+      "strings": [
+        "IClientUser",
+        "RequestSteamGroupChatMessageNotifications"
+      ]
+    },
+    {
+      "slot": 236,
+      "offset": "0x8a7c38",
+      "strings": [
+        "IClientUser",
+        "RequestSteamGroupChatMessageHistory"
+      ]
+    },
+    {
+      "slot": 237,
+      "offset": "0x8a7df4",
+      "strings": [
+        "IClientUser",
+        "RequestSendSteamGroupChatMessage"
+      ]
+    },
+    {
+      "slot": 238,
+      "offset": "0x8a7fc8",
+      "strings": [
+        "IClientUser",
+        "OnNewGroupChatMsgAdded"
+      ]
+    },
+    {
+      "slot": 239,
+      "offset": "0x8a81b0",
+      "strings": [
+        "IClientUser",
+        "OnGroupChatUserStateChange"
+      ]
+    },
+    {
+      "slot": 240,
+      "offset": "0x8a8348",
+      "strings": [
+        "IClientUser",
+        "OnReceivedGroupChatSubscriptionResponse"
+      ]
+    },
+    {
+      "slot": 241,
+      "offset": "0x8a84e0",
+      "strings": [
+        "GetTimedTrialStatus",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 242,
+      "offset": "0x8a86cc",
+      "strings": [
+        "IClientUser",
+        "RequestTimedTrialStatus"
+      ]
+    },
+    {
+      "slot": 243,
+      "offset": "0x8a8850",
+      "strings": [
+        "IClientUser",
+        "PrepareForSystemSuspend"
+      ]
+    },
+    {
+      "slot": 244,
+      "offset": "0x8a89bc",
+      "strings": [
+        "IClientUser",
+        "ResumeSuspendedGames"
+      ]
+    },
+    {
+      "slot": 245,
+      "offset": "0x8a8b40",
+      "strings": [
+        "GetClientInstallationID",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 246,
+      "offset": "0x8a8cac",
+      "strings": [
+        "GetAppIDForGameID",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 247,
+      "offset": "0x8a8e34",
+      "strings": [
+        "BDoNotDisturb",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 248,
+      "offset": "0x8a8fa0",
+      "strings": [
+        "IClientUser",
+        "SetAdditionalClientArgData"
+      ]
+    },
+    {
+      "slot": 249,
+      "offset": "0x8a9108",
+      "strings": [
+        "GetFamilyGroupID",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 250,
+      "offset": "0x8a9274",
+      "strings": [
+        "GetFamilyGroupName",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 251,
+      "offset": "0x8a93dc",
+      "strings": [
+        "GetFamilyGroupRole",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 252,
+      "offset": "0x8a9548",
+      "strings": [
+        "/opt/buildbot/buildworker/steam_rel_client_osx/build/src/clientdll/interfacemap_client.h",
+        "GetFamilyGroupMembers",
+        "IClientUser",
+        "m_bInProcessPipe"
+      ]
+    },
+    {
+      "slot": 253,
+      "offset": "0x8a9784",
+      "strings": [
+        "GetSharedAppLockInfo",
+        "IClientUser"
+      ]
+    },
+    {
+      "slot": 254,
+      "offset": "0x8a9994",
+      "strings": [
+        "/opt/buildbot/buildworker/steam_rel_client_osx/build/src/clientdll/interfacemap_client.h",
+        "GetFamilyDLCForApp",
+        "IClientUser",
+        "m_bInProcessPipe"
+      ]
+    },
+    {
+      "slot": 255,
+      "offset": "0x8a9b84",
+      "strings": [
+        "IClientUser",
+        "SetPreferredLender"
+      ]
+    },
+    {
+      "slot": 256,
+      "offset": "0x8a9d28",
+      "strings": [
+        "/opt/buildbot/buildworker/steam_rel_client_osx/build/src/clientdll/interfacemap_client.h",
+        "GetFamilyCopyCounts",
+        "IClientUser",
+        "m_bInProcessPipe"
+      ]
+    },
+    {
+      "slot": 257,
+      "offset": "0x8a9ef8",
+      "strings": [
+        "/opt/buildbot/buildworker/steam_rel_client_osx/build/src/clientdll/interfacemap_client.h",
+        "BGetProcessIDsForGame",
+        "IClientUser",
+        "m_bInProcessPipe"
+      ]
+    },
+    {
+      "slot": 258,
+      "offset": "0x8aa150",
+      "strings": [
+        "CancelLicenseForApp",
+        "IClientUser",
+        "m_CachedVal"
+      ]
+    }
+  ]
+}

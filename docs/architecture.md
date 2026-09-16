@@ -1,0 +1,108 @@
+# Architecture
+
+## Native interface and Rust core
+
+SwiftUI and AppKit manage windows, interactions, preferences, and user-facing state. `AppModel` coordinates these operations on the MainActor. `CoreClient` is a Swift actor that serializes catalog calls and converts generated types into presentation models.
+
+The Rust core owns catalog rules and persistence. The UniFFI bridge stays small. The interface sends an add or remove command and receives games. SwiftUI-specific types and constraints do not cross the bridge.
+
+Future high-frequency processing, such as controller input, can stay between the Rust modules and the compatibility engine. It does not need to pass through interface state for every event.
+
+## Stores: SteamKit, EpicKit, and GOGKit
+
+Each kit has its own place in the Rust workspace. `steam-kit` and `epic-kit` implement sign-in, owned libraries, downloading, and launch plans. GOG only describes its unavailable capabilities.
+
+`steam-kit` separates `auth`, `cm`, `friends`, `content`, `client`, and `news`. `auth` obtains authorization through QR or credentials. `cm` owns the account connection, protobuf messages, licenses, and metadata. `friends` reduces social events into account-scoped state. `content` downloads and verifies depots. `client` selects depots and coordinates installation. Public news requests never receive account credentials.
+
+Within Steam's `content`, `manifest_cache` stores validated CDN archives by depot and manifest ID. Keys and tokens stay in memory. The client loads a validated copy before requesting a network code, after checking access rights and requesting current metadata. Both stores use the verification scheduler in `forge-core`, with at most four readers and all threads joined before any repair. The same crate's `install` module owns path confinement under an installation root, the per-installation lock, bounded manifest-cache files, SHA-1 file checks and permission bits, and its `transfer` module owns the progress vocabulary and the bounded chunk pump; each storefront maps these into its own error type. Each storefront supplies its file metadata, path checks, hashing, and error mapping. The caches store only manifests, never file verification results.
+
+The `launch` module resolves Steam launch options into a plan containing the executable, arguments, and working directory. It checks paths without starting a process. `SteamGameLauncher` executes this plan on macOS. `SteamModel` coordinates optional file verification and then launch, retaining the game selected at the start of the operation and rejecting responses after cancellation or an account change.
+
+The Rust `language` module maps the locale provided by macOS to a Steam language. The interface starts downloads with automatic settings: macOS when available, otherwise Windows, the system language, and a `Games/Steam` directory under Forge's data directory. These parameters remain explicit in the bridge so a future selection interface can be added without changing the protocol.
+
+The UniFFI bridge exposes asynchronous operations using the Tokio runtime. The CM task keeps sending heartbeats during downloads. `SteamModel` owns the SwiftUI states for sign-in, the library, details, and transfers. Counters invalidate old responses after signing out or changing the details page. Progress can be read without blocking on the transfer. Cancellation uses a Rust token whose flag is checked between steps and which also wakes any pending CDN request immediately.
+
+`SteamKeychain` saves the refresh token in the macOS Keychain when the user chooses to remember the session. Catalog files, preferences, and logs receive neither passwords nor tokens. Download receipts are separated by account, and directories by game and platform. The local game catalog keeps its format and behavior.
+
+Future multiplayer functions can use the transport and account session in `cm`, with their own messages and state. Downloading does not simulate a game's Steamworks API or a multiplayer session. New crates will only be needed when another consumer needs to reuse these modules.
+
+### Steam friends
+
+The existing CM reader routes `ClientFriendsList` and `ClientPersonaState` to the `friends` reducer separately from library and download responses. Full relationship lists replace membership, including empty lists. Incremental lists change only the supplied relationships. Only individual accounts with the accepted-friend relationship enter the presentation. Persona information arriving before the initial list is temporarily retained. A full list or newly accepted friend triggers the read-only `Chat.RequestFriendPersonaStates#1` status request; `ClientRequestFriendData` separately hydrates names and avatars, including offline friends, in bounded batches.
+
+The reducer separates presence from game activity and applies the message's field groups. A `Status` group replaces presence and activity, with absent fields taking their protobuf defaults; an omitted state in this group means offline. A name/avatar-only update preserves both fields. Offline clears old activity, so a later online-only event cannot restore the previous game. Unknown presence values remain unknown. Forge does not publish a change to the local account's presence or infer invisible friends.
+
+The observation carries complete snapshots with an account ID and revision. A suspended `nextFriends(afterRevision:)` call subscribes and checks the revision atomically, then wakes on a change. A slow interface can skip intermediate snapshots without losing the final relationship or field state. The wait holds no content-query mutex. There is one socket reader and no friends refresh timer. Protobuf, envelope, and response-queue limits still apply independently of the optional social packets.
+
+`SteamModel`, owned by `AppModel`, owns the observation and reconnect task. Opening or closing the panel and changing sections do not create another session or subscription. Reconnection uses progressive delays and a finite number of attempts, while the previous list remains marked as stale until the replacement session finishes hydration. Authentication rejection ends the retry cycle. Sign-out cancels the observation and connection attempt, closes the transport, clears social state, and closes the panel. Account and observation generations reject late events. `SteamConnectionAttempt` provides explicit Rust cancellation because the generated asynchronous Swift wrapper does not propagate Swift task cancellation by itself.
+
+`FriendsPresentationState`, `FriendPresentation`, and their identities contain no protobuf or generated Steam types. A row identity includes store, account, and friend IDs. `FriendsPanel` and `FriendRow` consume these common types; the Steam and Epic adapters know their backend enums. GOG can supply this presentation later without placeholder providers or actions now.
+
+The root view places the panel over the full window, isolates background interaction and accessibility, traps keyboard focus, and restores the previous responder on close. Local search follows the library's case- and accent-insensitive conventions. Stable sorting places active games before other online friends; unknown presence stays separate and offline friends remain searchable in a collapsible section. Rows are lazy. The account-scoped avatar cache reuses images across status changes and rejects results from an obsolete cache generation. It holds at most 128 decoded 96-pixel images and eight pending requests, each bounded by 2 MiB and 20 seconds. Its ephemeral URL session disables the URL cache. Neither friends nor these avatars add disk persistence.
+
+See [the CM notes](steam-cm-notes.md#friends-protocol-references) for checked source revisions, wire-field details, and the distinction between protocol facts and SDK semantics. Chat, friend management, invitations, game launches from friend activity, achievements, and cloud synchronization are outside this implementation.
+
+### Epic Games
+
+`epic-kit` exchanges an authorization code obtained on the Epic website for an OAuth session. Its client retrieves library pages and catalog metadata. Access tokens stay in the Rust client. Only the refresh token can be saved by `EpicKeychain`, in an item separate from Steam's.
+
+`EpicWebAuthentication` presents the Epic website in a `WKWebView` window with temporary web storage. It intercepts the HTTPS `localhost/launcher/authorized` callback before any local request. `EpicAuthorizationCallback` checks the origin, path, and code. If Epic returns the official JSON variant, the window hides that page and reads only the authorization response. Closing or canceling destroys the attempt's windows. Secondary windows retain their relationship with the original page.
+
+`EpicModel` coordinates restoration, sign-in, search, details, refresh, and transfers. It invalidates responses arriving after sign-out and serializes Keychain writes. Session creation functions and storage are injectable so account changes and errors can be tested without an Epic account. The session starts only when the Epic tab is opened.
+
+### Epic friends
+
+`epic-kit::friends` keeps accepted relationships, presentation metadata, availability and game activity separate. `social` owns a bounded native STOMP 1.2 connection and revisioned complete snapshots. The session owns the service; the reader never waits for SwiftUI, avatar downloads or library/content operations. Initial and recovery HTTP requests run concurrently with socket reads, with a bounded event buffer replayed over the result. Removal/block tombstones also reject stale metadata from later reads. A relationship event received during hydration schedules one coalesced follow-up for current names and new friends.
+
+The bootstrap uses the launcher friends summary and Presence Service's `circle=friends` response. Namespace presence arrays replace earlier arrays, and game selection aggregates active connections deterministically. Missing account presence is unknown, not offline. An authoritative offline, invisible or unknown status clears activity. No namespace or image URL is invented from an owned-library entry.
+
+If the summary omits names, optional Account Service lookups fetch at most 100 profiles per request under a ten-second total budget. Only one enrichment request runs at a time, without blocking socket reads. The connection caches positive and absent profile names for retained friends; friend-entry updates invalidate that cache. Missing names and avatars keep the common fallbacks.
+
+A presence HTTP 403 preserves the accepted roster, marks initial presence access as denied, and keeps the socket reading subsequent events. Later metadata reconciliation preserves presence already observed on that connection when the replacement presence request is denied. A successful friends response alone never marks presence as loaded. Other bootstrap errors trigger the corresponding authentication, retry or terminal error path. The current Epic gateway accepts STOMP with an outgoing 30-second heartbeat and no incoming heartbeat request. WebSocket Ping/Pong provides a separate transport watchdog. Neither mechanism queries friends or statuses.
+
+`Client` shares the OAuth mutex between social, library and downloads. A renewing task owns the bounded refresh request so cancellation of a social attempt cannot discard an already rotated token. A separate credential-revision watch publishes immediately after refresh, regardless of the following social operation. `EpicModel` reads the latest credentials inside its serialized Keychain write queue, respecting the account generation and remember-session setting.
+
+`nextFriends` and `nextCredentialsRevision` register the watch before comparing revisions. `stopFriends` aborts social connection/read/retry tasks and wakes social waiters. `shutdownObservers` additionally ends credential observation; voluntary `disconnect` retains download cancellation and OAuth revocation. Social retry does neither. Five consecutive unsuccessful attempts exhaust automatic retry; explicit retry or system wake starts a new cycle. Only a healthy ready connection resets the failure budget.
+
+`AppModel.activeFriendsAccount` routes one modal by store and account, independently of the selected library. `RootView` binds the avatar cache to that presented identity. Account logout closes only the affected panel, and background streams remain independent. `EpicModel` checks session and observation generations around waits. Local Swift fixtures cover those lifetimes, credential saves, and simultaneous stores; loopback Rust tests cover actual HTTP, WebSocket, framing, reducers and watches. See [Epic protocol validation](epic-protocol.md#friends-and-live-presence) for the separate live-service evidence.
+
+
+Stores share `StorefrontPage` and `StorefrontTitleBar` for the fixed glass bar, account menu, search, and sorting. `StorefrontScrollView` content scrolls behind this bar, and its persistent scrollbar starts below it. The AppKit material uses the window content and becomes opaque when Reduce Transparency is enabled.
+
+Steam retrieves the account's public name and avatar through its authenticated CM session without a Web API key, then loads the image from the Steam CDN. The menu and initials use the public name. The sign-in username is used only for authentication. Until the public name is available, the menu shows "Steam account". This request follows library loading without blocking its display and runs again on refresh. Stale responses are ignored after sign-out or a new request. The avatar falls back to initials when no image is available or downloading fails. Epic uses initials.
+
+Steam and Epic share `GameDetailHeader` for the banner, metrics, and button position. The Epic catalog supplies the vertical cover and horizontal banner separately from metadata already loaded. The same transfer presentation protocol drives both stores' progress button and library progress panel. Epic's Download action chooses Mac when available, otherwise Windows. Once installed, Launch verifies files against the current manifest, applies updates, and then starts the game. Cancellation, errors, and account changes prevent launch; the initial download never launches automatically.
+
+Epic's `content_manifest` validates binary and JSON BuildPatch manifests. `content` verifies installed files through the shared bounded scheduler, downloads bounded concurrent CDN chunks, validates their hashes, and assembles files atomically. Cancellation and atomic file replacement reuse `forge-core` primitives also used by Steam. Verified chunks survive interruption and are removed after successful installation. `client::download` checks ownership, refreshes authentication once after rejection, coordinates progress and cancellation, and writes an installation receipt only after every file succeeds. CDN requests never receive the account bearer token. A dropped bridge future cancels the transfer. Receipts are separated by Epic account; backend paths include the complete game identity and platform.
+
+Epic's manifest cache persists the raw archive under `.forge-content/manifests`, keyed by namespace, catalog item, app name, platform, and the current server hash. Every attempt first requests current ownership and asset metadata. Cache reads validate the archive hash, app identity, format, and installation paths. Corrupt or obsolete archives are fetched again. CDN locations and deployment metadata always come from the fresh response; tokens and signed URLs are not cached. Manifest writes are atomic and separate from chunk-cache cleanup. Size-only details requests do not create an installation or write a cache.
+
+Epic's `client::launch` checks the installation receipt and current account ownership before obtaining a fresh exchange code and, when required, an ownership token. `forge-core::launch` supplies the path validation and argument parsing used by both stores. `SteamGameLauncher` and `EpicGameLauncher` share a native process executor that passes arguments directly, without a shell. Epic ownership tokens use private temporary files removed after process exit or launch failure. Neither tokens nor exchange codes enter installation receipts. Native Mac builds can launch; Windows execution still needs a compatibility engine.
+
+## Compatibility engines
+
+The catalog stores game references, not a specific Wine version. A future Windows launch implementation can select an engine and a profile for each game. Engine configuration must stay separate from user files and allow rolling back to a previous version.
+
+A customized Wine build would be a reproducible distribution of a known base and identified patches. Its code and graphics dependencies form a separate project from the Rust core. Each change will require game testing and compliance with the redistribution terms of the chosen components.
+
+This codebase includes neither Wine nor anti-cheat patches. Fixing environment compatibility does not establish acceptance by a game or its servers. That remains a separate research topic.
+
+## Controllers
+
+Plan an input module independent of the interface and stores. Its future job will be to detect device capabilities, apply profiles, and send input to the game through the selected engine. Support must be validated end to end for each model and connection. Detection in macOS alone does not demonstrate that a controller works in Wine.
+
+Start with user-space mechanisms, such as SDL or Apple frameworks, before deciding whether a driver is needed. No system extension is installed here.
+
+## Storage and identity
+
+The local catalog is a versioned JSON file that Rust writes atomically. Removing a game from the library never deletes it. Tests must verify opening, writing, and reopening, along with read failures. Swift integration tests use a separate temporary catalog.
+
+The product name is provisional. The display name, bundle identifier, and storage identifier have different roles. A future rebrand must preserve access to the existing catalog.
+
+## Technical sources
+
+- [UniFFI: Swift](https://mozilla.github.io/uniffi-rs/latest/swift/overview.html)
+- [SwiftUI and AppKit](https://developer.apple.com/documentation/swiftui/nsviewrepresentable)
+- [Steam Input](https://partner.steamgames.com/doc/features/steam_controller/concepts)
+- [SDL Gamepad](https://wiki.libsdl.org/SDL3/CategoryGamepad)
+- [Wine sources](https://github.com/wine-mirror/wine)
