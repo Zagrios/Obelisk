@@ -535,7 +535,7 @@ final class SteamPresentationTests: XCTestCase {
 
     @MainActor
     func testSignOutBeforeLaunchTaskStartsDoesNotRestoreBusyStateOrStartVerification() async throws {
-        let fixture = try await launchFixture(cancelAuthRestart: true)
+        let fixture = try await launchFixture()
         defer { fixture.cleanUp() }
         // There is deliberately no suspension between these two actions.
         fixture.model.primaryAction()
@@ -649,7 +649,7 @@ final class SteamPresentationTests: XCTestCase {
 
     @MainActor
     func testSignOutBeforeSteamUninstallTaskStartsPreservesGameAndReceipt() async throws {
-        let fixture = try await launchFixture(cancelAuthRestart: true)
+        let fixture = try await launchFixture()
         defer { fixture.cleanUp() }
         let receipt = try XCTUnwrap(fixture.model.selectedInstallation)
         fixture.model.uninstall(receipt)
@@ -728,7 +728,7 @@ final class SteamPresentationTests: XCTestCase {
     @MainActor
     func testSignOutWhileGameRunsKeepsGlobalReservationUntilExit() async throws {
         let lifetime = FixtureResponses<UInt32, Bool>()
-        let fixture = try await launchFixture(verify: false, cancelAuthRestart: true, lifetime: lifetime)
+        let fixture = try await launchFixture(verify: false, lifetime: lifetime)
         defer { fixture.cleanUp() }
         fixture.model.primaryAction()
         try await eventually { fixture.model.gameSessions.active?.running == true }
@@ -754,7 +754,86 @@ final class SteamPresentationTests: XCTestCase {
     }
 
     @MainActor
-    private func launchFixture(verify: Bool? = nil, needsVerification: Bool? = nil, failVerification: Bool = false, cancelAuthRestart: Bool = false, lifetime: FixtureResponses<UInt32, Bool>? = nil, failLaunch: Bool = false, sessions: SteamGameSessions? = nil) async throws -> LaunchFixture {
+    func testQRSignInRunsThroughTheLoginPortWithoutReachingSteam() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let details = FixtureResponses<DetailsRequest, SteamGameDetails>()
+        let session = FixtureSteamSession(games: fixtureGames, details: details)
+        let starts = FixtureLoginStarts()
+        let login = FixtureLogin(qrUrl: "https://s.team/q/fixture",
+                                 credentials: SteamCredentials(accountName: "Test account", steamId: 42, refreshToken: "fixture-only-never-sent"))
+        let model = SteamModel(directory: root, keychain: FixtureCredentialStore(value: nil),
+                               connect: { _ in session }, news: { _ in [] },
+                               beginLogin: { start in await starts.record(start); return login },
+                               localeIdentifier: "fr-FR")
+
+        // No stored session, so start() opens a QR challenge.
+        await model.start()
+        try await eventually { model.qrURL != nil }
+        XCTAssertEqual(model.qrURL, "https://s.team/q/fixture")
+        XCTAssertFalse(model.isCredentialChallenge)
+
+        try await eventually(timeout: .seconds(10)) { model.isConnected }
+        let recorded = await starts.all
+        XCTAssertEqual(recorded, [.qr], "Sign-in must start exactly once, through the port")
+        XCTAssertEqual(model.games.count, fixtureGames.count)
+    }
+
+    @MainActor
+    func testCredentialSignInSubmitsSteamGuardAndConnects() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let details = FixtureResponses<DetailsRequest, SteamGameDetails>()
+        let session = FixtureSteamSession(games: fixtureGames, details: details)
+        let starts = FixtureLoginStarts()
+        let login = FixtureLogin(confirmations: [SteamGuardMethod(kind: .deviceCode, message: "Fixture")],
+                                 credentials: SteamCredentials(accountName: "Test account", steamId: 42, refreshToken: "fixture-only-never-sent"),
+                                 guardRequired: true)
+        let model = SteamModel(directory: root, keychain: FixtureCredentialStore(value: nil),
+                               connect: { _ in session }, news: { _ in [] },
+                               beginLogin: { start in await starts.record(start); return login },
+                               localeIdentifier: "fr-FR")
+
+        model.signIn(account: "account", password: "password")
+        try await eventually { model.challenge != nil }
+        XCTAssertTrue(model.isCredentialChallenge)
+        // The first offered confirmation decides which Guard prompt is shown.
+        XCTAssertEqual(model.guardKind, .deviceCode)
+        XCTAssertFalse(model.isConnected, "Steam Guard must gate the session")
+
+        model.submitGuard("12345")
+        try await eventually(timeout: .seconds(10)) { model.isConnected }
+        XCTAssertEqual(login.submittedKinds, [.deviceCode])
+        let recorded = await starts.all
+        XCTAssertEqual(recorded, [.credentials(account: "account", password: "password")])
+    }
+
+    @MainActor
+    func testRejectedCredentialsReportTheErrorAndFallBackToQR() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let details = FixtureResponses<DetailsRequest, SteamGameDetails>()
+        let session = FixtureSteamSession(games: fixtureGames, details: details)
+        let starts = FixtureLoginStarts()
+        let model = SteamModel(directory: root, keychain: FixtureCredentialStore(value: nil),
+                               connect: { _ in session }, news: { _ in [] },
+                               beginLogin: { start in
+                                   await starts.record(start)
+                                   if case .credentials = start { throw SteamError.Failure(reason: "Fixture: rejected") }
+                                   return FixtureLogin(qrUrl: "https://s.team/q/fallback", failsPolling: true)
+                               },
+                               localeIdentifier: "fr-FR")
+
+        model.signIn(account: "account", password: "wrong")
+        try await eventually { model.errorMessage != nil }
+        XCTAssertFalse(model.isSubmittingCredentials)
+        XCTAssertFalse(model.isCredentialChallenge, "A rejected password returns the view to the QR challenge")
+
+        try await eventually { model.qrURL == "https://s.team/q/fallback" }
+        let recorded = await starts.all
+        XCTAssertEqual(recorded, [.credentials(account: "account", password: "wrong"), .qr])
+        XCTAssertFalse(model.isConnected)
+    }
+
+    @MainActor
+    private func launchFixture(verify: Bool? = nil, needsVerification: Bool? = nil, failVerification: Bool = false, lifetime: FixtureResponses<UInt32, Bool>? = nil, failLaunch: Bool = false, sessions: SteamGameSessions? = nil) async throws -> LaunchFixture {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let parent = root.appending(path: "Installed games")
         let installedDirectory = parent.appending(path: "steam-620-macos")
@@ -777,8 +856,8 @@ final class SteamPresentationTests: XCTestCase {
             await events.append("plan:\(appId)")
             return SteamLaunchPlan(appId: appId, platform: platform, target: LaunchTarget(executable: directory + "/Game.app", arguments: [], workingDirectory: directory, isApplicationBundle: true))
         })
-        let credentialStore = FixtureCredentialStore(cancelTaskOnRemove: cancelAuthRestart)
-        let model = SteamModel(directory: root, keychain: credentialStore, connect: { _ in session }, news: { _ in [] }, localeIdentifier: "fr-FR", preferences: preferences, gameSessions: sessions ?? SteamGameSessions(), launch: { plan, credentials, onEvent in
+        let credentialStore = FixtureCredentialStore()
+        let model = SteamModel(directory: root, keychain: credentialStore, connect: { _ in session }, news: { _ in [] }, beginLogin: { _ in throw SteamError.Failure(reason: "Fixture: sign-in is offline in tests") }, localeIdentifier: "fr-FR", preferences: preferences, gameSessions: sessions ?? SteamGameSessions(), launch: { plan, credentials, onEvent in
             XCTAssertEqual(credentials.steamId, 42)
             XCTAssertEqual(credentials.accountName, "Test account")
             XCTAssertEqual(credentials.refreshToken, "fixture-only-never-sent")
@@ -910,8 +989,8 @@ final class SteamPresentationTests: XCTestCase {
     }
 
     @MainActor
-    private func eventually(_ predicate: @MainActor () async -> Bool) async throws {
-        let deadline = ContinuousClock.now + .seconds(3)
+    private func eventually(timeout: Duration = .seconds(3), _ predicate: @MainActor () async -> Bool) async throws {
+        let deadline = ContinuousClock.now + timeout
         while !(await predicate()) {
             if ContinuousClock.now >= deadline { throw FixtureFailure.timeout }
             try await Task.sleep(for: .milliseconds(5))
@@ -920,17 +999,56 @@ final class SteamPresentationTests: XCTestCase {
 }
 
 private actor FixtureCredentialStore: SteamCredentialStore {
-    private let cancelTaskOnRemove: Bool
-    private var value: SteamCredentials? = SteamCredentials(accountName: "Test account", steamId: 42, refreshToken: "fixture-only-never-sent")
-    init(cancelTaskOnRemove: Bool = false) { self.cancelTaskOnRemove = cancelTaskOnRemove }
+    private var value: SteamCredentials?
+    init(value: SteamCredentials? = SteamCredentials(accountName: "Test account", steamId: 42, refreshToken: "fixture-only-never-sent")) {
+        self.value = value
+    }
     private(set) var loadCount = 0
     func load() -> SteamCredentials? { loadCount += 1; return value }
     func save(_ credentials: SteamCredentials) { value = credentials }
-    func remove() {
-        value = nil
-        // Prevent this offline sign-out test from starting a real QR HTTP session.
-        if cancelTaskOnRemove { withUnsafeCurrentTask { $0?.cancel() } }
+    func remove() { value = nil }
+}
+
+/// A Steam login that never reaches the network. Sign-out restarts QR sign-in,
+/// so every model in these tests is built with one.
+private final class FixtureLogin: SteamLoginProtocol, @unchecked Sendable {
+    private let snapshot: SteamChallenge
+    private let credentials: SteamCredentials?
+    private let guardRequired: Bool
+    private let failsPolling: Bool
+    private let state = NSLock()
+    private var guardAccepted = false
+    private var submissions: [SteamGuardKind] = []
+
+    init(qrUrl: String? = nil, confirmations: [SteamGuardMethod] = [], credentials: SteamCredentials? = nil,
+         guardRequired: Bool = false, failsPolling: Bool = false, pollIntervalMs: UInt32 = 1) {
+        snapshot = SteamChallenge(qrUrl: qrUrl, confirmations: confirmations, pollIntervalMs: pollIntervalMs, remoteInteraction: false)
+        self.credentials = credentials
+        self.guardRequired = guardRequired
+        self.failsPolling = failsPolling
     }
+
+    func challenge() async -> SteamChallenge { snapshot }
+
+    func poll() async throws -> SteamCredentials? {
+        if failsPolling { throw SteamError.Failure(reason: "Fixture: offline") }
+        return state.withLock { guardRequired && !guardAccepted ? nil : credentials }
+    }
+
+    func submitGuard(code: String, kind: SteamGuardKind) async throws {
+        guard code == "12345" else { throw SteamError.Failure(reason: "Fixture: wrong Steam Guard code") }
+        state.withLock {
+            submissions.append(kind)
+            guardAccepted = true
+        }
+    }
+
+    var submittedKinds: [SteamGuardKind] { state.withLock { submissions } }
+}
+
+private actor FixtureLoginStarts {
+    private(set) var all: [SteamLoginStart] = []
+    func record(_ start: SteamLoginStart) { all.append(start) }
 }
 
 private struct DetailsRequest: Hashable, Sendable {

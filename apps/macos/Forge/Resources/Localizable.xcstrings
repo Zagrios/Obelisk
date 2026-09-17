@@ -4064,40 +4064,6 @@
         }
       }
     },
-    "backend.steam.verification.invalidFileCount": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The number of verified files is invalid."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Nombre de fichiers vérifiés incorrect."
-          }
-        }
-      }
-    },
-    "backend.steam.verification.invalidTotalSize": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The total size of verified files is invalid."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Taille totale de fichiers vérifiés incorrecte."
-          }
-        }
-      }
-    },
     "backend.steam.verification.workerFailed": {
       "extractionState": "manual",
       "localizations": {

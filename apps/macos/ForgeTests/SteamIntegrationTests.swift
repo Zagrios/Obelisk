@@ -314,7 +314,8 @@ final class SteamIntegrationTests: XCTestCase {
             directory: FileManager.default.temporaryDirectory.appending(path: "ForgeCachedLibrary-\(UUID().uuidString)"),
             keychain: CachedSteamCredentials(),
             connect: { _ in session },
-            news: { _ in [] }
+            news: { _ in [] },
+            beginLogin: offlineLogin
         )
     }
 
@@ -382,10 +383,13 @@ private actor CachedSteamCredentials: SteamCredentialStore {
         SteamCredentials(accountName: "Cache fixture", steamId: 42, refreshToken: "fixture-only-never-sent")
     }
     func save(_ credentials: SteamCredentials) {}
-    func remove() {
-        // The offline sign-out test must not start a real Steam QR login.
-        withUnsafeCurrentTask { $0?.cancel() }
-    }
+    func remove() {}
+}
+
+/// Sign-out restarts QR sign-in. This offline test never authenticates, so
+/// refusing the start keeps that restart off the network.
+private let offlineLogin: @Sendable (SteamLoginStart) async throws -> any SteamLoginProtocol = { _ in
+    throw SteamError.Failure(reason: "Fixture: sign-in is offline in tests")
 }
 
 private actor CachedSteamSession: SteamSessionProtocol {

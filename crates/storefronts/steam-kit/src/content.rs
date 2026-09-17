@@ -22,7 +22,7 @@ use std::{
 use forge_core::{
     install::{
         self, InstallError, PARTIAL_DIRECTORY, apply_permissions, checked_file_path,
-        ensure_directory, reject_link_or_special_file, safe_relative_path, try_lock_file,
+        ensure_directory, reject_link_or_special_file, safe_relative_path,
     },
     transfer::{self, Cancelled, DownloadPhase, DownloadProgress, DownloadSummary, Reporter},
 };
@@ -417,10 +417,7 @@ impl DiskInstall {
         fs::create_dir_all(&self.destination)?;
         let root = fs::canonicalize(&self.destination)?;
         // A per-destination lock also prevents conflicting depots from being installed together.
-        let cache = ensure_directory(&root, Path::new(PARTIAL_DIRECTORY))?;
-        let lock_path = cache.join("install.lock");
-        reject_link_or_special_file(&lock_path)?;
-        let _lock = try_lock_file(&lock_path)?.ok_or(ContentError::AlreadyDownloading)?;
+        let _lock = install::lock_engine(&root)?.ok_or(ContentError::AlreadyDownloading)?;
         if let Some(archive) = self.archive.take() {
             self.cancel.check()?;
             manifest_cache::store(&root, self.depot_id, self.manifest_id, &archive)?;
@@ -433,25 +430,9 @@ impl DiskInstall {
         // Readers finish before the repair loop can replace any game files.
         // Reports include only valid whole files; missing/corrupt files contribute
         // bytes later as their chunks are repaired and checked.
-        let verified = verification::verify_files(
-            &root,
-            &manifest.files,
-            &self.cancel,
-            |bytes, files, name| {
-                self.reporter.update(|status| {
-                    status.completed_bytes = bytes;
-                    status.completed_files = files;
-                    status.current_file.replace_range(.., name);
-                });
-            },
-        )?;
-        let mut reused_bytes: u64 = manifest
-            .files
-            .iter()
-            .zip(&verified)
-            .filter(|(_, valid)| **valid)
-            .map(|(file, _)| file.size)
-            .sum();
+        let verified =
+            verification::verify_files(&root, &manifest.files, &self.cancel, &self.reporter)?;
+        let mut reused_bytes = verified.reused_bytes;
 
         // Directory entries are synced once per run of files sharing a parent
         // rather than after every rename; a lost rename is repaired next run
@@ -474,14 +455,16 @@ impl DiskInstall {
                 ensured_parents.insert(parent.to_path_buf());
             }
             let target = checked_file_path(&root, &relative)?;
+            if verified.valid[index] {
+                apply_permissions(&target, is_executable(file))?;
+                continue;
+            }
+            // Only a file this pass actually repairs is reported: verification
+            // finished above, and traversing a valid file is one chmod.
             self.reporter.update(|status| {
                 status.phase = DownloadPhase::Verifying;
                 status.current_file.clone_from(&file.name);
             });
-            if verified[index] {
-                apply_permissions(&target, is_executable(file))?;
-                continue;
-            }
             reused_bytes += self.assemble(&partial_root, file, &root, &relative, &target)?;
             let directory = target.parent().unwrap_or(&root).to_path_buf();
             if pending_directory.as_ref() != Some(&directory)

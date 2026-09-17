@@ -23,6 +23,10 @@ pub const PARTIAL_DIRECTORY: &str = ".forge-content";
 pub const RECEIPT_FILE: &str = ".forge-install.json";
 /// Advisory lock held from preparation until the receipt is published.
 pub const LOCK_FILE: &str = ".forge-install.lock";
+/// The engine lock, inside the installation's own partial directory. Distinct
+/// from [`LOCK_FILE`]: this one guards the detached disk worker, which outlives
+/// a dropped transfer future, while [`LOCK_FILE`] spans a whole transfer.
+pub const ENGINE_LOCK_FILE: &str = "install.lock";
 
 #[derive(Debug, Error)]
 pub enum InstallError {
@@ -178,6 +182,16 @@ pub fn try_lock_file(path: &Path) -> io::Result<Option<File>> {
         .write(true)
         .open(path)?;
     Ok(file.try_lock().is_ok().then_some(file))
+}
+
+/// Creates the partial directory under an installation root and takes the
+/// engine lock inside it. `Ok(None)` means another disk worker, in this process
+/// or another, still holds it. The lock is released when the returned file is
+/// dropped, so a caller holds it by keeping the handle alive.
+pub fn lock_engine(root: &Path) -> Result<Option<File>, InstallError> {
+    let cache = ensure_directory(root, Path::new(PARTIAL_DIRECTORY))?;
+    let path = checked_file_path(&cache, Path::new(ENGINE_LOCK_FILE))?;
+    try_lock_file(&path).map_err(Into::into)
 }
 
 /// Reads a whole file of at most `limit` bytes. `None` when the file is missing
@@ -365,6 +379,39 @@ mod tests {
         ));
         assert!(checked_file_path(root.path(), Path::new("new/file")).is_ok());
         assert!(reject_link_or_special_file(&root.path().join("plain")).is_ok());
+    }
+
+    #[test]
+    fn the_engine_lock_is_exclusive_and_released_with_its_handle() {
+        let root = tempfile::tempdir().unwrap();
+        let held = lock_engine(root.path())
+            .unwrap()
+            .expect("first worker takes it");
+        assert!(
+            root.path()
+                .join(PARTIAL_DIRECTORY)
+                .join(ENGINE_LOCK_FILE)
+                .is_file(),
+            "the lock lives inside the installation's own partial directory"
+        );
+        assert!(
+            lock_engine(root.path()).unwrap().is_none(),
+            "a second worker is refused while the first holds it"
+        );
+        drop(held);
+        assert!(lock_engine(root.path()).unwrap().is_some());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_engine_lock_refuses_a_redirected_partial_directory() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(outside.path(), root.path().join(PARTIAL_DIRECTORY)).unwrap();
+        assert!(matches!(
+            lock_engine(root.path()),
+            Err(InstallError::UnsafePath(_))
+        ));
     }
 
     #[test]

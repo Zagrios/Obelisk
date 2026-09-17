@@ -85,13 +85,8 @@ impl Client {
     }
 
     pub async fn games(&self) -> Result<Vec<Game>, EpicError> {
-        let result = self
-            .with_access_token(|token| async move { library(&self.api, &token).await })
-            .await;
-        if self.session.lock().await.is_none() {
-            return Err(EpicError::Unauthorized);
-        }
-        result
+        self.with_access_token(|token| async move { library(&self.api, &token).await })
+            .await
     }
 
     pub async fn game_details(
@@ -117,8 +112,9 @@ impl Client {
                         platform,
                     ),
                 );
-                if self.session.lock().await.is_none()
-                    || matches!(history, Err(EpicError::Unauthorized))
+                // Re-raise so the funnel refreshes the token once; the funnel
+                // also rejects the result if the session went away meanwhile.
+                if matches!(history, Err(EpicError::Unauthorized))
                     || matches!(size, Err(EpicError::Unauthorized))
                 {
                     return Err(EpicError::Unauthorized);
@@ -157,7 +153,9 @@ impl Client {
     }
 
     /// Runs `operation` with a current access token. When Epic rejects that
-    /// token, it is refreshed once and the operation runs again.
+    /// token, it is refreshed once and the operation runs again. A result
+    /// computed for a session the account discarded while the request was in
+    /// flight is never returned: sign-out clears the session concurrently.
     pub(crate) async fn with_access_token<T, Fut>(
         &self,
         operation: impl Fn(String) -> Fut,
@@ -166,13 +164,17 @@ impl Client {
         Fut: Future<Output = Result<T, EpicError>>,
     {
         let token = self.access_token(None).await?;
-        match operation(token.clone()).await {
+        let result = match operation(token.clone()).await {
             Err(EpicError::Unauthorized) => {
                 let token = self.access_token(Some(&token)).await?;
                 operation(token).await
             }
             result => result,
+        };
+        if self.session.lock().await.is_none() {
+            return Err(EpicError::Unauthorized);
         }
+        result
     }
 
     /// The catalog is presentation data. Check the current account's paginated

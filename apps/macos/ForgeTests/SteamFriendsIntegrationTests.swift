@@ -100,15 +100,18 @@ final class SteamFriendsIntegrationTests: XCTestCase {
         first.fixture.disconnect(authenticationRequired: false)
         await connections.waitForRequest(2)
         modelA.signOut()
+        // Sign-out advances the authentication generation once, then restarts
+        // QR sign-in, which advances it again. Wait for that restart so the
+        // handoff below uses the generation the model actually reached.
+        await waitForSignInRestart(modelA)
 
         let accountB = FriendsWireFixture.accountID + 1
         let second = FriendsBridgeTestSession(accountID: accountB, hydrated: true)
-        // Sign-out advanced the same model's authentication generation from 0
-        // to 1. Hand off a new authenticated account exactly as login polling does.
+        // Hand off a new authenticated account exactly as login polling does.
         let switchAccount = Task {
             await modelA.connect(
                 SteamCredentials(accountName: "Fixture B", steamId: accountB, refreshToken: "fixture-only-never-sent"),
-                generation: 1, persist: false
+                generation: 2, persist: false
             )
         }
         await connections.waitForRequest(3)
@@ -285,7 +288,9 @@ func friendsTestModel(
         directory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString),
         keychain: FriendsTestCredentials(accountID: accountID),
         connect: connect ?? { _ in session! },
-        news: { _ in [] }, reconnectDelay: reconnectDelay
+        news: { _ in [] },
+        beginLogin: offlineLogin,
+        reconnectDelay: reconnectDelay
     )
 }
 
@@ -295,7 +300,28 @@ private struct FriendsTestCredentials: SteamCredentialStore {
         SteamCredentials(accountName: "Fixture", steamId: accountID, refreshToken: "fixture-only-never-sent")
     }
     func save(_ credentials: SteamCredentials) async throws {}
-    func remove() async throws { withUnsafeCurrentTask { $0?.cancel() } }
+    func remove() async throws {}
+}
+
+/// Sign-out restarts QR sign-in. These tests never authenticate, so refusing
+/// the start keeps that restart off the network and leaves no polling task.
+private let offlineLogin: @Sendable (SteamLoginStart) async throws -> any SteamLoginProtocol = { _ in
+    throw SteamError.Failure(reason: "Fixture: sign-in is offline in tests")
+}
+
+/// The restart is asynchronous. `offlineLogin` reports its refusal once it has
+/// run, which is also the point where the authentication generation has settled.
+@MainActor
+private func waitForSignInRestart(
+    _ model: SteamModel, file: StaticString = #filePath, line: UInt = #line
+) async {
+    let deadline = ContinuousClock.now + .seconds(2)
+    while model.qrError == nil {
+        if ContinuousClock.now >= deadline {
+            return XCTFail("Sign-out never restarted QR sign-in", file: file, line: line)
+        }
+        await Task.yield()
+    }
 }
 
 final class FriendsBridgeTestSession: SteamSessionProtocol, @unchecked Sendable {

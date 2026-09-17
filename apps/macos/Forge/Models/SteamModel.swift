@@ -24,6 +24,14 @@ enum SteamLibrarySort: String, CaseIterable, Identifiable {
     }
 }
 
+/// How a Steam login is started. Both entry points go through one port, so
+/// the model never holds a concrete `SteamLogin` and tests can drive sign-in
+/// without opening a Steam HTTP session.
+enum SteamLoginStart: Sendable, Equatable {
+    case qr
+    case credentials(account: String, password: String)
+}
+
 struct SteamInstallReceipt: InstallReceipt, Identifiable {
     var id: String { "\(appId)-\(platform)" }
     let appId: UInt32
@@ -94,11 +102,12 @@ final class SteamModel {
     @ObservationIgnored private let keychain: any SteamCredentialStore
     @ObservationIgnored private let connectSession: @Sendable (SteamCredentials) async throws -> any SteamSessionProtocol
     @ObservationIgnored private let loadNews: @Sendable (UInt32) async throws -> [SteamNews]
+    @ObservationIgnored private let beginLogin: @Sendable (SteamLoginStart) async throws -> any SteamLoginProtocol
     let gameSessions: SteamGameSessions
     @ObservationIgnored private let executeLaunch: @MainActor (SteamLaunchPlan, SteamCredentials, @escaping SteamGameEventHandler) async throws -> Void
     @ObservationIgnored private let preferences: UserDefaults
     @ObservationIgnored private var session: (any SteamSessionProtocol)?
-    @ObservationIgnored private var login: SteamLogin?
+    @ObservationIgnored private var login: (any SteamLoginProtocol)?
     private var steamId: UInt64? { sessionCredentials?.steamId }
     @ObservationIgnored private var started = false
     @ObservationIgnored private var generation = 0
@@ -130,6 +139,14 @@ final class SteamModel {
         keychain: any SteamCredentialStore = SteamKeychain(),
         connect: @escaping @Sendable (SteamCredentials) async throws -> any SteamSessionProtocol = { try await SteamSessionConnection.connect($0) },
         news: @escaping @Sendable (UInt32) async throws -> [SteamNews] = { try await steamNews(appId: $0) },
+        beginLogin: @escaping @Sendable (SteamLoginStart) async throws -> any SteamLoginProtocol = { start in
+            switch start {
+            case .qr:
+                try await SteamLogin.beginQr()
+            case let .credentials(account, password):
+                try await SteamLogin.beginCredentials(accountName: account, password: password)
+            }
+        },
         localeIdentifier: String = Locale.preferredLanguages.first ?? Locale.current.identifier,
         preferences: UserDefaults = .standard,
         reconnectDelay: @escaping @Sendable (Int) async throws -> Void = { attempt in
@@ -144,6 +161,7 @@ final class SteamModel {
         self.keychain = keychain
         self.connectSession = connect
         self.loadNews = news
+        self.beginLogin = beginLogin
         self.language = steamLanguage(locale: localeIdentifier)
         self.preferences = preferences
         self.reconnectDelay = reconnectDelay
@@ -157,6 +175,7 @@ final class SteamModel {
     }
 
     deinit {
+        loginTask?.cancel()
         friendsTask?.cancel()
         connectionTask?.cancel()
         session?.shutdown()
@@ -306,7 +325,7 @@ final class SteamModel {
         pollingActive = false
         loginTask = Task {
             do {
-                let request = try await SteamLogin.beginQr()
+                let request = try await beginLogin(.qr)
                 guard current == generation && !Task.isCancelled else { return }
                 login = request
                 await poll(request, generation: current)
@@ -330,7 +349,7 @@ final class SteamModel {
         pollingActive = false
         loginTask = Task {
             do {
-                let request = try await SteamLogin.beginCredentials(accountName: account, password: password)
+                let request = try await beginLogin(.credentials(account: account, password: password))
                 guard current == generation && !Task.isCancelled else { return }
                 login = request
                 isSubmittingCredentials = false
@@ -366,7 +385,7 @@ final class SteamModel {
         }
     }
 
-    private func poll(_ request: SteamLogin, generation current: Int) async {
+    private func poll(_ request: any SteamLoginProtocol, generation current: Int) async {
         pollingActive = true
         defer { if current == generation { pollingActive = false } }
         do {

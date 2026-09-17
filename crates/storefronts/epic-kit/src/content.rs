@@ -17,7 +17,7 @@ use std::{
 use forge_core::{
     install::{
         self, PARTIAL_DIRECTORY, apply_permissions, checked_file_path, ensure_directory, hex,
-        safe_relative_path, try_lock_file,
+        safe_relative_path,
     },
     transfer::{self, CancelToken, DownloadPhase, DownloadProgress, DownloadSummary, Reporter},
 };
@@ -221,36 +221,18 @@ impl DiskInstall {
         self.cancel.check()?;
         fs::create_dir_all(&self.destination)?;
         let root = fs::canonicalize(&self.destination)?;
-        let cache = ensure_directory(&root, Path::new(PARTIAL_DIRECTORY))?;
-        let lock_path = checked_file_path(&cache, Path::new("install.lock"))?;
-        let _lock = try_lock_file(&lock_path)?.ok_or(EpicError::AlreadyDownloading)?;
+        let _lock = install::lock_engine(&root)?.ok_or(EpicError::AlreadyDownloading)?;
         let manifest = Arc::clone(&self.manifest);
         let partial_relative = PathBuf::from(PARTIAL_DIRECTORY)
             .join("epic")
             .join(manifest_key(&manifest));
         let partial_root = ensure_directory(&root, &partial_relative)?;
         let chunk_root = ensure_directory(&partial_root, Path::new("chunks"))?;
-        let verified = verification::verify_files(
-            &root,
-            &manifest.files,
-            &self.cancel,
-            |bytes, files, name| {
-                self.reporter.update(|status| {
-                    status.completed_bytes = bytes;
-                    status.completed_files = files;
-                    status.current_file.replace_range(.., name);
-                });
-            },
-        )?;
-        let mut reused_bytes: u64 = manifest
-            .files
-            .iter()
-            .zip(&verified)
-            .filter(|(_, valid)| **valid)
-            .map(|(file, _)| file.size())
-            .sum();
+        let verified =
+            verification::verify_files(&root, &manifest.files, &self.cancel, &self.reporter)?;
+        let mut reused_bytes = verified.reused_bytes;
         let mut remaining_chunks = HashMap::new();
-        for (file, valid) in manifest.files.iter().zip(&verified) {
+        for (file, valid) in manifest.files.iter().zip(&verified.valid) {
             if !valid {
                 for part in &file.parts {
                     *remaining_chunks.entry(part.guid).or_insert(0_usize) += 1;
@@ -260,7 +242,7 @@ impl DiskInstall {
         // Parents are created and checked once per distinct directory; every
         // file's full path is still confined right before it is written.
         let mut ensured_parents: HashSet<PathBuf> = HashSet::new();
-        for (file, valid) in manifest.files.iter().zip(verified) {
+        for (file, valid) in manifest.files.iter().zip(verified.valid) {
             self.cancel.check()?;
             let relative = safe_relative_path(&file.filename)?;
             let parent = relative.parent().unwrap_or(Path::new(""));
