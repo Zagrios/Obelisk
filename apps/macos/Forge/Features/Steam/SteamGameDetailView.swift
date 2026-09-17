@@ -56,7 +56,8 @@ struct SteamGameDetailView: View {
             } else if let error = model.detailsError {
                 HStack {
                     Text(L10n.message(error)).font(.system(size: 12)).foregroundStyle(.secondary)
-                    Button(L10n.string("ui.common.retry"), action: model.reloadDetails).buttonStyle(.borderless)
+                    Button(L10n.string("ui.common.retry"), action: model.reloadDetails)
+                        .forgeButtonStyle(.borderless)
                 }
             }
 
@@ -102,6 +103,7 @@ struct SteamGameDetailView: View {
                         if let url = URL(string: article.url), url.scheme == "https", url.host != nil {
                             Link(destination: url) { Label(L10n.string("ui.game.read_article"), systemImage: "arrow.up.right") }
                                 .font(.system(size: 11, weight: .medium))
+                                .pointerCursor()
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -139,7 +141,7 @@ struct SteamGameActionButton: View {
                         .background(.primary.opacity(0.06), in: Circle())
                         .contentShape(Circle())
                 }
-                .buttonStyle(.plain)
+                .forgeButtonStyle(.plain)
                 .foregroundStyle(.secondary)
                 .accessibilityLabel(L10n.string("ui.transfer.cancel"))
                 .help(L10n.string("ui.transfer.cancel"))

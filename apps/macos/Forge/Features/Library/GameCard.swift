@@ -60,7 +60,7 @@ struct GameCard: View {
                         Label(L10n.string("ui.game.play"), systemImage: "play.fill")
                             .font(.system(size: 11, weight: .semibold))
                     }
-                    .buttonStyle(.bordered)
+                    .forgeButtonStyle(.bordered)
                     .tint(ForgeStyle.accent)
                     .disabled(!isNative)
                     .help(isNative ? L10n.string("ui.game.launch_named", game.title) : L10n.string("ui.game.configure_windows_engine"))
@@ -76,6 +76,8 @@ struct GameCard: View {
                 .strokeBorder(isHovered ? tint.opacity(0.45) : ForgePalette(colorScheme: colorScheme).border)
         }
         .onHover { isHovered = $0 }
+        // The card itself only reacts to a double click when the game can run.
+        .pointerCursor(isNative)
         .onTapGesture(count: 2) { if isNative { launch() } }
         .contextMenu {
             Button(L10n.string("ui.game.launch"), systemImage: "play.fill", action: launch)

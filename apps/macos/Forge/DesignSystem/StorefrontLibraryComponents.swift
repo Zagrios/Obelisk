@@ -32,7 +32,8 @@ struct StorefrontWarningBanner: View {
                 Text(L10n.message(message)).font(.system(size: 12))
                 Spacer(minLength: 0)
                 Button { self.message = nil } label: { Image(systemName: "xmark") }
-                    .buttonStyle(.plain).accessibilityLabel(L10n.string("ui.common.dismiss_warning"))
+                    .forgeButtonStyle(.plain)
+                    .accessibilityLabel(L10n.string("ui.common.dismiss_warning"))
             }
             .padding(13)
             .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
@@ -54,7 +55,7 @@ struct StorefrontEmptyLibrary: View {
             Button(searchText.isEmpty ? L10n.string("ui.common.refresh") : L10n.string("ui.search.clear")) {
                 if searchText.isEmpty { refresh() } else { searchText = "" }
             }
-            .buttonStyle(.bordered)
+            .forgeButtonStyle(.bordered)
         }
         .frame(maxWidth: .infinity, minHeight: 260)
     }
@@ -83,7 +84,7 @@ struct LibraryGridCard<Artwork: View>: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .forgeButtonStyle(.plain)
         .onHover { hovered = $0 }
     }
 }

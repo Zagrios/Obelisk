@@ -18,7 +18,10 @@ struct EpicLoginView: View {
             if model.isRestoring || model.isConnecting || model.isSigningOut {
                 VStack(spacing: 18) {
                     ProgressView(model.isSigningOut ? L10n.string("ui.account.signing_out") : model.isRestoring ? L10n.string("ui.account.restoring_session") : L10n.string("ui.epic.connecting"))
-                    if !model.isSigningOut { Button(L10n.string("ui.common.cancel"), action: model.cancelSignIn).buttonStyle(.borderless) }
+                    if !model.isSigningOut {
+                        Button(L10n.string("ui.common.cancel"), action: model.cancelSignIn)
+                            .forgeButtonStyle(.borderless)
+                    }
                 }
                 .frame(maxWidth: .infinity, minHeight: 260)
             } else {
@@ -28,12 +31,13 @@ struct EpicLoginView: View {
                         .font(.system(size: 13)).foregroundStyle(.secondary)
                     Toggle(L10n.string("ui.account.remember_me"), isOn: $model.rememberSession)
                         .toggleStyle(.checkbox)
+                        .pointerCursor()
                         .font(.system(size: 12))
                     Button(L10n.string("ui.epic.sign_in")) { model.signIn() }
                         .buttonStyle(ForgePrimaryButtonStyle())
                     if model.canRetryRestore {
                         Button(L10n.string("ui.account.retry_saved_session"), action: model.retryRestore)
-                            .buttonStyle(.borderless).font(.system(size: 12))
+                            .forgeButtonStyle(.borderless).font(.system(size: 12))
                     }
                 }
                 .padding(26)

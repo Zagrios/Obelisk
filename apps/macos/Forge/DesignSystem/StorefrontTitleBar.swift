@@ -59,7 +59,7 @@ struct StorefrontTitleBar<AccountMenu: View>: View {
             if isConnected {
                 Menu { accountMenu } label: { avatar }
                     .menuStyle(.button)
-                    .buttonStyle(.plain)
+                    .forgeButtonStyle(.plain)
                     .menuIndicator(.hidden)
                     .fixedSize()
                     .accessibilityLabel(accountLabel)
@@ -93,7 +93,7 @@ struct StorefrontTitleBar<AccountMenu: View>: View {
                     .modifier(StorefrontControlGlass())
                     .contentShape(Capsule())
                 }
-                .buttonStyle(.plain)
+                .forgeButtonStyle(.plain)
                 .fixedSize()
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: sortTitle)
                 .popover(isPresented: $sortIsPresented, arrowEdge: .bottom) {
@@ -190,7 +190,7 @@ struct StorefrontTitleBar<AccountMenu: View>: View {
                 Button { searchText = "" } label: {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                 }
-                .buttonStyle(.plain)
+                .forgeButtonStyle(.plain)
                 .accessibilityLabel(L10n.string("ui.search.clear"))
             }
         }
@@ -229,7 +229,7 @@ struct StorefrontSortPopover: View {
                     .background(focusedOption == option.id ? Color.primary.opacity(0.09) : .clear, in: RoundedRectangle(cornerRadius: 6))
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .forgeButtonStyle(.plain)
                 .focusable()
                 .focused($focusedOption, equals: option.id)
                 .focusEffectDisabled()

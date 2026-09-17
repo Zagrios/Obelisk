@@ -79,7 +79,7 @@ struct SidebarView: View {
                 in: RoundedRectangle(cornerRadius: 7)
             )
         }
-        .buttonStyle(.plain)
+        .forgeButtonStyle(.plain)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 

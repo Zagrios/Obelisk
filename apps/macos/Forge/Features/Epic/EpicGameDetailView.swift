@@ -54,7 +54,7 @@ struct EpicGameDetailView: View {
                 Button(L10n.string("ui.epic.show_files"), systemImage: "folder") {
                     NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: receipt.directory)
                 }
-                .buttonStyle(.borderless)
+                .forgeButtonStyle(.borderless)
             }
 
             VStack(alignment: .leading, spacing: 16) {

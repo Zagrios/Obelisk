@@ -29,6 +29,7 @@ struct SettingsView: View {
                             }
                         }
                         .pickerStyle(.segmented)
+                        .pointerCursor()
                         .labelsHidden()
                         .frame(width: 260)
                     }
@@ -50,6 +51,7 @@ struct SettingsView: View {
                         }
                     }
                     .toggleStyle(.switch)
+                    .pointerCursor()
                     .padding(18)
                 }
 
@@ -81,7 +83,7 @@ struct SettingsView: View {
                                 Spacer()
                                 if section == .steam || section == .epic {
                                     Button(L10n.string("ui.settings.open_store", section.title)) { model.selection = section }
-                                        .buttonStyle(.bordered)
+                                        .forgeButtonStyle(.bordered)
                                 } else {
                                     ComingSoonBadge()
                                 }

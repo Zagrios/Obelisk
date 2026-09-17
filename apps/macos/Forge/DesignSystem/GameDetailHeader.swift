@@ -20,7 +20,7 @@ struct GameManagementButton: View {
                 .contentShape(RoundedRectangle(cornerRadius: 10))
         }
         .menuStyle(.button)
-        .buttonStyle(.plain)
+        .forgeButtonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize()
         .disabled(!isAvailable)
@@ -73,7 +73,7 @@ struct GameDetailHeader<Artwork: View, Action: View>: View {
                 Label(libraryTitle, systemImage: "chevron.left")
                     .font(.system(size: 12, weight: .medium))
             }
-            .buttonStyle(.borderless)
+            .forgeButtonStyle(.borderless)
 
             Color.clear
                 .frame(height: 280)

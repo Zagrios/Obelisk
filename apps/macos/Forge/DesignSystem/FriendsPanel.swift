@@ -27,9 +27,11 @@ struct FriendsPanel: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     if state.connection == .authenticationRequired {
                         Button(L10n.string("ui.friends.signIn"), action: signIn)
+                            .pointerCursor()
                             .focused($focusedControl, equals: .reconnect)
                     } else {
                         Button(L10n.string("ui.friends.retry"), action: retry)
+                            .pointerCursor()
                             .focused($focusedControl, equals: .reconnect)
                     }
                 }
@@ -80,7 +82,7 @@ struct FriendsPanel: View {
                                 .padding(.horizontal, 10).padding(.vertical, 12)
                                 .contentShape(Rectangle())
                             }
-                            .buttonStyle(.plain)
+                            .forgeButtonStyle(.plain)
                             .focused($focusedControl, equals: .offline)
                             .disabled(sections.isSearching)
                             .accessibilityValue(L10n.string(sections.showsOffline(isExpanded: offlineExpanded) ? "ui.friends.expanded" : "ui.friends.collapsed"))
@@ -131,7 +133,7 @@ struct FriendsPanel: View {
                     .background(.primary.opacity(0.07), in: Circle())
                     .contentShape(Circle())
             }
-            .buttonStyle(.plain)
+            .forgeButtonStyle(.plain)
             .focused($focusedControl, equals: .close)
             .accessibilityLabel(L10n.string("ui.friends.close"))
             .accessibilityIdentifier("friends-close")
@@ -152,7 +154,7 @@ struct FriendsPanel: View {
                 Button { search = ""; focus.target = .search } label: {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                 }
-                .buttonStyle(.plain)
+                .forgeButtonStyle(.plain)
                 .focused($focusedControl, equals: .clear)
                 .accessibilityLabel(L10n.string("ui.search.clear"))
             }

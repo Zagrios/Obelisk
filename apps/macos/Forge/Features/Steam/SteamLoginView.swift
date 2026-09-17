@@ -59,6 +59,7 @@ struct SteamLoginView: View {
             }
             Toggle(L10n.string("ui.account.remember_me"), isOn: $model.rememberSession)
                 .toggleStyle(.checkbox)
+                .pointerCursor()
                 .font(.system(size: 12))
             Button(action: signIn) {
                 HStack {
@@ -72,6 +73,7 @@ struct SteamLoginView: View {
             .disabled(account.trimmingCharacters(in: .whitespaces).isEmpty || password.isEmpty || model.isSubmittingCredentials)
             Link(L10n.string("ui.steam.sign_in_help"), destination: URL(string: "https://help.steampowered.com/\(L10n.languageCode)/wizard/HelpWithLogin")!)
                 .font(.system(size: 11))
+                .pointerCursor()
         }
         .disabled(model.isSubmittingCredentials)
     }
@@ -92,7 +94,8 @@ struct SteamLoginView: View {
             }
             if let error = model.qrError {
                 Text(L10n.message(error)).font(.system(size: 11)).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                Button(L10n.string("ui.steam.qr_refresh"), action: model.beginQR).buttonStyle(.borderless).font(.system(size: 11))
+                Button(L10n.string("ui.steam.qr_refresh"), action: model.beginQR)
+                    .forgeButtonStyle(.borderless).font(.system(size: 11))
             } else {
                 Text(model.challenge?.remoteInteraction == true ? L10n.string("ui.steam.qr_confirm") : L10n.string("ui.steam.qr_instructions"))
                     .font(.system(size: 12)).foregroundStyle(.secondary).multilineTextAlignment(.center)
@@ -112,7 +115,9 @@ struct SteamLoginView: View {
                             Text(guardLabel(method.kind)).tag(method.kind)
                         }
                     }
-                    .labelsHidden().frame(maxWidth: 280)
+                    .labelsHidden()
+                    .pointerCursor()
+                    .frame(maxWidth: 280)
                 }
                 if model.guardKind == .emailCode || model.guardKind == .deviceCode {
                     Text(model.guardKind == .emailCode ? L10n.string("ui.steam.guard_email_code_instructions") : L10n.string("ui.steam.guard_device_code_instructions"))
@@ -136,7 +141,7 @@ struct SteamLoginView: View {
                 }
             } else { ProgressView(L10n.string("ui.steam.guard_preparing")) }
             Button(L10n.string("ui.steam.back_to_sign_in"), action: model.beginQR)
-                .buttonStyle(.borderless).font(.system(size: 12))
+                .forgeButtonStyle(.borderless).font(.system(size: 12))
         }
         .padding(32)
         .frame(maxWidth: .infinity, minHeight: 290)

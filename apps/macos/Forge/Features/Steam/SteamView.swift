@@ -98,7 +98,11 @@ struct SteamTransferView: View {
                 Label(transfer.activityTitle, systemImage: systemImage)
                     .font(.system(size: 13, weight: .semibold))
                 Spacer()
-                if isDownloading { Button(L10n.string("ui.common.cancel"), action: cancel).controlSize(.small) }
+                if isDownloading {
+                    Button(L10n.string("ui.common.cancel"), action: cancel)
+                        .controlSize(.small)
+                        .pointerCursor()
+                }
             }
             if transfer.totalBytes > 0 {
                 ProgressView(value: Double(min(transfer.completedBytes, transfer.totalBytes)), total: Double(transfer.totalBytes))

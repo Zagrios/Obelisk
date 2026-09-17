@@ -115,7 +115,7 @@ struct LibraryView: View {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundStyle(.tertiary)
                     }
-                    .buttonStyle(.plain)
+                    .forgeButtonStyle(.plain)
                     .accessibilityLabel(L10n.string("ui.search.clear"))
                 }
             }
@@ -231,7 +231,7 @@ struct LibraryView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
             Button(L10n.string("ui.search.clear")) { model.searchText = "" }
-                .buttonStyle(.bordered)
+                .forgeButtonStyle(.bordered)
         }
         .padding(32)
         .frame(maxWidth: .infinity, minHeight: 300)
@@ -281,7 +281,7 @@ struct LibraryView: View {
                         }
                         .contentShape(RoundedRectangle(cornerRadius: 11))
                     }
-                    .buttonStyle(.plain)
+                    .forgeButtonStyle(.plain)
                     .accessibilityLabel(section == .gog ? L10n.string("ui.library.gog_coming_soon") : L10n.string("ui.library.store_accessibility", section.title))
                 }
             }

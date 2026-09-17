@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Shared colors and spacing for the native macOS interface.
@@ -39,6 +40,72 @@ struct ForgePalette {
     }
 }
 
+extension View {
+    /// Shows the pointing hand while the pointer is over a clickable control,
+    /// the way `cursor: pointer` behaves on the web. A disabled control, or one
+    /// passed `isClickable: false`, keeps the arrow so the cursor never
+    /// promises an action that cannot happen.
+    func pointerCursor(_ isClickable: Bool = true) -> some View {
+        modifier(PointerCursor(isClickable: isClickable))
+    }
+
+    /// `buttonStyle`, paired with the pointing hand every clickable control in
+    /// Forge is meant to show. Prefer it over `.buttonStyle` so the two cannot
+    /// drift apart: a button that opts out of the pointer should say so with an
+    /// explicit `.pointerCursor(false)`, not by omission.
+    ///
+    /// Apply `.disabled(_:)` after this, never before — `pointerCursor` reads
+    /// the enabled state from the environment.
+    func forgeButtonStyle<S: PrimitiveButtonStyle>(_ style: S) -> some View {
+        buttonStyle(style).pointerCursor()
+    }
+}
+
+private struct PointerCursor: ViewModifier {
+    let isClickable: Bool
+    @Environment(\.isEnabled) private var isEnabled
+
+    private var pointsAtAction: Bool { isClickable && isEnabled }
+
+    func body(content: Content) -> some View {
+        if #available(macOS 15.0, *) {
+            // `.default` rather than `nil`: an unclickable control nested in a
+            // clickable one must not inherit its pointing hand.
+            content.pointerStyle(pointsAtAction ? .link : .default)
+        } else {
+            content.modifier(LegacyPointerCursor(pointsAtAction: pointsAtAction))
+        }
+    }
+}
+
+/// `pointerStyle` only exists from macOS 15. Older systems push and pop the
+/// cursor by hand, remembering whether this control still owns the top of the
+/// stack so it stays balanced when the control is disabled or removed while
+/// hovered.
+private struct LegacyPointerCursor: ViewModifier {
+    let pointsAtAction: Bool
+    @State private var isPushed = false
+
+    func body(content: Content) -> some View {
+        content
+            .onHover { hovering in
+                push(hovering ? cursor : nil)
+            }
+            .onChange(of: pointsAtAction) { _, _ in
+                if isPushed { push(cursor) }
+            }
+            .onDisappear { push(nil) }
+    }
+
+    private var cursor: NSCursor { pointsAtAction ? .pointingHand : .arrow }
+
+    private func push(_ cursor: NSCursor?) {
+        if isPushed { NSCursor.pop() }
+        isPushed = cursor != nil
+        cursor?.push()
+    }
+}
+
 struct ForgePrimaryButtonStyle: ButtonStyle {
     var scale: CGFloat = 1
 
@@ -52,6 +119,7 @@ struct ForgePrimaryButtonStyle: ButtonStyle {
                 ForgeStyle.accent.opacity(configuration.isPressed ? 0.75 : 1),
                 in: RoundedRectangle(cornerRadius: 8 * scale)
             )
+            .pointerCursor()
     }
 }
 
