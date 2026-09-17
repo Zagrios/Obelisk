@@ -23,7 +23,7 @@ impl Prepared {
         environment.insert(
             "DYLD_INSERT_LIBRARIES".into(),
             self.directory
-                .join(crate::package::HELPERS[1])
+                .join(crate::package::ADAPTER)
                 .to_string_lossy()
                 .into_owned(),
         );
@@ -95,15 +95,34 @@ fn sandbox(config: &Config, directory: &Path) -> Result<String, Error> {
                 .home
                 .join("Library/Application Support/com.zagrios.forge")
         )?,
-        quote(&directory.join(crate::package::HELPERS[0]))?
+        quote(&directory.join(crate::package::HOST))?
     ))
 }
-pub(crate) fn report(path: &Path, proof: &crate::Proof) -> Result<(), Error> {
-    let bytes = serde_json::to_vec_pretty(proof).map_err(|_| Error::Storage)?;
-    let temporary = path.with_extension("tmp");
-    fs::write(&temporary, bytes)?;
-    fs::rename(temporary, path)?;
+/// Durability is explicit: session recovery requires fsync, diagnostics do not.
+#[derive(Clone, Copy)]
+pub(crate) enum Durability {
+    Atomic,
+    FileSync,
+}
+
+pub(crate) fn atomic_write(
+    path: &Path,
+    durability: Durability,
+    write: impl FnOnce(&mut std::fs::File) -> Result<(), Error>,
+) -> Result<(), Error> {
+    let mut temporary = tempfile::NamedTempFile::new_in(path.parent().ok_or(Error::Storage)?)?;
+    write(temporary.as_file_mut())?;
+    if matches!(durability, Durability::FileSync) {
+        temporary.as_file().sync_all()?;
+    }
+    temporary.persist(path).map_err(|_| Error::Storage)?;
     Ok(())
+}
+
+pub(crate) fn report(path: &Path, proof: &crate::Proof) -> Result<(), Error> {
+    atomic_write(path, Durability::Atomic, |file| {
+        serde_json::to_writer_pretty(file, proof).map_err(|_| Error::Storage)
+    })
 }
 pub(crate) fn failure_report(
     config: &Config,
@@ -123,4 +142,32 @@ pub(crate) fn failure_report(
         serde_json::to_vec_pretty(&report).map_err(|_| Error::Storage)?,
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod atomic_tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn incomplete_atomic_writes_preserve_the_previous_file_and_remove_temporary_files() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("state.json");
+        for durability in [Durability::Atomic, Durability::FileSync] {
+            fs::write(&path, b"previous").unwrap();
+            let result = atomic_write(&path, durability, |file| {
+                file.write_all(b"incomplete")?;
+                Err(Error::Storage)
+            });
+            assert!(result.is_err());
+            assert_eq!(fs::read(&path).unwrap(), b"previous");
+            assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
+            atomic_write(&path, durability, |file| {
+                file.write_all(b"complete")?;
+                Ok(())
+            })
+            .unwrap();
+            assert_eq!(fs::read(&path).unwrap(), b"complete");
+        }
+    }
 }

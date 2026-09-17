@@ -338,3 +338,51 @@ fn bundled_runtime_loads_without_steam_installation_access() {
         directory
     );
 }
+
+#[test]
+fn equal_size_and_timestamp_tampering_is_still_detected() {
+    let fixture = Fixture::new();
+    let old = fixture.prepare().unwrap();
+    let path = old.join("steamclient.dylib");
+    let before = fs::metadata(&path).unwrap();
+    let file = fs::OpenOptions::new().write(true).open(&path).unwrap();
+    (&file)
+        .write_all(&vec![b'x'; before.len() as usize])
+        .unwrap();
+    file.set_times(fs::FileTimes::new().set_modified(before.modified().unwrap()))
+        .unwrap();
+    assert_eq!(fs::metadata(&path).unwrap().len(), before.len());
+    assert_eq!(
+        fs::metadata(&path).unwrap().modified().unwrap(),
+        before.modified().unwrap()
+    );
+    assert_ne!(fixture.prepare().unwrap(), old);
+}
+
+#[cfg(unix)]
+#[test]
+fn tree_validation_rejects_root_file_and_nested_parent_symlinks() {
+    for component in [
+        "steamclient.dylib",
+        "Frameworks/Breakpad.framework/Versions",
+        "",
+    ] {
+        let fixture = Fixture::new();
+        let old = fixture.prepare().unwrap();
+        // This focused tree contains exactly the payload inventory.
+        for helper in HELPERS {
+            fs::remove_file(old.join(helper)).unwrap();
+        }
+        verify_tree(&old, &fixture.files, &AtomicBool::new(false)).unwrap();
+        let path = if component.is_empty() {
+            old.clone()
+        } else {
+            old.join(component)
+        };
+        let external = fixture._root.path().join("external");
+        fs::rename(&path, &external).unwrap();
+        std::os::unix::fs::symlink(&external, &path).unwrap();
+        assert!(verify_tree(&old, &fixture.files, &AtomicBool::new(false)).is_err());
+        assert!(external.exists());
+    }
+}

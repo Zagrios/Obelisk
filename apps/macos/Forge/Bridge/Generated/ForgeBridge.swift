@@ -1453,6 +1453,140 @@ public func FfiConverterTypeSteamFriendsFixture_lower(_ value: SteamFriendsFixtu
 
 
 
+public protocol SteamGameSessionProtocol: AnyObject, Sendable {
+    
+    func cancelPreparation() 
+    
+    func snapshot(after: UInt64?) async throws  -> SteamGameSnapshot
+    
+}
+open class SteamGameSession: SteamGameSessionProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_forge_bridge_fn_clone_steamgamesession(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_forge_bridge_fn_free_steamgamesession(handle, $0) }
+    }
+
+    
+
+    
+open func cancelPreparation()  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_forge_bridge_fn_method_steamgamesession_cancel_preparation(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+}
+}
+    
+open func snapshot(after: UInt64?)async throws  -> SteamGameSnapshot  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_forge_bridge_fn_method_steamgamesession_snapshot(
+                        self.uniffiCloneHandle(),FfiConverterOptionUInt64.lower(after)
+                )
+            },
+            pollFunc: ffi_forge_bridge_rust_future_poll_rust_buffer,
+            completeFunc: ffi_forge_bridge_rust_future_complete_rust_buffer,
+            freeFunc: ffi_forge_bridge_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeSteamGameSnapshot_lift,
+            errorHandler: FfiConverterTypeSteamError_lift
+        )
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSteamGameSession: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = SteamGameSession
+
+    public static func lift(_ handle: UInt64) throws -> SteamGameSession {
+        return SteamGameSession(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: SteamGameSession) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SteamGameSession {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: SteamGameSession, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSteamGameSession_lift(_ handle: UInt64) throws -> SteamGameSession {
+    return try FfiConverterTypeSteamGameSession.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSteamGameSession_lower(_ value: SteamGameSession) -> UInt64 {
+    return FfiConverterTypeSteamGameSession.lower(value)
+}
+
+
+
+
+
+
 public protocol SteamLoginProtocol: AnyObject, Sendable {
     
     func challenge() async  -> SteamChallenge
@@ -1648,7 +1782,7 @@ public protocol SteamNativeLaunchProtocol: AnyObject, Sendable {
     
     func cancel() 
     
-    func prepare(configuration: SteamNativeConfiguration) async throws  -> SteamNativeRuntime
+    func startGame(configuration: SteamNativeConfiguration, target: SteamSupervisedTarget, sessionDirectory: String) async throws  -> SteamGameSession
     
 }
 open class SteamNativeLaunch: SteamNativeLaunchProtocol, @unchecked Sendable {
@@ -1721,18 +1855,18 @@ open func cancel()  {try! rustCall() {
 }
 }
     
-open func prepare(configuration: SteamNativeConfiguration)async throws  -> SteamNativeRuntime  {
+open func startGame(configuration: SteamNativeConfiguration, target: SteamSupervisedTarget, sessionDirectory: String)async throws  -> SteamGameSession  {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_forge_bridge_fn_method_steamnativelaunch_prepare(
-                        self.uniffiCloneHandle(),FfiConverterTypeSteamNativeConfiguration_lower(configuration)
+                uniffi_forge_bridge_fn_method_steamnativelaunch_start_game(
+                        self.uniffiCloneHandle(),FfiConverterTypeSteamNativeConfiguration_lower(configuration),FfiConverterTypeSteamSupervisedTarget_lower(target),FfiConverterString.lower(sessionDirectory)
                 )
             },
             pollFunc: ffi_forge_bridge_rust_future_poll_u64,
             completeFunc: ffi_forge_bridge_rust_future_complete_u64,
             freeFunc: ffi_forge_bridge_rust_future_free_u64,
-            liftFunc: FfiConverterTypeSteamNativeRuntime_lift,
+            liftFunc: FfiConverterTypeSteamGameSession_lift,
             errorHandler: FfiConverterTypeSteamError_lift
         )
 }
@@ -1780,197 +1914,6 @@ public func FfiConverterTypeSteamNativeLaunch_lift(_ handle: UInt64) throws -> S
 #endif
 public func FfiConverterTypeSteamNativeLaunch_lower(_ value: SteamNativeLaunch) -> UInt64 {
     return FfiConverterTypeSteamNativeLaunch.lower(value)
-}
-
-
-
-
-
-
-public protocol SteamNativeRuntimeProtocol: AnyObject, Sendable {
-    
-    func adapterPath()  -> String
-    
-    func diagnosticPath()  -> String
-    
-    func discoveryService()  -> String
-    
-    func environment()  -> [String: String]
-    
-    func gameStarted(pid: UInt32) throws 
-    
-    func nextState(previous: SteamHostState) async  -> SteamHostState
-    
-    func stop(exitCode: Int32?) 
-    
-}
-open class SteamNativeRuntime: SteamNativeRuntimeProtocol, @unchecked Sendable {
-    fileprivate let handle: UInt64
-
-    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    public struct NoHandle {
-        public init() {}
-    }
-
-    // TODO: We'd like this to be `private` but for Swifty reasons,
-    // we can't implement `FfiConverter` without making this `required` and we can't
-    // make it `required` without making it `public`.
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    required public init(unsafeFromHandle handle: UInt64) {
-        self.handle = handle
-    }
-
-    // This constructor can be used to instantiate a fake object.
-    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
-    //
-    // - Warning:
-    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    public init(noHandle: NoHandle) {
-        self.handle = 0
-    }
-
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    public func uniffiCloneHandle() -> UInt64 {
-        return try! rustCall { uniffi_forge_bridge_fn_clone_steamnativeruntime(self.handle, $0) }
-    }
-    // No primary constructor declared for this class.
-
-    deinit {
-        if handle == 0 {
-            // Mock objects have handle=0 don't try to free them
-            return
-        }
-
-        try! rustCall { uniffi_forge_bridge_fn_free_steamnativeruntime(handle, $0) }
-    }
-
-    
-
-    
-open func adapterPath() -> String  {
-    return try!  FfiConverterString.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_forge_bridge_fn_method_steamnativeruntime_adapter_path(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-})
-}
-    
-open func diagnosticPath() -> String  {
-    return try!  FfiConverterString.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_forge_bridge_fn_method_steamnativeruntime_diagnostic_path(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-})
-}
-    
-open func discoveryService() -> String  {
-    return try!  FfiConverterString.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_forge_bridge_fn_method_steamnativeruntime_discovery_service(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-})
-}
-    
-open func environment() -> [String: String]  {
-    return try!  FfiConverterDictionaryStringString.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_forge_bridge_fn_method_steamnativeruntime_environment(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-})
-}
-    
-open func gameStarted(pid: UInt32)throws   {try rustCallWithError(FfiConverterTypeSteamError_lift) {
-        uniffiCallStatus in
-    uniffi_forge_bridge_fn_method_steamnativeruntime_game_started(
-            self.uniffiCloneHandle(),
-        FfiConverterUInt32.lower(pid),uniffiCallStatus
-    )
-}
-}
-    
-open func nextState(previous: SteamHostState)async  -> SteamHostState  {
-    return
-        try!  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_forge_bridge_fn_method_steamnativeruntime_next_state(
-                        self.uniffiCloneHandle(),FfiConverterTypeSteamHostState_lower(previous)
-                )
-            },
-            pollFunc: ffi_forge_bridge_rust_future_poll_rust_buffer,
-            completeFunc: ffi_forge_bridge_rust_future_complete_rust_buffer,
-            freeFunc: ffi_forge_bridge_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypeSteamHostState_lift,
-            errorHandler: nil
-            
-        )
-}
-    
-open func stop(exitCode: Int32?)  {try! rustCall() {
-        uniffiCallStatus in
-    uniffi_forge_bridge_fn_method_steamnativeruntime_stop(
-            self.uniffiCloneHandle(),
-        FfiConverterOptionInt32.lower(exitCode),uniffiCallStatus
-    )
-}
-}
-    
-
-    
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeSteamNativeRuntime: FfiConverter {
-    typealias FfiType = UInt64
-    typealias SwiftType = SteamNativeRuntime
-
-    public static func lift(_ handle: UInt64) throws -> SteamNativeRuntime {
-        return SteamNativeRuntime(unsafeFromHandle: handle)
-    }
-
-    public static func lower(_ value: SteamNativeRuntime) -> UInt64 {
-        return value.uniffiCloneHandle()
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SteamNativeRuntime {
-        let handle: UInt64 = try readInt(&buf)
-        return try lift(handle)
-    }
-
-    public static func write(_ value: SteamNativeRuntime, into buf: inout [UInt8]) {
-        writeInt(&buf, lower(value))
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeSteamNativeRuntime_lift(_ handle: UInt64) throws -> SteamNativeRuntime {
-    return try FfiConverterTypeSteamNativeRuntime.lift(handle)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeSteamNativeRuntime_lower(_ value: SteamNativeRuntime) -> UInt64 {
-    return FfiConverterTypeSteamNativeRuntime.lower(value)
 }
 
 
@@ -3408,6 +3351,84 @@ public func FfiConverterTypeSteamGameDetails_lower(_ value: SteamGameDetails) ->
 }
 
 
+public struct SteamGameSnapshot: Equatable, Hashable {
+    public var id: String
+    public var appId: UInt32
+    public var phase: SteamGamePhase
+    public var connection: SteamSupervisorConnection
+    public var host: SteamHostState
+    public var exitCode: Int32?
+    public var error: String?
+    public var revision: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, appId: UInt32, phase: SteamGamePhase, connection: SteamSupervisorConnection, host: SteamHostState, exitCode: Int32?, error: String?, revision: UInt64) {
+        self.id = id
+        self.appId = appId
+        self.phase = phase
+        self.connection = connection
+        self.host = host
+        self.exitCode = exitCode
+        self.error = error
+        self.revision = revision
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SteamGameSnapshot: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSteamGameSnapshot: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SteamGameSnapshot {
+        return
+            try SteamGameSnapshot(
+                id: FfiConverterString.read(from: &buf), 
+                appId: FfiConverterUInt32.read(from: &buf), 
+                phase: FfiConverterTypeSteamGamePhase.read(from: &buf), 
+                connection: FfiConverterTypeSteamSupervisorConnection.read(from: &buf), 
+                host: FfiConverterTypeSteamHostState.read(from: &buf), 
+                exitCode: FfiConverterOptionInt32.read(from: &buf), 
+                error: FfiConverterOptionString.read(from: &buf), 
+                revision: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SteamGameSnapshot, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterUInt32.write(value.appId, into: &buf)
+        FfiConverterTypeSteamGamePhase.write(value.phase, into: &buf)
+        FfiConverterTypeSteamSupervisorConnection.write(value.connection, into: &buf)
+        FfiConverterTypeSteamHostState.write(value.host, into: &buf)
+        FfiConverterOptionInt32.write(value.exitCode, into: &buf)
+        FfiConverterOptionString.write(value.error, into: &buf)
+        FfiConverterUInt64.write(value.revision, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSteamGameSnapshot_lift(_ buf: RustBuffer) throws -> SteamGameSnapshot {
+    return try FfiConverterTypeSteamGameSnapshot.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSteamGameSnapshot_lower(_ value: SteamGameSnapshot) -> RustBuffer {
+    return FfiConverterTypeSteamGameSnapshot.lower(value)
+}
+
+
 public struct SteamGuardMethod: Equatable, Hashable {
     public var kind: SteamGuardKind
     public var message: String
@@ -3785,6 +3806,68 @@ public func FfiConverterTypeSteamProfile_lift(_ buf: RustBuffer) throws -> Steam
 #endif
 public func FfiConverterTypeSteamProfile_lower(_ value: SteamProfile) -> RustBuffer {
     return FfiConverterTypeSteamProfile.lower(value)
+}
+
+
+public struct SteamSupervisedTarget: Equatable, Hashable {
+    public var executable: String
+    public var arguments: [String]
+    public var workingDirectory: String
+    public var environment: [String: String]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(executable: String, arguments: [String], workingDirectory: String, environment: [String: String]) {
+        self.executable = executable
+        self.arguments = arguments
+        self.workingDirectory = workingDirectory
+        self.environment = environment
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SteamSupervisedTarget: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSteamSupervisedTarget: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SteamSupervisedTarget {
+        return
+            try SteamSupervisedTarget(
+                executable: FfiConverterString.read(from: &buf), 
+                arguments: FfiConverterSequenceString.read(from: &buf), 
+                workingDirectory: FfiConverterString.read(from: &buf), 
+                environment: FfiConverterDictionaryStringString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SteamSupervisedTarget, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.executable, into: &buf)
+        FfiConverterSequenceString.write(value.arguments, into: &buf)
+        FfiConverterString.write(value.workingDirectory, into: &buf)
+        FfiConverterDictionaryStringString.write(value.environment, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSteamSupervisedTarget_lift(_ buf: RustBuffer) throws -> SteamSupervisedTarget {
+    return try FfiConverterTypeSteamSupervisedTarget.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSteamSupervisedTarget_lower(_ value: SteamSupervisedTarget) -> RustBuffer {
+    return FfiConverterTypeSteamSupervisedTarget.lower(value)
 }
 
 
@@ -4686,6 +4769,86 @@ public func FfiConverterTypeSteamFriendsConnection_lower(_ value: SteamFriendsCo
 
 
 
+public enum SteamGamePhase: Equatable, Hashable {
+    
+    case preparing
+    case running
+    case finished
+    case failed
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension SteamGamePhase: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSteamGamePhase: FfiConverterRustBuffer {
+    typealias SwiftType = SteamGamePhase
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SteamGamePhase {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .preparing
+        
+        case 2: return .running
+        
+        case 3: return .finished
+        
+        case 4: return .failed
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: SteamGamePhase, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .preparing:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .running:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .finished:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .failed:
+            writeInt(&buf, Int32(4))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSteamGamePhase_lift(_ buf: RustBuffer) throws -> SteamGamePhase {
+    return try FfiConverterTypeSteamGamePhase.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSteamGamePhase_lower(_ value: SteamGamePhase) -> RustBuffer {
+    return FfiConverterTypeSteamGamePhase.lower(value)
+}
+
+
+
+
 public enum SteamGuardKind: Equatable, Hashable {
     
     case none
@@ -4862,6 +5025,72 @@ public func FfiConverterTypeSteamHostState_lift(_ buf: RustBuffer) throws -> Ste
 #endif
 public func FfiConverterTypeSteamHostState_lower(_ value: SteamHostState) -> RustBuffer {
     return FfiConverterTypeSteamHostState.lower(value)
+}
+
+
+
+
+public enum SteamSupervisorConnection: Equatable, Hashable {
+    
+    case connected
+    case reconnecting
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension SteamSupervisorConnection: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSteamSupervisorConnection: FfiConverterRustBuffer {
+    typealias SwiftType = SteamSupervisorConnection
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SteamSupervisorConnection {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .connected
+        
+        case 2: return .reconnecting
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: SteamSupervisorConnection, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .connected:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .reconnecting:
+            writeInt(&buf, Int32(2))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSteamSupervisorConnection_lift(_ buf: RustBuffer) throws -> SteamSupervisorConnection {
+    return try FfiConverterTypeSteamSupervisorConnection.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSteamSupervisorConnection_lower(_ value: SteamSupervisorConnection) -> RustBuffer {
+    return FfiConverterTypeSteamSupervisorConnection.lower(value)
 }
 
 
@@ -5157,6 +5386,30 @@ fileprivate struct FfiConverterOptionData: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterData.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeSteamGameSession: FfiConverterRustBuffer {
+    typealias SwiftType = SteamGameSession?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeSteamGameSession.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeSteamGameSession.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -5646,6 +5899,20 @@ public func steamNews(appId: UInt32)async throws  -> [SteamNews]  {
             errorHandler: FfiConverterTypeSteamError_lift
         )
 }
+public func recoverSteamGameSession(sessionDirectory: String, helper: String)async throws  -> SteamGameSession?  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_forge_bridge_fn_func_recover_steam_game_session(FfiConverterString.lower(sessionDirectory),FfiConverterString.lower(helper)
+                )
+            },
+            pollFunc: ffi_forge_bridge_rust_future_poll_rust_buffer,
+            completeFunc: ffi_forge_bridge_rust_future_complete_rust_buffer,
+            freeFunc: ffi_forge_bridge_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterOptionTypeSteamGameSession.lift,
+            errorHandler: FfiConverterTypeSteamError_lift
+        )
+}
 
 private enum InitializationResult {
     case ok
@@ -5681,6 +5948,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_forge_bridge_checksum_func_steam_news() != 1536) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_forge_bridge_checksum_func_recover_steam_game_session() != 8495) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_forge_bridge_checksum_method_library_add_local_game() != 50097) {
@@ -5791,31 +6061,16 @@ private let initializationResult: InitializationResult = {
     if (uniffi_forge_bridge_checksum_method_steamfriendsfixture_receive() != 25591) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_forge_bridge_checksum_method_steamgamesession_cancel_preparation() != 38545) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_forge_bridge_checksum_method_steamgamesession_snapshot() != 61725) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_forge_bridge_checksum_method_steamnativelaunch_cancel() != 28509) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_forge_bridge_checksum_method_steamnativelaunch_prepare() != 23634) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_forge_bridge_checksum_method_steamnativeruntime_adapter_path() != 49913) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_forge_bridge_checksum_method_steamnativeruntime_diagnostic_path() != 49412) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_forge_bridge_checksum_method_steamnativeruntime_discovery_service() != 52908) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_forge_bridge_checksum_method_steamnativeruntime_environment() != 42883) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_forge_bridge_checksum_method_steamnativeruntime_game_started() != 19965) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_forge_bridge_checksum_method_steamnativeruntime_next_state() != 39500) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_forge_bridge_checksum_method_steamnativeruntime_stop() != 9690) {
+    if (uniffi_forge_bridge_checksum_method_steamnativelaunch_start_game() != 29228) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_forge_bridge_checksum_constructor_library_new() != 16986) {

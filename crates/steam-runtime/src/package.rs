@@ -4,7 +4,7 @@ use crate::{Config, Error};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fs::{self, File},
     io::{Read, Write},
     path::{Path, PathBuf},
@@ -15,8 +15,9 @@ use std::{
 };
 
 const MANIFEST: &str = include_str!("../runtime-manifest.json");
-pub(crate) const HELPERS: [&str; 2] =
-    ["forge-steam-host", "libforge_steam_discovery_adapter.dylib"];
+pub(crate) const HOST: &str = "forge-steam-host";
+pub(crate) const ADAPTER: &str = "libforge_steam_discovery_adapter.dylib";
+pub(crate) const HELPERS: [&str; 2] = [HOST, ADAPTER];
 
 #[derive(Deserialize)]
 pub struct Manifest {
@@ -70,25 +71,9 @@ fn is_directory(path: &Path) -> Result<(), Error> {
         Err(Error::VersionMismatch)
     }
 }
-fn directories(root: &Path, path: &Path) -> Result<(), Error> {
-    let relative = path
-        .strip_prefix(root)
-        .map_err(|_| Error::VersionMismatch)?;
-    is_directory(root)?;
-    let mut parent = root.to_path_buf();
-    for component in relative.components() {
-        let std::path::Component::Normal(name) = component else {
-            return Err(Error::VersionMismatch);
-        };
-        parent.push(name);
-        is_directory(&parent)?;
-    }
-    Ok(())
-}
 fn verify_file(root: &Path, entry: &PayloadFile, cancelled: &AtomicBool) -> Result<(), Error> {
     check(cancelled)?;
     let path = root.join(&entry.path);
-    directories(root, path.parent().ok_or(Error::VersionMismatch)?)?;
     let metadata = regular(&path)?;
     if metadata.len() != entry.size || crate::sha(&path)? != entry.sha256 {
         return Err(Error::VersionMismatch);
@@ -96,43 +81,57 @@ fn verify_file(root: &Path, entry: &PayloadFile, cancelled: &AtomicBool) -> Resu
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        if entry.path == HELPERS[0] && metadata.permissions().mode() & 0o100 == 0 {
+        if entry.path == HOST && metadata.permissions().mode() & 0o100 == 0 {
             return Err(Error::VersionMismatch);
         }
     }
     Ok(())
 }
 fn verify_tree(root: &Path, entries: &[PayloadFile], cancelled: &AtomicBool) -> Result<(), Error> {
-    directories(root, root)?;
-    let mut allowed = BTreeSet::new();
+    is_directory(root)?;
+    let mut files = BTreeMap::new();
+    let mut directories = BTreeSet::new();
     for entry in entries {
-        verify_file(root, entry, cancelled)?;
-        let mut path = Path::new(&entry.path);
-        while !path.as_os_str().is_empty() {
-            allowed.insert(path.to_path_buf());
-            path = path.parent().ok_or(Error::VersionMismatch)?;
+        let path = Path::new(&entry.path);
+        if path.as_os_str().is_empty()
+            || path
+                .components()
+                .any(|c| !matches!(c, std::path::Component::Normal(_)))
+            || files.insert(path.to_path_buf(), entry).is_some()
+        {
+            return Err(Error::VersionMismatch);
+        }
+        let mut parent = path.parent();
+        while let Some(path) = parent.filter(|p| !p.as_os_str().is_empty()) {
+            directories.insert(path.to_path_buf());
+            parent = path.parent();
         }
     }
+    // Validate each ancestor before descending, and each regular file before
+    // hashing. No unvalidated path is opened, including symlinked parents.
     let mut pending = vec![root.to_path_buf()];
     while let Some(directory) = pending.pop() {
+        is_directory(&directory)?;
         for entry in fs::read_dir(directory)? {
             check(cancelled)?;
             let entry = entry?;
-            if !allowed.contains(
-                entry
-                    .path()
-                    .strip_prefix(root)
-                    .map_err(|_| Error::VersionMismatch)?,
-            ) {
-                return Err(Error::VersionMismatch);
-            }
+            let path = entry.path();
+            let relative = path
+                .strip_prefix(root)
+                .map_err(|_| Error::VersionMismatch)?;
             let kind = entry.file_type()?;
-            if kind.is_dir() {
-                pending.push(entry.path());
-            } else if !kind.is_file() {
+            if kind.is_dir() && directories.contains(relative) {
+                pending.push(path);
+            } else if kind.is_file() {
+                let expected = files.remove(relative).ok_or(Error::VersionMismatch)?;
+                verify_file(root, expected, cancelled)?;
+            } else {
                 return Err(Error::VersionMismatch);
             }
         }
+    }
+    if !files.is_empty() {
+        return Err(Error::VersionMismatch);
     }
     Ok(())
 }
@@ -227,7 +226,7 @@ fn prepare_with(
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            if name == HELPERS[0] && metadata.permissions().mode() & 0o100 == 0 {
+            if name == HOST && metadata.permissions().mode() & 0o100 == 0 {
                 return Err(Error::Unavailable);
             }
         }

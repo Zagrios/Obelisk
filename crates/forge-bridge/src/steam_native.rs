@@ -44,42 +44,32 @@ impl SteamNativeLaunch {
     pub fn cancel(&self) {
         self.launch.cancel();
     }
-    pub async fn prepare(
+    pub async fn start_game(
         &self,
         configuration: SteamNativeConfiguration,
-    ) -> Result<Arc<SteamNativeRuntime>, SteamError> {
+        target: SteamSupervisedTarget,
+        session_directory: String,
+    ) -> Result<Arc<SteamGameSession>, SteamError> {
         let launch = self.launch.clone();
-        let SteamNativeConfiguration {
-            app_id,
-            helpers,
-            package,
-            cache,
-            diagnostics,
-            steam_api,
-            home,
-        } = configuration;
-        let runtime = tokio::task::spawn_blocking(move || {
-            launch.prepare(steam_runtime::Config {
-                app_id,
-                helpers: helpers.into(),
-                package: package.into(),
-                cache: cache.into(),
-                diagnostics: diagnostics.into(),
-                steam_api: steam_api.into(),
-                home: home.into(),
-            })
+        tokio::task::spawn_blocking(move || {
+            let client = launch.start_supervised(steam_runtime::supervisor::Request {
+                root: session_directory.into(),
+                id: String::new(),
+                config: configuration.into(),
+                target: steam_runtime::supervisor::Target {
+                    executable: target.executable.into(),
+                    arguments: target.arguments,
+                    working_directory: target.working_directory.into(),
+                    environment: target.environment,
+                },
+            })?;
+            Ok(Arc::new(SteamGameSession {
+                client: Arc::new(client),
+            }))
         })
         .await
-        .map_err(|_| steam_runtime::Error::StartFailed)??;
-        Ok(Arc::new(SteamNativeRuntime {
-            runtime: Arc::new(runtime),
-        }))
+        .map_err(|_| steam_runtime::Error::StartFailed)?
     }
-}
-
-#[derive(uniffi::Object)]
-pub struct SteamNativeRuntime {
-    runtime: Arc<steam_runtime::Runtime>,
 }
 
 #[derive(Clone, Copy, Debug, uniffi::Enum)]
@@ -100,42 +90,121 @@ impl From<steam_runtime::HostState> for SteamHostState {
         }
     }
 }
-impl From<SteamHostState> for steam_runtime::HostState {
-    fn from(value: SteamHostState) -> Self {
-        match value {
-            SteamHostState::Online => Self::Online,
-            SteamHostState::Disconnected => Self::Disconnected,
-            SteamHostState::Lost => Self::Lost,
-            SteamHostState::Stopped => Self::Stopped,
+
+impl From<SteamNativeConfiguration> for steam_runtime::Config {
+    fn from(c: SteamNativeConfiguration) -> Self {
+        Self {
+            app_id: c.app_id,
+            helpers: c.helpers.into(),
+            package: c.package.into(),
+            cache: c.cache.into(),
+            diagnostics: c.diagnostics.into(),
+            steam_api: c.steam_api.into(),
+            home: c.home.into(),
         }
     }
 }
 
+#[derive(uniffi::Record)]
+pub struct SteamSupervisedTarget {
+    pub executable: String,
+    pub arguments: Vec<String>,
+    pub working_directory: String,
+    pub environment: std::collections::HashMap<String, String>,
+}
+
+#[derive(Clone, Copy, Debug, uniffi::Enum)]
+pub enum SteamGamePhase {
+    Preparing,
+    Running,
+    Finished,
+    Failed,
+}
+impl From<steam_runtime::supervisor::Phase> for SteamGamePhase {
+    fn from(phase: steam_runtime::supervisor::Phase) -> Self {
+        use steam_runtime::supervisor::Phase;
+        match phase {
+            Phase::Preparing => Self::Preparing,
+            Phase::Running => Self::Running,
+            Phase::Finished => Self::Finished,
+            Phase::Failed => Self::Failed,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, uniffi::Enum)]
+pub enum SteamSupervisorConnection {
+    Connected,
+    Reconnecting,
+}
+
+#[derive(uniffi::Record)]
+pub struct SteamGameSnapshot {
+    pub id: String,
+    pub app_id: u32,
+    pub phase: SteamGamePhase,
+    pub connection: SteamSupervisorConnection,
+    pub host: SteamHostState,
+    pub exit_code: Option<i32>,
+    pub error: Option<String>,
+    pub revision: u64,
+}
+
+impl From<steam_runtime::supervisor::Snapshot> for SteamGameSnapshot {
+    fn from(s: steam_runtime::supervisor::Snapshot) -> Self {
+        Self {
+            phase: s.phase.into(),
+            connection: if s.reconnecting {
+                SteamSupervisorConnection::Reconnecting
+            } else {
+                SteamSupervisorConnection::Connected
+            },
+            id: s.id,
+            app_id: s.app_id,
+            host: s.host.into(),
+            exit_code: s.exit_code,
+            error: s.error,
+            revision: s.revision,
+        }
+    }
+}
+
+#[derive(uniffi::Object)]
+pub struct SteamGameSession {
+    client: Arc<steam_runtime::supervisor::Client>,
+}
+
 #[uniffi::export(async_runtime = "tokio")]
-impl SteamNativeRuntime {
-    pub async fn next_state(&self, previous: SteamHostState) -> SteamHostState {
-        let runtime = self.runtime.clone();
-        tokio::task::spawn_blocking(move || runtime.next_state(previous.into()))
-            .await
-            .map(Into::into)
-            .unwrap_or(SteamHostState::Lost)
+impl SteamGameSession {
+    pub async fn snapshot(&self, after: Option<u64>) -> Result<SteamGameSnapshot, SteamError> {
+        let client = self.client.clone();
+        tokio::task::spawn_blocking(move || {
+            client.snapshot(after).map(Into::into).map_err(Into::into)
+        })
+        .await
+        .map_err(|_| steam_runtime::Error::StartFailed)?
     }
-    pub fn environment(&self) -> std::collections::HashMap<String, String> {
-        self.runtime.environment()
+    pub fn cancel_preparation(&self) {
+        self.client.cancel_preparation();
     }
-    pub fn adapter_path(&self) -> String {
-        self.runtime.adapter()
-    }
-    pub fn discovery_service(&self) -> String {
-        self.runtime.service()
-    }
-    pub fn diagnostic_path(&self) -> String {
-        self.runtime.diagnostic_path()
-    }
-    pub fn game_started(&self, pid: u32) -> Result<(), SteamError> {
-        self.runtime.started(pid).map_err(Into::into)
-    }
-    pub fn stop(&self, exit_code: Option<i32>) {
-        self.runtime.stopped(exit_code);
-    }
+}
+
+#[uniffi::export(async_runtime = "tokio")]
+pub async fn recover_steam_game_session(
+    session_directory: String,
+    helper: String,
+) -> Result<Option<Arc<SteamGameSession>>, SteamError> {
+    tokio::task::spawn_blocking(move || {
+        Ok(steam_runtime::supervisor::Client::recover(
+            std::path::Path::new(&session_directory),
+            std::path::Path::new(&helper),
+        )?
+        .map(|client| {
+            Arc::new(SteamGameSession {
+                client: Arc::new(client),
+            })
+        }))
+    })
+    .await
+    .map_err(|_| steam_runtime::Error::StartFailed)?
 }

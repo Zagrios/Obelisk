@@ -72,7 +72,13 @@ final class SteamModel {
     private(set) var isLoadingNews = false
     private(set) var detailsError: String?
     private(set) var newsError: String?
-    private(set) var platform = "windows"
+    var platform: String {
+        if let details, details.appId == selectedGame?.appId { return details.preferredPlatform }
+        // Installation receipts are available before remote details. Never use
+        // the previous game's platform to present the newly selected game.
+        return installations.contains { $0.appId == selectedGame?.appId && $0.platform == "macos" }
+            ? "macos" : "windows"
+    }
     private(set) var language: String
     private(set) var transfer: SteamTransfer?
     private(set) var isDownloading = false
@@ -184,9 +190,18 @@ final class SteamModel {
         isConnected && selectedInstallation != nil && canModifyInstallation(of: selectedGame?.appId)
     }
 
+    /// The active session when it belongs to the game on screen.
+    private var selectedGameSession: SteamGameSessions.Session? {
+        guard let active = gameSessions.active, active.appId == selectedGame?.appId else { return nil }
+        return active
+    }
+
     var gameSessionMessage: String? {
-        guard let active = gameSessions.active else { return nil }
-        if active.appId != selectedGame?.appId { return L10n.string("model.steam.otherGameRunning") }
+        if gameSessions.isRecovering { return L10n.string("model.steam.recoveringSession") }
+        if let error = gameSessions.recoveryError { return error }
+        guard gameSessions.active != nil else { return nil }
+        guard let active = selectedGameSession else { return L10n.string("model.steam.otherGameRunning") }
+        if active.connection == .reconnecting { return L10n.string("model.steam.recoveringSession") }
         switch active.host {
         case .disconnected: return L10n.string("model.steam.gameDisconnected")
         case .lost: return L10n.string("model.steam.gameHostLost")
@@ -195,18 +210,21 @@ final class SteamModel {
     }
 
     var primaryActionTitle: String {
-        if let active = gameSessions.active, active.appId == selectedGame?.appId, active.running {
-            return L10n.string("model.steam.running")
-        }
+        if gameSessions.isRecovering { return L10n.string("model.steam.recoveringSession") }
+        if selectedGameSession?.running == true { return L10n.string("model.steam.running") }
         if isUninstalling && uninstallAppId == selectedGame?.appId { return L10n.string("model.game.uninstalling") }
         if isLaunching && launchAppId == selectedGame?.appId {
             return isVerifyingBeforeLaunch ? L10n.string("model.steam.verifying") : L10n.string("model.steam.launching")
         }
+        if selectedGameSession != nil { return L10n.string("model.steam.launching") }
         if selectedInstallation != nil { return L10n.string("model.steam.launch") }
         return canResumeDownload ? L10n.string("model.steam.resume") : L10n.string("model.steam.download")
     }
 
-    var primaryActionSymbol: String { selectedInstallation == nil ? "arrow.down" : "play.fill" }
+    var primaryActionSymbol: String {
+        if selectedGameSession != nil { return "play.fill" }
+        return selectedInstallation == nil ? "arrow.down" : "play.fill"
+    }
 
     var primaryActionAvailable: Bool {
         guard let selectedGame, let details, details.appId == selectedGame.appId else { return false }
@@ -708,7 +726,6 @@ final class SteamModel {
                 let loaded = try await session.details(appId: game.appId, language: requestedLanguage)
                 guard current == generation && self.session === session && selection == detailGeneration && detailsRequest == detailsRequestGeneration else { return }
                 details = loaded
-                platform = loaded.preferredPlatform
                 isLoadingDetails = false
             } catch {
                 guard current == generation && self.session === session && selection == detailGeneration && detailsRequest == detailsRequestGeneration else { return }
@@ -835,7 +852,7 @@ final class SteamModel {
                 let sessions = gameSessions
                 try await executeLaunch(plan, credentials) { [weak self] event in
                     sessions.receive(event, for: reservation)
-                    if case .running = event, let self, self.generation == current {
+                    if case .phase(.running) = event, let self, self.generation == current {
                         self.isLaunching = false
                     }
                 }

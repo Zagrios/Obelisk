@@ -11,10 +11,15 @@ fn run() -> i32 {
     if native::disable_core_dumps().is_err() || native::translated() {
         return 2;
     }
+    let args: Vec<_> = std::env::args().collect();
+    match args.get(1).map(String::as_str) {
+        Some("process-identity") => return process_identity(args.get(2)),
+        Some("supervise") => return supervise(),
+        _ => {}
+    }
     let Ok(mut output) = host::event_pipe() else {
         return 2;
     };
-    let args: Vec<_> = std::env::args().collect();
     let result = match args.get(1).map(String::as_str) {
         // Offline packaging validation: load pinned libraries and resolve the
         // engine factories only. No global user, credentials or network login.
@@ -56,4 +61,31 @@ fn run() -> i32 {
             1
         }
     }
+}
+
+fn process_identity(argument: Option<&String>) -> i32 {
+    let Some(pid) = argument.and_then(|s| s.parse::<u32>().ok()) else {
+        return 2;
+    };
+    let identity = native::process_identity(pid);
+    if identity.is_none() && !native::process_is_absent(pid) {
+        return 1;
+    }
+    use std::io::Write;
+    let mut output = std::io::stdout().lock();
+    let written = serde_json::to_writer(&mut output, &identity).is_ok()
+        && output.write_all(b"\n").is_ok()
+        && output.flush().is_ok();
+    i32::from(!written)
+}
+
+fn supervise() -> i32 {
+    let served = native::detach_supervisor().is_ok()
+        && steam_runtime::supervisor::serve(
+            std::io::stdin().lock(),
+            std::io::stderr().lock(),
+            native::process_identity,
+        )
+        .is_ok();
+    i32::from(!served)
 }

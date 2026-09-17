@@ -5,11 +5,12 @@ pub mod package;
 pub mod packaging;
 mod process;
 pub mod protocol;
+pub mod supervisor;
 use protocol::{Credentials, Event};
 use std::{
     path::PathBuf,
     sync::{
-        Arc, Condvar, Mutex,
+        Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
     time::{Duration, Instant},
@@ -29,6 +30,8 @@ pub fn sha(path: &std::path::Path) -> std::io::Result<String> {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("backend.steam.runtime.sessionBusy")]
+    SessionBusy,
     #[error("backend.steam.runtime.cancelled")]
     Cancelled,
     #[error("backend.steam.runtime.invalidSession")]
@@ -56,6 +59,7 @@ impl From<std::io::Error> for Error {
     }
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct Config {
     pub helpers: PathBuf,
     pub package: PathBuf,
@@ -79,6 +83,21 @@ impl Launch {
     }
     pub fn cancel(&self) {
         self.cancelled.store(true, Ordering::Release);
+    }
+    pub fn start_supervised(
+        &self,
+        mut request: supervisor::Request,
+    ) -> Result<supervisor::Client, Error> {
+        self.check_cancelled()?;
+        let credentials = self
+            .credentials
+            .lock()
+            .map_err(|_| Error::InvalidSession)?
+            .take()
+            .ok_or(Error::InvalidSession)?;
+        request.id = uuid::Uuid::new_v4().to_string();
+        let helper = request.config.helpers.join(package::HOST);
+        supervisor::start(&helper, &credentials, request, &self.cancelled)
     }
     pub fn prepare(&self, config: Config) -> Result<Runtime, Error> {
         let mut events = Vec::new();
@@ -164,16 +183,15 @@ impl Launch {
             host_state: HostState::Online,
             state: "ready".into(),
         };
+        let wakeup = host.wakeup.clone();
         let runtime = Runtime {
             inner: Mutex::new(Inner {
                 host,
                 proof,
                 stopped: false,
             }),
-            wakeup: Condvar::new(),
-            adapter: prepared
-                .directory
-                .join("libforge_steam_discovery_adapter.dylib"),
+            wakeup,
+            adapter: prepared.directory.join(package::ADAPTER),
             service,
             report: prepared.report.clone(),
             _prepared: prepared,
@@ -248,7 +266,7 @@ pub struct Proof {
     pub state: String,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HostState {
     Online,
@@ -263,7 +281,7 @@ struct Inner {
 }
 pub struct Runtime {
     inner: Mutex<Inner>,
-    wakeup: Condvar,
+    wakeup: Arc<process::Wake>,
     adapter: PathBuf,
     service: String,
     report: PathBuf,
@@ -295,12 +313,13 @@ impl Runtime {
         files::report(&self.report, &inner.proof)
     }
     /// Wait on the private event pipe, independently of the UI. `stopped` wakes
-    /// this bounded wait; Swift task cancellation must not abandon a live game.
+    /// this wait; Swift task cancellation must not abandon a live game.
     pub fn next_state(&self, previous: HostState) -> HostState {
-        let Ok(mut inner) = self.inner.lock() else {
-            return HostState::Lost;
-        };
         loop {
+            let generation = self.wakeup.generation();
+            let Ok(mut inner) = self.inner.lock() else {
+                return HostState::Lost;
+            };
             if inner.stopped {
                 return HostState::Stopped;
             }
@@ -323,11 +342,9 @@ impl Runtime {
             if inner.proof.host_state != previous {
                 return inner.proof.host_state;
             }
-            // Releases the mutex, so game termination never waits on this observer.
-            let Ok((held, _)) = self.wakeup.wait_timeout(inner, Duration::from_millis(250)) else {
-                return HostState::Lost;
-            };
-            inner = held;
+            // Never hold the runtime mutex while waiting for pipe input.
+            drop(inner);
+            self.wakeup.wait(generation);
         }
     }
     pub fn stopped(&self, exit: Option<i32>) {
@@ -346,7 +363,7 @@ impl Runtime {
             }
             .into();
             let _ = files::report(&self.report, &inner.proof);
-            self.wakeup.notify_all();
+            self.wakeup.notify();
         }
     }
     fn drain(inner: &mut Inner) {
@@ -394,8 +411,9 @@ mod tests {
         command.arg("-c").arg(script);
         process::Child::spawn(command).unwrap()
     }
-    fn runtime(script: &str, root: &std::path::Path) -> Runtime {
+    pub(crate) fn runtime(script: &str, root: &std::path::Path) -> Runtime {
         let host = child(script);
+        let wakeup = host.wakeup.clone();
         Runtime {
             inner: Mutex::new(Inner {
                 proof: Proof {
@@ -416,7 +434,7 @@ mod tests {
                 host,
                 stopped: false,
             }),
-            wakeup: Condvar::new(),
+            wakeup,
             adapter: root.join("adapter"),
             service: "fixture".into(),
             report: root.join("report.json"),

@@ -2,10 +2,36 @@ use crate::{Config, Error, files::Prepared, protocol::Event};
 use std::{
     io::{BufRead, BufReader, Read},
     process::{ChildStdin, Command, Stdio},
-    sync::mpsc::{self, Receiver, RecvTimeoutError},
+    sync::{
+        Arc, Condvar, Mutex,
+        mpsc::{self, Receiver, RecvTimeoutError},
+    },
     thread::JoinHandle,
     time::{Duration, Instant},
 };
+
+/// Generation-based notifications avoid losing an event between drain and wait.
+#[derive(Default)]
+pub(crate) struct Wake {
+    generation: Mutex<u64>,
+    changed: Condvar,
+}
+impl Wake {
+    pub fn generation(&self) -> u64 {
+        *self.generation.lock().unwrap()
+    }
+    pub fn notify(&self) {
+        *self.generation.lock().unwrap() += 1;
+        self.changed.notify_all();
+    }
+    pub fn wait(&self, previous: u64) {
+        drop(
+            self.changed
+                .wait_while(self.generation.lock().unwrap(), |g| *g == previous)
+                .unwrap(),
+        );
+    }
+}
 
 pub(crate) struct Child {
     child: std::process::Child,
@@ -13,6 +39,7 @@ pub(crate) struct Child {
     events: Receiver<Event>,
     reader: Option<JoinHandle<()>>,
     reaped: bool,
+    pub wakeup: Arc<Wake>,
 }
 impl Child {
     pub fn host(prepared: &Prepared, config: &Config, service: &str) -> Result<Self, Error> {
@@ -23,7 +50,7 @@ impl Child {
         command
             .arg("-f")
             .arg(&prepared.profile)
-            .arg(prepared.directory.join("forge-steam-host"))
+            .arg(prepared.directory.join(crate::package::HOST))
             .arg("engine")
             .arg(prepared.directory.join("steamclient.dylib"))
             .arg(config.app_id.to_string())
@@ -41,7 +68,7 @@ impl Child {
         Self::spawn(Self::checker_command(prepared, config, service))
     }
     fn checker_command(prepared: &Prepared, config: &Config, service: &str) -> Command {
-        let mut command = Command::new(prepared.directory.join("forge-steam-host"));
+        let mut command = Command::new(prepared.directory.join(crate::package::HOST));
         command
             .arg("check")
             .arg(&config.steam_api)
@@ -67,6 +94,8 @@ impl Child {
         let input = child.stdin.take();
         let output = child.stdout.take().ok_or(Error::StartFailed)?;
         let (sender, events) = mpsc::sync_channel(64);
+        let wakeup = Arc::new(Wake::default());
+        let changed = wakeup.clone();
         let reader = std::thread::spawn(move || {
             let mut reader = BufReader::new(output);
             loop {
@@ -83,7 +112,11 @@ impl Child {
                 if sender.try_send(event).is_err() {
                     break;
                 }
+                changed.notify();
             }
+            // Disconnect first, then notify: observers must see EOF on wakeup.
+            drop(sender);
+            changed.notify();
         });
         Ok(Self {
             child,
@@ -91,6 +124,7 @@ impl Child {
             events,
             reader: Some(reader),
             reaped: false,
+            wakeup,
         })
     }
     pub fn id(&self) -> u32 {

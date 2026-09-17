@@ -1,8 +1,8 @@
 # Native Steam launches from Forge
 
-Forge's existing Launch button now starts a Rust Steam host before the native
-macOS game. It passes the session already held by `SteamModel` through a private
-stdin pipe. No extra screen, login, Keychain query or user action is involved.
+Forge's existing Launch button starts a separate Rust supervisor, which starts
+the Steam host before the native macOS game. It passes the session already held
+by `SteamModel` through a one-time private stdin pipe. No extra screen, login, Keychain query or user action is involved.
 
 The app bundles a minimal, hash-pinned Valve runtime archive. The host loads its
 original libraries from a verified private cache prepared from that archive. It
@@ -25,14 +25,18 @@ fixed the failure. A regression test covers all three consumers' environment.
 - `crates/steam-native` is a separate workspace for the Rust executable, private
   ABI calls, Mach transport and discovery adapter. The main workspace retains
   `unsafe_code = "forbid"`.
-- `crates/forge-bridge/src/steam_native.rs` exposes one launch attempt and its
-  runtime. Swift cancellation explicitly reaches the blocking Rust operation.
-- `SteamGameLauncher` waits for the actual game process to exit, then stops the
-  runtime and finishes its observer. A shared, observable `SteamGameSessions`
-  reservation spans preparation through teardown, including account sign-out.
-  Closing the private pipe still stops the host if Forge exits. Authentication
-  failure, cancellation before spawning or failed SDK validation cleans up the
-  helper and scratch home.
+- `crates/forge-bridge/src/steam_native.rs` exposes a supervised launch and a
+  reconnectable game-session client. Swift cancellation explicitly cancels
+  preparation; dropping the client only detaches the interface.
+- `forge-steam-host supervise` runs outside the Valve host sandbox, in a separate
+  process session. It owns the host's private pipe and the game child process.
+  The `engine` child retains the existing sandbox and ABI boundary. Forge can
+  exit or crash without closing the host's pipe.
+- `SteamGameLauncher` observes supervisor snapshots. The shared, observable
+  `SteamGameSessions` reservation spans preparation through teardown and account
+  sign-out, and restores an existing session when a new Forge process starts.
+  Authentication failure, cancellation before spawning or failed SDK validation
+  cleans up the host and scratch home.
 - `scripts/build-steam-native.sh` builds and signs both helpers in Forge's bundle.
   Only the helper has the entitlements needed to load Valve libraries and use
   DYLD discovery. Forge's Keychain identity remains unchanged.
@@ -55,23 +59,28 @@ verification and uninstall entry points reject operations on the reserved App ID
 including through a replacement account session. Other games can still download
 while a game is running.
 
-The Rust supervisor consumes the host's typed event pipe through an asynchronous
-UniFFI wait. Network disconnection, reconnection and host loss are distinct states.
+The independent Rust supervisor consumes the host's typed event pipe. The UI
+observes snapshots through a private Unix socket and an asynchronous UniFFI wait.
+UniFFI exposes the supervisor's `Preparing`, `Running`, `Finished` and `Failed`
+phases directly. Control reconnection is separate from both game phase and Steam
+host state: an IPC error or failed identity query does not declare the host dead.
+The Rust client retains its last observed snapshot and paces retries at 500 ms;
+Swift presents those states without its own transport retry timer.
+Network disconnection, reconnection and host loss are distinct states.
 Disconnection and loss appear in the game details without releasing the session
 or terminating the game. Diagnostics retain the last `host_state` separately from
 `game_started`/`game_exited`, so the final exit record does not erase host failure.
 No credentials or native log payloads are added to those records.
 
-Once `Process.run` succeeds, Swift task cancellation does not terminate or abandon
-the game. It waits for process exit even if the account signs out. A failed
+Once the supervisor spawns the game, Swift task cancellation does not terminate
+or abandon it. The supervisor waits for process exit even if the account signs out. A failed
 post-spawn diagnostic write or host death likewise cannot trigger termination.
 A nonzero game exit reports an error and releases the session after cleanup.
 Reservation IDs reject late events or cleanup from a previous session.
 
 This tracks the directly launched process. Games that hand execution to another
-process need separate compatibility work. Surviving Forge termination, reattaching
-after a Forge crash, and recovering Steamworks inside a game after host loss are
-not implemented. Steam Cloud is unchanged.
+process need separate compatibility work. Recovering Steamworks inside a game
+after host loss is not implemented. Steam Cloud is unchanged.
 
 Tests use disposable processes and injected session events for cancellation after
 spawn, immediate/nonzero exit, failed spawn, duplicate requests, file-operation
@@ -81,6 +90,73 @@ These controls are separate from authenticated Silksong checks. The September 17
 237 main-workspace Rust tests, one native test, 183 Swift tests with nine skips
 and no failures, app signature verification and isolated runtime loading. No
 real game or save was used to validate these session changes.
+
+## Surviving Forge closure and crash
+
+The supervisor receives its bounded launch request and credentials once over a
+private Unix socket pair mapped to stdin and stderr. After publishing its initial
+record and starting its control listener, it acknowledges the session over that
+same channel. The client bounds the reply wait at 15 seconds; it no longer polls
+`session.json` during startup. Failed acknowledgement triggers durable recovery,
+and losing the parent never revokes an accepted launch. Neither endpoint is a log
+or a source of credentials after handoff. No further input from Forge is needed.
+A new process session prevents a terminal/process-group shutdown of Forge from taking
+it down. The supervisor remains only for preparation and the game lifetime; no
+login item or persistent system service is installed.
+
+A private `SteamSessions` directory under
+`~/Library/Application Support/com.zagrios.forge/` holds launch/owner locks and
+atomic session metadata. Each session has a UUID, App ID, account ID, supervisor
+and game identity, socket address and final status. Credentials and ownership
+tickets are never written there. Directories use mode 0700 and records mode 0600.
+Session metadata and diagnostics share a unique-temporary-file/rename helper;
+session writes retain file `fsync`, while diagnostic writes remain best effort.
+This preserves the existing file durability policy, not a new directory-fsync
+or power-loss recovery guarantee.
+A separate short, random 0700 directory under `/tmp` holds the control socket to
+respect macOS socket-path limits even with long home-directory names.
+
+The supervisor holds an exclusive file lock for its lifetime. Launch admission
+also uses a startup lock. A blocking lock waiter allows one second for the old
+owner's terminal teardown; after timeout it retains the startup lock until the
+owner releases, preventing additional waiters or competing launches.
+A client validates UID, executable path and libproc's
+kernel birth timestamp, including microseconds, before connecting to a recorded
+supervisor. Responses must match the session UUID, account, App ID and supervisor
+identity. Stale PID reuse does not establish a session. Normal observation waits
+for state changes over the socket, with a bounded timeout for lost connections.
+The control listener blocks in `accept` and receives an explicit shutdown wakeup.
+The host pipe reader signals a generation-based condition variable on events and
+EOF, replacing the runtime's periodic 250 ms wakeup. Game exit also wakes it.
+If the control socket is removed externally, process teardown does not wait on
+an unreachable listener.
+
+At startup, Swift blocks Steam installation operations and launches until
+recovery completes. A recovered running game restores the Running action and
+its App ID's installation guards, independently of account authentication. The
+supervisor reaps its game child, stops the host, publishes the final status and
+removes the socket/scratch directory even if Forge never reopens. Private final
+metadata remains available to a late observer, including after another session
+starts. Automatic metadata/cache retention cleanup is separate work.
+
+A supervisor crash is different from an interface crash. If the supervisor is
+lost, the game identity is checked before retaining the reservation; the UI
+reports host loss and keeps protecting the game until that exact process exits.
+This exceptional path rechecks process identity, without restarting Steamworks.
+Unreadable metadata, failed identity queries or an ambiguous running record keep
+operations blocked. An orphan's exit code cannot be recovered from libproc.
+
+[Supervisor validation](evidence/steam-supervisor-lifecycle-2026-09-17.json) covers
+normal detach, a killed disposable UI parent, reattachment, duplicate rejection,
+preparation cancellation, failed spawn, immediate/nonzero exit, host loss,
+supervisor loss, PID identity mismatch, and recovered Swift actions/guards.
+[Refinement validation](evidence/steam-supervisor-refinement-2026-09-17.json)
+adds lost acknowledgements, control reconnection, lock deadlines, unreadable
+metadata, socket removal, atomic-write rollback and equal-size/equal-mtime tampering.
+These tests launch disposable processes, not Silksong. The user separately
+reported successful Silksong quit/reopen and action-state checks before this
+refinement; these latest changes have not been retested with a real game. Existing games
+launched by the previous implementation have no recoverable supervisor record.
 
 ## Bundled runtime preparation
 
@@ -121,7 +197,11 @@ At game launch, the Rust supervisor verifies a cache generation identified by th
 payload and bundled-helper hashes. If necessary, it extracts the embedded ZIP
 into a private staging directory, checking exact paths, entry types, byte lengths
 and SHA-256. It copies Forge's signed helpers alongside the engine, verifies the
-whole tree, and publishes a unique generation by rename. No runtime download,
+whole tree, and publishes a unique generation by rename. Validation descends only
+through checked directories, rejects symlinked ancestors and files, and hashes
+every expected regular file in one traversal. Full hashing remains mandatory:
+a stamp, matching size or matching modification time cannot prove unchanged
+contents. No runtime download,
 Steam installation lookup, Keychain read or additional UI is involved.
 
 An invalid cache is repaired from the app bundle into a new generation. Existing
@@ -241,6 +321,6 @@ so another process taking the port can cause a failed launch. Valve libraries ar
 embedded in the local app bundle; they are not versioned in the repository.
 
 Steam Cloud is not integrated. The game uses its normal local save location.
-Closing Forge stops its host, even if the game remains open. Preserving a session
-across Forge termination, achievements, playtime and online-game behavior remain
-separate tasks.
+The supervisor preserves new sessions across Forge closure or crash. Authenticated
+Silksong validation of this new ownership path, achievements, playtime and
+online-game behavior remain separate checks.

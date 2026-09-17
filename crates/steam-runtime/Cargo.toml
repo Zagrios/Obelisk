@@ -14,6 +14,8 @@ sha2 = "0.10"
 zeroize = { version = "1", features = ["derive"] }
 tempfile.workspace = true
 zip = { version = "=8.2.0", default-features = false, features = ["deflate-flate2"] }
+# zip pulls flate2 without a backend; this selects rust_backend for the
+# standalone steam-native workspace, where no other crate unifies it in.
 flate2.workspace = true
 reqwest = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }

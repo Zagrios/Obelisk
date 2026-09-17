@@ -8939,6 +8939,38 @@
           }
         }
       }
+    },
+    "backend.steam.runtime.sessionBusy": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A Steam game session is already active or is being recovered."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Une session de jeu Steam est déjà active ou en cours de récupération."
+          }
+        }
+      }
+    },
+    "model.steam.recoveringSession": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recovering the Steam game session…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Récupération de la session de jeu Steam…"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

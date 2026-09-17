@@ -14,7 +14,9 @@ esac
 # Acquisition happens at build time from hash-pinned Valve CDN archives, never
 # from an installed Steam client. The app ships the verified minimal payload.
 RUNTIME_PACKAGE="$PROJECT_ROOT/build/steam-runtime/runtime.zip"
-CARGO_TARGET_DIR="$PROJECT_ROOT/target" cargo run --locked \
+# Optimized: the no-op path still inflates and hashes the whole payload, which
+# costs seconds per incremental build when this tool is built unoptimized.
+CARGO_TARGET_DIR="$PROJECT_ROOT/target" cargo run --locked --release \
     --manifest-path "$PROJECT_ROOT/Cargo.toml" -p steam-runtime \
     --features packaging --bin forge-steam-runtime-package -- \
     "$PROJECT_ROOT/build/steam-runtime/downloads" "$RUNTIME_PACKAGE"
