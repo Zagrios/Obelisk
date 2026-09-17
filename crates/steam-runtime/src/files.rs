@@ -1,4 +1,4 @@
-use crate::{CLIENT_SHA256, Config, Error};
+use crate::{Config, Error};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -23,7 +23,7 @@ impl Prepared {
         environment.insert(
             "DYLD_INSERT_LIBRARIES".into(),
             self.directory
-                .join("libforge_steam_discovery_adapter.dylib")
+                .join(crate::package::HELPERS[1])
                 .to_string_lossy()
                 .into_owned(),
         );
@@ -31,8 +31,11 @@ impl Prepared {
         environment
     }
 }
-fn private_directory(path: &Path) -> Result<(), Error> {
+pub(crate) fn private_directory(path: &Path) -> Result<(), Error> {
     fs::create_dir_all(path)?;
+    if !fs::symlink_metadata(path)?.file_type().is_dir() {
+        return Err(Error::Storage);
+    }
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -40,69 +43,14 @@ fn private_directory(path: &Path) -> Result<(), Error> {
     }
     Ok(())
 }
-pub(crate) fn prepare(config: &Config) -> Result<Prepared, Error> {
-    if !config.source.join("steamclient.dylib").is_file()
-        || !config.helpers.join("forge-steam-host").is_file()
-        || !config
-            .helpers
-            .join("libforge_steam_discovery_adapter.dylib")
-            .is_file()
-        || !config.steam_api.is_file()
-    {
+pub(crate) fn prepare(
+    config: &Config,
+    cancelled: &std::sync::atomic::AtomicBool,
+) -> Result<Prepared, Error> {
+    if !config.steam_api.is_file() {
         return Err(Error::Unavailable);
     }
-    if crate::sha(&config.source.join("steamclient.dylib"))? != CLIENT_SHA256 {
-        return Err(Error::VersionMismatch);
-    }
-    let helper_hash = crate::sha(&config.helpers.join("forge-steam-host"))?;
-    let adapter_hash = crate::sha(
-        &config
-            .helpers
-            .join("libforge_steam_discovery_adapter.dylib"),
-    )?;
-    private_directory(&config.cache)?;
-    let directory = config.cache.join(format!(
-        "{}-{}-{}",
-        &CLIENT_SHA256[..12],
-        &helper_hash[..12],
-        &adapter_hash[..12]
-    ));
-    if !directory.exists() {
-        let temporary = config
-            .cache
-            .join(format!(".staging-{}", uuid::Uuid::new_v4()));
-        private_directory(&temporary)?;
-        let result = (|| {
-            for name in [
-                "steamclient.dylib",
-                "libtier0_s.dylib",
-                "libvstdlib_s.dylib",
-                "libaudio.dylib",
-                "crashhandler.dylib",
-            ] {
-                fs::copy(config.source.join(name), temporary.join(name))?;
-            }
-            copy_tree(
-                &config.source.join("Frameworks/Breakpad.framework"),
-                &temporary.join("Frameworks/Breakpad.framework"),
-            )?;
-            for name in ["forge-steam-host", "libforge_steam_discovery_adapter.dylib"] {
-                fs::copy(config.helpers.join(name), temporary.join(name))?;
-            }
-            fs::rename(&temporary, &directory)?;
-            Ok::<_, Error>(())
-        })();
-        if result.is_err() {
-            let _ = fs::remove_dir_all(&temporary);
-        }
-        result?;
-    }
-    if crate::sha(&directory.join("steamclient.dylib"))? != CLIENT_SHA256
-        || crate::sha(&directory.join("forge-steam-host"))? != helper_hash
-        || crate::sha(&directory.join("libforge_steam_discovery_adapter.dylib"))? != adapter_hash
-    {
-        return Err(Error::VersionMismatch);
-    }
+    let directory = crate::package::prepare(config, cancelled)?;
     let id = uuid::Uuid::new_v4();
     let run_directory = config.cache.join(format!("launch-{id}"));
     let listeners = [
@@ -135,23 +83,6 @@ pub(crate) fn prepare(config: &Config) -> Result<Prepared, Error> {
     fs::write(&prepared.profile, sandbox(config, &prepared.directory)?)?;
     Ok(prepared)
 }
-fn copy_tree(source: &Path, target: &Path) -> Result<(), Error> {
-    if fs::symlink_metadata(source)?.file_type().is_symlink() {
-        #[cfg(unix)]
-        std::os::unix::fs::symlink(fs::read_link(source)?, target)?;
-        #[cfg(not(unix))]
-        return Err(Error::Unavailable);
-    } else if source.is_dir() {
-        fs::create_dir_all(target)?;
-        for entry in fs::read_dir(source)? {
-            let entry = entry?;
-            copy_tree(&entry.path(), &target.join(entry.file_name()))?;
-        }
-    } else {
-        fs::copy(source, target)?;
-    }
-    Ok(())
-}
 fn quote(path: &Path) -> Result<String, Error> {
     serde_json::to_string(path.to_str().ok_or(Error::Storage)?).map_err(|_| Error::Storage)
 }
@@ -164,7 +95,7 @@ fn sandbox(config: &Config, directory: &Path) -> Result<String, Error> {
                 .home
                 .join("Library/Application Support/com.zagrios.forge")
         )?,
-        quote(&directory.join("forge-steam-host"))?
+        quote(&directory.join(crate::package::HELPERS[0]))?
     ))
 }
 pub(crate) fn report(path: &Path, proof: &crate::Proof) -> Result<(), Error> {

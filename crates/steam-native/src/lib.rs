@@ -8,13 +8,13 @@ pub mod native;
 pub mod sdk;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
-pub use steam_runtime::CLIENT_SHA256;
+pub use steam_runtime::client_sha256;
 
 pub fn sha(path: &std::path::Path) -> Result<String> {
     Ok(steam_runtime::sha(path)?)
 }
 pub fn pinned_client(path: &std::path::Path) -> Result<()> {
-    if sha(path)? != CLIENT_SHA256 {
+    if sha(path)? != client_sha256() {
         return Err("Unrecognized Steam engine; refusing private ABI calls".into());
     }
     Ok(())

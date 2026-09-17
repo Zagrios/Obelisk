@@ -1,0 +1,76 @@
+{
+  "date": "2026-09-17",
+  "valve_client_version": "1788652215",
+  "acquisition": "Pinned HTTPS Valve CDN packages; no local Steam installation imported",
+  "archive_sha256": "b4faaa14b262294cdc4981c1cb08fee4066e68041305eb67280f43852d047a08",
+  "archive_bytes": 19323267,
+  "files": [
+    {
+      "path": "steamclient.dylib",
+      "size": 52232096,
+      "sha256": "035722a42c74989fa38c7efe0d735fdb38444e1102c92246652b5d913d019840"
+    },
+    {
+      "path": "libtier0_s.dylib",
+      "size": 422336,
+      "sha256": "1ba6133697243e4622bf7ba9390338718e0ecf06fc9282d95e4cfe3fce3bd524"
+    },
+    {
+      "path": "libvstdlib_s.dylib",
+      "size": 538416,
+      "sha256": "5df96f8204026b2e76c006372d9ca2bee9cf9634baf21fc20f4595545ee996ad"
+    },
+    {
+      "path": "libaudio.dylib",
+      "size": 254464,
+      "sha256": "8beaaa14d68c3a8a1c359dd1673163126113a156fd1a90f155975e1cce5614a0"
+    },
+    {
+      "path": "crashhandler.dylib",
+      "size": 323968,
+      "sha256": "5c5bc64af2522b7db15594dc95dc9992c0b526a9f932b1af1d129cfd615b1cee"
+    },
+    {
+      "path": "Frameworks/Breakpad.framework/Versions/A/Breakpad",
+      "size": 351312,
+      "sha256": "bca3dbe21864b3ecdd86c003042f2fe42c52b0af716f8ec3bb14039bd64de5e4"
+    },
+    {
+      "path": "Frameworks/Breakpad.framework/Versions/A/Resources/breakpadUtilities.dylib",
+      "size": 489760,
+      "sha256": "a354ca72885b36bd22ad00a8723a9a768b5bf91ca7c7786736fea512c744d4b2"
+    },
+    {
+      "path": "Frameworks/Breakpad.framework/Versions/A/Resources/Info.plist",
+      "size": 1296,
+      "sha256": "be7f1c1699b4fa09b1f92ad7e484bc5915afb10c1da87e21cfed14f0be2a5eac"
+    }
+  ],
+  "checks": {
+    "build": true,
+    "app_signature": true,
+    "localization_keys": 514,
+    "rust_main_workspace_passed": 234,
+    "rust_native_workspace_passed": 1,
+    "swift_executed": 177,
+    "swift_skipped": 9,
+    "swift_failures": 0,
+    "isolated_bundled_runtime_load": true,
+    "isolated_load_network": "denied",
+    "isolated_load_steam_installation_reads": "denied",
+    "isolated_load_file_writes": "denied except /dev/null",
+    "offline_package_rebuild_identical": true
+  },
+  "loader_regression": "Removing Breakpad Resources/Info.plist causes dyld code-signature rejection; restoring the pinned original allows loading. Canonical paths are used for sandbox process-exec rules.",
+  "scope": {
+    "authenticated_game_launch_repeated": false,
+    "steam_cloud_tested": false,
+    "real_saves_modified": false,
+    "published": false
+  },
+  "local_logs": [
+    "build/steam-runtime-build.log",
+    "build/steam-runtime-test.log",
+    "build/steam-runtime-offline-load.log"
+  ]
+}

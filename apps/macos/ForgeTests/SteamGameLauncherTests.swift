@@ -9,9 +9,25 @@ final class SteamGameLauncherTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let app = try nonExecutableBundle(root: root, binarySource: URL(fileURLWithPath: "/usr/bin/true"))
         let binary = app.appending(path: "Contents/MacOS/game")
-        let resource = app.appending(path: "Contents/resource.txt")
+        let resources = app.appending(path: "Contents/Resources")
+        try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
+        let resource = resources.appending(path: "resource.txt")
         try "resource".write(to: resource, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: resource.path)
+        // The copied Apple executable is not an Apple-signed application bundle.
+        // Sign only this disposable fixture so Gatekeeper does not prompt or kill
+        // it after Process.run; the test must also observe its successful exit.
+        for arguments in [["--force", "--sign", "-", "--identifier", "com.zagrios.forge.fixture", app.path],
+                          ["--verify", "--deep", "--strict", app.path]] {
+            let codesign = Process()
+            codesign.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+            codesign.arguments = arguments
+            try codesign.run()
+            codesign.waitUntilExit()
+            guard codesign.terminationStatus == 0 else {
+                throw NSError(domain: "ForgeFixtureSigning", code: Int(codesign.terminationStatus))
+            }
+        }
         XCTAssertFalse(FileManager.default.isExecutableFile(atPath: binary.path))
         let plan = SteamLaunchPlan(appId: 42, platform: "macos", target: LaunchTarget(executable: app.path,
                                    arguments: [], workingDirectory: root.path, isApplicationBundle: true))
@@ -41,6 +57,75 @@ final class SteamGameLauncherTests: XCTestCase {
         } catch GameLaunchFailure.notExecutable {
             XCTAssertFalse(FileManager.default.isExecutableFile(atPath: binary.path))
         }
+    }
+
+    @MainActor
+    func testCancellationAfterSpawnWaitsForActualProcessExit() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let executable = root.appending(path: "held-game")
+        let release = root.appending(path: "release")
+        try "#!/bin/sh\nfor n in $(seq 1 300); do [ -e \"$1\" ] && exit 0; sleep 0.01; done\nexit 9\n"
+            .write(to: executable, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
+        let plan = SteamLaunchPlan(appId: 42, platform: "macos", target: LaunchTarget(executable: executable.path,
+            arguments: [release.path], workingDirectory: root.path, isApplicationBundle: false))
+        var running = false
+        var finished = false
+        let operation = Task {
+            try await SteamGameLauncher.launchForTesting(plan) { event in
+                if case .running = event { running = true }
+            }
+            finished = true
+        }
+        let deadline = ContinuousClock.now + .seconds(2)
+        while !running && ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertTrue(running)
+        operation.cancel()
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertFalse(finished, "Cancellation must not release a live game")
+        try Data().write(to: release)
+        try await operation.value
+        XCTAssertTrue(finished)
+    }
+
+    @MainActor
+    func testImmediateExitCompletesAndFailedStartNeverReportsRunning() async throws {
+        var starts = 0
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let executables = ["/usr/bin/true", "/usr/bin/false", root.appending(path: "missing").path]
+        for executable in (0..<10).flatMap({ _ in executables }) {
+            let plan = SteamLaunchPlan(appId: 42, platform: "macos", target: LaunchTarget(executable: executable,
+                arguments: [], workingDirectory: root.path, isApplicationBundle: false))
+            do {
+                try await SteamGameLauncher.launchForTesting(plan) { event in
+                    if case .running = event { starts += 1 }
+                }
+                XCTAssertEqual(executable, "/usr/bin/true")
+            } catch {
+                XCTAssertNotEqual(executable, "/usr/bin/true")
+            }
+        }
+        XCTAssertEqual(starts, 20)
+    }
+
+    @MainActor
+    func testSessionRejectsStaleEventsAndOnlyItsOwnerCanReleaseIt() throws {
+        let sessions = SteamGameSessions()
+        let first = try XCTUnwrap(sessions.reserve(appId: 42))
+        XCTAssertNil(sessions.reserve(appId: 43))
+        sessions.release(UUID())
+        XCTAssertTrue(sessions.isBusy)
+        sessions.release(first)
+        let second = try XCTUnwrap(sessions.reserve(appId: 43))
+        sessions.receive(.running, for: first)
+        sessions.receive(.host(.lost), for: first)
+        sessions.release(first)
+        XCTAssertEqual(sessions.active?.id, second)
+        XCTAssertEqual(sessions.active?.running, false)
+        XCTAssertEqual(sessions.active?.host, .online)
+        sessions.release(second)
     }
 
     private func nonExecutableBundle(root: URL, binarySource: URL) throws -> URL {

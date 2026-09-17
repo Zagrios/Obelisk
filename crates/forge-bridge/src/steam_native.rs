@@ -20,7 +20,7 @@ pub struct SteamNativeLaunch {
 pub struct SteamNativeConfiguration {
     pub app_id: u32,
     pub helpers: String,
-    pub source: String,
+    pub package: String,
     pub cache: String,
     pub diagnostics: String,
     pub steam_api: String,
@@ -52,7 +52,7 @@ impl SteamNativeLaunch {
         let SteamNativeConfiguration {
             app_id,
             helpers,
-            source,
+            package,
             cache,
             diagnostics,
             steam_api,
@@ -62,7 +62,7 @@ impl SteamNativeLaunch {
             launch.prepare(steam_runtime::Config {
                 app_id,
                 helpers: helpers.into(),
-                source: source.into(),
+                package: package.into(),
                 cache: cache.into(),
                 diagnostics: diagnostics.into(),
                 steam_api: steam_api.into(),
@@ -71,17 +71,55 @@ impl SteamNativeLaunch {
         })
         .await
         .map_err(|_| steam_runtime::Error::StartFailed)??;
-        Ok(Arc::new(SteamNativeRuntime { runtime }))
+        Ok(Arc::new(SteamNativeRuntime {
+            runtime: Arc::new(runtime),
+        }))
     }
 }
 
 #[derive(uniffi::Object)]
 pub struct SteamNativeRuntime {
-    runtime: steam_runtime::Runtime,
+    runtime: Arc<steam_runtime::Runtime>,
 }
 
-#[uniffi::export]
+#[derive(Clone, Copy, Debug, uniffi::Enum)]
+pub enum SteamHostState {
+    Online,
+    Disconnected,
+    Lost,
+    Stopped,
+}
+
+impl From<steam_runtime::HostState> for SteamHostState {
+    fn from(value: steam_runtime::HostState) -> Self {
+        match value {
+            steam_runtime::HostState::Online => Self::Online,
+            steam_runtime::HostState::Disconnected => Self::Disconnected,
+            steam_runtime::HostState::Lost => Self::Lost,
+            steam_runtime::HostState::Stopped => Self::Stopped,
+        }
+    }
+}
+impl From<SteamHostState> for steam_runtime::HostState {
+    fn from(value: SteamHostState) -> Self {
+        match value {
+            SteamHostState::Online => Self::Online,
+            SteamHostState::Disconnected => Self::Disconnected,
+            SteamHostState::Lost => Self::Lost,
+            SteamHostState::Stopped => Self::Stopped,
+        }
+    }
+}
+
+#[uniffi::export(async_runtime = "tokio")]
 impl SteamNativeRuntime {
+    pub async fn next_state(&self, previous: SteamHostState) -> SteamHostState {
+        let runtime = self.runtime.clone();
+        tokio::task::spawn_blocking(move || runtime.next_state(previous.into()))
+            .await
+            .map(Into::into)
+            .unwrap_or(SteamHostState::Lost)
+    }
     pub fn environment(&self) -> std::collections::HashMap<String, String> {
         self.runtime.environment()
     }

@@ -11,6 +11,18 @@ case "${CONFIGURATION:-Debug}" in
     Release) PROFILE_NAME=release; PROFILE_DIRECTORY=release ;;
     *) exit 1 ;;
 esac
+# Acquisition happens at build time from hash-pinned Valve CDN archives, never
+# from an installed Steam client. The app ships the verified minimal payload.
+RUNTIME_PACKAGE="$PROJECT_ROOT/build/steam-runtime/runtime.zip"
+CARGO_TARGET_DIR="$PROJECT_ROOT/target" cargo run --locked \
+    --manifest-path "$PROJECT_ROOT/Cargo.toml" -p steam-runtime \
+    --features packaging --bin forge-steam-runtime-package -- \
+    "$PROJECT_ROOT/build/steam-runtime/downloads" "$RUNTIME_PACKAGE"
+RUNTIME_DESTINATION="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/SteamRuntime"
+mkdir -p "$RUNTIME_DESTINATION"
+if ! cmp -s "$RUNTIME_PACKAGE" "$RUNTIME_DESTINATION/runtime.zip"; then
+    cp "$RUNTIME_PACKAGE" "$RUNTIME_DESTINATION/runtime.zip"
+fi
 export CARGO_TARGET_DIR="$PROJECT_ROOT/build/steam-native-target"
 cargo build --locked --manifest-path "$PROJECT_ROOT/crates/steam-native/Cargo.toml" \
     --workspace --bins --lib --profile "$PROFILE_NAME"

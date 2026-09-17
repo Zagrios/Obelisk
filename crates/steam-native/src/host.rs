@@ -131,6 +131,9 @@ pub fn serve(
                 disconnected = true;
             }
             if online {
+                if disconnected {
+                    emit(output, &Event::Reconnected {})?;
+                }
                 disconnected = false;
             }
         }

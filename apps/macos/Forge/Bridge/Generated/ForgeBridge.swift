@@ -1799,6 +1799,8 @@ public protocol SteamNativeRuntimeProtocol: AnyObject, Sendable {
     
     func gameStarted(pid: UInt32) throws 
     
+    func nextState(previous: SteamHostState) async  -> SteamHostState
+    
     func stop(exitCode: Int32?) 
     
 }
@@ -1898,6 +1900,23 @@ open func gameStarted(pid: UInt32)throws   {try rustCallWithError(FfiConverterTy
         FfiConverterUInt32.lower(pid),uniffiCallStatus
     )
 }
+}
+    
+open func nextState(previous: SteamHostState)async  -> SteamHostState  {
+    return
+        try!  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_forge_bridge_fn_method_steamnativeruntime_next_state(
+                        self.uniffiCloneHandle(),FfiConverterTypeSteamHostState_lower(previous)
+                )
+            },
+            pollFunc: ffi_forge_bridge_rust_future_poll_rust_buffer,
+            completeFunc: ffi_forge_bridge_rust_future_complete_rust_buffer,
+            freeFunc: ffi_forge_bridge_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeSteamHostState_lift,
+            errorHandler: nil
+            
+        )
 }
     
 open func stop(exitCode: Int32?)  {try! rustCall() {
@@ -3574,7 +3593,7 @@ public func FfiConverterTypeSteamLaunchPlan_lower(_ value: SteamLaunchPlan) -> R
 public struct SteamNativeConfiguration: Equatable, Hashable {
     public var appId: UInt32
     public var helpers: String
-    public var source: String
+    public var package: String
     public var cache: String
     public var diagnostics: String
     public var steamApi: String
@@ -3582,10 +3601,10 @@ public struct SteamNativeConfiguration: Equatable, Hashable {
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(appId: UInt32, helpers: String, source: String, cache: String, diagnostics: String, steamApi: String, home: String) {
+    public init(appId: UInt32, helpers: String, package: String, cache: String, diagnostics: String, steamApi: String, home: String) {
         self.appId = appId
         self.helpers = helpers
-        self.source = source
+        self.package = package
         self.cache = cache
         self.diagnostics = diagnostics
         self.steamApi = steamApi
@@ -3610,7 +3629,7 @@ public struct FfiConverterTypeSteamNativeConfiguration: FfiConverterRustBuffer {
             try SteamNativeConfiguration(
                 appId: FfiConverterUInt32.read(from: &buf), 
                 helpers: FfiConverterString.read(from: &buf), 
-                source: FfiConverterString.read(from: &buf), 
+                package: FfiConverterString.read(from: &buf), 
                 cache: FfiConverterString.read(from: &buf), 
                 diagnostics: FfiConverterString.read(from: &buf), 
                 steamApi: FfiConverterString.read(from: &buf), 
@@ -3621,7 +3640,7 @@ public struct FfiConverterTypeSteamNativeConfiguration: FfiConverterRustBuffer {
     public static func write(_ value: SteamNativeConfiguration, into buf: inout [UInt8]) {
         FfiConverterUInt32.write(value.appId, into: &buf)
         FfiConverterString.write(value.helpers, into: &buf)
-        FfiConverterString.write(value.source, into: &buf)
+        FfiConverterString.write(value.package, into: &buf)
         FfiConverterString.write(value.cache, into: &buf)
         FfiConverterString.write(value.diagnostics, into: &buf)
         FfiConverterString.write(value.steamApi, into: &buf)
@@ -4768,6 +4787,86 @@ public func FfiConverterTypeSteamGuardKind_lower(_ value: SteamGuardKind) -> Rus
 
 
 
+public enum SteamHostState: Equatable, Hashable {
+    
+    case online
+    case disconnected
+    case lost
+    case stopped
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension SteamHostState: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSteamHostState: FfiConverterRustBuffer {
+    typealias SwiftType = SteamHostState
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SteamHostState {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .online
+        
+        case 2: return .disconnected
+        
+        case 3: return .lost
+        
+        case 4: return .stopped
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: SteamHostState, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .online:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .disconnected:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .lost:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .stopped:
+            writeInt(&buf, Int32(4))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSteamHostState_lift(_ buf: RustBuffer) throws -> SteamHostState {
+    return try FfiConverterTypeSteamHostState.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSteamHostState_lower(_ value: SteamHostState) -> RustBuffer {
+    return FfiConverterTypeSteamHostState.lower(value)
+}
+
+
+
+
 public enum StorefrontId: Equatable, Hashable {
     
     case steam
@@ -5711,6 +5810,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_forge_bridge_checksum_method_steamnativeruntime_game_started() != 19965) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_forge_bridge_checksum_method_steamnativeruntime_next_state() != 39500) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_forge_bridge_checksum_method_steamnativeruntime_stop() != 9690) {

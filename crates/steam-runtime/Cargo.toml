@@ -12,9 +12,19 @@ thiserror.workspace = true
 uuid.workspace = true
 sha2 = "0.10"
 zeroize = { version = "1", features = ["derive"] }
-
-[dev-dependencies]
 tempfile.workspace = true
+zip = { version = "=8.2.0", default-features = false, features = ["deflate-flate2"] }
+flate2.workspace = true
+reqwest = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+
+[features]
+packaging = ["dep:reqwest", "dep:tokio"]
+
+[[bin]]
+name = "forge-steam-runtime-package"
+path = "src/bin/package.rs"
+required-features = ["packaging"]
 
 [lints]
 workspace = true

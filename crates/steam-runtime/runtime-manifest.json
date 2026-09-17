@@ -1,0 +1,75 @@
+{
+  "version": "1788652215",
+  "manifest_url": "https://client-update.akamai.steamstatic.com/steam_client_osx",
+  "manifest_sha256": "8b7c2b2159efc9949abd88883aec99a5295e6177ee2f0715308684f8ef0225f8",
+  "packages": [
+    {
+      "name": "bins_client_osx",
+      "url": "https://client-update.akamai.steamstatic.com/bins_client_osx.zip.f7656139b237bfef41c68b8d2e28f6eead50fed2",
+      "size": 18575968,
+      "sha256": "9dd984c379df9abe2b9d0855f0d797109ab2b06276a43cb14f0d673f69f8efd4"
+    },
+    {
+      "name": "bins_osx",
+      "url": "https://client-update.akamai.steamstatic.com/bins_osx.zip.40e90e639beb889e771c2669d274e065623c6fb8",
+      "size": 39393202,
+      "sha256": "8f8b075397f5b933bf7dcf9d6ae611487016f8554592edaa28f1589fbba2c152"
+    },
+    {
+      "name": "breakpad_osx",
+      "url": "https://client-update.akamai.steamstatic.com/breakpad_osx.zip.3a5f76a13e79733ae3b08af8c94dafba2f99d2a5",
+      "size": 576088,
+      "sha256": "56eefbca21e1adaf255160744aa9aa05fb31d153ce537d4b220cfd6169a94ce5"
+    }
+  ],
+  "files": [
+    {
+      "path": "steamclient.dylib",
+      "package": "bins_client_osx",
+      "size": 52232096,
+      "sha256": "035722a42c74989fa38c7efe0d735fdb38444e1102c92246652b5d913d019840"
+    },
+    {
+      "path": "libtier0_s.dylib",
+      "package": "bins_osx",
+      "size": 422336,
+      "sha256": "1ba6133697243e4622bf7ba9390338718e0ecf06fc9282d95e4cfe3fce3bd524"
+    },
+    {
+      "path": "libvstdlib_s.dylib",
+      "package": "bins_osx",
+      "size": 538416,
+      "sha256": "5df96f8204026b2e76c006372d9ca2bee9cf9634baf21fc20f4595545ee996ad"
+    },
+    {
+      "path": "libaudio.dylib",
+      "package": "bins_osx",
+      "size": 254464,
+      "sha256": "8beaaa14d68c3a8a1c359dd1673163126113a156fd1a90f155975e1cce5614a0"
+    },
+    {
+      "path": "crashhandler.dylib",
+      "package": "bins_osx",
+      "size": 323968,
+      "sha256": "5c5bc64af2522b7db15594dc95dc9992c0b526a9f932b1af1d129cfd615b1cee"
+    },
+    {
+      "path": "Frameworks/Breakpad.framework/Versions/A/Breakpad",
+      "package": "breakpad_osx",
+      "size": 351312,
+      "sha256": "bca3dbe21864b3ecdd86c003042f2fe42c52b0af716f8ec3bb14039bd64de5e4"
+    },
+    {
+      "path": "Frameworks/Breakpad.framework/Versions/A/Resources/breakpadUtilities.dylib",
+      "package": "breakpad_osx",
+      "size": 489760,
+      "sha256": "a354ca72885b36bd22ad00a8723a9a768b5bf91ca7c7786736fea512c744d4b2"
+    },
+    {
+      "path": "Frameworks/Breakpad.framework/Versions/A/Resources/Info.plist",
+      "package": "breakpad_osx",
+      "size": 1296,
+      "sha256": "be7f1c1699b4fa09b1f92ad7e484bc5915afb10c1da87e21cfed14f0be2a5eac"
+    }
+  ]
+}

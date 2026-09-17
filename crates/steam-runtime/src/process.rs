@@ -179,7 +179,7 @@ mod tests {
         };
         let config = Config {
             helpers: temporary.path().into(),
-            source: temporary.path().into(),
+            package: temporary.path().join("runtime.zip"),
             cache: temporary.path().into(),
             diagnostics: temporary.path().into(),
             steam_api: temporary.path().join("libsteam_api.dylib"),

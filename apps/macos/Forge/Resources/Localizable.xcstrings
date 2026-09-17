@@ -41,13 +41,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The native Steam runtime is unavailable. This version of Forge requires a compatible local Steam installation."
+            "value": "The Steam runtime bundled with Forge is unavailable. Reinstall Forge to restore its files."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Le moteur Steam natif est indisponible. Cette version de Forge nécessite une installation locale de Steam compatible."
+            "value": "Le moteur Steam fourni avec Forge est indisponible. Réinstallez Forge pour restaurer ses fichiers."
           }
         }
       }
@@ -8851,6 +8851,91 @@
           "stringUnit": {
             "state": "translated",
             "value": "Epic a renvoyé vos amis, mais refuse l’accès à leur présence initiale. Certains statuts peuvent être indisponibles."
+          }
+        }
+      }
+    },
+    "model.steam.running": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Running"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En cours"
+          }
+        }
+      }
+    },
+    "model.steam.otherGameRunning": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Another Steam game is still running. Close it before launching a Steam game."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un autre jeu Steam est encore ouvert. Fermez-le avant de lancer un jeu Steam."
+          }
+        }
+      }
+    },
+    "model.steam.gameDisconnected": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The game has lost its Steam connection. It is still running."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le jeu a perdu sa connexion Steam. Il est toujours en cours."
+          }
+        }
+      }
+    },
+    "model.steam.gameHostLost": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The Steam runtime is unavailable. Close the game normally before launching it again."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le moteur Steam est indisponible. Fermez le jeu normalement avant de le relancer."
+          }
+        }
+      }
+    },
+    "model.steam.gameExited": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The game closed unexpectedly. You can launch it again."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le jeu s’est fermé de manière inattendue. Vous pouvez le relancer."
           }
         }
       }

@@ -47,6 +47,10 @@ struct SteamGameDetailView: View {
                 }
             }
 
+            if let message = model.gameSessionMessage {
+                Text(message).font(.system(size: 12)).foregroundStyle(.secondary)
+            }
+
             if model.isLoadingDetails {
                 ProgressView(L10n.string("ui.steam.finding_files")).controlSize(.small)
             } else if let error = model.detailsError {

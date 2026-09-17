@@ -16,6 +16,11 @@ fn run() -> i32 {
     };
     let args: Vec<_> = std::env::args().collect();
     let result = match args.get(1).map(String::as_str) {
+        // Offline packaging validation: load pinned libraries and resolve the
+        // engine factories only. No global user, credentials or network login.
+        Some("verify-runtime") if args.len() == 3 => {
+            Some(forge_steam_native::abi::Engine::open(args[2].as_ref()).map(|_| ()))
+        }
         Some("engine") if args.len() == 5 => args[3]
             .parse::<u32>()
             .ok()

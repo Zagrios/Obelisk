@@ -4,7 +4,8 @@ Forge's existing Launch button now starts a Rust Steam host before the native
 macOS game. It passes the session already held by `SteamModel` through a private
 stdin pipe. No extra screen, login, Keychain query or user action is involved.
 
-The host loads Valve's original libraries from a versioned private cache. It
+The app bundles a minimal, hash-pinned Valve runtime archive. The host loads its
+original libraries from a verified private cache prepared from that archive. It
 requires authentication for the expected account and a nonempty ownership ticket
 for the selected game. A separate consumer then checks the game's unmodified
 Steamworks library, account, App ID and subscription before Forge starts the game.
@@ -26,9 +27,12 @@ fixed the failure. A regression test covers all three consumers' environment.
   `unsafe_code = "forbid"`.
 - `crates/forge-bridge/src/steam_native.rs` exposes one launch attempt and its
   runtime. Swift cancellation explicitly reaches the blocking Rust operation.
-- `SteamGameLauncher` retains the runtime until the game's process exits. Closing
-  the private pipe stops the host if Forge exits. Authentication failure,
-  cancellation or failed SDK validation cleans up the helper and scratch home.
+- `SteamGameLauncher` waits for the actual game process to exit, then stops the
+  runtime and finishes its observer. A shared, observable `SteamGameSessions`
+  reservation spans preparation through teardown, including account sign-out.
+  Closing the private pipe still stops the host if Forge exits. Authentication
+  failure, cancellation before spawning or failed SDK validation cleans up the
+  helper and scratch home.
 - `scripts/build-steam-native.sh` builds and signs both helpers in Forge's bundle.
   Only the helper has the entitlements needed to load Valve libraries and use
   DYLD discovery. Forge's Keychain identity remains unchanged.
@@ -40,6 +44,118 @@ App ID, process IDs, ticket length and discovery counts. Failed starts record
 finite stage names and error keys. Reports are under
 `~/Library/Logs/Forge/Steam/` and libraries under
 `~/Library/Caches/com.zagrios.forge/SteamRuntime/`.
+
+## Game session tracking
+
+Forge currently admits one Steam game session at a time. The model reserves it
+synchronously before launch verification, and releases it after failure or actual
+game exit and host teardown. The running game's action reads "Running". Selecting
+another installed Steam game does not enable another launch. Download, resume,
+verification and uninstall entry points reject operations on the reserved App ID,
+including through a replacement account session. Other games can still download
+while a game is running.
+
+The Rust supervisor consumes the host's typed event pipe through an asynchronous
+UniFFI wait. Network disconnection, reconnection and host loss are distinct states.
+Disconnection and loss appear in the game details without releasing the session
+or terminating the game. Diagnostics retain the last `host_state` separately from
+`game_started`/`game_exited`, so the final exit record does not erase host failure.
+No credentials or native log payloads are added to those records.
+
+Once `Process.run` succeeds, Swift task cancellation does not terminate or abandon
+the game. It waits for process exit even if the account signs out. A failed
+post-spawn diagnostic write or host death likewise cannot trigger termination.
+A nonzero game exit reports an error and releases the session after cleanup.
+Reservation IDs reject late events or cleanup from a previous session.
+
+This tracks the directly launched process. Games that hand execution to another
+process need separate compatibility work. Surviving Forge termination, reattaching
+after a Forge crash, and recovering Steamworks inside a game after host loss are
+not implemented. Steam Cloud is unchanged.
+
+Tests use disposable processes and injected session events for cancellation after
+spawn, immediate/nonzero exit, failed spawn, duplicate requests, file-operation
+guards, network recovery, host loss, account sign-out and stale session events.
+These controls are separate from authenticated Silksong checks. The September 17
+[session validation report](evidence/steam-session-lifecycle-2026-09-17.json) records
+237 main-workspace Rust tests, one native test, 183 Swift tests with nine skips
+and no failures, app signature verification and isolated runtime loading. No
+real game or save was used to validate these session changes.
+
+## Bundled runtime preparation
+
+`crates/steam-runtime/runtime-manifest.json` pins Valve client version `1788652215`,
+three HTTPS archive URLs, their byte lengths and SHA-256 hashes, and the exact
+eight files retained from them. The acquisition source is Valve's
+[macOS update manifest](https://client-update.akamai.steamstatic.com/steam_client_osx),
+observed on September 17, 2026 with SHA-256
+`8b7c2b2159efc9949abd88883aec99a5295e6177ee2f0715308684f8ef0225f8`.
+The seven library hashes match the September 16 binary inventory. The build does not
+follow the latest manifest or accept a different engine automatically.
+
+The retained files are `steamclient.dylib`, `libtier0_s.dylib`,
+`libvstdlib_s.dylib`, `libaudio.dylib`, `crashhandler.dylib`, and Breakpad's
+`Versions/A/Breakpad` and `Versions/A/Resources/breakpadUtilities.dylib` at their
+original relative paths, plus Breakpad's original `Versions/A/Resources/Info.plist`.
+The plist is required by the library's code signature: removing it reproduces a
+dyld rejection, and restoring those exact bytes makes the isolated load pass.
+Framework headers, crash-report applications, UI files,
+web helpers and the Steam executable are excluded. The game's own Steamworks
+API library remains the SDK consumer. Minimal loading and authenticated gameplay
+are separate validation steps.
+
+The Rust `forge-steam-runtime-package` build tool, behind the `packaging` feature,
+downloads the fixed Valve archives into ignored `build/steam-runtime/downloads/`,
+checks their complete size/hash, and writes only the allowlisted files into
+`build/steam-runtime/runtime.zip`. It verifies every payload file before publishing
+the ZIP atomically. A valid existing package supports subsequent offline builds.
+The source repository contains the manifest and tool, not Valve binaries.
+
+`scripts/build-steam-native.sh` includes this ZIP as
+`Forge.app/Contents/Resources/SteamRuntime/runtime.zip`. Keeping the original
+libraries inside a resource archive preserves their exact bytes and avoids
+re-signing the pinned engine as nested application code. The app's signature
+seals the archive. This is not a claim of notarization or distribution approval.
+
+At game launch, the Rust supervisor verifies a cache generation identified by the
+payload and bundled-helper hashes. If necessary, it extracts the embedded ZIP
+into a private staging directory, checking exact paths, entry types, byte lengths
+and SHA-256. It copies Forge's signed helpers alongside the engine, verifies the
+whole tree, and publishes a unique generation by rename. No runtime download,
+Steam installation lookup, Keychain read or additional UI is involved.
+
+An invalid cache is repaired from the app bundle into a new generation. Existing
+generations are never overwritten or deleted while a game may be using them.
+Concurrent preparations use separate staging directories. Cancellation and normal
+errors remove their own staging data; leftovers from an abrupt process exit are
+ignored, never treated as a runtime. Automatic reclamation of old generations is
+not implemented. Purging the cache only requires local extraction from Forge.
+The existing host sandbox continues to deny access to Steam's application-support
+directory. This change does not add offline account authentication or Steam Cloud.
+
+Tests cover first preparation without a Steam directory, reuse without the source
+ZIP, missing/corrupt payloads, unexpected paths and symlinks, cache corruption,
+helper updates, concurrent preparations, interruption and cancellation. An opt-in
+check, also invoked by `scripts/test.sh` after the app build, prepares the actual
+bundled package in a temporary directory and runs the
+signed helper's internal `verify-runtime` mode under a sandbox denying network,
+Steam installation reads, and file writes. It loads the engine and resolves its
+factories without creating a global user, authenticating or launching a game:
+
+```sh
+FORGE_STEAM_BUNDLE="$PWD/build/xcode/Build/Products/Debug/Forge.app" \
+  cargo test --locked -p steam-runtime \
+  bundled_runtime_loads_without_steam_installation_access -- --ignored
+```
+
+The September 17 [packaging validation report](evidence/steam-runtime-bundle-2026-09-17.json)
+records successful build/signature checks, both Rust workspaces, 177 Swift tests
+with nine skips and no failures, the isolated load, and a byte-identical offline
+rebuild of the 19,323,267-byte archive. Local detailed logs remain under `build/`.
+
+The September 16 authenticated Silksong run below used the former imported
+runtime. The reduced bundled payload requires a separate authenticated game
+check; the offline loader test alone does not establish game or Cloud behavior.
 
 ## Silksong validation
 
@@ -111,17 +227,20 @@ workflow.
 This integration currently targets native Apple silicon and the pinned Valve
 client SHA-256
 `035722a42c74989fa38c7efe0d735fdb38444e1102c92246652b5d913d019840`.
-It copies that build's libraries from the local Steam installation. Obtaining and
-updating the runtime independently of an installed Steam client remains separate
-work. A mismatched engine version fails before private ABI calls.
+The build obtains the exact libraries from pinned Valve CDN packages and embeds
+them in Forge. No installed Steam client is read, including on first launch.
+Updating the pinned engine still requires ABI and compatibility validation; a
+mismatched version fails before private ABI calls.
 
 The SDK check currently requires Silksong's modern flat Steamworks interfaces.
 Other SDK versions, games without `libsteam_api.dylib`, Intel games, hardened games
-that reject the adapter and concurrent game launches need compatibility work.
+that reject the adapter need compatibility work. Concurrent Steam game sessions
+are blocked until their compatibility is validated.
 Private endpoints use ephemeral loopback ports; the host binds after allocation,
-so another process taking the port can cause a failed launch. No native libraries
-are bundled in the repository or distribution by this change.
+so another process taking the port can cause a failed launch. Valve libraries are
+embedded in the local app bundle; they are not versioned in the repository.
 
 Steam Cloud is not integrated. The game uses its normal local save location.
-Closing Forge stops its host, even if the game remains open. Broader game lifecycle
-UX, achievements, playtime and online-game behavior are separate tasks.
+Closing Forge stops its host, even if the game remains open. Preserving a session
+across Forge termination, achievements, playtime and online-game behavior remain
+separate tasks.

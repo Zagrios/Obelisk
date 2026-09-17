@@ -1,0 +1,44 @@
+{
+  "date": "2026-09-17",
+  "scope": "Steam session lifetime, one active Steam game, installation-operation guards, host connection observation",
+  "checks": {
+    "build": true,
+    "app_signature": true,
+    "rust_main_workspace_passed": 237,
+    "rust_native_workspace_passed": 1,
+    "swift_executed": 183,
+    "swift_skipped": 9,
+    "swift_failures": 0,
+    "localization_keys": 519,
+    "isolated_bundled_runtime_load": true
+  },
+  "covered_cases": [
+    "reservation before verification and duplicate requests",
+    "running game blocks download, verification and uninstall for its App ID",
+    "reservation survives sign-out until process exit",
+    "stale reservation events and release ignored",
+    "network disconnection and reconnection distinct from host loss",
+    "host loss leaves game session active",
+    "normal and nonzero immediate game exits",
+    "cancellation after spawning waits for actual exit",
+    "observer finishes on runtime stop",
+    "late gameStarted cannot overwrite a final report"
+  ],
+  "test_repairs": [
+    "Disposable Mach-O app fixture uses the standard Resources directory and must pass ad-hoc signature verification before execution. No system security setting is changed.",
+    "Termination result is stored by a callback installed before Process.run, avoiding the observed waitUntilExit hang."
+  ],
+  "validation_limits": {
+    "authenticated_silksong_launch_repeated_after_these_changes": false,
+    "real_saves_modified": false,
+    "survival_after_forge_exit_implemented": false,
+    "steam_cloud_implemented": false,
+    "committed_or_published": false
+  },
+  "runtime_archive_sha256": "b4faaa14b262294cdc4981c1cb08fee4066e68041305eb67280f43852d047a08",
+  "logs": [
+    "build/steam-session-build.log",
+    "build/steam-session-focused-test.log",
+    "build/steam-session-test.log"
+  ]
+}

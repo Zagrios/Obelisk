@@ -1,22 +1,29 @@
 //! Safe launcher-side supervision. Native ABI code lives in the separate helper.
 mod files;
+pub mod package;
+#[cfg(feature = "packaging")]
+pub mod packaging;
 mod process;
 pub mod protocol;
 use protocol::{Credentials, Event};
 use std::{
     path::PathBuf,
     sync::{
-        Arc, Mutex,
+        Arc, Condvar, Mutex,
         atomic::{AtomicBool, Ordering},
     },
     time::{Duration, Instant},
 };
 
-pub const CLIENT_SHA256: &str = "035722a42c74989fa38c7efe0d735fdb38444e1102c92246652b5d913d019840";
+/// The pinned engine hash lives only in the runtime manifest; this reads it back.
+pub fn client_sha256() -> &'static str {
+    &package::entry("steamclient.dylib").sha256
+}
 pub fn sha(path: &std::path::Path) -> std::io::Result<String> {
     use sha2::{Digest, Sha256};
     let mut digest = Sha256::new();
-    std::io::copy(&mut std::fs::File::open(path)?, &mut digest)?;
+    let mut file = std::io::BufReader::with_capacity(64 * 1024, std::fs::File::open(path)?);
+    std::io::copy(&mut file, &mut digest)?;
     Ok(format!("{:x}", digest.finalize()))
 }
 
@@ -51,7 +58,7 @@ impl From<std::io::Error> for Error {
 
 pub struct Config {
     pub helpers: PathBuf,
-    pub source: PathBuf,
+    pub package: PathBuf,
     pub cache: PathBuf,
     pub diagnostics: PathBuf,
     pub steam_api: PathBuf,
@@ -93,7 +100,7 @@ impl Launch {
             return Err(Error::InvalidSession);
         }
         let id = credentials.steam_id;
-        let prepared = files::prepare(config)?;
+        let prepared = files::prepare(config, &self.cancelled)?;
         self.check_cancelled()?;
         let service = format!(
             "com.zagrios.forge.discovery.{}",
@@ -154,6 +161,7 @@ impl Launch {
             game_pid: None,
             game_exit: None,
             discovery_paths: 0,
+            host_state: HostState::Online,
             state: "ready".into(),
         };
         let runtime = Runtime {
@@ -162,6 +170,7 @@ impl Launch {
                 proof,
                 stopped: false,
             }),
+            wakeup: Condvar::new(),
             adapter: prepared
                 .directory
                 .join("libforge_steam_discovery_adapter.dylib"),
@@ -209,11 +218,7 @@ impl Launch {
         }
     }
     fn check_cancelled(&self) -> Result<(), Error> {
-        if self.cancelled.load(Ordering::Acquire) {
-            Err(Error::Cancelled)
-        } else {
-            Ok(())
-        }
+        package::check(&self.cancelled)
     }
 }
 fn failure(reason: protocol::Failure) -> Error {
@@ -239,7 +244,17 @@ pub struct Proof {
     pub game_pid: Option<u32>,
     pub game_exit: Option<i32>,
     pub discovery_paths: u32,
+    pub host_state: HostState,
     pub state: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HostState {
+    Online,
+    Disconnected,
+    Lost,
+    Stopped,
 }
 struct Inner {
     host: process::Child,
@@ -248,6 +263,7 @@ struct Inner {
 }
 pub struct Runtime {
     inner: Mutex<Inner>,
+    wakeup: Condvar,
     adapter: PathBuf,
     service: String,
     report: PathBuf,
@@ -268,13 +284,51 @@ impl Runtime {
     }
     pub fn started(&self, pid: u32) -> Result<(), Error> {
         let mut inner = self.inner.lock().map_err(|_| Error::StartFailed)?;
-        if !inner.host.alive()? {
-            return Err(Error::StartFailed);
+        if inner.stopped {
+            return Ok(());
         }
+        // The game already exists. Record it even if its host has just died;
+        // losing Steam must never turn into permission to terminate the game.
         Self::drain(&mut inner);
         inner.proof.game_pid = Some(pid);
         inner.proof.state = "game_started".into();
         files::report(&self.report, &inner.proof)
+    }
+    /// Wait on the private event pipe, independently of the UI. `stopped` wakes
+    /// this bounded wait; Swift task cancellation must not abandon a live game.
+    pub fn next_state(&self, previous: HostState) -> HostState {
+        let Ok(mut inner) = self.inner.lock() else {
+            return HostState::Lost;
+        };
+        loop {
+            if inner.stopped {
+                return HostState::Stopped;
+            }
+            let before = (inner.proof.host_state, inner.proof.discovery_paths);
+            // Sweep without blocking: `next` reports host death as an error, and
+            // only returns `Ok(None)` once it has confirmed the host is alive.
+            loop {
+                match inner.host.next(Duration::ZERO) {
+                    Ok(Some(event)) => Self::accept(&mut inner, event),
+                    Ok(None) => break,
+                    Err(_) => {
+                        inner.proof.host_state = HostState::Lost;
+                        break;
+                    }
+                }
+            }
+            if before != (inner.proof.host_state, inner.proof.discovery_paths) {
+                let _ = files::report(&self.report, &inner.proof);
+            }
+            if inner.proof.host_state != previous {
+                return inner.proof.host_state;
+            }
+            // Releases the mutex, so game termination never waits on this observer.
+            let Ok((held, _)) = self.wakeup.wait_timeout(inner, Duration::from_millis(250)) else {
+                return HostState::Lost;
+            };
+            inner = held;
+        }
     }
     pub fn stopped(&self, exit: Option<i32>) {
         if let Ok(mut inner) = self.inner.lock() {
@@ -292,15 +346,24 @@ impl Runtime {
             }
             .into();
             let _ = files::report(&self.report, &inner.proof);
+            self.wakeup.notify_all();
         }
     }
     fn drain(inner: &mut Inner) {
         while let Some(event) = inner.host.try_event() {
-            match event {
-                Event::Discovery { paths } => inner.proof.discovery_paths = paths,
-                Event::Disconnected {} => inner.proof.state = "disconnected".into(),
-                _ => {}
+            Self::accept(inner, event);
+        }
+    }
+    fn accept(inner: &mut Inner, event: Event) {
+        match event {
+            Event::Discovery { paths } => inner.proof.discovery_paths = paths,
+            Event::Disconnected {} if inner.proof.host_state != HostState::Lost => {
+                inner.proof.host_state = HostState::Disconnected;
             }
+            Event::Reconnected {} if inner.proof.host_state != HostState::Lost => {
+                inner.proof.host_state = HostState::Online;
+            }
+            _ => {}
         }
     }
     fn write_report(&self) -> Result<(), Error> {
@@ -330,6 +393,130 @@ mod tests {
         let mut command = std::process::Command::new("/bin/sh");
         command.arg("-c").arg(script);
         process::Child::spawn(command).unwrap()
+    }
+    fn runtime(script: &str, root: &std::path::Path) -> Runtime {
+        let host = child(script);
+        Runtime {
+            inner: Mutex::new(Inner {
+                proof: Proof {
+                    app_id: 42,
+                    host_pid: host.id(),
+                    authenticated: true,
+                    ticket_bytes: 178,
+                    sdk_initialized: true,
+                    account_verified: true,
+                    license_verified: true,
+                    asynchronous_request: true,
+                    game_pid: None,
+                    game_exit: None,
+                    discovery_paths: 0,
+                    host_state: HostState::Online,
+                    state: "ready".into(),
+                },
+                host,
+                stopped: false,
+            }),
+            wakeup: Condvar::new(),
+            adapter: root.join("adapter"),
+            service: "fixture".into(),
+            report: root.join("report.json"),
+            _prepared: files::Prepared {
+                directory: root.into(),
+                run_directory: root.join("scratch"),
+                profile: root.join("profile"),
+                report: root.join("report.json"),
+                endpoints: [
+                    ("Steam3Master".into(), "127.0.0.1:1".into()),
+                    ("SteamClientService".into(), "127.0.0.1:2".into()),
+                ],
+            },
+        }
+    }
+    fn signal(runtime: &Runtime) {
+        use std::io::Write;
+        runtime
+            .inner
+            .lock()
+            .unwrap()
+            .host
+            .input
+            .as_mut()
+            .unwrap()
+            .write_all(b"go\n")
+            .unwrap();
+    }
+    fn changed(runtime: &Arc<Runtime>, previous: HostState) -> HostState {
+        let (send, receive) = std::sync::mpsc::channel();
+        let observer = runtime.clone();
+        let worker = std::thread::spawn(move || {
+            let _ = send.send(observer.next_state(previous));
+        });
+        let result = receive.recv_timeout(Duration::from_secs(3));
+        if result.is_err() {
+            runtime.stopped(None);
+        }
+        worker.join().unwrap();
+        result.expect("host state did not change")
+    }
+    #[test]
+    fn session_distinguishes_connection_recovery_and_host_loss_until_game_exit() {
+        let root = tempfile::tempdir().unwrap();
+        let runtime = Arc::new(runtime(
+            r#"read line; printf '%s\n' '{"event":"disconnected"}'; read line; printf '%s\n' '{"event":"reconnected"}'; read line; exit 0"#,
+            root.path(),
+        ));
+        runtime.started(1234).unwrap();
+        signal(&runtime);
+        assert_eq!(
+            changed(&runtime, HostState::Online),
+            HostState::Disconnected
+        );
+        signal(&runtime);
+        assert_eq!(
+            changed(&runtime, HostState::Disconnected),
+            HostState::Online
+        );
+        signal(&runtime);
+        assert_eq!(changed(&runtime, HostState::Online), HostState::Lost);
+        {
+            let inner = runtime.inner.lock().unwrap();
+            assert!(!inner.stopped);
+            assert_eq!(inner.proof.game_pid, Some(1234));
+            assert_eq!(inner.proof.state, "game_started");
+        }
+        runtime.stopped(Some(0));
+        assert_eq!(runtime.next_state(HostState::Lost), HostState::Stopped);
+        let proof: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(root.path().join("report.json")).unwrap())
+                .unwrap();
+        assert_eq!(proof["state"], "game_exited");
+        assert_eq!(proof["host_state"], "lost");
+        assert_eq!(proof["game_exit"], 0);
+    }
+    #[test]
+    fn game_exit_wakes_observer_and_immediate_exit_cannot_restore_started_state() {
+        let root = tempfile::tempdir().unwrap();
+        let runtime = Arc::new(runtime("read line", root.path()));
+        runtime.started(1234).unwrap();
+        let observer = runtime.clone();
+        let worker = std::thread::spawn(move || observer.next_state(HostState::Online));
+        runtime.stopped(Some(0));
+        assert_eq!(worker.join().unwrap(), HostState::Stopped);
+        runtime.started(5678).unwrap();
+        assert_eq!(runtime.inner.lock().unwrap().proof.game_pid, Some(1234));
+        assert_eq!(runtime.inner.lock().unwrap().proof.state, "game_exited");
+        runtime.stopped(Some(9));
+        assert_eq!(runtime.inner.lock().unwrap().proof.game_exit, Some(0));
+    }
+    #[test]
+    fn host_loss_after_spawn_still_records_the_live_game() {
+        let root = tempfile::tempdir().unwrap();
+        let runtime = runtime("read line", root.path());
+        runtime.inner.lock().unwrap().host.stop();
+        runtime.started(1234).unwrap();
+        assert_eq!(runtime.next_state(HostState::Online), HostState::Lost);
+        assert!(!runtime.inner.lock().unwrap().stopped);
+        runtime.stopped(Some(0));
     }
     #[test]
     fn readiness_requires_authentication_matching_app_pid_and_nonempty_ticket() {

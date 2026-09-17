@@ -82,6 +82,7 @@ pub enum Event {
         stage: SdkStage,
     },
     Disconnected {},
+    Reconnected {},
     Failed {
         reason: Failure,
     },

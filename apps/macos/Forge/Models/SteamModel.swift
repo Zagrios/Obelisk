@@ -88,7 +88,8 @@ final class SteamModel {
     @ObservationIgnored private let keychain: any SteamCredentialStore
     @ObservationIgnored private let connectSession: @Sendable (SteamCredentials) async throws -> any SteamSessionProtocol
     @ObservationIgnored private let loadNews: @Sendable (UInt32) async throws -> [SteamNews]
-    @ObservationIgnored private let executeLaunch: @MainActor (SteamLaunchPlan, SteamCredentials) async throws -> Void
+    let gameSessions: SteamGameSessions
+    @ObservationIgnored private let executeLaunch: @MainActor (SteamLaunchPlan, SteamCredentials, @escaping SteamGameEventHandler) async throws -> Void
     @ObservationIgnored private let preferences: UserDefaults
     @ObservationIgnored private var session: (any SteamSessionProtocol)?
     @ObservationIgnored private var login: SteamLogin?
@@ -128,8 +129,9 @@ final class SteamModel {
         reconnectDelay: @escaping @Sendable (Int) async throws -> Void = { attempt in
             try await Task.sleep(for: .seconds(1 << attempt))
         },
-        launch: @escaping @MainActor (SteamLaunchPlan, SteamCredentials) async throws -> Void = { plan, credentials in
-            try await SteamGameLauncher.launch(plan, credentials: credentials)
+        gameSessions: SteamGameSessions = .shared,
+        launch: @escaping @MainActor (SteamLaunchPlan, SteamCredentials, @escaping SteamGameEventHandler) async throws -> Void = { plan, credentials, onEvent in
+            try await SteamGameLauncher.launch(plan, credentials: credentials, onEvent: onEvent)
         }
     ) {
         self.directory = directory
@@ -142,6 +144,7 @@ final class SteamModel {
         self.verifyBeforeLaunch = preferences.object(forKey: Self.verifyBeforeLaunchPreferenceKey) == nil
             ? true : preferences.bool(forKey: Self.verifyBeforeLaunchPreferenceKey)
         self.executeLaunch = launch
+        self.gameSessions = gameSessions
         wakeObserver = SystemWakeObservation { [weak self] in
             Task { @MainActor [weak self] in self?.retryFriends() }
         }
@@ -162,8 +165,14 @@ final class SteamModel {
         return nil
     }
 
+    /// Every installation-mutating entry point asks this, so a new one cannot
+    /// silently gain permission to touch a running game's files.
+    private func canModifyInstallation(of appId: UInt32?) -> Bool {
+        !isDownloading && !isLaunching && !isUninstalling && !gameSessions.protects(appId)
+    }
+
     var canResumeDownload: Bool {
-        !isDownloading && !isLaunching && !isUninstalling && lastDownload != nil
+        canModifyInstallation(of: lastDownload?.game.appId) && lastDownload != nil
             && lastDownload?.game.appId == selectedGame?.appId
     }
 
@@ -172,10 +181,23 @@ final class SteamModel {
     }
 
     var canUninstallSelectedGame: Bool {
-        isConnected && selectedInstallation != nil && !isDownloading && !isLaunching && !isUninstalling
+        isConnected && selectedInstallation != nil && canModifyInstallation(of: selectedGame?.appId)
+    }
+
+    var gameSessionMessage: String? {
+        guard let active = gameSessions.active else { return nil }
+        if active.appId != selectedGame?.appId { return L10n.string("model.steam.otherGameRunning") }
+        switch active.host {
+        case .disconnected: return L10n.string("model.steam.gameDisconnected")
+        case .lost: return L10n.string("model.steam.gameHostLost")
+        default: return nil
+        }
     }
 
     var primaryActionTitle: String {
+        if let active = gameSessions.active, active.appId == selectedGame?.appId, active.running {
+            return L10n.string("model.steam.running")
+        }
         if isUninstalling && uninstallAppId == selectedGame?.appId { return L10n.string("model.game.uninstalling") }
         if isLaunching && launchAppId == selectedGame?.appId {
             return isVerifyingBeforeLaunch ? L10n.string("model.steam.verifying") : L10n.string("model.steam.launching")
@@ -188,7 +210,9 @@ final class SteamModel {
 
     var primaryActionAvailable: Bool {
         guard let selectedGame, let details, details.appId == selectedGame.appId else { return false }
-        return !isLoadingDetails && !isDownloading && !isLaunching && !isUninstalling && (details.macos || details.windows)
+        return !isLoadingDetails && canModifyInstallation(of: selectedGame.appId)
+            && !(selectedInstallation != nil && gameSessions.isBusy)
+            && (details.macos || details.windows)
     }
 
     func primaryAction() {
@@ -703,7 +727,7 @@ final class SteamModel {
 
     func downloadSelected() {
         guard let game = selectedGame, let details, details.appId == game.appId,
-              session != nil, !isDownloading, !isLaunching, !isUninstalling, details.macos || details.windows else { return }
+              session != nil, canModifyInstallation(of: game.appId), details.macos || details.windows else { return }
         if canResumeDownload {
             resumeDownload()
             return
@@ -721,7 +745,7 @@ final class SteamModel {
     }
 
     func download(_ game: SteamGame, platform: String, language: String, directory: URL) {
-        guard let session, !isDownloading, !isLaunching, !isUninstalling else { return }
+        guard let session, canModifyInstallation(of: game.appId) else { return }
         let current = generation
         downloadCancellationRequested = false
         beginTransfer(game, platform: platform, language: language, directory: directory, session: session, generation: current)
@@ -777,7 +801,8 @@ final class SteamModel {
     }
 
     private func launchGame(_ game: SteamGame, receipt: SteamInstallReceipt) {
-        guard let session, !isLaunching, !isDownloading, !isUninstalling else { return }
+        guard let session, canModifyInstallation(of: game.appId),
+              let reservation = gameSessions.reserve(appId: game.appId) else { return }
         let current = generation
         let mustVerify = verifyBeforeLaunch || receipt.needsVerification == true
         isLaunching = true
@@ -787,6 +812,7 @@ final class SteamModel {
         errorMessage = nil
         launchTask = Task {
             defer {
+                gameSessions.release(reservation)
                 if current == generation {
                     isLaunching = false
                     isVerifyingBeforeLaunch = false
@@ -806,9 +832,17 @@ final class SteamModel {
                 let plan = try await session.launchPlan(appId: game.appId, platform: ready.platform, directory: ready.directory)
                 guard current == generation && !Task.isCancelled && !downloadCancellationRequested else { return }
                 guard let credentials = sessionCredentials else { throw SteamError.AuthenticationRequired }
-                try await executeLaunch(plan, credentials)
+                let sessions = gameSessions
+                try await executeLaunch(plan, credentials) { [weak self] event in
+                    sessions.receive(event, for: reservation)
+                    if case .running = event, let self, self.generation == current {
+                        self.isLaunching = false
+                    }
+                }
             } catch {
-                guard current == generation && !Task.isCancelled && !downloadCancellationRequested else { return }
+                guard current == generation else { return }
+                let gameWasRunning = gameSessions.active.map { $0.id == reservation && $0.running } ?? false
+                guard gameWasRunning || (!Task.isCancelled && !downloadCancellationRequested) else { return }
                 if !(error is CancellationError) { errorMessage = Self.message(error) }
             }
         }
@@ -825,7 +859,7 @@ final class SteamModel {
     }
 
     func uninstall(_ receipt: SteamInstallReceipt) {
-        guard isConnected, !isDownloading, !isLaunching, !isUninstalling,
+        guard isConnected, canModifyInstallation(of: receipt.appId),
               installations.contains(receipt), let file = receiptsURL else { return }
         let current = generation
         let remaining = installations.filter { $0 != receipt }

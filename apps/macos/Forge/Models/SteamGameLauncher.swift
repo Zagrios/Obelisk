@@ -1,8 +1,9 @@
 import Foundation
+import Observation
 
 @MainActor
 enum SteamGameLauncher {
-    static func launch(_ plan: SteamLaunchPlan, credentials: SteamCredentials) async throws {
+    static func launch(_ plan: SteamLaunchPlan, credentials: SteamCredentials, onEvent: @escaping SteamGameEventHandler) async throws {
         guard plan.platform == "macos" else { throw GameLaunchFailure.windowsRuntimeUnavailable }
         let target = plan.target
         let api = try await Task.detached(priority: .userInitiated) {
@@ -14,7 +15,7 @@ enum SteamGameLauncher {
         let configuration = SteamNativeConfiguration(
             appId: plan.appId,
             helpers: Bundle.main.bundleURL.appending(path: "Contents/Helpers/SteamNative").path,
-            source: home.appending(path: "Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS").path,
+            package: Bundle.main.bundleURL.appending(path: "Contents/Resources/SteamRuntime/runtime.zip").path,
             cache: home.appending(path: "Library/Caches/com.zagrios.forge/SteamRuntime").path,
             diagnostics: home.appending(path: "Library/Logs/Forge/Steam").path,
             steamApi: api.path,
@@ -28,11 +29,12 @@ enum SteamGameLauncher {
             var environment = runtime.environment()
             environment["SteamAppId"] = String(plan.appId)
             environment["SteamGameId"] = String(plan.appId)
-            try await NativeGameLauncher.launch(
+            let launched = try await NativeGameLauncher.spawn(
                 plan.target, platform: plan.platform, nativePlatform: "macos",
                 environment: environment,
                 ownershipToken: nil, steamRuntime: runtime
             )
+            try await supervise(launched, steamRuntime: runtime, onEvent: onEvent)
         } catch {
             runtime.stop(exitCode: nil)
             throw error
@@ -41,13 +43,37 @@ enum SteamGameLauncher {
 
     // Low-level process fixtures exercise bundle/argument handling without an account.
     #if DEBUG
-    static func launchForTesting(_ plan: SteamLaunchPlan) async throws {
-        try await NativeGameLauncher.launch(
+    static func launchForTesting(_ plan: SteamLaunchPlan, onEvent: @escaping SteamGameEventHandler = { _ in }) async throws {
+        let launched = try await NativeGameLauncher.spawn(
             plan.target, platform: plan.platform, nativePlatform: "macos",
             environment: ["SteamAppId": String(plan.appId), "SteamGameId": String(plan.appId)], ownershipToken: nil
         )
+        try await supervise(launched, steamRuntime: nil, onEvent: onEvent)
     }
     #endif
+
+    /// After Process.run succeeds, cancellation only cancels preparation. Own the
+    /// process until its actual exit, including on sign-out, and report host health.
+    private static func supervise(_ launched: LaunchedGameProcess, steamRuntime: SteamNativeRuntime?,
+                                  onEvent: @escaping SteamGameEventHandler) async throws {
+        defer { withExtendedLifetime(launched.process) {} }
+        onEvent(.running)
+        let observation = Task {
+            guard let steamRuntime else { return }
+            var previous = SteamHostState.online
+            while true {
+                let state = await steamRuntime.nextState(previous: previous)
+                if state == .stopped { return }
+                onEvent(.host(state))
+                if state == .lost { return }
+                previous = state
+            }
+        }
+        let exitCode = await launched.exit.wait()
+        await Task.detached { steamRuntime?.stop(exitCode: exitCode) }.value
+        await observation.value
+        if exitCode != 0 { throw SteamError.Failure(reason: "model.steam.gameExited") }
+    }
 
     private nonisolated static func steamAPI(for target: LaunchTarget) throws -> URL {
         let root = URL(fileURLWithPath: target.executable).resolvingSymlinksInPath()
@@ -76,7 +102,7 @@ enum SteamGameLauncher {
 @MainActor
 enum EpicGameLauncher {
     static func launch(_ plan: EpicLaunchPlan) async throws {
-        try await NativeGameLauncher.launch(
+        _ = try await NativeGameLauncher.spawn(
             plan.target, platform: plan.platform, nativePlatform: "Mac", environment: [:], ownershipToken: plan.ownershipToken
         )
     }
@@ -85,15 +111,16 @@ enum EpicGameLauncher {
 /// Storefront arguments remain literal process arguments. No shell interprets them.
 @MainActor
 private enum NativeGameLauncher {
-    static func launch(_ target: LaunchTarget, platform: String, nativePlatform: String,
-                       environment: [String: String], ownershipToken: Data?, steamRuntime: SteamNativeRuntime? = nil) async throws {
+    static func spawn(_ target: LaunchTarget, platform: String, nativePlatform: String,
+                      environment: [String: String], ownershipToken: Data?,
+                      steamRuntime: SteamNativeRuntime? = nil) async throws -> LaunchedGameProcess {
         try Task.checkCancellation()
         let worker = Task.detached(priority: .userInitiated) {
             try run(platform: platform, nativePlatform: nativePlatform, path: target.executable, arguments: target.arguments,
                     workingDirectory: target.workingDirectory, isApplicationBundle: target.isApplicationBundle,
                     environment: environment, ownershipToken: ownershipToken, steamRuntime: steamRuntime)
         }
-        try await withTaskCancellationHandler {
+        return try await withTaskCancellationHandler {
             try await worker.value
         } onCancel: {
             worker.cancel()
@@ -102,7 +129,7 @@ private enum NativeGameLauncher {
 
     // Process.run() can wait on macOS executable checks. Keep that work off the UI.
     private nonisolated static func run(platform: String, nativePlatform: String, path: String, arguments: [String],
-                                        workingDirectory: String, isApplicationBundle: Bool, environment: [String: String], ownershipToken: Data?, steamRuntime: SteamNativeRuntime?) throws {
+                                        workingDirectory: String, isApplicationBundle: Bool, environment: [String: String], ownershipToken: Data?, steamRuntime: SteamNativeRuntime?) throws -> LaunchedGameProcess {
         try Task.checkCancellation()
         guard platform == nativePlatform else {
             throw GameLaunchFailure.windowsRuntimeUnavailable
@@ -140,7 +167,6 @@ private enum NativeGameLauncher {
         }
 
         let process = Process()
-        let lifetime = UUID()
         process.executableURL = executable
         process.arguments = arguments
         var ownershipDirectory: URL?
@@ -149,7 +175,6 @@ private enum NativeGameLauncher {
             if !launched, let ownershipDirectory { try? FileManager.default.removeItem(at: ownershipDirectory) }
             if !launched, let steamRuntime {
                 steamRuntime.stop(exitCode: nil)
-                NativeSteamProcesses.shared.remove(lifetime)
             }
         }
         if let ownershipToken {
@@ -181,33 +206,99 @@ private enum NativeGameLauncher {
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
-        if let steamRuntime {
-            process.terminationHandler = { child in
-                steamRuntime.stop(exitCode: child.terminationStatus)
-                NativeSteamProcesses.shared.remove(lifetime)
-            }
-            NativeSteamProcesses.shared.retain(process, id: lifetime)
+        let completion = GameProcessExit()
+        let cleanup = process.terminationHandler
+        process.terminationHandler = { child in
+            cleanup?(child)
+            completion.finish(child.terminationStatus)
         }
         try Task.checkCancellation()
         try process.run()
-        if let steamRuntime {
-            do { try steamRuntime.gameStarted(pid: UInt32(process.processIdentifier)) }
-            catch {
-                if process.isRunning { process.terminate() }
-                throw error
-            }
-        }
         launched = true
+        // A diagnostics write failure or host loss after spawning must not kill
+        // the game or release its session. The observer reports host health.
+        if let steamRuntime { try? steamRuntime.gameStarted(pid: UInt32(process.processIdentifier)) }
+        return LaunchedGameProcess(process: process, exit: completion)
     }
 }
 
-/// Retain the process and its runtime until the game's termination callback.
-private final class NativeSteamProcesses: @unchecked Sendable {
-    static let shared = NativeSteamProcesses()
+/// The termination callback can run before the async caller receives the process.
+/// Keep its result so both orderings complete without blocking a Swift executor.
+private final class GameProcessExit: @unchecked Sendable {
     private let lock = NSLock()
-    private var processes: [UUID: Process] = [:]
-    func retain(_ process: Process, id: UUID) { lock.withLock { processes[id] = process } }
-    func remove(_ id: UUID) { lock.withLock { _ = processes.removeValue(forKey: id) } }
+    private var status: Int32?
+    private var continuation: CheckedContinuation<Int32, Never>?
+
+    func finish(_ value: Int32) {
+        let waiting = lock.withLock {
+            status = value
+            let waiting = continuation
+            continuation = nil
+            return waiting
+        }
+        waiting?.resume(returning: value)
+    }
+
+    func wait() async -> Int32 {
+        await withCheckedContinuation { waiting in
+            let completed = lock.withLock { () -> Int32? in
+                if let status { return status }
+                continuation = waiting
+                return nil
+            }
+            if let completed { waiting.resume(returning: completed) }
+        }
+    }
+}
+
+private struct LaunchedGameProcess: Sendable {
+    let process: Process
+    let exit: GameProcessExit
+}
+
+enum SteamGameEvent: Sendable {
+    case running
+    case host(SteamHostState)
+}
+
+typealias SteamGameEventHandler = @MainActor @Sendable (SteamGameEvent) -> Void
+
+/// One Steam session for this Forge process, independent of account/UI lifetime.
+@MainActor @Observable
+final class SteamGameSessions {
+    static let shared = SteamGameSessions()
+    struct Session {
+        let id: UUID
+        let appId: UInt32
+        var running = false
+        var host = SteamHostState.online
+    }
+    private(set) var active: Session?
+    var isBusy: Bool { active != nil }
+
+    func reserve(appId: UInt32) -> UUID? {
+        guard active == nil else { return nil }
+        let id = UUID()
+        active = Session(id: id, appId: appId)
+        return id
+    }
+
+    func receive(_ event: SteamGameEvent, for id: UUID) {
+        guard active?.id == id else { return }
+        switch event {
+        case .running: active?.running = true
+        case .host(let state): active?.host = state
+        }
+    }
+
+    func release(_ id: UUID) {
+        if active?.id == id { active = nil }
+    }
+
+    func protects(_ appId: UInt32?) -> Bool {
+        guard let appId else { return false }
+        return active?.appId == appId
+    }
 }
 
 enum GameLaunchFailure: LocalizedError {
