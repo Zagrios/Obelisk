@@ -32,9 +32,10 @@ fixed the failure. A regression test covers all three consumers' environment.
   process session. It owns the host's private pipe and the game child process.
   The `engine` child retains the existing sandbox and ABI boundary. Forge can
   exit or crash without closing the host's pipe.
-- `SteamGameLauncher` observes supervisor snapshots. The shared, observable
-  `SteamGameSessions` reservation spans preparation through teardown and account
-  sign-out, and restores an existing session when a new Forge process starts.
+- `SteamGameLauncher` prepares the native launch and returns the supervisor client.
+  The shared, observable `SteamGameSessions` owns admission, snapshot observation,
+  recovery and release. Its reservation spans preparation through teardown and
+  account sign-out, and it restores an existing session when Forge starts.
   Authentication failure, cancellation before spawning or failed SDK validation
   cleans up the host and scratch home.
 - `scripts/build-steam-native.sh` builds and signs both helpers in Forge's bundle.
@@ -51,9 +52,11 @@ finite stage names and error keys. Reports are under
 
 ## Game session tracking
 
-Forge currently admits one Steam game session at a time. The model reserves it
-synchronously before launch verification, and releases it after failure or actual
-game exit and host teardown. The running game's action reads "Running". Selecting
+Forge currently admits one Steam game session at a time. `SteamGameSessions.launch`
+reserves it synchronously before invoking the model's launch verification and plan
+preparation. The module releases it after a definite preparation failure, confirmed
+absence during recovery, or actual game exit and host teardown. The running game's
+action reads "Running". Selecting
 another installed Steam game does not enable another launch. Download, resume,
 verification and uninstall entry points reject operations on the reserved App ID,
 including through a replacement account session. Other games can still download
@@ -76,15 +79,22 @@ Once the supervisor spawns the game, Swift task cancellation does not terminate
 or abandon it. The supervisor waits for process exit even if the account signs out. A failed
 post-spawn diagnostic write or host death likewise cannot trigger termination.
 A nonzero game exit reports an error and releases the session after cleanup.
-Reservation IDs reject late events or cleanup from a previous session.
+Callers cannot release reservations or forward session events. Each operation owns
+its client observation through completion; cancelling an old completed operation
+cannot change the next session.
 
 This tracks the directly launched process. Games that hand execution to another
 process need separate compatibility work. Recovering Steamworks inside a game
 after host loss is not implemented. Steam Cloud is unchanged.
 
-Tests use disposable processes and injected session events for cancellation after
+Tests use disposable processes and scripted supervisor snapshots for cancellation after
 spawn, immediate/nonzero exit, failed spawn, duplicate requests, file-operation
-guards, network recovery, host loss, account sign-out and stale session events.
+guards, network recovery, host loss, account sign-out and old operation handles.
+`SteamGameSessionsTests` covers lost acknowledgement followed by failed/delayed
+recovery, cancellation before preparation, during handoff and after spawn, control
+loss, terminal errors and old operation handles. `SteamPresentationTests` exercises
+that same module through launch, verification/download/uninstall guards and account
+replacement during recovery, using scripted supervisor snapshots.
 These controls are separate from authenticated Silksong checks. The September 17
 [session validation report](evidence/steam-session-lifecycle-2026-09-17.json) records
 237 main-workspace Rust tests, one native test, 183 Swift tests with nine skips
@@ -97,8 +107,12 @@ The supervisor receives its bounded launch request and credentials once over a
 private Unix socket pair mapped to stdin and stderr. After publishing its initial
 record and starting its control listener, it acknowledges the session over that
 same channel. The client bounds the reply wait at 15 seconds; it no longer polls
-`session.json` during startup. Failed acknowledgement triggers durable recovery,
-and losing the parent never revokes an accepted launch. Neither endpoint is a log
+`session.json` during startup. Failed acknowledgement returns an uncertain-handoff
+error to `SteamGameSessions`,
+which starts durable recovery on the same injected instance without releasing its
+reservation. While recovery has not identified the live game, all Steam installation
+mutations stay blocked. Losing the parent never revokes an accepted launch.
+Neither endpoint is a log
 or a source of credentials after handoff. No further input from Forge is needed.
 A new process session prevents a terminal/process-group shutdown of Forge from taking
 it down. The supervisor remains only for preparation and the game lifetime; no

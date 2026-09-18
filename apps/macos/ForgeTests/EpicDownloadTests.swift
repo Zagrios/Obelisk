@@ -213,6 +213,28 @@ final class EpicDownloadTests: XCTestCase {
         XCTAssertEqual(fixture.model.transfer?.state, .complete)
     }
 
+    func testCancellationDuringFinalCredentialSaveRetainsCompletedInstallation() async throws {
+        let fixture = try await fixture()
+        defer { fixture.cleanUp() }
+        try await eventually { !fixture.model.isLoadingGameDetails && fixture.session.credentialRevisions.isWaiting }
+        await fixture.session.holdNextDownload()
+        fixture.model.downloadSelected()
+        try await eventually { await fixture.session.waitingForDownload }
+        await fixture.store.holdNextSave()
+        await fixture.session.completeDownload()
+        try await eventually { await fixture.store.waitingForSave }
+
+        XCTAssertEqual(fixture.model.installations.count, 1)
+        XCTAssertEqual(fixture.model.transfer?.state, .complete)
+        fixture.model.cancelDownload()
+        await fixture.store.completeSave()
+        try await eventually { !fixture.model.isDownloading }
+        XCTAssertEqual(fixture.model.installations.count, 1)
+        XCTAssertEqual(fixture.model.transfer?.state, .complete)
+        XCTAssertFalse(fixture.model.canResumeDownload)
+        XCTAssertNil(fixture.model.errorMessage)
+    }
+
     func testCancellationDuringPreparationSavesRotationWithoutStartingDownload() async throws {
         let fixture = try await fixture()
         defer { fixture.cleanUp() }
@@ -302,7 +324,7 @@ final class EpicDownloadTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let oldCredentials = credentials("old")
         let newCredentials = credentials("new", account: "second-account")
-        let store = EpicDownloadCredentialStore(oldCredentials)
+        let store = EpicMemoryStore(oldCredentials)
         let oldSession = EpicDownloadSession(credentials: oldCredentials, game: game("one"))
         let newSession = EpicDownloadSession(credentials: newCredentials, game: game("two"))
         let model = EpicModel(directory: directory, keychain: store, authorize: { "fixture-code" },
@@ -363,7 +385,7 @@ final class EpicDownloadTests: XCTestCase {
 
         let different = credentials("different", account: "different-account")
         let otherSession = EpicDownloadSession(credentials: different, game: fixture.game)
-        let other = EpicModel(directory: fixture.directory, keychain: EpicDownloadCredentialStore(different), restore: { _ in otherSession })
+        let other = EpicModel(directory: fixture.directory, keychain: EpicMemoryStore(different), restore: { _ in otherSession })
         await other.start()
         XCTAssertTrue(other.installations.isEmpty)
 
@@ -618,7 +640,7 @@ final class EpicDownloadTests: XCTestCase {
         let owned = owned ?? game("one")
         let directory = temporaryDirectory()
         let credential = credentials("current")
-        let store = EpicDownloadCredentialStore(credential)
+        let store = EpicMemoryStore(credential)
         let session = EpicDownloadSession(credentials: credential, game: owned)
         let launcher = EpicLaunchRecorder()
         let model = EpicModel(directory: directory, keychain: store, restore: { _ in session }, language: "fr-FR", launch: { plan in
@@ -664,19 +686,11 @@ private struct EpicDownloadFixture {
     let directory: URL
     let model: EpicModel
     let session: EpicDownloadSession
-    let store: EpicDownloadCredentialStore
+    let store: EpicMemoryStore
     let game: EpicGame
     let launcher: EpicLaunchRecorder
 
     func cleanUp() { try? FileManager.default.removeItem(at: directory) }
-}
-
-private actor EpicDownloadCredentialStore: EpicCredentialStore {
-    private(set) var value: EpicCredentials?
-    init(_ value: EpicCredentials?) { self.value = value }
-    func load() -> EpicCredentials? { value }
-    func save(_ value: EpicCredentials) { self.value = value }
-    func remove() { value = nil }
 }
 
 private struct EpicDownloadRequest: Equatable, Sendable {
@@ -691,14 +705,19 @@ private actor EpicDownloadSession: EpicSessionProtocol {
     func startFriends() async {}
     func reconnectFriends() async {}
     nonisolated func stopFriends() {}
-    nonisolated func shutdownObservers() {}
+    nonisolated func shutdownObservers() { credentialRevisions.stop() }
     nonisolated func friends() -> EpicFriendsSnapshot {
         EpicFriendsSnapshot(accountId: "unused", revision: 1, connection: .stopped, friends: [], message: nil)
     }
     func nextFriends(afterRevision: UInt64) async -> EpicFriendsSnapshot { friends() }
-    func nextCredentialsRevision(afterRevision: UInt64) async -> UInt64? { nil }
+    nonisolated let credentialRevisions = EpicCredentialRevisionFeed()
+    func nextCredentialsRevision(afterRevision: UInt64) async -> UInt64? {
+        await credentialRevisions.next(after: afterRevision)
+    }
 
-    private var credential: EpicCredentials
+    private var credential: EpicCredentials {
+        didSet { credentialRevisions.publish() }
+    }
     private let owned: EpicGame
     private var prepared: EpicCredentials?
     private var failure: EpicCredentials?

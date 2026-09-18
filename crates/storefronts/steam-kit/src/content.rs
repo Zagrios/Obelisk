@@ -237,14 +237,15 @@ impl ContentClient {
                 )
                 .await?;
             let key = plan.depot_key;
-            let manifest = tokio::task::spawn_blocking(move || {
-                let manifest_bytes = unpack_zip(&zipped, MAX_MANIFEST_BYTES)?;
-                let manifest = parse_manifest(&manifest_bytes, &key)?;
-                validate_manifest_files(&manifest.files)?;
-                Ok::<_, ContentError>((manifest, zipped))
-            })
-            .await
-            .map_err(|_| invalid("backend.steam.content.manifestParseInterrupted"))?;
+            let manifest = cancel
+                .spawn_blocking(move || {
+                    let manifest_bytes = unpack_zip(&zipped, MAX_MANIFEST_BYTES)?;
+                    let manifest = parse_manifest(&manifest_bytes, &key)?;
+                    validate_manifest_files(&manifest.files)?;
+                    Ok::<_, ContentError>((manifest, zipped))
+                })
+                .await
+                .map_err(|_| invalid("backend.steam.content.manifestParseInterrupted"))?;
             let (manifest, zipped) = manifest?;
             (Arc::new(manifest), Some(zipped))
         };
@@ -281,7 +282,7 @@ impl ContentClient {
             results,
         };
         let (reused_bytes, ()) = tokio::join!(
-            tokio::task::spawn_blocking(move || disk.run()),
+            cancel.spawn_blocking(move || disk.run()),
             transfer::pump_chunks(
                 request_queue,
                 deliveries,
@@ -322,11 +323,10 @@ impl ContentClient {
             match fetched {
                 Ok(encrypted) => {
                     let expected = chunk.clone();
-                    let decoded = tokio::task::spawn_blocking(move || {
-                        decode_chunk(&encrypted, &expected, &key)
-                    })
-                    .await
-                    .map_err(|_| invalid("backend.steam.content.chunkDecryptionInterrupted"))?;
+                    let decoded = cancel
+                        .spawn_blocking(move || decode_chunk(&encrypted, &expected, &key))
+                        .await
+                        .map_err(|_| invalid("backend.steam.content.chunkDecryptionInterrupted"))?;
                     match decoded {
                         Ok(bytes) => return Ok(bytes),
                         Err(error) => last_error = Some(error),
@@ -414,6 +414,7 @@ struct DiskInstall {
 impl DiskInstall {
     /// Returns the number of verified bytes reused from disk.
     fn run(mut self) -> Result<u64, ContentError> {
+        self.cancel.check()?;
         fs::create_dir_all(&self.destination)?;
         let root = fs::canonicalize(&self.destination)?;
         // A per-destination lock also prevents conflicting depots from being installed together.

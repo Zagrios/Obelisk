@@ -43,17 +43,17 @@ final class EpicModel {
     private(set) var launchLibraryID: String?
     private(set) var installations: [EpicInstallReceipt] = []
     var errorMessage: String?
-    var storageWarning: String?
+    var storageWarning: String? {
+        get { rememberedSession.storageWarning }
+        set { rememberedSession.storageWarning = newValue }
+    }
     var searchText = ""
-    var rememberSession = true {
-        didSet {
-            guard rememberSession != oldValue else { return }
-            let current = generation
-            Task { await persistSession(generation: current) }
-        }
+    var rememberSession: Bool {
+        get { rememberedSession.rememberSession }
+        set { rememberedSession.rememberSession = newValue }
     }
 
-    @ObservationIgnored private let keychain: any EpicCredentialStore
+    @ObservationIgnored private let rememberedSession: EpicRememberedSession
     @ObservationIgnored private let directory: URL
     @ObservationIgnored private let executeLaunch: @MainActor (EpicLaunchPlan) async throws -> Void
     @ObservationIgnored private let launchLanguage: String
@@ -62,7 +62,6 @@ final class EpicModel {
     @ObservationIgnored private let restoreSession: @Sendable (EpicCredentials) async throws -> any EpicSessionProtocol
     @ObservationIgnored private var session: (any EpicSessionProtocol)?
     @ObservationIgnored private var friendsTask: Task<Void, Never>?
-    @ObservationIgnored private var credentialsTask: Task<Void, Never>?
     @ObservationIgnored private var friendsObservationGeneration = 0
     @ObservationIgnored private var wakeObserver: SystemWakeObservation?
 
@@ -73,7 +72,6 @@ final class EpicModel {
     @ObservationIgnored private var libraryTask: Task<Void, Never>?
     @ObservationIgnored private var detailsTask: Task<Void, Never>?
     @ObservationIgnored private var detailsGeneration = 0
-    @ObservationIgnored private var storageTask: Task<Void, Never>?
     @ObservationIgnored private var downloadTask: Task<Void, Never>?
     @ObservationIgnored private var uninstallTask: Task<Void, Never>?
     @ObservationIgnored private var uninstallLibraryID: String?
@@ -92,7 +90,7 @@ final class EpicModel {
         launch: @escaping @MainActor (EpicLaunchPlan) async throws -> Void = { try await EpicGameLauncher.launch($0) }
     ) {
         self.directory = directory
-        self.keychain = keychain
+        self.rememberedSession = EpicRememberedSession(store: keychain)
         self.authorize = authorize
         self.createSession = signIn
         self.restoreSession = restore
@@ -105,8 +103,6 @@ final class EpicModel {
 
     deinit {
         friendsTask?.cancel()
-        credentialsTask?.cancel()
-        session?.shutdownObservers()
     }
 
     // Always read the observable account, even before the unobserved session exists.
@@ -195,7 +191,7 @@ final class EpicModel {
         defer { if current == generation { isRestoring = false } }
         let credentials: EpicCredentials?
         do {
-            credentials = try await keychain.load()
+            credentials = try await rememberedSession.load()
         } catch {
             guard current == generation else { return }
             storageWarning = error.localizedDescription
@@ -210,7 +206,7 @@ final class EpicModel {
             guard current == generation && !Task.isCancelled else { return }
             errorMessage = Self.message(error)
             if case EpicError.Unauthorized = error {
-                await writeCredentials(nil, generation: current)
+                await rememberedSession.forget().value
             } else {
                 canRetryRestore = true
             }
@@ -274,13 +270,12 @@ final class EpicModel {
             accountID = credentials.accountId
             accountName = credentials.displayName.isEmpty ? credentials.accountId : credentials.displayName
             friends = .epic(accountID: credentials.accountId)
-            observeCredentials(connected, account: credentials.accountId, generation: current)
             observeFriends(connected, account: credentials.accountId, generation: current)
             isConnecting = false
             isRestoring = false
             errorMessage = nil
             isLoadingGames = true
-            await writeCredentials(credentials, generation: current)
+            await rememberedSession.activate(connected, accountID: credentials.accountId)
             guard current == generation else { return }
 
             await reloadGames(connected, generation: current)
@@ -309,11 +304,9 @@ final class EpicModel {
     private func reloadGames(_ connected: any EpicSessionProtocol, generation current: Int) async {
         defer { if current == generation { isLoadingGames = false } }
         do {
-            let prepared = try await connected.prepare()
-            guard current == generation && !Task.isCancelled else { return }
-            await writeCredentials(prepared, generation: current)
-            guard current == generation && !Task.isCancelled else { return }
-            let loaded = try await connected.games()
+            let loaded = try await rememberedSession.perform(on: connected) {
+                try await connected.games()
+            }
             guard current == generation && !Task.isCancelled else { return }
             games = loaded
             if let selectedGame {
@@ -322,57 +315,9 @@ final class EpicModel {
             }
         } catch {
             guard current == generation && !Task.isCancelled else { return }
-            // Signing out bumps the generation, so the persist below becomes a no-op.
             if case EpicError.Unauthorized = error { signOut() }
             errorMessage = Self.message(error)
         }
-
-        // Epic can rotate its refresh token before a later library request fails.
-        await persistSession(generation: current)
-    }
-
-    private func persistSession(generation current: Int) async {
-        guard current == generation else { return }
-        guard rememberSession else {
-            await writeCredentials(nil, generation: current)
-            return
-        }
-        guard let session else { return }
-        do {
-            let credentials = try await session.credentials()
-            guard current == generation else { return }
-            await writeCredentials(credentials, generation: current)
-        } catch {
-            guard current == generation else { return }
-            storageWarning = L10n.string("model.epic.sessionNotSaved")
-        }
-    }
-
-    /// Saves when the user asked to be remembered, otherwise removes any stored item.
-    private func writeCredentials(_ credentials: EpicCredentials?, generation current: Int) async {
-        let previous = storageTask
-        let task = Task {
-            await previous?.value
-            guard current == generation else { return }
-            do {
-                if let credentials, rememberSession {
-                    // A queued library save may contain a token older than a social refresh.
-                    // Resolve the current credential only after earlier Keychain writes finish.
-                    let latest = try await session?.credentials() ?? credentials
-                    guard current == generation else { return }
-                    if rememberSession { try await keychain.save(latest) }
-                    else { try await keychain.remove() }
-                }
-                else { try await keychain.remove() }
-                guard current == generation else { return }
-                storageWarning = nil
-            } catch {
-                guard current == generation else { return }
-                storageWarning = error.localizedDescription
-            }
-        }
-        storageTask = task
-        await task.value
     }
 
     func signOut() {
@@ -380,12 +325,10 @@ final class EpicModel {
         generation += 1
         let current = generation
         let disconnected = session
+        let removal = rememberedSession.forget()
         friendsObservationGeneration += 1
         friendsTask?.cancel()
-        credentialsTask?.cancel()
         friendsTask = nil
-        credentialsTask = nil
-        disconnected?.shutdownObservers()
         friends = nil
         isFriendsPresented = false
         disconnected?.cancelDownload()
@@ -421,7 +364,7 @@ final class EpicModel {
         isSigningOut = true
         canRetryRestore = false
         Task {
-            await writeCredentials(nil, generation: current)
+            await removal.value
             if current == generation { isSigningOut = false }
             do { try await disconnected?.disconnect() }
             catch {
@@ -469,29 +412,6 @@ final class EpicModel {
         }
     }
 
-    private func observeCredentials(_ connected: any EpicSessionProtocol, account: String, generation current: Int) {
-        credentialsTask?.cancel()
-        credentialsTask = Task { [weak self] in
-            await withTaskCancellationHandler {
-                var revision: UInt64 = 0
-                while !Task.isCancelled {
-                    guard let updated = await connected.nextCredentialsRevision(afterRevision: revision) else { return }
-                    revision = updated
-                    guard self?.generation == current, self?.accountID == account, !Task.isCancelled else { return }
-                    do {
-                        let credentials = try await connected.credentials()
-                        guard self?.generation == current, self?.accountID == account,
-                              credentials.accountId == account, !Task.isCancelled else { return }
-                        await self?.writeCredentials(credentials, generation: current)
-                    } catch {
-                        guard self?.generation == current else { return }
-                        self?.storageWarning = L10n.string("model.epic.sessionNotSaved")
-                    }
-                }
-            } onCancel: { connected.shutdownObservers() }
-        }
-    }
-
     func open(_ game: EpicGame) {
         closeGame()
         selectedGame = game
@@ -524,22 +444,19 @@ final class EpicModel {
         defer { if isCurrent() { isLoadingGameDetails = false } }
         guard isCurrent() else { return }
         do {
-            let prepared = try await session.prepare()
-            guard current == generation else { return }
-            await writeCredentials(prepared, generation: current)
-            guard isCurrent() else { return }
-            let details = try await session.gameDetails(
-                namespace: game.namespace,
-                catalogItemId: game.catalogItemId,
-                appName: game.appName,
-                platform: game.preferredPlatform
-            )
+            let details = try await rememberedSession.perform(on: session) {
+                guard isCurrent() else { throw CancellationError() }
+                return try await session.gameDetails(
+                    namespace: game.namespace,
+                    catalogItemId: game.catalogItemId,
+                    appName: game.appName,
+                    platform: game.preferredPlatform
+                )
+            }
             if isCurrent() { selectedGameDetails = details }
         } catch {
             // Secondary metadata must not prevent browsing the library.
         }
-        // Closing a game cancels its task, but any rotated token still belongs to this account.
-        await Task { await persistSession(generation: current) }.value
     }
 
     func downloadSelected() {
@@ -585,24 +502,20 @@ final class EpicModel {
             }
             do {
                 let receipt = try await performDownload(game, platform: platform, directory: destination, session: session, generation: current)
-                await Task { await persistSession(generation: current) }.value
                 try requireCurrentDownload(generation: current)
                 saveInstallations()
                 isDownloading = false
                 guard launchAfterDownload else { return }
                 isVerifyingBeforeLaunch = false
-                let plan = try await session.launchPlan(namespace: game.namespace, catalogItemId: game.catalogItemId,
+                let plan = try await rememberedSession.perform(on: session, preparing: false) {
+                    try requireCurrentDownload(generation: current)
+                    return try await session.launchPlan(namespace: game.namespace, catalogItemId: game.catalogItemId,
                                                         appName: game.appName, platform: receipt.platform,
                                                         directory: receipt.directory, language: launchLanguage)
-                // Launch authorization may rotate credentials, including when the
-                // selection has changed while this original game was verified.
-                await Task { await persistSession(generation: current) }.value
+                }
                 try requireCurrentDownload(generation: current)
                 try await executeLaunch(plan)
             } catch {
-                // Cancellation can also interrupt launch authorization. Persist in
-                // a fresh task so its cancellation cannot discard a rotated token.
-                await Task { await persistSession(generation: current) }.value
                 guard current == generation else { return }
                 saveInstallations()
                 if !(error is CancellationError) && !downloadCancellationRequested {
@@ -624,8 +537,10 @@ final class EpicModel {
                                  session: any EpicSessionProtocol, generation current: Int) async throws -> EpicInstallReceipt {
         var terminalState: TransferState = .failed
         var startedDownload = false
-        defer {
-            if current == generation {
+        var finishedProgress = false
+        func finishProgress() {
+            if current == generation && !finishedProgress {
+                finishedProgress = true
                 progressTask?.cancel()
                 progressTask = nil
                 if startedDownload, let snapshot = session.downloadProgress(), snapshot.appName == game.appName, snapshot.state == terminalState {
@@ -636,34 +551,35 @@ final class EpicModel {
                 transfer?.state = terminalState
             }
         }
+        defer { finishProgress() }
         do {
             try requireCurrentDownload(generation: current)
-            let prepared = try await session.prepare()
-            guard current == generation else { throw CancellationError() }
-            await writeCredentials(prepared, generation: current)
-            try requireCurrentDownload(generation: current)
-            progressTask = Task {
-                while current == generation && !Task.isCancelled {
-                    if let snapshot = session.downloadProgress(), snapshot.appName == game.appName,
-                       snapshot.state == .preparing || snapshot.state == .verifying || snapshot.state == .downloading {
-                        if snapshot != transfer { transfer = snapshot }
+            return try await rememberedSession.perform(on: session) {
+                try requireCurrentDownload(generation: current)
+                progressTask = Task {
+                    while current == generation && !Task.isCancelled {
+                        if let snapshot = session.downloadProgress(), snapshot.appName == game.appName,
+                           snapshot.state == .preparing || snapshot.state == .verifying || snapshot.state == .downloading {
+                            if snapshot != transfer { transfer = snapshot }
+                        }
+                        try? await Task.sleep(for: .milliseconds(250))
                     }
-                    try? await Task.sleep(for: .milliseconds(250))
                 }
+                startedDownload = true
+                let installed = try await session.download(namespace: game.namespace, catalogItemId: game.catalogItemId,
+                                                           appName: game.appName, platform: platform, directory: destination.path)
+                try requireCurrentDownload(generation: current)
+                guard session.downloadProgress()?.state != .cancelled else { throw CancellationError() }
+                let receipt = EpicInstallReceipt(namespace: game.namespace, appName: installed.appName, name: game.title,
+                                                 directory: installed.directory, platform: installed.platform, totalBytes: installed.totalBytes)
+                installations.removeAll { $0.id == receipt.id }
+                installations.append(receipt)
+                saveInstallations()
+                lastDownload = nil
+                terminalState = .complete
+                finishProgress()
+                return receipt
             }
-            startedDownload = true
-            let installed = try await session.download(namespace: game.namespace, catalogItemId: game.catalogItemId,
-                                                       appName: game.appName, platform: platform, directory: destination.path)
-            try requireCurrentDownload(generation: current)
-            guard session.downloadProgress()?.state != .cancelled else { throw CancellationError() }
-            let receipt = EpicInstallReceipt(namespace: game.namespace, appName: installed.appName, name: game.title,
-                                             directory: installed.directory, platform: installed.platform, totalBytes: installed.totalBytes)
-            installations.removeAll { $0.id == receipt.id }
-            installations.append(receipt)
-            saveInstallations()
-            lastDownload = nil
-            terminalState = .complete
-            return receipt
         } catch {
             let cancelled = error is CancellationError || downloadCancellationRequested
                 || (startedDownload && session.downloadProgress()?.state == .cancelled)

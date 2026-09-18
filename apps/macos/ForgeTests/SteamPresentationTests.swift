@@ -105,9 +105,9 @@ final class SteamPresentationTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let details = FixtureResponses<DetailsRequest, SteamGameDetails>()
         let session = FixtureSteamSession(games: fixtureGames, details: details)
-        let sessions = SteamGameSessions()
-        let reservation = try XCTUnwrap(sessions.reserve(appId: 620))
-        sessions.receive(.phase(.running), for: reservation)
+        let game = RecoveredGameFixture(appID: 620)
+        let sessions = SteamGameSessions(recoverExisting: true, recoverSession: { game })
+        try await eventually { sessions.active?.running == true }
         let model = SteamModel(directory: root, keychain: FixtureCredentialStore(), connect: { _ in session },
                                news: { _ in [] }, localeIdentifier: "fr-FR", gameSessions: sessions)
         await model.start()
@@ -120,17 +120,20 @@ final class SteamPresentationTests: XCTestCase {
         await details.release(DetailsRequest(appId: 620, language: "french"), value: fixtureDetails(620))
         try await eventually { model.details != nil }
         XCTAssertEqual(model.primaryActionSymbol, "play.fill")
-        sessions.receive(.connection(.reconnecting), for: reservation)
+        await game.update(connection: .reconnecting)
+        try await eventually { sessions.active?.connection == .reconnecting }
         XCTAssertEqual(sessions.active?.phase, .running)
         XCTAssertEqual(sessions.active?.host, .online)
         XCTAssertEqual(model.gameSessionMessage, L10n.string("model.steam.recoveringSession"))
         XCTAssertEqual(model.primaryActionTitle, L10n.string("model.steam.running"))
         XCTAssertFalse(model.primaryActionAvailable)
         XCTAssertTrue(sessions.protects(620))
-        XCTAssertNil(sessions.reserve(appId: 620))
-        sessions.receive(.connection(.connected), for: reservation)
+        XCTAssertTrue(sessions.isBusy)
+        await game.update(connection: .connected)
+        try await eventually { sessions.active?.connection == .connected }
         XCTAssertNil(model.gameSessionMessage)
-        sessions.release(reservation)
+        await game.finish()
+        try await eventually { !sessions.isBusy }
         XCTAssertEqual(model.primaryActionSymbol, "arrow.down")
     }
 
@@ -664,8 +667,8 @@ final class SteamPresentationTests: XCTestCase {
 
     @MainActor
     func testRunningSessionBlocksRelaunchVerificationAndUninstallUntilActualExit() async throws {
-        let lifetime = FixtureResponses<UInt32, Bool>()
-        let fixture = try await launchFixture(verify: false, lifetime: lifetime)
+        let game = RecoveredGameFixture(appID: 620)
+        let fixture = try await launchFixture(verify: false, game: game)
         defer { fixture.cleanUp() }
         fixture.model.primaryAction()
         fixture.model.primaryAction()
@@ -682,18 +685,20 @@ final class SteamPresentationTests: XCTestCase {
         XCTAssertFalse(fixture.model.isDownloading)
         XCTAssertFalse(fixture.model.isUninstalling)
         XCTAssertNotNil(fixture.model.selectedInstallation)
-        let reservation = try XCTUnwrap(fixture.model.gameSessions.active?.id)
-        fixture.model.gameSessions.receive(.host(.disconnected), for: reservation)
+        await game.update(host: .disconnected)
+        try await eventually { fixture.model.gameSessions.active?.host == .disconnected }
         XCTAssertEqual(fixture.model.gameSessionMessage, L10n.string("model.steam.gameDisconnected"))
-        fixture.model.gameSessions.receive(.host(.online), for: reservation)
+        await game.update(host: .online)
+        try await eventually { fixture.model.gameSessions.active?.host == .online }
         XCTAssertNil(fixture.model.gameSessionMessage)
-        fixture.model.gameSessions.receive(.host(.lost), for: reservation)
+        await game.update(host: .lost)
+        try await eventually { fixture.model.gameSessions.active?.host == .lost }
         XCTAssertEqual(fixture.model.gameSessionMessage, L10n.string("model.steam.gameHostLost"))
         XCTAssertFalse(fixture.model.primaryActionAvailable)
-        XCTAssertNil(fixture.model.gameSessions.reserve(appId: 570))
+        XCTAssertTrue(fixture.model.gameSessions.isBusy)
         let events = await fixture.events.snapshot()
         XCTAssertEqual(events, ["plan:620", "execute:620"])
-        await lifetime.release(620, value: true)
+        await game.finish()
         try await eventually { !fixture.model.gameSessions.isBusy }
         XCTAssertTrue(fixture.model.primaryActionAvailable)
         XCTAssertTrue(fixture.model.canUninstallSelectedGame)
@@ -727,8 +732,8 @@ final class SteamPresentationTests: XCTestCase {
 
     @MainActor
     func testSignOutWhileGameRunsKeepsGlobalReservationUntilExit() async throws {
-        let lifetime = FixtureResponses<UInt32, Bool>()
-        let fixture = try await launchFixture(verify: false, lifetime: lifetime)
+        let game = RecoveredGameFixture(appID: 620)
+        let fixture = try await launchFixture(verify: false, game: game)
         defer { fixture.cleanUp() }
         fixture.model.primaryAction()
         try await eventually { fixture.model.gameSessions.active?.running == true }
@@ -736,11 +741,85 @@ final class SteamPresentationTests: XCTestCase {
         XCTAssertTrue(fixture.model.gameSessions.isBusy)
         let replacement = SteamModel(directory: fixture.root, preferences: fixture.preferences, gameSessions: fixture.model.gameSessions)
         XCTAssertTrue(replacement.gameSessions.protects(620))
-        XCTAssertNil(replacement.gameSessions.reserve(appId: 570))
-        await lifetime.release(620, value: true)
+        XCTAssertTrue(replacement.gameSessions.isBusy)
+        await game.finish()
         try await eventually { !replacement.gameSessions.isBusy }
         XCTAssertFalse(fixture.model.isLaunching)
         XCTAssertNil(fixture.model.errorMessage)
+    }
+
+    @MainActor
+    func testLostLaunchAcknowledgementKeepsActionsAndInstallationProtectedThroughRecovery() async throws {
+        let game = RecoveredGameFixture(appID: 620)
+        let recovery = GameSessionGate<RecoveredGameFixture?>()
+        var starts = 0
+        let sessions = SteamGameSessions(startSession: { _, _ in
+            starts += 1
+            throw SteamGameHandoffFailure(cause: SteamError.Failure(reason: "backend.steam.runtime.unavailable"))
+        }, recoverSession: { try await recovery.wait() })
+        let fixture = try await launchFixture(verify: false, sessions: sessions)
+        defer { fixture.cleanUp() }
+        let receipt = try XCTUnwrap(fixture.model.selectedInstallation)
+        fixture.model.primaryAction()
+        XCTAssertTrue(sessions.protects(620))
+        try await eventually { await recovery.requests == 1 }
+        XCTAssertEqual(fixture.model.primaryActionTitle, L10n.string("model.steam.recoveringSession"))
+        XCTAssertFalse(fixture.model.primaryActionAvailable)
+        XCTAssertFalse(fixture.model.canUninstallSelectedGame)
+        fixture.model.primaryAction()
+        fixture.model.downloadSelected()
+        fixture.model.download(fixtureGames[0], platform: "macos", language: "french", directory: fixture.root)
+        fixture.model.resumeDownload()
+        fixture.model.uninstall(receipt)
+        XCTAssertFalse(fixture.model.isDownloading)
+        XCTAssertFalse(fixture.model.isUninstalling)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: receipt.directory))
+        XCTAssertEqual(fixture.model.selectedInstallation, receipt)
+        XCTAssertTrue(sessions.protects(620))
+        await recovery.resolve(game)
+        try await eventually { sessions.active?.running == true }
+        XCTAssertEqual(fixture.model.primaryActionTitle, L10n.string("model.steam.running"))
+        XCTAssertFalse(fixture.model.isLaunching)
+        XCTAssertFalse(fixture.model.canUninstallSelectedGame)
+        XCTAssertNil(fixture.model.errorMessage)
+        XCTAssertEqual(starts, 1)
+        await game.finish()
+        try await eventually { !sessions.isBusy }
+        XCTAssertTrue(fixture.model.primaryActionAvailable)
+        XCTAssertTrue(fixture.model.canUninstallSelectedGame)
+        XCTAssertNil(fixture.model.errorMessage)
+        XCTAssertNil(fixture.model.gameSessionMessage)
+    }
+
+    @MainActor
+    func testSignOutDuringAmbiguousLaunchKeepsReplacementModelProtectedUntilRecoveredExit() async throws {
+        let game = RecoveredGameFixture(appID: 620)
+        let recovery = GameSessionGate<RecoveredGameFixture?>()
+        let sessions = SteamGameSessions(startSession: { _, _ in
+            throw SteamGameHandoffFailure(cause: CancellationError())
+        }, recoverSession: { try await recovery.wait() })
+        let original = try await launchFixture(verify: false, sessions: sessions)
+        defer { original.cleanUp() }
+        original.model.primaryAction()
+        try await eventually { await recovery.requests == 1 }
+        original.model.signOut()
+        XCTAssertTrue(sessions.protects(620))
+        let replacement = try await launchFixture(verify: false, sessions: sessions)
+        defer { replacement.cleanUp() }
+        XCTAssertFalse(replacement.model.primaryActionAvailable)
+        XCTAssertFalse(replacement.model.canUninstallSelectedGame)
+        await recovery.resolve(game)
+        try await eventually { sessions.active?.running == true }
+        try await eventually { await game.cancellations == 1 }
+        XCTAssertEqual(replacement.model.primaryActionTitle, L10n.string("model.steam.running"))
+        XCTAssertFalse(replacement.model.canUninstallSelectedGame)
+        XCTAssertFalse(original.model.isLaunching)
+        XCTAssertNil(original.model.errorMessage)
+        await game.finish()
+        try await eventually { !sessions.isBusy }
+        XCTAssertTrue(replacement.model.primaryActionAvailable)
+        XCTAssertTrue(replacement.model.canUninstallSelectedGame)
+        XCTAssertNil(original.model.errorMessage)
     }
 
     @MainActor
@@ -833,7 +912,7 @@ final class SteamPresentationTests: XCTestCase {
     }
 
     @MainActor
-    private func launchFixture(verify: Bool? = nil, needsVerification: Bool? = nil, failVerification: Bool = false, lifetime: FixtureResponses<UInt32, Bool>? = nil, failLaunch: Bool = false, sessions: SteamGameSessions? = nil) async throws -> LaunchFixture {
+    private func launchFixture(verify: Bool? = nil, needsVerification: Bool? = nil, failVerification: Bool = false, game: RecoveredGameFixture? = nil, failLaunch: Bool = false, sessions: SteamGameSessions? = nil) async throws -> LaunchFixture {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let parent = root.appending(path: "Installed games")
         let installedDirectory = parent.appending(path: "steam-620-macos")
@@ -857,7 +936,7 @@ final class SteamPresentationTests: XCTestCase {
             return SteamLaunchPlan(appId: appId, platform: platform, target: LaunchTarget(executable: directory + "/Game.app", arguments: [], workingDirectory: directory, isApplicationBundle: true))
         })
         let credentialStore = FixtureCredentialStore()
-        let model = SteamModel(directory: root, keychain: credentialStore, connect: { _ in session }, news: { _ in [] }, beginLogin: { _ in throw SteamError.Failure(reason: "Fixture: sign-in is offline in tests") }, localeIdentifier: "fr-FR", preferences: preferences, gameSessions: sessions ?? SteamGameSessions(), launch: { plan, credentials, onEvent in
+        let gameSessions = sessions ?? SteamGameSessions(startSession: { plan, credentials in
             XCTAssertEqual(credentials.steamId, 42)
             XCTAssertEqual(credentials.accountName, "Test account")
             XCTAssertEqual(credentials.refreshToken, "fixture-only-never-sent")
@@ -865,11 +944,15 @@ final class SteamPresentationTests: XCTestCase {
             XCTAssertEqual(loads, 1, "Launching must reuse the connected session without reading Keychain again")
             await events.append("execute:\(plan.appId)")
             if failLaunch { throw SteamError.Failure(reason: "model.steam.gameExited") }
-            if let lifetime {
-                onEvent(.phase(.running))
-                _ = try await lifetime.request(plan.appId)
-            }
+            if let game { return game }
+            let completed = RecoveredGameFixture(appID: plan.appId)
+            await completed.finish()
+            return completed
+        }, recoverSession: {
+            XCTFail("A confirmed local launch must not recover another session")
+            return nil
         })
+        let model = SteamModel(directory: root, keychain: credentialStore, connect: { _ in session }, news: { _ in [] }, beginLogin: { _ in throw SteamError.Failure(reason: "Fixture: sign-in is offline in tests") }, localeIdentifier: "fr-FR", preferences: preferences, gameSessions: gameSessions)
         await model.start()
         model.open(fixtureGames[0])
         try await eventually { model.details != nil }

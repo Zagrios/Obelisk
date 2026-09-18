@@ -1,9 +1,12 @@
 //! Cancellation and progress vocabulary shared by storefront download engines.
+mod lifecycle;
+pub use lifecycle::{TransferBusy, TransferContext, TransferStatus, Transfers};
+
 use std::{
     future::Future,
     sync::{
         Arc, Mutex, PoisonError,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
 };
 
@@ -19,6 +22,8 @@ pub struct CancelToken(Arc<CancelState>);
 struct CancelState {
     cancelled: AtomicBool,
     notify: Notify,
+    workers: AtomicUsize,
+    workers_finished: Notify,
 }
 
 /// Returned by [`CancelToken::check`]; storefront errors convert it into their
@@ -58,6 +63,48 @@ impl CancelToken {
             return;
         }
         notified.await;
+    }
+
+    /// Registers work before it reaches the blocking pool. A dropped async
+    /// caller cannot release its transfer slot while this work still runs.
+    /// The worker must check this token at its normal cancellation points.
+    pub fn spawn_blocking<F, R>(&self, work: F) -> tokio::task::JoinHandle<R>
+    where
+        F: FnOnce() -> R + Send + 'static,
+        R: Send + 'static,
+    {
+        self.0.workers.fetch_add(1, Ordering::AcqRel);
+        let worker = BlockingWorker(Arc::clone(&self.0));
+        tokio::task::spawn_blocking(move || {
+            let _worker = worker;
+            work()
+        })
+    }
+
+    fn workers_finished(&self) -> bool {
+        self.0.workers.load(Ordering::Acquire) == 0
+    }
+
+    async fn wait_for_workers(&self) {
+        loop {
+            let notified = self.0.workers_finished.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            if self.workers_finished() {
+                return;
+            }
+            notified.await;
+        }
+    }
+}
+
+struct BlockingWorker(Arc<CancelState>);
+
+impl Drop for BlockingWorker {
+    fn drop(&mut self) {
+        if self.0.workers.fetch_sub(1, Ordering::AcqRel) == 1 {
+            self.0.workers_finished.notify_waiters();
+        }
     }
 }
 

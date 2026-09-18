@@ -108,7 +108,7 @@ impl ContentClient {
         };
         let mut cancellation_guard = CancellationGuard(Some(cancel.clone()));
         let (reused_bytes, ()) = tokio::join!(
-            tokio::task::spawn_blocking(move || disk.run()),
+            cancel.spawn_blocking(move || disk.run()),
             transfer::pump_chunks(receiver, deliveries, CHUNK_CONCURRENCY, cancel, |chunk| {
                 self.fetch_chunk(feature_level, base_urls, chunk, cancel, &reporter)
             }),
@@ -140,7 +140,8 @@ impl ContentClient {
                 match self.fetch(&url, cancel, reporter).await {
                     Ok(bytes) => {
                         let expected = chunk.clone();
-                        match tokio::task::spawn_blocking(move || decode_chunk(&bytes, &expected))
+                        match cancel
+                            .spawn_blocking(move || decode_chunk(&bytes, &expected))
                             .await
                             .map_err(|_| EpicError::Protocol)?
                         {

@@ -3,16 +3,16 @@
 use std::{
     collections::{HashMap, HashSet},
     path::Path,
-    sync::{
-        Arc, Mutex, PoisonError,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{Arc, Mutex, PoisonError},
     time::{Duration, Instant},
 };
 
 use forge_core::{
     install::{self, InstallError, LOCK_FILE, RECEIPT_FILE},
-    transfer::{Cancelled, DownloadProgress, DownloadSummary},
+    transfer::{
+        Cancelled, DownloadProgress, DownloadSummary, TransferBusy, TransferContext,
+        TransferStatus, Transfers,
+    },
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex as AsyncMutex;
@@ -201,10 +201,7 @@ pub struct Client {
     /// Owned app IDs expanded through PICS licenses, filled on first content query.
     catalog: AsyncMutex<Option<Arc<HashSet<u32>>>>,
     app_infos: Mutex<HashMap<u32, (Instant, Arc<AppInfo>)>>,
-    downloading: AtomicBool,
-    /// Token of the current (or last) download; replaced when a new one starts.
-    cancel: Mutex<CancelToken>,
-    progress: Arc<Mutex<Option<TransferProgress>>>,
+    downloads: Transfers<TransferProgress>,
 }
 
 impl Client {
@@ -227,9 +224,7 @@ impl Client {
             cm: AsyncMutex::new(cm),
             catalog: AsyncMutex::new(None),
             app_infos: Mutex::new(HashMap::new()),
-            downloading: AtomicBool::new(false),
-            cancel: Mutex::new(CancelToken::new()),
-            progress: Arc::new(Mutex::new(None)),
+            downloads: Transfers::default(),
         })
     }
 
@@ -242,10 +237,7 @@ impl Client {
     pub fn shutdown(&self) {
         self.friends.disconnect(false);
         self.connection_abort.abort();
-        self.cancel
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .cancel();
+        self.downloads.cancel();
     }
 
     pub async fn profile(&self) -> Result<crate::cm::AccountProfile, ClientError> {
@@ -333,10 +325,7 @@ impl Client {
     }
 
     pub fn progress(&self) -> Option<TransferProgress> {
-        self.progress
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+        self.downloads.snapshot()
     }
 
     pub async fn details(&self, app_id: u32, language: &str) -> Result<GameDetails, ClientError> {
@@ -357,14 +346,7 @@ impl Client {
     }
 
     pub fn cancel_download(&self) {
-        self.cancel_token().cancel();
-    }
-
-    fn cancel_token(&self) -> CancelToken {
-        self.cancel
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+        self.downloads.cancel();
     }
 
     /// Resolve only a completed installation belonging to this account. PICS is
@@ -402,54 +384,24 @@ impl Client {
         language: &str,
         parent: &Path,
     ) -> Result<Installation, ClientError> {
-        if self
-            .downloading
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_err()
-        {
-            return Err(ClientError(
-                "backend.steam.client.downloadInProgress".into(),
-            ));
-        }
-        let _active = ActiveDownload(&self.downloading);
-        let cancel = CancelToken::new();
-        *self.cancel.lock().unwrap_or_else(PoisonError::into_inner) = cancel.clone();
-        self.set_progress(TransferProgress {
-            app_id,
-            state: TransferState::Preparing,
-            completed_bytes: 0,
-            total_bytes: 0,
-            network_bytes: 0,
-            content_bytes: 0,
-            current_file: String::new(),
-            message: "backend.steam.client.preparingDepots".into(),
-        });
-        let result = self
-            .download_inner(app_id, platform, language, parent, &cancel)
-            .await;
-        let mut progress = self.progress.lock().unwrap_or_else(PoisonError::into_inner);
-        if let Some(progress) = progress.as_mut() {
-            match &result {
-                Ok(_) => {
-                    progress.state = TransferState::Complete;
-                    progress.message = if progress.content_bytes == 0 {
-                        "backend.steam.client.filesUpToDate"
-                    } else {
-                        "backend.steam.client.downloadComplete"
-                    }
-                    .into();
-                }
-                Err(error) => {
-                    progress.state = if cancel.is_cancelled() {
-                        TransferState::Cancelled
-                    } else {
-                        TransferState::Failed
-                    };
-                    progress.message = error.to_string();
-                }
-            }
-        }
-        result
+        self.downloads
+            .run(
+                TransferProgress {
+                    app_id,
+                    state: TransferState::Preparing,
+                    completed_bytes: 0,
+                    total_bytes: 0,
+                    network_bytes: 0,
+                    content_bytes: 0,
+                    current_file: String::new(),
+                    message: "backend.steam.client.preparingDepots".into(),
+                },
+                |transfer| async move {
+                    self.download_inner(app_id, platform, language, parent, &transfer)
+                        .await
+                },
+            )
+            .await
     }
 
     async fn download_inner(
@@ -458,8 +410,9 @@ impl Client {
         platform: &str,
         language: &str,
         parent: &Path,
-        cancel: &CancelToken,
+        transfer: &TransferContext<TransferProgress>,
     ) -> Result<Installation, ClientError> {
+        let cancel = transfer.cancel_token();
         if !matches!(platform, "windows" | "macos") || !crate::language::is_supported(language) {
             return Err(ClientError(
                 "backend.steam.client.unsupportedPlatformOrLanguage".into(),
@@ -503,7 +456,7 @@ impl Client {
                     depot,
                     &prepared.servers,
                     &destination,
-                    cancel,
+                    transfer,
                     base,
                 )
                 .await?;
@@ -528,15 +481,17 @@ impl Client {
             manifests,
         };
         save_installation(&destination, &installation)?;
-        self.set_progress(TransferProgress {
-            app_id,
-            state: TransferState::Complete,
-            completed_bytes: base.completed,
-            total_bytes: base.completed,
-            network_bytes: base.network,
-            content_bytes: base.content_bytes,
-            current_file: String::new(),
-            message: String::new(),
+        transfer.update(|progress| {
+            *progress = TransferProgress {
+                app_id,
+                state: TransferState::Downloading,
+                completed_bytes: base.completed,
+                total_bytes: base.completed,
+                network_bytes: base.network,
+                content_bytes: base.content_bytes,
+                current_file: String::new(),
+                message: String::new(),
+            }
         });
         Ok(installation)
     }
@@ -630,9 +585,10 @@ impl Client {
         depot: &PreparedDepot,
         servers: &[ContentServer],
         destination: &Path,
-        cancel: &CancelToken,
+        transfer: &TransferContext<TransferProgress>,
         base: ProgressBase,
     ) -> Result<(DownloadSummary, TransferBytes), ClientError> {
+        let cancel = transfer.cancel_token();
         let received = Arc::new(Mutex::new(DepotTransferBytes::default()));
         // The current manifest ID and depot key came from authorized Steam
         // metadata above. Keep one validated snapshot across all CDN attempts.
@@ -646,22 +602,25 @@ impl Client {
         // threads, so the callback owns everything it touches.
         let report: Arc<dyn Fn(DownloadProgress) + Send + Sync> = {
             let received = Arc::clone(&received);
-            let slot = Arc::clone(&self.progress);
+            let transfer = transfer.clone();
             let size = depot.estimated_bytes;
             Arc::new(move |progress: DownloadProgress| {
                 let bytes = received
                     .lock()
                     .unwrap_or_else(PoisonError::into_inner)
                     .observe(progress.network_bytes, progress.content_bytes);
-                *slot.lock().unwrap_or_else(PoisonError::into_inner) = Some(TransferProgress {
-                    app_id: base.app_id,
-                    state: progress.phase.into(),
-                    completed_bytes: base.completed + progress.completed_bytes,
-                    total_bytes: base.total_estimate.saturating_sub(size) + progress.total_bytes,
-                    network_bytes: base.network + bytes.network,
-                    content_bytes: base.content_bytes + bytes.content,
-                    current_file: progress.current_file,
-                    message: depot_label.clone(),
+                transfer.update(|status| {
+                    *status = TransferProgress {
+                        app_id: base.app_id,
+                        state: progress.phase.into(),
+                        completed_bytes: base.completed + progress.completed_bytes,
+                        total_bytes: base.total_estimate.saturating_sub(size)
+                            + progress.total_bytes,
+                        network_bytes: base.network + bytes.network,
+                        content_bytes: base.content_bytes + bytes.content,
+                        current_file: progress.current_file,
+                        message: depot_label.clone(),
+                    }
                 });
             })
         };
@@ -720,10 +679,6 @@ impl Client {
         Err(ClientError(last_error.unwrap_or_else(|| {
             "backend.steam.client.noDepotServer".into()
         })))
-    }
-
-    fn set_progress(&self, progress: TransferProgress) {
-        *self.progress.lock().unwrap_or_else(PoisonError::into_inner) = Some(progress);
     }
 }
 
@@ -873,10 +828,25 @@ fn client_error(error: impl std::fmt::Display) -> ClientError {
 fn storage_error(_: std::io::Error) -> ClientError {
     ClientError("backend.steam.client.storageFailed".into())
 }
-struct ActiveDownload<'a>(&'a AtomicBool);
-impl Drop for ActiveDownload<'_> {
-    fn drop(&mut self) {
-        self.0.store(false, Ordering::Release);
+impl From<TransferBusy> for ClientError {
+    fn from(_: TransferBusy) -> Self {
+        ClientError("backend.steam.client.downloadInProgress".into())
+    }
+}
+
+impl TransferStatus for TransferProgress {
+    fn finish(&mut self, state: TransferState, error: Option<String>) {
+        self.state = state;
+        self.message = error.unwrap_or_else(|| {
+            match state {
+                TransferState::Complete if self.content_bytes == 0 => {
+                    "backend.steam.client.filesUpToDate"
+                }
+                TransferState::Complete => "backend.steam.client.downloadComplete",
+                _ => "backend.steam.client.downloadStopped",
+            }
+            .into()
+        });
     }
 }
 

@@ -87,21 +87,6 @@ final class EpicModelTests: XCTestCase {
         XCTAssertNil(model.errorMessage)
     }
 
-    func testPreparedRotationIsSavedBeforeLibraryCompletes() async {
-        let original = credentials("original")
-        let store = EpicMemoryStore(original)
-        let session = EpicTestSession(credentials: original, games: [game("one")])
-        await session.rotateOnPrepare(credentials("prepared"))
-        await session.holdNextGames()
-        let model = EpicModel(keychain: store, restore: { _ in session })
-        let startup = Task { await model.start() }
-        await eventually { await session.waitingForGames }
-        let saved = await store.value
-        XCTAssertEqual(saved?.refreshToken, "prepared")
-        await session.completeGames([game("one")])
-        await startup.value
-    }
-
     func testRetryRestoreReservesAuthenticationBeforeAnotherSignIn() async {
         let original = credentials("original")
         let store = EpicMemoryStore(original)
@@ -361,7 +346,7 @@ final class EpicModelTests: XCTestCase {
         XCTAssertTrue(model.isConnected)
     }
 
-    func testSignOutWaitsForInFlightSaveBeforeRemovingCredentials() async {
+    func testSignOutDuringLoginBlocksAuthenticationUntilRemovalCompletes() async {
         let store = EpicMemoryStore(nil)
         await store.holdNextSave()
         let session = EpicTestSession(credentials: credentials("current"), games: [game("one")])
@@ -371,12 +356,13 @@ final class EpicModelTests: XCTestCase {
 
         model.signOut()
         model.cancelSignIn()
+        model.signIn(input: "0123456789abcdef0123456789abcdef")
         XCTAssertTrue(model.isSigningOut)
+        XCTAssertFalse(model.isConnecting)
+        XCTAssertFalse(model.isConnected)
         await store.completeSave()
         await eventually { !model.isSigningOut }
-        let saved = await store.value
-        XCTAssertNil(saved)
-        XCTAssertFalse(model.isConnected)
+        XCTAssertTrue(model.games.isEmpty)
     }
 
     func testStorageFailureLeavesConnectedSessionUsableWithWarning() async {
@@ -595,9 +581,10 @@ final class EpicModelTests: XCTestCase {
     }
 }
 
-private actor EpicMemoryStore: EpicCredentialStore {
+actor EpicMemoryStore: EpicCredentialStore {
     private(set) var value: EpicCredentials?
     private(set) var loads = 0
+    private(set) var writes: [EpicCredentials?] = []
     private(set) var waitingForSave = false
     private var shouldHoldSave = false
     private var shouldRejectSaves = false
@@ -614,23 +601,27 @@ private actor EpicMemoryStore: EpicCredentialStore {
             waitingForSave = false
         }
         value = credentials
+        writes.append(credentials)
     }
-    func remove() async throws { value = nil }
+    func remove() async throws { value = nil; writes.append(nil) }
     func holdNextSave() { shouldHoldSave = true }
     func completeSave() { saveContinuation?.resume(); saveContinuation = nil }
-    func rejectSaves() { shouldRejectSaves = true }
+    func rejectSaves(_ reject: Bool = true) { shouldRejectSaves = reject }
 }
 
-private actor EpicTestSession: EpicSessionProtocol {
+actor EpicTestSession: EpicSessionProtocol {
     func startFriends() async {}
     func reconnectFriends() async {}
     nonisolated func stopFriends() {}
-    nonisolated func shutdownObservers() {}
+    nonisolated func shutdownObservers() { credentialRevisions.stop() }
     nonisolated func friends() -> EpicFriendsSnapshot {
         EpicFriendsSnapshot(accountId: "unused", revision: 1, connection: .stopped, friends: [], message: nil)
     }
     func nextFriends(afterRevision: UInt64) async -> EpicFriendsSnapshot { friends() }
-    func nextCredentialsRevision(afterRevision: UInt64) async -> UInt64? { nil }
+    nonisolated let credentialRevisions = EpicCredentialRevisionFeed()
+    func nextCredentialsRevision(afterRevision: UInt64) async -> UInt64? {
+        await credentialRevisions.next(after: afterRevision)
+    }
 
     func launchPlan(namespace: String, catalogItemId: String, appName: String, platform: String, directory: String, language: String) async throws -> EpicLaunchPlan {
         throw EpicError.InvalidResponse
@@ -640,7 +631,9 @@ private actor EpicTestSession: EpicSessionProtocol {
     func download(namespace: String, catalogItemId: String, appName: String, platform: String, directory: String) async throws -> EpicInstallation {
         throw EpicError.InvalidResponse
     }
-    private var currentCredentials: EpicCredentials
+    private var currentCredentials: EpicCredentials {
+        didSet { credentialRevisions.publish() }
+    }
     private let ownedGames: [EpicGame]
     private var rotated: EpicCredentials?
     private var prepared: EpicCredentials?
@@ -663,7 +656,11 @@ private actor EpicTestSession: EpicSessionProtocol {
         self.rotated = rotated
     }
 
-    func credentials() async throws -> EpicCredentials { currentCredentials }
+    func rotate(_ credentials: EpicCredentials) { currentCredentials = credentials }
+    func credentials() async throws -> EpicCredentials {
+        try Task.checkCancellation()
+        return currentCredentials
+    }
     func prepare() async throws -> EpicCredentials {
         if let prepared { currentCredentials = prepared; self.prepared = nil }
         return currentCredentials
@@ -711,7 +708,7 @@ private actor EpicTestSession: EpicSessionProtocol {
     func completeGames(_ games: [EpicGame]) { gameContinuation?.resume(returning: games); gameContinuation = nil }
 }
 
-private struct EpicDetailsRequest: Equatable, Sendable {
+struct EpicDetailsRequest: Equatable, Sendable {
     let namespace: String
     let catalogItemId: String
     let appName: String

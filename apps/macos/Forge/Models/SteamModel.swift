@@ -104,7 +104,6 @@ final class SteamModel {
     @ObservationIgnored private let loadNews: @Sendable (UInt32) async throws -> [SteamNews]
     @ObservationIgnored private let beginLogin: @Sendable (SteamLoginStart) async throws -> any SteamLoginProtocol
     let gameSessions: SteamGameSessions
-    @ObservationIgnored private let executeLaunch: @MainActor (SteamLaunchPlan, SteamCredentials, @escaping SteamGameEventHandler) async throws -> Void
     @ObservationIgnored private let preferences: UserDefaults
     @ObservationIgnored private var session: (any SteamSessionProtocol)?
     @ObservationIgnored private var login: (any SteamLoginProtocol)?
@@ -152,10 +151,7 @@ final class SteamModel {
         reconnectDelay: @escaping @Sendable (Int) async throws -> Void = { attempt in
             try await Task.sleep(for: .seconds(1 << attempt))
         },
-        gameSessions: SteamGameSessions = .shared,
-        launch: @escaping @MainActor (SteamLaunchPlan, SteamCredentials, @escaping SteamGameEventHandler) async throws -> Void = { plan, credentials, onEvent in
-            try await SteamGameLauncher.launch(plan, credentials: credentials, onEvent: onEvent)
-        }
+        gameSessions: SteamGameSessions = .shared
     ) {
         self.directory = directory
         self.keychain = keychain
@@ -167,7 +163,6 @@ final class SteamModel {
         self.reconnectDelay = reconnectDelay
         self.verifyBeforeLaunch = preferences.object(forKey: Self.verifyBeforeLaunchPreferenceKey) == nil
             ? true : preferences.bool(forKey: Self.verifyBeforeLaunchPreferenceKey)
-        self.executeLaunch = launch
         self.gameSessions = gameSessions
         wakeObserver = SystemWakeObservation { [weak self] in
             Task { @MainActor [weak self] in self?.retryFriends() }
@@ -837,8 +832,7 @@ final class SteamModel {
     }
 
     private func launchGame(_ game: SteamGame, receipt: SteamInstallReceipt) {
-        guard let session, canModifyInstallation(of: game.appId),
-              let reservation = gameSessions.reserve(appId: game.appId) else { return }
+        guard let session, canModifyInstallation(of: game.appId), !gameSessions.isBusy else { return }
         let current = generation
         let mustVerify = verifyBeforeLaunch || receipt.needsVerification == true
         isLaunching = true
@@ -846,42 +840,35 @@ final class SteamModel {
         launchAppId = game.appId
         downloadCancellationRequested = false
         errorMessage = nil
-        launchTask = Task {
-            defer {
-                gameSessions.release(reservation)
-                if current == generation {
-                    isLaunching = false
-                    isVerifyingBeforeLaunch = false
-                    launchAppId = nil
-                }
+        var gameWasRunning = false
+        launchTask = gameSessions.launch(appId: game.appId, prepare: { [self] in
+            guard current == generation && !Task.isCancelled && !downloadCancellationRequested else { throw CancellationError() }
+            var ready = receipt
+            if mustVerify {
+                let parent = URL(fileURLWithPath: receipt.directory).deletingLastPathComponent()
+                beginTransfer(game, platform: receipt.platform, language: receipt.language, directory: parent, session: session, generation: current)
+                ready = try await performDownload(game, platform: receipt.platform, language: receipt.language, directory: parent, session: session, generation: current)
             }
-            guard current == generation && !Task.isCancelled && !downloadCancellationRequested else { return }
-            do {
-                var ready = receipt
-                if mustVerify {
-                    let parent = URL(fileURLWithPath: receipt.directory).deletingLastPathComponent()
-                    beginTransfer(game, platform: receipt.platform, language: receipt.language, directory: parent, session: session, generation: current)
-                    ready = try await performDownload(game, platform: receipt.platform, language: receipt.language, directory: parent, session: session, generation: current)
-                }
-                guard current == generation && !Task.isCancelled && !downloadCancellationRequested else { return }
-                isVerifyingBeforeLaunch = false
-                let plan = try await session.launchPlan(appId: game.appId, platform: ready.platform, directory: ready.directory)
-                guard current == generation && !Task.isCancelled && !downloadCancellationRequested else { return }
-                guard let credentials = sessionCredentials else { throw SteamError.AuthenticationRequired }
-                let sessions = gameSessions
-                try await executeLaunch(plan, credentials) { [weak self] event in
-                    sessions.receive(event, for: reservation)
-                    if case .phase(.running) = event, let self, self.generation == current {
-                        self.isLaunching = false
-                    }
-                }
-            } catch {
-                guard current == generation else { return }
-                let gameWasRunning = gameSessions.active.map { $0.id == reservation && $0.running } ?? false
-                guard gameWasRunning || (!Task.isCancelled && !downloadCancellationRequested) else { return }
-                if !(error is CancellationError) { errorMessage = Self.message(error) }
-            }
-        }
+            guard current == generation && !Task.isCancelled && !downloadCancellationRequested else { throw CancellationError() }
+            isVerifyingBeforeLaunch = false
+            let plan = try await session.launchPlan(appId: game.appId, platform: ready.platform, directory: ready.directory)
+            guard current == generation && !Task.isCancelled && !downloadCancellationRequested else { throw CancellationError() }
+            guard let credentials = sessionCredentials else { throw SteamError.AuthenticationRequired }
+            return SteamGameSessions.Launch(plan: plan, credentials: credentials)
+        }, onRunning: { [weak self] in
+            gameWasRunning = true
+            guard let self, self.generation == current else { return }
+            self.isLaunching = false
+        }, onCompletion: { [weak self] error in
+            guard let self, self.generation == current else { return }
+            self.isLaunching = false
+            self.isVerifyingBeforeLaunch = false
+            self.launchAppId = nil
+            self.launchTask = nil
+            guard let error, !(error is CancellationError),
+                  gameWasRunning || (!Task.isCancelled && !self.downloadCancellationRequested) else { return }
+            self.errorMessage = Self.message(error)
+        })
     }
 
     func cancelDownload() {

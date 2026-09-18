@@ -110,24 +110,6 @@ final class SteamGameLauncherTests: XCTestCase {
         XCTAssertEqual(starts, 20)
     }
 
-    @MainActor
-    func testSessionRejectsStaleEventsAndOnlyItsOwnerCanReleaseIt() throws {
-        let sessions = SteamGameSessions()
-        let first = try XCTUnwrap(sessions.reserve(appId: 42))
-        XCTAssertNil(sessions.reserve(appId: 43))
-        sessions.release(UUID())
-        XCTAssertTrue(sessions.isBusy)
-        sessions.release(first)
-        let second = try XCTUnwrap(sessions.reserve(appId: 43))
-        sessions.receive(.phase(.running), for: first)
-        sessions.receive(.host(.lost), for: first)
-        sessions.release(first)
-        XCTAssertEqual(sessions.active?.id, second)
-        XCTAssertEqual(sessions.active?.running, false)
-        XCTAssertEqual(sessions.active?.host, .online)
-        sessions.release(second)
-    }
-
     private func nonExecutableBundle(root: URL, binarySource: URL) throws -> URL {
         let app = root.appending(path: "Repair.app")
         let contents = app.appending(path: "Contents")
@@ -341,94 +323,5 @@ final class SteamGameLauncherTests: XCTestCase {
         try "#!/bin/sh\nprintf '%s\\n' \"$PWD\" \"$SteamAppId\" \"$SteamGameId\" \"$2\" > \"$1\"\n"
             .write(to: path, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: path.path)
-    }
-}
-
-actor RecoveredGameFixture: SteamGameSessionProtocol {
-    nonisolated let sessionID = UUID().uuidString
-    let appID: UInt32
-    init(appID: UInt32 = 42) { self.appID = appID }
-    private var ended = false
-    private var waiter: CheckedContinuation<Void, Never>?
-    nonisolated func cancelPreparation() {}
-
-    func snapshot(after: UInt64?) async throws -> SteamGameSnapshot {
-        try Task.checkCancellation()
-        if after != nil && !ended { await withCheckedContinuation { waiter = $0 } }
-        return SteamGameSnapshot(id: sessionID, appId: appID, phase: ended ? .finished : .running, connection: .connected,
-                                 host: .online, exitCode: ended ? 0 : nil, error: nil, revision: ended ? 2 : 1)
-    }
-    func finish() { ended = true; waiter?.resume(); waiter = nil }
-}
-
-extension SteamGameLauncherTests {
-    @MainActor
-    func testRecoveryBlocksOperationsBeforeFirstAwaitAndRestoresSessionUntilActualExit() async throws {
-        let game = RecoveredGameFixture()
-        let sessions = SteamGameSessions(recoverExisting: true, recoverSession: { game })
-        XCTAssertTrue(sessions.isRecovering)
-        XCTAssertTrue(sessions.protects(42))
-        XCTAssertTrue(sessions.protects(570))
-        XCTAssertNil(sessions.reserve(appId: 42))
-        let deadline = ContinuousClock.now + .seconds(3)
-        while sessions.isRecovering && ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
-        XCTAssertEqual(sessions.active?.appId, 42)
-        XCTAssertEqual(sessions.active?.running, true)
-        XCTAssertFalse(sessions.isRecovering)
-        XCTAssertTrue(sessions.protects(42))
-        XCTAssertFalse(sessions.protects(570))
-        XCTAssertNil(sessions.reserve(appId: 570))
-        await game.finish()
-        while sessions.isBusy && ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
-        XCTAssertFalse(sessions.isBusy)
-        XCTAssertFalse(sessions.protects(42))
-        XCTAssertNotNil(sessions.reserve(appId: 42))
-    }
-
-    @MainActor
-    func testCancellationOfUIObserverStillWaitsForRecoveredGameExit() async throws {
-        let game = RecoveredGameFixture()
-        var running = false
-        var finished = false
-        let observer = Task {
-            try await SteamGameLauncher.observe(game) { event in
-                if case .phase(.running) = event { running = true }
-            }
-            finished = true
-        }
-        let deadline = ContinuousClock.now + .seconds(3)
-        while !running && ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
-        XCTAssertTrue(running)
-        observer.cancel()
-        try await Task.sleep(for: .milliseconds(50))
-        XCTAssertFalse(finished)
-        await game.finish()
-        while !finished && ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
-        XCTAssertTrue(finished)
-        try await observer.value
-    }
-
-    @MainActor
-    func testFailedRecoveryKeepsGuardsThenRetriesWithoutCreatingAnotherGame() async throws {
-        var attempts = 0
-        var allowRecovery = false
-        let game = RecoveredGameFixture()
-        let sessions = SteamGameSessions(recoverExisting: true, recoverSession: {
-            attempts += 1
-            if attempts == 1 { throw SteamError.Failure(reason: "backend.steam.runtime.unavailable") }
-            while !allowRecovery { await Task.yield() }
-            return game
-        })
-        let deadline = ContinuousClock.now + .seconds(3)
-        while attempts == 0 && ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
-        XCTAssertTrue(sessions.isRecovering)
-        XCTAssertTrue(sessions.protects(42))
-        XCTAssertNil(sessions.reserve(appId: 42))
-        allowRecovery = true
-        while sessions.active == nil && ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
-        XCTAssertEqual(attempts, 2)
-        XCTAssertEqual(sessions.active?.running, true)
-        XCTAssertNil(sessions.recoveryError)
-        await game.finish()
     }
 }

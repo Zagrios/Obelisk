@@ -563,12 +563,15 @@ private actor EpicPresentationSession: EpicSessionProtocol {
     func startFriends() async {}
     func reconnectFriends() async {}
     nonisolated func stopFriends() {}
-    nonisolated func shutdownObservers() {}
+    nonisolated func shutdownObservers() { credentialRevisions.stop() }
     nonisolated func friends() -> EpicFriendsSnapshot {
         EpicFriendsSnapshot(accountId: "unused", revision: 1, connection: .stopped, friends: [], message: nil)
     }
     func nextFriends(afterRevision: UInt64) async -> EpicFriendsSnapshot { friends() }
-    func nextCredentialsRevision(afterRevision: UInt64) async -> UInt64? { nil }
+    nonisolated let credentialRevisions = EpicCredentialRevisionFeed()
+    func nextCredentialsRevision(afterRevision: UInt64) async -> UInt64? {
+        await credentialRevisions.next(after: afterRevision)
+    }
 
     func launchPlan(namespace: String, catalogItemId: String, appName: String, platform: String, directory: String, language: String) async throws -> EpicLaunchPlan {
         throw EpicError.InvalidResponse

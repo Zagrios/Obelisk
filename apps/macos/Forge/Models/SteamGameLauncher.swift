@@ -1,9 +1,8 @@
 import Foundation
-import Observation
 
 @MainActor
 enum SteamGameLauncher {
-    static func launch(_ plan: SteamLaunchPlan, credentials: SteamCredentials, onEvent: @escaping SteamGameEventHandler) async throws {
+    static func start(_ plan: SteamLaunchPlan, credentials: SteamCredentials) async throws -> any SteamGameSessionProtocol {
         guard plan.platform == "macos" else { throw GameLaunchFailure.windowsRuntimeUnavailable }
         let target = plan.target
         let api = try await Task.detached(priority: .userInitiated) {
@@ -24,20 +23,16 @@ enum SteamGameLauncher {
         let supervisedTarget = try await Task.detached(priority: .userInitiated) {
             try NativeGameLauncher.supervisedTarget(plan.target)
         }.value
-        let session: SteamGameSession
+        try Task.checkCancellation()
         do {
-            session = try await withTaskCancellationHandler {
+            return try await withTaskCancellationHandler {
                 try await attempt.startGame(configuration: configuration, target: supervisedTarget, sessionDirectory: sessionDirectory)
             } onCancel: { attempt.cancel() }
         } catch {
-            // A lost acknowledgement must not release guards if handoff already
-            // created a supervisor. Recovery resolves that ambiguity first.
-            SteamGameSessions.shared.recover()
-            throw error
+            // The supervisor may have accepted the game before its reply was lost.
+            // The session owner must resolve this before releasing its reservation.
+            throw SteamGameHandoffFailure(cause: error)
         }
-        try await withTaskCancellationHandler {
-            try await observe(session, onEvent: onEvent)
-        } onCancel: { Task.detached { session.cancelPreparation() } }
     }
 
     static var sessionDirectory: String {
@@ -50,37 +45,6 @@ enum SteamGameLauncher {
 
     static var helper: String {
         helpersDirectory.appending(path: "forge-steam-host").path
-    }
-
-    static func observe(_ session: any SteamGameSessionProtocol, initial: SteamGameSnapshot? = nil,
-                        onEvent: @escaping SteamGameEventHandler) async throws {
-        var pending = initial
-        var revision: UInt64?
-        while true {
-            let snapshot: SteamGameSnapshot
-            do {
-                if let first = pending { snapshot = first; pending = nil }
-                else {
-                    let after = revision
-                    snapshot = try await Task.detached { try await session.snapshot(after: after) }.value
-                }
-            } catch {
-                // Control loss is not evidence of game exit. Cancellation after
-                // spawn does not release the installation guards either.
-                onEvent(.connection(.reconnecting))
-                continue
-            }
-            revision = snapshot.revision
-            onEvent(.connection(snapshot.connection))
-            onEvent(.host(snapshot.host))
-            if snapshot.finished {
-                if let error = snapshot.error { throw SteamError.Failure(reason: error) }
-                if let code = snapshot.exitCode, code != 0 { throw SteamError.Failure(reason: "model.steam.gameExited") }
-                onEvent(.phase(snapshot.phase))
-                return
-            }
-            onEvent(.phase(snapshot.phase))
-        }
     }
 
     // Low-level process fixtures exercise bundle/argument handling without an account.
@@ -286,108 +250,17 @@ private struct LaunchedGameProcess: Sendable {
     let exit: GameProcessExit
 }
 
-extension SteamGameSnapshot {
-    var finished: Bool { phase == .finished || phase == .failed }
+/// A failed native handoff is ambiguous until durable recovery completes.
+struct SteamGameHandoffFailure: Error {
+    let cause: any Error
 }
 
+// Used only by disposable-process launch fixtures.
 enum SteamGameEvent: Sendable {
     case phase(SteamGamePhase)
-    case connection(SteamSupervisorConnection)
-    case host(SteamHostState)
 }
 
 typealias SteamGameEventHandler = @MainActor @Sendable (SteamGameEvent) -> Void
-
-/// One Steam session for this Forge process, independent of account/UI lifetime.
-@MainActor @Observable
-final class SteamGameSessions {
-    static let shared = SteamGameSessions(recoverExisting: true)
-    struct Session {
-        let id: UUID
-        let appId: UInt32
-        var phase = SteamGamePhase.preparing
-        var connection = SteamSupervisorConnection.connected
-        var running: Bool { phase == .running }
-        var host = SteamHostState.online
-    }
-    private(set) var active: Session?
-    private(set) var isRecovering = false
-    private(set) var recoveryError: String?
-    @ObservationIgnored private var recoveryTask: Task<Void, Never>?
-    @ObservationIgnored private let recoverSession: @MainActor () async throws -> (any SteamGameSessionProtocol)?
-    var isBusy: Bool { isRecovering || active != nil }
-
-    init(recoverExisting: Bool = false,
-         recoverSession: @escaping @MainActor () async throws -> (any SteamGameSessionProtocol)? = {
-             try await recoverSteamGameSession(sessionDirectory: SteamGameLauncher.sessionDirectory, helper: SteamGameLauncher.helper)
-         }) {
-        self.recoverSession = recoverSession
-        if recoverExisting { recover() }
-    }
-
-    func recover() {
-        guard recoveryTask == nil else { return }
-        isRecovering = true
-        recoveryTask = Task {
-            defer { recoveryTask = nil }
-            while true {
-                do {
-                    guard let client = try await recoverSession() else {
-                        isRecovering = false
-                        recoveryError = nil
-                        return
-                    }
-                    let snapshot = try await client.snapshot(after: nil)
-                    if snapshot.finished { continue }
-                    guard let id = UUID(uuidString: snapshot.id) else { throw SteamError.Failure(reason: "backend.steam.runtime.invalidSession") }
-                    active = Session(id: id, appId: snapshot.appId, phase: snapshot.phase, connection: snapshot.connection, host: snapshot.host)
-                    isRecovering = false
-                    recoveryError = nil
-                    do {
-                        try await SteamGameLauncher.observe(client, initial: snapshot) { event in
-                            self.receive(event, for: id)
-                        }
-                    } catch { recoveryError = SteamModel.message(error) }
-                    release(id)
-                    return
-                } catch {
-                    recoveryError = L10n.string("model.steam.recoveringSession")
-                    // Native recovery paces failed attempts.
-                    await Task.yield()
-                }
-            }
-        }
-    }
-
-    func reserve(appId: UInt32) -> UUID? {
-        guard !isBusy else { return nil }
-        let id = UUID()
-        recoveryError = nil
-        active = Session(id: id, appId: appId)
-        return id
-    }
-
-    func receive(_ event: SteamGameEvent, for id: UUID) {
-        guard active?.id == id else { return }
-        // Snapshots repeat unchanged fields; only real changes should invalidate views.
-        switch event {
-        case .phase(let phase) where active?.phase != phase: active?.phase = phase
-        case .connection(let state) where active?.connection != state: active?.connection = state
-        case .host(let state) where active?.host != state: active?.host = state
-        default: break
-        }
-    }
-
-    func release(_ id: UUID) {
-        if active?.id == id { active = nil }
-    }
-
-    func protects(_ appId: UInt32?) -> Bool {
-        if isRecovering { return true }
-        guard let appId else { return false }
-        return active?.appId == appId
-    }
-}
 
 enum GameLaunchFailure: LocalizedError {
     case windowsRuntimeUnavailable

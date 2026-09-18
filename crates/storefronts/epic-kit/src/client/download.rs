@@ -3,12 +3,12 @@
 use std::{
     fs::File,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, PoisonError},
+    sync::Arc,
 };
 
 use forge_core::{
     install::{LOCK_FILE, RECEIPT_FILE, checked_file_path, hex, try_lock_file},
-    transfer::CancelToken,
+    transfer::{TransferBusy, TransferContext, TransferStatus, Transfers},
 };
 use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
@@ -46,58 +46,37 @@ pub struct Installation {
     pub deployment_id: Option<String>,
 }
 
-#[derive(Default)]
-pub(super) struct Downloads {
-    active: Mutex<Option<CancelToken>>,
-    progress: Arc<Mutex<Option<TransferProgress>>>,
+pub(super) type Downloads = Transfers<TransferProgress>;
+
+impl From<TransferBusy> for EpicError {
+    fn from(_: TransferBusy) -> Self {
+        Self::AlreadyDownloading
+    }
 }
 
-/// Dropping the UniFFI future must stop workers and release the session slot,
-/// including when a caller disappears without explicitly requesting cancel.
-struct ActiveDownload<'a>(&'a Downloads);
-
-impl Drop for ActiveDownload<'_> {
-    fn drop(&mut self) {
-        let mut active = self.0.active.lock().unwrap_or_else(PoisonError::into_inner);
-        if let Some(cancel) = active.take() {
-            cancel.cancel();
-        }
-        let mut progress = self
-            .0
-            .progress
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        if let Some(progress) = progress.as_mut()
-            && matches!(
-                progress.state,
-                TransferState::Preparing | TransferState::Verifying | TransferState::Downloading
-            )
-        {
-            progress.state = TransferState::Cancelled;
-            progress.message = "backend.epic.cancelled".into();
-        }
+impl TransferStatus for TransferProgress {
+    fn finish(&mut self, state: TransferState, error: Option<String>) {
+        self.state = state;
+        self.message = error.unwrap_or_else(|| {
+            match state {
+                TransferState::Complete if self.content_bytes == 0 => {
+                    "backend.epic.files_up_to_date"
+                }
+                TransferState::Complete => "backend.epic.download_complete",
+                _ => "backend.epic.cancelled",
+            }
+            .into()
+        });
     }
 }
 
 impl Client {
     pub fn progress(&self) -> Option<TransferProgress> {
-        self.downloads
-            .progress
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+        self.downloads.snapshot()
     }
 
     pub fn cancel_download(&self) {
-        if let Some(cancel) = self
-            .downloads
-            .active
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .as_ref()
-        {
-            cancel.cancel();
-        }
+        self.downloads.cancel();
     }
 
     pub async fn download(
@@ -108,74 +87,36 @@ impl Client {
         platform: &str,
         parent: &Path,
     ) -> Result<Installation, EpicError> {
-        let cancel = {
-            let mut active = self
-                .downloads
-                .active
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
-            if active.is_some() {
-                return Err(EpicError::AlreadyDownloading);
-            }
-            let cancel = CancelToken::new();
-            *active = Some(cancel.clone());
-            cancel
-        };
-        let _active = ActiveDownload(&self.downloads);
-        *self
-            .downloads
-            .progress
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = Some(TransferProgress {
-            app_name: app_name.into(),
-            state: TransferState::Preparing,
-            completed_bytes: 0,
-            total_bytes: 0,
-            network_bytes: 0,
-            content_bytes: 0,
-            current_file: String::new(),
-            message: "backend.epic.preparing".into(),
-        });
-        // The content engine observes the same token and drains its disk worker.
-        // Only the read-only preparation phase races directly against cancel.
-        let result = self
-            .download_inner(
-                namespace,
-                catalog_item_id,
-                app_name,
-                platform,
-                parent,
-                &cancel,
-            )
-            .await;
-        let mut progress = self
-            .downloads
-            .progress
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        if let Some(progress) = progress.as_mut() {
-            match &result {
-                Ok(_) => {
-                    progress.state = TransferState::Complete;
-                    progress.message = if progress.content_bytes == 0 {
-                        "backend.epic.files_up_to_date"
-                    } else {
-                        "backend.epic.download_complete"
+        self.downloads
+            .run(
+                TransferProgress {
+                    app_name: app_name.into(),
+                    state: TransferState::Preparing,
+                    completed_bytes: 0,
+                    total_bytes: 0,
+                    network_bytes: 0,
+                    content_bytes: 0,
+                    current_file: String::new(),
+                    message: "backend.epic.preparing".into(),
+                },
+                |transfer| async move {
+                    let result = self
+                        .download_inner(
+                            namespace,
+                            catalog_item_id,
+                            app_name,
+                            platform,
+                            parent,
+                            &transfer,
+                        )
+                        .await;
+                    if matches!(result, Err(EpicError::Cancelled)) {
+                        transfer.cancel_token().cancel();
                     }
-                    .into();
-                }
-                Err(error) => {
-                    progress.state =
-                        if cancel.is_cancelled() || matches!(error, EpicError::Cancelled) {
-                            TransferState::Cancelled
-                        } else {
-                            TransferState::Failed
-                        };
-                    progress.message = error.to_string();
-                }
-            }
-        }
-        result
+                    result
+                },
+            )
+            .await
     }
 
     async fn download_inner(
@@ -185,8 +126,9 @@ impl Client {
         app_name: &str,
         platform: &str,
         parent: &Path,
-        cancel: &CancelToken,
+        transfer: &TransferContext<TransferProgress>,
     ) -> Result<Installation, EpicError> {
+        let cancel = transfer.cancel_token();
         validate_identity(namespace, catalog_item_id, app_name, platform)?;
         if !parent.is_absolute() || !parent.is_dir() {
             return Err(EpicError::Service {
@@ -224,8 +166,7 @@ impl Client {
             std::fs::remove_file(&receipt)?;
         }
 
-        let progress = self.downloads.progress.clone();
-        let callback_cancel = cancel.clone();
+        let progress = transfer.clone();
         let summary = ContentClient::new(self.api.http.clone())
             .download(
                 Arc::clone(&manifest),
@@ -233,12 +174,8 @@ impl Client {
                 &destination,
                 cancel,
                 move |snapshot| {
-                    if callback_cancel.is_cancelled() {
-                        return;
-                    }
                     debug_assert!(snapshot.completed_files <= snapshot.total_files);
-                    let mut progress = progress.lock().unwrap_or_else(PoisonError::into_inner);
-                    if let Some(progress) = progress.as_mut() {
+                    progress.update(|progress| {
                         progress.state = snapshot.phase.into();
                         progress.completed_bytes = snapshot.completed_bytes;
                         progress.total_bytes = snapshot.total_bytes;
@@ -247,7 +184,7 @@ impl Client {
                         progress.content_bytes = snapshot.content_bytes;
                         progress.current_file = snapshot.current_file;
                         progress.message.clear();
-                    }
+                    });
                 },
             )
             .await?;
@@ -257,19 +194,13 @@ impl Client {
         }
         debug_assert!(summary.reused_bytes <= summary.total_bytes);
         debug_assert_eq!(summary.completed_files as usize, manifest.files.len());
-        if let Some(progress) = self
-            .downloads
-            .progress
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .as_mut()
-        {
+        transfer.update(|progress| {
             progress.completed_bytes = summary.total_bytes;
             progress.total_bytes = summary.total_bytes;
             progress.network_bytes = network_bytes.saturating_add(summary.downloaded_bytes);
             progress.content_bytes = summary.content_bytes;
             progress.current_file.clear();
-        }
+        });
         let installation = Installation {
             app_name: app_name.into(),
             namespace: namespace.into(),

@@ -863,3 +863,95 @@ async fn traversal_manifest_does_not_create_destination() {
     assert!(!destination.exists());
     assert!(!parent.path().join("escaped").exists());
 }
+
+#[tokio::test]
+async fn abandoned_account_transfer_keeps_disk_admission_until_worker_exits() {
+    use crate::client::{ClientError, TransferProgress, TransferState};
+    use forge_core::transfer::Transfers;
+    fn initial() -> TransferProgress {
+        TransferProgress {
+            app_id: 42,
+            state: TransferState::Preparing,
+            completed_bytes: 0,
+            total_bytes: 0,
+            network_bytes: 0,
+            content_bytes: 0,
+            current_file: String::new(),
+            message: String::new(),
+        }
+    }
+    let directory = tempfile::tempdir().unwrap();
+    let bytes = b"new complete game";
+    let original = b"old working game";
+    fs::write(directory.path().join("game.exe"), original).unwrap();
+    let fixture = CdnFixture::new(routes(file("game.exe", &[bytes]), &[bytes]));
+    let transfers = Arc::new(Transfers::default());
+    let owner = Arc::clone(&transfers);
+    let client = fixture.client();
+    let target = plan(directory.path());
+    let (reached, waiting) = tokio::sync::oneshot::channel();
+    let (release, blocked) = std::sync::mpsc::channel();
+    let gate = Mutex::new(Some((reached, blocked)));
+    let task = tokio::spawn(async move {
+        owner
+            .run(initial(), |transfer| async move {
+                let progress = transfer.clone();
+                client
+                    .download_depot(&target, transfer.cancel_token(), move |snapshot| {
+                        progress.update(|status| {
+                            status.state = snapshot.phase.into();
+                            status.completed_bytes = snapshot.completed_bytes;
+                        });
+                        // This report comes from the disk worker before it asks for chunks.
+                        if snapshot.current_file == "game.exe"
+                            && let Some((reached, blocked)) = gate.lock().unwrap().take()
+                        {
+                            reached.send(()).unwrap();
+                            blocked.recv_timeout(Duration::from_secs(5)).unwrap();
+                        }
+                    })
+                    .await
+                    .map_err(|error| ClientError(error.to_string()))
+            })
+            .await
+    });
+    tokio::time::timeout(Duration::from_secs(5), waiting)
+        .await
+        .unwrap()
+        .unwrap();
+    task.abort();
+    assert!(task.await.unwrap_err().is_cancelled());
+    assert!(
+        transfers
+            .run(initial(), |_| async { Ok::<_, ClientError>(()) })
+            .await
+            .is_err()
+    );
+    assert!(install::lock_engine(directory.path()).unwrap().is_none());
+    assert_eq!(
+        fs::read(directory.path().join("game.exe")).unwrap(),
+        original
+    );
+    release.send(()).unwrap();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while transfers.snapshot().unwrap().state != TransferState::Cancelled {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(install::lock_engine(directory.path()).unwrap().is_some());
+    transfers
+        .run(initial(), |transfer| async move {
+            fixture
+                .client()
+                .download_depot(&plan(directory.path()), transfer.cancel_token(), |_| {})
+                .await
+                .map_err(|error| ClientError(error.to_string()))?;
+            assert_eq!(fs::read(directory.path().join("game.exe")).unwrap(), bytes);
+            Ok::<_, ClientError>(())
+        })
+        .await
+        .unwrap();
+    assert_eq!(transfers.snapshot().unwrap().state, TransferState::Complete);
+}
