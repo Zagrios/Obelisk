@@ -1,0 +1,175 @@
+{
+  "Object": [
+    [
+      "quota",
+      {
+        "Value": "100000000"
+      }
+    ],
+    [
+      "maxnumfiles",
+      {
+        "Value": "256"
+      }
+    ],
+    [
+      "savefiles",
+      {
+        "Object": [
+          [
+            "0",
+            {
+              "Object": [
+                [
+                  "root",
+                  {
+                    "Value": "WinAppDataLocalLow"
+                  }
+                ],
+                [
+                  "path",
+                  {
+                    "Value": "Team Cherry/Hollow Knight Silksong/{Steam3AccountID}"
+                  }
+                ],
+                [
+                  "pattern",
+                  {
+                    "Value": "*.dat"
+                  }
+                ],
+                [
+                  "recursive",
+                  {
+                    "Value": "1"
+                  }
+                ]
+              ]
+            }
+          ]
+        ]
+      }
+    ],
+    [
+      "rootoverrides",
+      {
+        "Object": [
+          [
+            "0",
+            {
+              "Object": [
+                [
+                  "root",
+                  {
+                    "Value": "WinAppDataLocalLow"
+                  }
+                ],
+                [
+                  "os",
+                  {
+                    "Value": "MacOS"
+                  }
+                ],
+                [
+                  "oscompare",
+                  {
+                    "Value": "="
+                  }
+                ],
+                [
+                  "useinstead",
+                  {
+                    "Value": "MacHome"
+                  }
+                ],
+                [
+                  "pathtransforms",
+                  {
+                    "Object": [
+                      [
+                        "0",
+                        {
+                          "Object": [
+                            [
+                              "find",
+                              {
+                                "Value": "Team Cherry/Hollow Knight Silksong/{Steam3AccountID}"
+                              }
+                            ],
+                            [
+                              "replace",
+                              {
+                                "Value": "/Library/Application Support/unity.Team-Cherry.Silksong/{Steam3AccountID}"
+                              }
+                            ]
+                          ]
+                        }
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            }
+          ],
+          [
+            "1",
+            {
+              "Object": [
+                [
+                  "root",
+                  {
+                    "Value": "WinAppDataLocalLow"
+                  }
+                ],
+                [
+                  "os",
+                  {
+                    "Value": "Linux"
+                  }
+                ],
+                [
+                  "oscompare",
+                  {
+                    "Value": "="
+                  }
+                ],
+                [
+                  "useinstead",
+                  {
+                    "Value": "LinuxHome"
+                  }
+                ],
+                [
+                  "pathtransforms",
+                  {
+                    "Object": [
+                      [
+                        "0",
+                        {
+                          "Object": [
+                            [
+                              "find",
+                              {
+                                "Value": "Team Cherry/Hollow Knight Silksong/{Steam3AccountID}"
+                              }
+                            ],
+                            [
+                              "replace",
+                              {
+                                "Value": ".config/unity3d/Team Cherry/Hollow Knight Silksong/{Steam3AccountID}"
+                              }
+                            ]
+                          ]
+                        }
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            }
+          ]
+        ]
+      }
+    ]
+  ]
+}

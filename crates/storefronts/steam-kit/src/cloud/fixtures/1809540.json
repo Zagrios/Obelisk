@@ -1,0 +1,98 @@
+{
+  "Object": [
+    [
+      "quota",
+      {
+        "Value": "1052428800"
+      }
+    ],
+    [
+      "maxnumfiles",
+      {
+        "Value": "5000"
+      }
+    ],
+    [
+      "savefiles",
+      {
+        "Object": [
+          [
+            "0",
+            {
+              "Object": [
+                [
+                  "root",
+                  {
+                    "Value": "WinAppDataLocalLow"
+                  }
+                ],
+                [
+                  "path",
+                  {
+                    "Value": "RedCandleGames/NineSols"
+                  }
+                ],
+                [
+                  "pattern",
+                  {
+                    "Value": "*.*"
+                  }
+                ],
+                [
+                  "recursive",
+                  {
+                    "Value": "1"
+                  }
+                ]
+              ]
+            }
+          ]
+        ]
+      }
+    ],
+    [
+      "rootoverrides",
+      {
+        "Object": [
+          [
+            "0",
+            {
+              "Object": [
+                [
+                  "root",
+                  {
+                    "Value": "WinAppDataLocalLow"
+                  }
+                ],
+                [
+                  "os",
+                  {
+                    "Value": "MacOS"
+                  }
+                ],
+                [
+                  "oscompare",
+                  {
+                    "Value": "="
+                  }
+                ],
+                [
+                  "useinstead",
+                  {
+                    "Value": "MacAppSupport"
+                  }
+                ],
+                [
+                  "addpath",
+                  {
+                    "Value": ""
+                  }
+                ]
+              ]
+            }
+          ]
+        ]
+      }
+    ]
+  ]
+}

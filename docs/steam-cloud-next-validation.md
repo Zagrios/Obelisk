@@ -1,3 +1,9 @@
+# Current follow-up, September 20, 2026
+
+[Current compatibility implementation and evidence](steam-cloud-compatibility-2026-09-20.md) supersede the SDK and metadata status below. Ordinary SDK RemoteStorage persistence and Rust-owned transfers are implemented and passed an authenticated two-cache roundtrip. Additional observed AutoCloud forms are supported. Real-game SDK launch/exit and Mac/Steam Deck confirmation remain unverified. FileShare and Dynamic Cloud are explicitly outside this follow-up, not completion gates. No history or format migration was added.
+
+The remainder records earlier trials and their scope at the time.
+
 # Follow-up validation, September 19, 2026
 
 This continues the five workstreams from the latest handoff. It does not replace the earlier authenticated upload and unchanged-save lifecycle evidence.

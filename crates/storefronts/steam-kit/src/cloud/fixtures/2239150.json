@@ -1,0 +1,137 @@
+{
+  "Object": [
+    [
+      "quota",
+      {
+        "Value": "100000000"
+      }
+    ],
+    [
+      "maxnumfiles",
+      {
+        "Value": "100"
+      }
+    ],
+    [
+      "savefiles",
+      {
+        "Object": [
+          [
+            "0",
+            {
+              "Object": [
+                [
+                  "root",
+                  {
+                    "Value": "WinAppDataLocalLow"
+                  }
+                ],
+                [
+                  "path",
+                  {
+                    "Value": "Grizzly Games\\Thronefall"
+                  }
+                ],
+                [
+                  "pattern",
+                  {
+                    "Value": "*.sav"
+                  }
+                ]
+              ]
+            }
+          ],
+          [
+            "1",
+            {
+              "Object": [
+                [
+                  "root",
+                  {
+                    "Value": "WinAppDataLocalLow"
+                  }
+                ],
+                [
+                  "path",
+                  {
+                    "Value": "Grizzly Games\\Thronefall"
+                  }
+                ],
+                [
+                  "pattern",
+                  {
+                    "Value": "*.json"
+                  }
+                ]
+              ]
+            }
+          ]
+        ]
+      }
+    ],
+    [
+      "rootoverrides",
+      {
+        "Object": [
+          [
+            "0",
+            {
+              "Object": [
+                [
+                  "root",
+                  {
+                    "Value": "WinAppDataLocalLow"
+                  }
+                ],
+                [
+                  "os",
+                  {
+                    "Value": "MacOS"
+                  }
+                ],
+                [
+                  "oscompare",
+                  {
+                    "Value": "="
+                  }
+                ],
+                [
+                  "useinstead",
+                  {
+                    "Value": "MacAppSupport"
+                  }
+                ],
+                [
+                  "pathtransforms",
+                  {
+                    "Object": [
+                      [
+                        "0",
+                        {
+                          "Object": [
+                            [
+                              "find",
+                              {
+                                "Value": "Grizzly Games\\Thronefall"
+                              }
+                            ],
+                            [
+                              "replace",
+                              {
+                                "Value": "Grizzly Games\\Thronefall"
+                              }
+                            ]
+                          ]
+                        }
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            }
+          ]
+        ]
+      }
+    ]
+  ]
+}

@@ -46,6 +46,21 @@ impl SteamNativeLaunch {
     pub fn cancel(&self) {
         self.launch.cancel();
     }
+    #[cfg(debug_assertions)]
+    pub async fn probe_storage(
+        &self,
+        configuration: SteamNativeConfiguration,
+        transfers: bool,
+    ) -> Result<String, SteamError> {
+        let launch = self.launch.clone();
+        tokio::task::spawn_blocking(move || {
+            launch
+                .probe_storage(configuration.into(), transfers)
+                .map_err(Into::into)
+        })
+        .await
+        .map_err(|_| steam_runtime::Error::StartFailed)?
+    }
     pub async fn start_game(
         &self,
         configuration: SteamNativeConfiguration,

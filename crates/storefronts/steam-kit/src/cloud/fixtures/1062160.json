@@ -1,0 +1,305 @@
+{
+  "Object": [
+    [
+      "quota",
+      {
+        "Value": "1000000000"
+      }
+    ],
+    [
+      "maxnumfiles",
+      {
+        "Value": "10000"
+      }
+    ],
+    [
+      "savefiles",
+      {
+        "Object": [
+          [
+            "3",
+            {
+              "Object": [
+                [
+                  "root",
+                  {
+                    "Value": "WinAppDataLocalLow"
+                  }
+                ],
+                [
+                  "path",
+                  {
+                    "Value": "Dry Cactus/Poly Bridge 2/Profiles"
+                  }
+                ],
+                [
+                  "pattern",
+                  {
+                    "Value": "*"
+                  }
+                ]
+              ]
+            }
+          ],
+          [
+            "4",
+            {
+              "Object": [
+                [
+                  "root",
+                  {
+                    "Value": "WinAppDataLocalLow"
+                  }
+                ],
+                [
+                  "path",
+                  {
+                    "Value": "Dry Cactus/Poly Bridge 2/Sandbox"
+                  }
+                ],
+                [
+                  "pattern",
+                  {
+                    "Value": "*"
+                  }
+                ]
+              ]
+            }
+          ],
+          [
+            "5",
+            {
+              "Object": [
+                [
+                  "root",
+                  {
+                    "Value": "WinAppDataLocalLow"
+                  }
+                ],
+                [
+                  "path",
+                  {
+                    "Value": "Dry Cactus/Poly Bridge 2/SaveSlots"
+                  }
+                ],
+                [
+                  "pattern",
+                  {
+                    "Value": "*"
+                  }
+                ],
+                [
+                  "recursive",
+                  {
+                    "Value": "1"
+                  }
+                ]
+              ]
+            }
+          ],
+          [
+            "6",
+            {
+              "Object": [
+                [
+                  "root",
+                  {
+                    "Value": "WinMyDocuments"
+                  }
+                ],
+                [
+                  "path",
+                  {
+                    "Value": "Dry Cactus/Poly Bridge 2/Profiles"
+                  }
+                ],
+                [
+                  "pattern",
+                  {
+                    "Value": "*"
+                  }
+                ],
+                [
+                  "platforms",
+                  {
+                    "Object": [
+                      [
+                        "1",
+                        {
+                          "Value": "Windows"
+                        }
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            }
+          ],
+          [
+            "7",
+            {
+              "Object": [
+                [
+                  "root",
+                  {
+                    "Value": "WinMyDocuments"
+                  }
+                ],
+                [
+                  "path",
+                  {
+                    "Value": "Dry Cactus/Poly Bridge 2/Sandbox"
+                  }
+                ],
+                [
+                  "pattern",
+                  {
+                    "Value": "*"
+                  }
+                ],
+                [
+                  "platforms",
+                  {
+                    "Object": [
+                      [
+                        "1",
+                        {
+                          "Value": "Windows"
+                        }
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            }
+          ],
+          [
+            "8",
+            {
+              "Object": [
+                [
+                  "root",
+                  {
+                    "Value": "WinMyDocuments"
+                  }
+                ],
+                [
+                  "path",
+                  {
+                    "Value": "Dry Cactus/Poly Bridge 2/SaveSlots"
+                  }
+                ],
+                [
+                  "pattern",
+                  {
+                    "Value": "*"
+                  }
+                ],
+                [
+                  "platforms",
+                  {
+                    "Object": [
+                      [
+                        "1",
+                        {
+                          "Value": "Windows"
+                        }
+                      ]
+                    ]
+                  }
+                ],
+                [
+                  "recursive",
+                  {
+                    "Value": "1"
+                  }
+                ]
+              ]
+            }
+          ]
+        ]
+      }
+    ],
+    [
+      "rootoverrides",
+      {
+        "Object": [
+          [
+            "1",
+            {
+              "Object": [
+                [
+                  "root",
+                  {
+                    "Value": "WinAppDataLocalLow"
+                  }
+                ],
+                [
+                  "os",
+                  {
+                    "Value": "MacOS"
+                  }
+                ],
+                [
+                  "oscompare",
+                  {
+                    "Value": "="
+                  }
+                ],
+                [
+                  "useinstead",
+                  {
+                    "Value": "MacAppSupport"
+                  }
+                ],
+                [
+                  "addpath",
+                  {
+                    "Value": ""
+                  }
+                ]
+              ]
+            }
+          ],
+          [
+            "2",
+            {
+              "Object": [
+                [
+                  "root",
+                  {
+                    "Value": "WinAppDataLocalLow"
+                  }
+                ],
+                [
+                  "os",
+                  {
+                    "Value": "Linux"
+                  }
+                ],
+                [
+                  "oscompare",
+                  {
+                    "Value": "="
+                  }
+                ],
+                [
+                  "useinstead",
+                  {
+                    "Value": "LinuxHome"
+                  }
+                ],
+                [
+                  "addpath",
+                  {
+                    "Value": ".config/unity3d/"
+                  }
+                ]
+              ]
+            }
+          ]
+        ]
+      }
+    ]
+  ]
+}

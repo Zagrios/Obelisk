@@ -1,0 +1,48 @@
+{
+  "Object": [
+    [
+      "quota",
+      {
+        "Value": "512000"
+      }
+    ],
+    [
+      "maxnumfiles",
+      {
+        "Value": "50"
+      }
+    ],
+    [
+      "savefiles",
+      {
+        "Object": [
+          [
+            "0",
+            {
+              "Object": [
+                [
+                  "root",
+                  {
+                    "Value": "gameinstall"
+                  }
+                ],
+                [
+                  "path",
+                  {
+                    "Value": "."
+                  }
+                ],
+                [
+                  "pattern",
+                  {
+                    "Value": "*.json"
+                  }
+                ]
+              ]
+            }
+          ]
+        ]
+      }
+    ]
+  ]
+}

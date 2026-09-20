@@ -45,7 +45,7 @@ impl Child {
     pub fn host(prepared: &Prepared, config: &Config, service: &str) -> Result<Self, Error> {
         Self::spawn(Self::host_command(prepared, config, service))
     }
-    fn host_command(prepared: &Prepared, config: &Config, service: &str) -> Command {
+    pub(crate) fn host_command(prepared: &Prepared, config: &Config, service: &str) -> Command {
         let mut command = Command::new("/usr/bin/sandbox-exec");
         command
             .arg("-f")
@@ -58,10 +58,13 @@ impl Child {
             .current_dir(&prepared.directory)
             .env_clear()
             .env("PATH", "/usr/bin:/bin")
-            .env("HOME", prepared.run_directory.join("home"))
+            .env("HOME", prepared.home())
             .env("TMPDIR", prepared.run_directory.join("tmp"));
         // Host, preflight consumer and game must connect to the same private IPC.
         command.envs(prepared.endpoints.iter().map(|(key, value)| (key, value)));
+        if prepared.storage.is_some() {
+            command.env("FORGE_STORAGE_METADATA", "1");
+        }
         command
     }
     pub fn checker(prepared: &Prepared, config: &Config, service: &str) -> Result<Self, Error> {
@@ -76,12 +79,22 @@ impl Child {
             .arg(config.app_id.to_string())
             .env_clear()
             .env("PATH", "/usr/bin:/bin")
-            .env("HOME", prepared.run_directory.join("home"))
+            .env("HOME", prepared.home())
             .env("TMPDIR", prepared.run_directory.join("tmp"))
             .env("SteamAppId", config.app_id.to_string())
             .env("SteamGameId", config.app_id.to_string())
             .envs(prepared.consumer_environment(service))
             .current_dir(&prepared.directory);
+        if let Some(storage) = &prepared.storage {
+            command.env("FORGE_STORAGE_METADATA", "1");
+            command.env(
+                "FORGE_STORAGE_DIRECTORY",
+                storage.home.join(format!(
+                    "Library/Application Support/Steam/userdata/{}/{}",
+                    storage.account_id as u32, storage.app_id
+                )),
+            );
+        }
         command
     }
     pub(crate) fn spawn(mut command: Command) -> Result<Self, Error> {
@@ -202,6 +215,7 @@ mod tests {
     fn host_sdk_and_game_share_the_private_ipc_endpoints() {
         let temporary = tempfile::tempdir().unwrap();
         let prepared = Prepared {
+            storage: None,
             directory: temporary.path().join("engine"),
             run_directory: temporary.path().join("run"),
             profile: temporary.path().join("profile"),

@@ -6,6 +6,9 @@ import Foundation
 extension SteamSessionProtocol {
     func archiveCloud(config: SteamCloudConfiguration) async throws {}
     #if DEBUG
+    func cloudAutocloudMetadata() async throws -> String {
+        throw CocoaError(.featureUnsupported)
+    }
     func cloudSdkCandidates() async throws -> String {
         throw CocoaError(.featureUnsupported)
     }

@@ -23,6 +23,30 @@ pub struct Session {
     shown: Option<(RemoteView, Manifest)>,
 }
 impl Session {
+    #[cfg(debug_assertions)]
+    pub(crate) fn probe_prepare(&mut self) -> Result<(), crate::Error> {
+        self.recover_dead_owner()?;
+        let runtime = self.runtime.clone();
+        let control = self.control.clone();
+        runtime.block_on(control.guarded(Duration::from_secs(60), self.preflight(None)))?;
+        Ok(())
+    }
+    #[cfg(debug_assertions)]
+    pub(crate) fn probe_finish(&mut self) -> Result<(), crate::Error> {
+        self.finished();
+        if self.control.state.lock().unwrap().status.phase != Phase::Synced {
+            return Err(Failure::Storage.into());
+        }
+        Ok(())
+    }
+    pub fn native_storage(&self) -> Result<Option<crate::NativeStorage>, crate::Error> {
+        self.context
+            .as_ref()
+            .map(|context| context.prepare_sdk())
+            .transpose()
+            .map(Option::flatten)
+            .map_err(Into::into)
+    }
     pub fn new(
         config: Config,
         credentials: Credentials,
@@ -175,19 +199,20 @@ impl Session {
             self.control.status(Phase::Disabled, None);
             return Ok(());
         };
-        // SDK-only games have no Auto-Cloud projection. Do not pretend that the
-        // deliberately isolated native RemoteStorage cache provides persistence.
-        if metadata.field("savefiles").is_none() {
-            self.context = None;
-            self.control.status(Phase::Disabled, None);
-            return Ok(());
+        if metadata
+            .field("appidredirect")
+            .is_some_and(|v| v.text() != Some("0"))
+        {
+            return Err(Failure::Unsupported);
         }
-        steam_kit::cloud::MacCloudPaths::new(
-            &metadata,
-            self.credentials.steam_id,
-            &self.config.home,
-            &self.config.install,
-        )?;
+        if metadata.field("savefiles").is_some() {
+            steam_kit::cloud::MacCloudPaths::new(
+                &metadata,
+                self.credentials.steam_id,
+                &self.config.home,
+                &self.config.install,
+            )?;
+        }
         if let Some(context) = &mut self.context {
             context.config = self.config.clone();
             context.metadata = metadata;

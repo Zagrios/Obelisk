@@ -1,0 +1,137 @@
+{
+  "Object": [
+    [
+      "quota",
+      {
+        "Value": "3072000"
+      }
+    ],
+    [
+      "maxnumfiles",
+      {
+        "Value": "60"
+      }
+    ],
+    [
+      "savefiles",
+      {
+        "Object": [
+          [
+            "0",
+            {
+              "Object": [
+                [
+                  "root",
+                  {
+                    "Value": "WinAppDataRoaming"
+                  }
+                ],
+                [
+                  "path",
+                  {
+                    "Value": "/Doublefine/BrutalLegend/{64BitSteamID}"
+                  }
+                ],
+                [
+                  "pattern",
+                  {
+                    "Value": "*.sav"
+                  }
+                ],
+                [
+                  "platforms",
+                  {
+                    "Object": [
+                      [
+                        "1",
+                        {
+                          "Value": "Windows"
+                        }
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            }
+          ],
+          [
+            "1",
+            {
+              "Object": [
+                [
+                  "root",
+                  {
+                    "Value": "MacAppSupport"
+                  }
+                ],
+                [
+                  "path",
+                  {
+                    "Value": "/Doublefine/BrutalLegend/{64BitSteamID}"
+                  }
+                ],
+                [
+                  "pattern",
+                  {
+                    "Value": "*.sav"
+                  }
+                ],
+                [
+                  "platforms",
+                  {
+                    "Object": [
+                      [
+                        "1",
+                        {
+                          "Value": "MacOS"
+                        }
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            }
+          ],
+          [
+            "2",
+            {
+              "Object": [
+                [
+                  "root",
+                  {
+                    "Value": "LinuxXdgDataHome"
+                  }
+                ],
+                [
+                  "path",
+                  {
+                    "Value": "/doublefine/brutallegend/{64BitSteamID}"
+                  }
+                ],
+                [
+                  "pattern",
+                  {
+                    "Value": "*.sav"
+                  }
+                ],
+                [
+                  "platforms",
+                  {
+                    "Object": [
+                      [
+                        "1",
+                        {
+                          "Value": "Linux"
+                        }
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            }
+          ]
+        ]
+      }
+    ]
+  ]
+}

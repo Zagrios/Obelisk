@@ -4,6 +4,41 @@ import XCTest
 
 final class SteamGameLauncherTests: XCTestCase {
     @MainActor
+    func testStandaloneMachORepairsOnlyOwnerExecutePermission() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let binary = root.appending(path: "game")
+        try FileManager.default.copyItem(atPath: "/usr/bin/true", toPath: binary.path)
+        try FileManager.default.setAttributes([.posixPermissions: 0o640], ofItemAtPath: binary.path)
+        let plan = SteamLaunchPlan(appId: 42, platform: "macos", installDirectory: root.path,
+            target: LaunchTarget(executable: binary.path, arguments: [], workingDirectory: root.path, isApplicationBundle: false))
+        try await SteamGameLauncher.launchForTesting(plan)
+        XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: binary.path)[.posixPermissions] as? Int, 0o740)
+        // File verification can restore the publisher's non-executable mode.
+        try FileManager.default.setAttributes([.posixPermissions: 0o640], ofItemAtPath: binary.path)
+        try await SteamGameLauncher.launchForTesting(plan)
+        XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: binary.path)[.posixPermissions] as? Int, 0o740)
+    }
+
+    @MainActor
+    func testStandaloneNonMachOIsNotMadeExecutable() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let binary = root.appending(path: "game")
+        for bytes in [Data("not an executable".utf8), Data("#!/bin/sh\nexit 0\n".utf8)] {
+            try bytes.write(to: binary)
+            try FileManager.default.setAttributes([.posixPermissions: 0o640], ofItemAtPath: binary.path)
+            do {
+                try await SteamGameLauncher.launchForTesting(SteamLaunchPlan(appId: 42, platform: "macos", installDirectory: root.path,
+                    target: LaunchTarget(executable: binary.path, arguments: [], workingDirectory: root.path, isApplicationBundle: false)))
+                XCTFail("Unverified executable format must not gain execute permission")
+            } catch GameLaunchFailure.notExecutable {
+                XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: binary.path)[.posixPermissions] as? Int, 0o640)
+            }
+        }
+    }
+
+    @MainActor
     func testMacBundleRepairsDeclaredMachOExecutableWithoutChangingResources() async throws {
         let root = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }

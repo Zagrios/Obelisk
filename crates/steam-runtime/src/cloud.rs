@@ -1,7 +1,11 @@
 //! Auto-Cloud lifecycle owned by the detached game supervisor. The UI sends
 //! decisions, never file transfers. Credentials exist only in process memory.
+mod paths;
 mod session;
 mod store;
+pub(crate) fn safe_storage_path(path: &std::path::Path) -> Result<(), crate::Error> {
+    store::safe(path).map_err(Into::into)
+}
 pub use session::{Session, resolve, resume};
 pub use store::{archive, archive_with_rules, removed};
 

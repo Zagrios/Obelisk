@@ -334,6 +334,10 @@ impl SteamSession {
         Ok(self.client.cloud_sdk_candidates().await?)
     }
     #[cfg(debug_assertions)]
+    pub async fn cloud_autocloud_metadata(&self) -> Result<String, SteamError> {
+        Ok(self.client.cloud_autocloud_metadata().await?)
+    }
+    #[cfg(debug_assertions)]
     pub async fn cloud_transfer_probe(
         &self,
         app_id: u32,

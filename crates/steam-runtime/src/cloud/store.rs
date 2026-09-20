@@ -1,3 +1,4 @@
+use super::paths::Paths;
 use super::*;
 use serde::de::DeserializeOwned;
 use std::{fs, path::Path};
@@ -154,13 +155,21 @@ impl Context {
             self,
         )
     }
-    pub fn paths(&self) -> Result<MacCloudPaths, Failure> {
-        Ok(MacCloudPaths::new(
+    pub fn paths(&self) -> Result<Paths, Failure> {
+        if self.metadata.field("savefiles").is_none() {
+            return Ok(Paths::Sdk(self.sdk_paths()?));
+        }
+        let auto = MacCloudPaths::new(
             &self.metadata,
             self.account_id,
             &self.config.home,
             &self.config.install,
-        )?)
+        )?;
+        if self.metadata.field("quota").is_some() {
+            Ok(Paths::Mixed(auto, self.sdk_paths()?))
+        } else {
+            Ok(Paths::Auto(auto))
+        }
     }
     pub fn refresh_bindings(&mut self, local: Option<&Manifest>) -> Result<(), Failure> {
         let paths = self.paths()?;

@@ -6,6 +6,8 @@ pub mod package;
 pub mod packaging;
 mod process;
 pub mod protocol;
+#[cfg(debug_assertions)]
+mod storage_probe;
 pub mod supervisor;
 use protocol::{Credentials, Event};
 use std::{
@@ -20,6 +22,19 @@ use std::{
 /// The pinned engine hash lives only in the runtime manifest; this reads it back.
 pub fn client_sha256() -> &'static str {
     &package::entry("steamclient.dylib").sha256
+}
+pub fn native_cache_checkpoint(directory: PathBuf, app_id: u32) -> bool {
+    steam_kit::cloud::SdkCloudPaths::new(directory, app_id)
+        .and_then(|paths| paths.local_files(&[]))
+        .is_ok()
+}
+pub fn native_cache_files(
+    directory: PathBuf,
+    app_id: u32,
+) -> Result<Vec<steam_kit::cloud::LocalCloudFile>, Error> {
+    steam_kit::cloud::SdkCloudPaths::new(directory, app_id)
+        .and_then(|paths| paths.local_files(&[]))
+        .map_err(|_| Error::Storage)
 }
 pub fn sha(path: &std::path::Path) -> std::io::Result<String> {
     use sha2::{Digest, Sha256};
@@ -78,12 +93,20 @@ pub struct Config {
 pub struct Launch {
     credentials: Mutex<Option<Credentials>>,
     cancelled: Arc<AtomicBool>,
+    storage: Mutex<Option<NativeStorage>>,
+}
+#[derive(Clone)]
+pub struct NativeStorage {
+    pub home: PathBuf,
+    pub account_id: u64,
+    pub app_id: u32,
 }
 impl Launch {
     pub fn new(credentials: Credentials) -> Self {
         Self {
             credentials: Mutex::new(Some(credentials)),
             cancelled: Arc::new(AtomicBool::new(false)),
+            storage: Mutex::new(None),
         }
     }
     pub fn cancel(&self) {
@@ -124,7 +147,18 @@ impl Launch {
             return Err(Error::InvalidSession);
         }
         let id = credentials.steam_id;
-        let prepared = files::prepare(config, &self.cancelled)?;
+        let mut prepared = files::prepare(config, &self.cancelled)?;
+        if let Some(storage) = self
+            .storage
+            .lock()
+            .map_err(|_| Error::InvalidSession)?
+            .as_ref()
+        {
+            if storage.account_id != id || storage.app_id != config.app_id {
+                return Err(Error::InvalidSession);
+            }
+            prepared.enable_storage(storage)?;
+        }
         self.check_cancelled()?;
         let service = format!(
             "com.zagrios.forge.discovery.{}",
@@ -444,6 +478,7 @@ mod tests {
             service: "fixture".into(),
             report: root.join("report.json"),
             _prepared: files::Prepared {
+                storage: None,
                 directory: root.into(),
                 run_directory: root.join("scratch"),
                 profile: root.join("profile"),

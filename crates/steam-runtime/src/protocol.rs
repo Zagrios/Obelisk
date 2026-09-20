@@ -78,6 +78,14 @@ pub enum Event {
         app_id: u32,
         asynchronous_request: bool,
     },
+    StorageVerified {
+        total: u64,
+        available: u64,
+        readback: bool,
+    },
+    StorageFailure {
+        reason: String,
+    },
     SdkStage {
         stage: SdkStage,
     },

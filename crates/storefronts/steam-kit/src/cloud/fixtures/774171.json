@@ -1,0 +1,99 @@
+{
+  "Object": [
+    [
+      "quota",
+      {
+        "Value": "1048576"
+      }
+    ],
+    [
+      "maxnumfiles",
+      {
+        "Value": "8"
+      }
+    ],
+    [
+      "savefiles",
+      {
+        "Object": [
+          [
+            "0",
+            {
+              "Object": [
+                [
+                  "root",
+                  {
+                    "Value": "WinAppDataLocal"
+                  }
+                ],
+                [
+                  "path",
+                  {
+                    "Value": "Steam/MuseDash"
+                  }
+                ],
+                [
+                  "pattern",
+                  {
+                    "Value": "*.sav"
+                  }
+                ],
+                [
+                  "platforms",
+                  {
+                    "Object": [
+                      [
+                        "1",
+                        {
+                          "Value": "Windows"
+                        }
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            }
+          ],
+          [
+            "1",
+            {
+              "Object": [
+                [
+                  "root",
+                  {
+                    "Value": "MacHome"
+                  }
+                ],
+                [
+                  "path",
+                  {
+                    "Value": "/Steam/MuseDash"
+                  }
+                ],
+                [
+                  "pattern",
+                  {
+                    "Value": "*.sav"
+                  }
+                ],
+                [
+                  "platforms",
+                  {
+                    "Object": [
+                      [
+                        "1",
+                        {
+                          "Value": "MacOS"
+                        }
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            }
+          ]
+        ]
+      }
+    ]
+  ]
+}

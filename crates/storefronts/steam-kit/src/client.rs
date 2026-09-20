@@ -1,7 +1,7 @@
 //! Account-scoped orchestration. Authentication, CM messages and content formats
 //! remain independently usable; no UI or platform keychain code lives here.
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     path::Path,
     sync::{Arc, Mutex, PoisonError},
     time::{Duration, Instant},
@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex as AsyncMutex;
 
 use crate::{
-    cm::{AppInfo, ContentServer, DepotInfo, SteamConnection, supports_platform},
+    cm::{AppInfo, ContentLicenses, ContentServer, DepotInfo, SteamConnection, supports_platform},
     content::{CancelToken, ContentClient, ContentError, DepotDownload},
 };
 mod cloud;
@@ -199,8 +199,8 @@ pub struct Client {
     friends: crate::friends::FriendsEventSource,
     connection_abort: tokio::task::AbortHandle,
     cloud_authorized: std::sync::atomic::AtomicBool,
-    /// Owned app IDs expanded through PICS licenses, filled on first content query.
-    catalog: AsyncMutex<Option<Arc<HashSet<u32>>>>,
+    /// App and depot IDs expanded through PICS licenses, filled on first content query.
+    catalog: AsyncMutex<Option<Arc<ContentLicenses>>>,
     app_infos: Mutex<HashMap<u32, (Instant, Arc<AppInfo>)>>,
     downloads: Transfers<TransferProgress>,
 }
@@ -309,21 +309,15 @@ impl Client {
 
     /// Call with the CM lock held: every path acquires CM before catalog.
     /// Player.GetOwnedGames is presentation data, not proof of depot/DLC rights.
-    async fn licensed_apps(
+    async fn licensed_content(
         &self,
         cm: &mut SteamConnection,
-    ) -> Result<Arc<HashSet<u32>>, ClientError> {
+    ) -> Result<Arc<ContentLicenses>, ClientError> {
         let mut catalog = self.catalog.lock().await;
         if let Some(owned) = catalog.as_ref() {
             return Ok(Arc::clone(owned));
         }
-        let owned: Arc<HashSet<_>> = Arc::new(
-            cm.owned_app_ids()
-                .await
-                .map_err(client_error)?
-                .into_iter()
-                .collect(),
-        );
+        let owned = Arc::new(cm.content_licenses().await.map_err(client_error)?);
         *catalog = Some(Arc::clone(&owned));
         Ok(owned)
     }
@@ -334,7 +328,7 @@ impl Client {
 
     pub async fn details(&self, app_id: u32, language: &str) -> Result<GameDetails, ClientError> {
         let mut cm = self.cm.lock().await;
-        let owned = self.licensed_apps(&mut cm).await?;
+        let owned = self.licensed_content(&mut cm).await?;
         let app = self.app_info(&mut cm, app_id).await?;
         drop(cm);
         let windows = select_depots(&app, &owned, "windows", language);
@@ -371,8 +365,8 @@ impl Client {
             .filter(|receipt| receipt.app_id == app_id && receipt.platform == platform)
             .ok_or_else(|| ClientError("backend.steam.client.incompleteInstallation".into()))?;
         let mut cm = self.cm.lock().await;
-        let owned = self.licensed_apps(&mut cm).await?;
-        if !owned.contains(&receipt.app_id) {
+        let owned = self.licensed_content(&mut cm).await?;
+        if !owned.apps.contains(&receipt.app_id) {
             return Err(ClientError("backend.steam.client.gameNotOwned".into()));
         }
         let app = Arc::new(cm.app_info(app_id).await.map_err(client_error)?);
@@ -510,8 +504,8 @@ impl Client {
         cancel: &CancelToken,
     ) -> Result<PreparedInstall, ClientError> {
         let mut cm = self.cm.lock().await;
-        let owned = self.licensed_apps(&mut cm).await?;
-        if !owned.contains(&app_id) {
+        let owned = self.licensed_content(&mut cm).await?;
+        if !owned.apps.contains(&app_id) {
             return Err(ClientError("backend.steam.client.gameNotOwned".into()));
         }
         let app = self.app_info(&mut cm, app_id).await?;
@@ -688,7 +682,7 @@ impl Client {
 
 fn select_depots<'a>(
     app: &'a AppInfo,
-    owned: &HashSet<u32>,
+    owned: &ContentLicenses,
     platform: &str,
     language: &str,
 ) -> Vec<&'a DepotInfo> {
@@ -700,7 +694,8 @@ fn select_depots<'a>(
         .iter()
         .filter(|depot| {
             supports_platform(&depot.os_list, platform)
-                && depot.dlc_app_id.is_none_or(|dlc| owned.contains(&dlc))
+                && (app.free_to_download || owned.depots.contains(&depot.depot_id))
+                && depot.dlc_app_id.is_none_or(|dlc| owned.apps.contains(&dlc))
                 && (depot.public_manifest.is_some() || depot.shared_from_app.is_some())
         })
         .collect();
@@ -936,6 +931,68 @@ mod tests {
             size_bytes: None,
         }
     }
+    fn licenses(
+        apps: impl IntoIterator<Item = u32>,
+        depots: impl IntoIterator<Item = u32>,
+    ) -> ContentLicenses {
+        ContentLicenses {
+            apps: apps.into_iter().collect(),
+            depots: depots.into_iter().collect(),
+        }
+    }
+
+    #[test]
+    fn unlicensed_depot_without_dlc_tag_is_not_selected() {
+        // Dead Cells publishes this additional Mac depot without dlcappid.
+        // Its base package grants 588652, but not 1046443.
+        let mut app = app(vec![
+            depot(588652, "macos", None, None),
+            depot(1046443, "macos", None, None),
+        ]);
+        app.app_id = 588650;
+        let rights = licenses([588650], [588651, 588652, 588653, 588654]);
+        let selected: Vec<_> = select_depots(&app, &rights, "macos", "english")
+            .iter()
+            .map(|d| d.depot_id)
+            .collect();
+        assert_eq!(selected, [588652]);
+        let rights = licenses([588650], [588652, 1046443]);
+        assert_eq!(select_depots(&app, &rights, "macos", "english").len(), 2);
+    }
+
+    #[test]
+    fn depot_rights_do_not_grant_dlc_app_ownership() {
+        let app = app(vec![depot(2, "macos", None, Some(99))]);
+        assert!(select_depots(&app, &licenses([1], [2, 99]), "macos", "english").is_empty());
+        assert_eq!(
+            select_depots(&app, &licenses([1, 99], [2]), "macos", "english").len(),
+            1
+        );
+    }
+
+    #[test]
+    fn free_to_download_depots_do_not_require_package_membership() {
+        let mut app = app(vec![depot(2, "macos", None, None)]);
+        assert!(select_depots(&app, &licenses([1], []), "macos", "english").is_empty());
+        app.free_to_download = true;
+        assert_eq!(
+            select_depots(&app, &licenses([1], []), "macos", "english").len(),
+            1
+        );
+    }
+
+    #[test]
+    fn unlicensed_depots_cannot_choose_language_or_architecture() {
+        let mut english = depot(2, "macos", Some("english"), None);
+        english.os_arch = Some("32".into());
+        let mut unlicensed = depot(3, "macos", Some("french"), None);
+        unlicensed.os_arch = Some("64".into());
+        let app = app(vec![english, unlicensed]);
+        let rights = licenses([1], [2]);
+        let selected = select_depots(&app, &rights, "macos", "french");
+        assert_eq!(selected.iter().map(|d| d.depot_id).collect::<Vec<_>>(), [2]);
+    }
+
     #[test]
     fn selection_respects_platform_language_and_dlc_ownership() {
         let app = AppInfo {
@@ -953,7 +1010,7 @@ mod tests {
                 depot(5, "windows", None, Some(99)),
             ],
         };
-        let owned = HashSet::from([1]);
+        let owned = licenses([1], [1, 2, 3, 4, 5]);
         assert_eq!(
             select_depots(&app, &owned, "windows", "french")
                 .iter()
@@ -998,15 +1055,16 @@ mod tests {
             unpublished,
             other_platform,
         ]);
-        let selected: Vec<_> = select_depots(&app, &HashSet::from([1]), "windows", "french")
-            .into_iter()
-            .map(|depot| depot.depot_id)
-            .collect();
+        let selected: Vec<_> =
+            select_depots(&app, &licenses([1], [1, 2, 3, 4, 5]), "windows", "french")
+                .into_iter()
+                .map(|depot| depot.depot_id)
+                .collect();
         assert_eq!(selected, [1, 2]);
     }
     #[test]
     fn neutral_depots_cannot_create_unsupported_or_unknown_platform_support() {
-        let owned = HashSet::from([1]);
+        let owned = licenses([1], [1, 2, 3, 4, 5]);
         let mut app = app(vec![
             depot(1, "", None, None),
             depot(2, "windows", None, None),
@@ -1027,9 +1085,17 @@ mod tests {
             depot(2, "macos", None, Some(99)),
         ]);
         app.os_list.clear();
-        assert!(select_depots(&app, &HashSet::from([1]), "macos", "english").is_empty());
+        assert!(
+            select_depots(&app, &licenses([1], [1, 2, 3, 4, 5]), "macos", "english").is_empty()
+        );
         assert_eq!(
-            select_depots(&app, &HashSet::from([1, 99]), "macos", "english").len(),
+            select_depots(
+                &app,
+                &licenses([1, 99], [1, 2, 3, 4, 5]),
+                "macos",
+                "english"
+            )
+            .len(),
             2
         );
     }
@@ -1041,7 +1107,7 @@ mod tests {
         french.os_arch = Some("32".into());
         let app = app(vec![english, french]);
         assert_eq!(
-            select_depots(&app, &HashSet::from([1]), "windows", "french")[0].depot_id,
+            select_depots(&app, &licenses([1], [1, 2, 3, 4, 5]), "windows", "french")[0].depot_id,
             3
         );
     }

@@ -111,6 +111,9 @@ pub fn serve(
                 authenticated = true;
                 emit(output, &Event::Authenticated {})?;
                 client.request_ticket(app)?;
+                if std::env::var_os("FORGE_STORAGE_METADATA").is_some() {
+                    engine.request_app_info(user, pipe, app)?;
+                }
             }
             if online && authenticated && !ready {
                 let length = client.ticket_length(app)?;
@@ -193,6 +196,21 @@ pub fn serve(
         }
         if mach::send(&mut reply) != 0 {
             mach::destroy(&mut reply);
+        }
+    }
+    if std::env::var_os("FORGE_STORAGE_METADATA").is_some() {
+        let home = std::env::var_os("HOME").ok_or("Native storage HOME missing")?;
+        let cache = std::path::PathBuf::from(home).join(format!(
+            "Library/Application Support/Steam/userdata/{}/{app}",
+            expected_id as u32
+        ));
+        let started = Instant::now();
+        while !steam_runtime::native_cache_checkpoint(cache.clone(), app) {
+            if started.elapsed() > Duration::from_millis(500) {
+                return Err("Native storage index incomplete".into());
+            }
+            while engine.callback(pipe).is_some() {}
+            std::thread::sleep(Duration::from_millis(10));
         }
     }
     engine.release(user, pipe);

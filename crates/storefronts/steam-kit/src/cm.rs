@@ -111,6 +111,25 @@ pub struct AppInfo {
     pub cloud: Option<crate::cloud::CloudMetadata>,
 }
 
+/// App ownership and depot entitlement are distinct package fields.
+#[derive(Clone, Debug, Default)]
+pub struct ContentLicenses {
+    pub apps: BTreeSet<u32>,
+    pub depots: BTreeSet<u32>,
+}
+
+impl ContentLicenses {
+    fn extend_package(&mut self, root: &kv::Kv) {
+        for (field, ids) in [("appids", &mut self.apps), ("depotids", &mut self.depots)] {
+            if let Some(entries) = root.get(field) {
+                ids.extend(entries.children().iter().filter_map(|(_, value)| {
+                    value.text()?.parse::<u32>().ok().filter(|id| *id > 0)
+                }));
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct DepotInfo {
     pub depot_id: u32,
@@ -514,6 +533,11 @@ impl SteamConnection {
     /// Resolves licensed packages to app IDs (including DLC) for download checks.
     /// Steam still authorizes every depot key and manifest request individually.
     pub async fn owned_app_ids(&mut self) -> Result<Vec<u32>, CmError> {
+        Ok(self.content_licenses().await?.apps.into_iter().collect())
+    }
+
+    /// Preserve both namespaces when expanding active PICS packages.
+    pub async fn content_licenses(&mut self) -> Result<ContentLicenses, CmError> {
         self.ensure_logged_on()?;
         if self.licenses.is_none() {
             let packet = self.wait_for(LICENSE_LIST, None).await?;
@@ -532,7 +556,7 @@ impl SteamConnection {
                 access_token: license.access_token,
             })
             .collect();
-        let mut ids = BTreeSet::new();
+        let mut rights = ContentLicenses::default();
         for batch in packages.chunks(50) {
             let response = self.products(&[], batch).await?;
             if !response.unknown_packages.is_empty() {
@@ -549,20 +573,10 @@ impl SteamConnection {
                 let tree = kv::package(&package.buffer)?;
                 let name = package.id.to_string();
                 let root = tree.get(&name).unwrap_or(&tree);
-                if let Some(apps) = root.get("appids") {
-                    for (_, app) in apps.children() {
-                        if let Some(id) = app
-                            .text()
-                            .and_then(|value| value.parse::<u32>().ok())
-                            .filter(|id| *id > 0)
-                        {
-                            ids.insert(id);
-                        }
-                    }
-                }
+                rights.extend_package(root);
             }
         }
-        Ok(ids.into_iter().collect())
+        Ok(rights)
     }
 
     pub async fn app_info(&mut self, app_id: u32) -> Result<AppInfo, CmError> {
@@ -2271,6 +2285,28 @@ mod tests {
                 .is_err()
             );
         }
+    }
+
+    #[test]
+    fn package_entitlements_preserve_app_and_depot_namespaces() {
+        let package = kv::text(br#""appids" { "0" "588650" } "depotids" { "0" "588651" "1" "588652" "2" "588653" "3" "588654" }"#).unwrap();
+        let mut rights = ContentLicenses::default();
+        rights.extend_package(&package);
+        assert_eq!(rights.apps, BTreeSet::from([588650]));
+        assert_eq!(
+            rights.depots,
+            BTreeSet::from([588651, 588652, 588653, 588654])
+        );
+        assert!(!rights.depots.contains(&1046443));
+        rights.extend_package(
+            &kv::text(br#""appids" { "0" "99" } "depotids" { "0" "1046443" "1" "0" "2" "bad" }"#)
+                .unwrap(),
+        );
+        assert!(rights.depots.contains(&1046443));
+        assert!(rights.apps.contains(&99));
+        assert!(!rights.apps.contains(&1046443));
+        assert!(!rights.depots.contains(&99));
+        assert!(!rights.depots.contains(&0));
     }
 
     #[test]

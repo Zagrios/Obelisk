@@ -9,6 +9,43 @@ use std::{fs, os::unix::fs::PermissionsExt};
 mod interruption_probe;
 
 impl Client {
+    /// Publisher metadata and Mac manifests. Never downloads or mutates saves.
+    #[cfg(debug_assertions)]
+    pub async fn cloud_autocloud_metadata(&self) -> Result<String, CloudError> {
+        deadline(240, async {
+            let mut cm = self.cm.lock().await;
+            let games = cm.owned_games().await?;
+            let mut apps = Vec::new();
+            let mut inspected = 0;
+            for batch in games.chunks(30) {
+                if !self.cloud_authorized() {
+                    return Err(CloudError::Revoked);
+                }
+                let ids: Vec<_> = batch.iter().map(|g| g.app_id).collect();
+                for app in cm.app_infos(&ids).await? {
+                    inspected += 1;
+                    if let Some(ufs) = app.cloud {
+                        let listing = if app.os_list.iter().any(|os| os == "macos")
+                            && ufs.field("savefiles").is_some()
+                        {
+                            Some(cm.cloud_listing(app.app_id).await?)
+                        } else {
+                            None
+                        };
+                        apps.push(serde_json::json!({"app_id":app.app_id,
+                            "name":app.name,"os_list":app.os_list,"ufs":ufs,
+                            "listing":listing}));
+                    }
+                }
+            }
+            serde_json::to_string_pretty(&serde_json::json!({
+                "operation":"read_only_autocloud_metadata", "inspected":inspected,
+                "owned_count":games.len(), "apps":apps
+            }))
+            .map_err(|_| CloudError::Storage)
+        })
+        .await
+    }
     /// Whether Cloud transfers may still run. Sign-out clears this; UI closure
     /// and lost IPC do not.
     pub(crate) fn cloud_authorized(&self) -> bool {

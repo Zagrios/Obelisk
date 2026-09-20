@@ -4,6 +4,8 @@
 use crate::kv::Kv;
 pub(crate) mod downloads;
 mod paths;
+mod sdk;
+pub use sdk::SdkCloudPaths;
 pub(crate) mod preferences;
 mod read;
 pub(crate) mod upload;

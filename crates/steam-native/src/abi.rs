@@ -190,6 +190,31 @@ impl Engine {
             image_base: self.interface.image_base,
         }))
     }
+    pub fn request_app_info(&self, user: i32, pipe: i32, app: u32) -> Result<()> {
+        let address = self.interface.method(17, 0xa02e4c)?;
+        // SAFETY: pinned Engine005 Apps accessor and RequestAppInfoUpdate ABI
+        // independently documented in steam-cloud-gamenative-bootstrap.md.
+        let object = unsafe {
+            let get: unsafe extern "C" fn(Object, i32, i32) -> Object =
+                std::mem::transmute(address);
+            get(self.interface.object.as_ptr(), user, pipe)
+        };
+        let apps = Interface {
+            object: NonNull::new(object).ok_or("Apps unavailable")?,
+            image_base: self.interface.image_base,
+        };
+        let address = apps.method(7, 0x8dd498)?;
+        // SAFETY: one live u32 AppID and count 1, pinned proxy takes a bool result.
+        let accepted = unsafe {
+            let request: unsafe extern "C" fn(Object, *const u32, i32) -> bool =
+                std::mem::transmute(address);
+            request(object, &app, 1)
+        };
+        if !accepted {
+            return Err("App metadata request rejected".into());
+        }
+        Ok(())
+    }
 }
 
 pub struct ClientUser(Interface);

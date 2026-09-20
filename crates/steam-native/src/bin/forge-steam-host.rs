@@ -21,6 +21,16 @@ fn run() -> i32 {
         return 2;
     };
     let result = match args.get(1).map(String::as_str) {
+        #[cfg(debug_assertions)]
+        Some("check-storage") if args.len() == 6 => args[4].parse::<u32>().ok().map(|app| {
+            sdk::storage_probe(
+                args[2].as_ref(),
+                args[3].as_ref(),
+                app,
+                args[5] == "read",
+                &mut output,
+            )
+        }),
         // Offline packaging validation: load pinned libraries and resolve the
         // engine factories only. No global user, credentials or network login.
         Some("verify-runtime") if args.len() == 3 => {

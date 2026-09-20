@@ -492,6 +492,9 @@ final class SteamModel {
         // backup is the default. Flag and report name stay in one row so a new
         // probe cannot pick up another probe's filename.
         let probes: [(flag: String, report: String)] = [
+            ("--steam-cloud-storage-probe", "cloud-storage-probe.json"),
+            ("--steam-cloud-storage-transfer-probe", "cloud-storage-transfer-probe.json"),
+            ("--steam-cloud-autocloud-metadata", "cloud-autocloud-metadata.json"),
             ("--steam-cloud-sdk-candidates", "cloud-sdk-candidates.json"),
             ("--steam-cloud-preferences", "cloud-preferences-result.json"),
             ("--steam-cloud-interruption-probe", "cloud-interruption-result.json"),
@@ -509,6 +512,27 @@ final class SteamModel {
         do {
             let json: String
             switch probe.flag {
+            case "--steam-cloud-storage-probe", "--steam-cloud-storage-transfer-probe":
+                guard arguments.count > index + 3, let credentials = sessionCredentials,
+                      !cloud.isBusy, gameSessions.reserveCloudProbe() else { throw CocoaError(.featureUnsupported) }
+                defer { gameSessions.finishCloudProbe() }
+                let home = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+                let api = URL(fileURLWithPath: arguments[index + 3])
+                let configuration = SteamNativeConfiguration(
+                    appId: appID,
+                    helpers: SteamGameLauncher.helpersDirectory.path,
+                    package: Bundle.main.bundleURL.appending(path: "Contents/Resources/SteamRuntime/runtime.zip").path,
+                    cache: home.appending(path: "Library/Caches/com.zagrios.forge/SteamRuntime").path,
+                    diagnostics: home.appending(path: "Library/Logs/Forge/Steam").path,
+                    steamApi: api.path, home: home.path,
+                    cloudDirectory: SteamGameLauncher.cloudDirectory,
+                    installDirectory: api.deletingLastPathComponent().path)
+                let attempt = SteamNativeLaunch(credentials: credentials)
+                json = try await withTaskCancellationHandler {
+                    try await attempt.probeStorage(configuration: configuration, transfers: probe.flag == "--steam-cloud-storage-transfer-probe")
+                } onCancel: { attempt.cancel() }
+            case "--steam-cloud-autocloud-metadata":
+                json = try await native.cloudAutocloudMetadata()
             case "--steam-cloud-sdk-candidates":
                 json = try await native.cloudSdkCandidates()
             case "--steam-cloud-preferences":

@@ -1,0 +1,112 @@
+{
+  "Object": [
+    [
+      "quota",
+      {
+        "Value": "62914560"
+      }
+    ],
+    [
+      "maxnumfiles",
+      {
+        "Value": "20"
+      }
+    ],
+    [
+      "savefiles",
+      {
+        "Object": [
+          [
+            "0",
+            {
+              "Object": [
+                [
+                  "root",
+                  {
+                    "Value": "WinMyDocuments"
+                  }
+                ],
+                [
+                  "path",
+                  {
+                    "Value": "Saved Games/Hades"
+                  }
+                ],
+                [
+                  "pattern",
+                  {
+                    "Value": "Profile*.sav"
+                  }
+                ]
+              ]
+            }
+          ]
+        ]
+      }
+    ],
+    [
+      "rootoverrides",
+      {
+        "Object": [
+          [
+            "1",
+            {
+              "Object": [
+                [
+                  "root",
+                  {
+                    "Value": "WinMyDocuments"
+                  }
+                ],
+                [
+                  "os",
+                  {
+                    "Value": "MacOS"
+                  }
+                ],
+                [
+                  "oscompare",
+                  {
+                    "Value": "="
+                  }
+                ],
+                [
+                  "useinstead",
+                  {
+                    "Value": "MacAppSupport"
+                  }
+                ],
+                [
+                  "pathtransforms",
+                  {
+                    "Object": [
+                      [
+                        "0",
+                        {
+                          "Object": [
+                            [
+                              "find",
+                              {
+                                "Value": "Saved Games/Hades"
+                              }
+                            ],
+                            [
+                              "replace",
+                              {
+                                "Value": "Supergiant Games/Hades"
+                              }
+                            ]
+                          ]
+                        }
+                      ]
+                    ]
+                  }
+                ]
+              ]
+            }
+          ]
+        ]
+      }
+    ]
+  ]
+}

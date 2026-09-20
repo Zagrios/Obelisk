@@ -1,0 +1,129 @@
+{
+  "Object": [
+    [
+      "quota",
+      {
+        "Value": "1000000000"
+      }
+    ],
+    [
+      "maxnumfiles",
+      {
+        "Value": "1000"
+      }
+    ],
+    [
+      "savefiles",
+      {
+        "Object": [
+          [
+            "0",
+            {
+              "Object": [
+                [
+                  "root",
+                  {
+                    "Value": "gameinstall"
+                  }
+                ],
+                [
+                  "path",
+                  {
+                    "Value": "Saves"
+                  }
+                ],
+                [
+                  "pattern",
+                  {
+                    "Value": "*.celeste"
+                  }
+                ]
+              ]
+            }
+          ]
+        ]
+      }
+    ],
+    [
+      "rootoverrides",
+      {
+        "Object": [
+          [
+            "1",
+            {
+              "Object": [
+                [
+                  "root",
+                  {
+                    "Value": "gameinstall"
+                  }
+                ],
+                [
+                  "os",
+                  {
+                    "Value": "Linux"
+                  }
+                ],
+                [
+                  "oscompare",
+                  {
+                    "Value": "="
+                  }
+                ],
+                [
+                  "useinstead",
+                  {
+                    "Value": "LinuxXdgDataHome"
+                  }
+                ],
+                [
+                  "addpath",
+                  {
+                    "Value": "Celeste"
+                  }
+                ]
+              ]
+            }
+          ],
+          [
+            "2",
+            {
+              "Object": [
+                [
+                  "root",
+                  {
+                    "Value": "gameinstall"
+                  }
+                ],
+                [
+                  "os",
+                  {
+                    "Value": "MacOS"
+                  }
+                ],
+                [
+                  "oscompare",
+                  {
+                    "Value": "="
+                  }
+                ],
+                [
+                  "useinstead",
+                  {
+                    "Value": "MacAppSupport"
+                  }
+                ],
+                [
+                  "addpath",
+                  {
+                    "Value": "Celeste"
+                  }
+                ]
+              ]
+            }
+          ]
+        ]
+      }
+    ]
+  ]
+}

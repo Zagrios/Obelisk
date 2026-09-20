@@ -10,6 +10,37 @@ use std::{
 /// adapter. Unsupported metadata cannot produce an empty set.
 pub struct MacCloudPaths {
     rules: Vec<Rule>,
+    foreign: Vec<(String, String, bool)>,
+}
+
+fn canonical_root(name: &str) -> &str {
+    if name.eq_ignore_ascii_case("GameInstall") {
+        "GameInstall"
+    } else {
+        name
+    }
+}
+
+fn rule_suffix(
+    name: &str,
+    root: &str,
+    source: &str,
+    recursive: bool,
+) -> Result<Option<String>, CloudError> {
+    let Some(after_root) = name.strip_prefix(&format!("%{root}%")) else {
+        return Ok(None);
+    };
+    let path = after_root.strip_prefix('/').unwrap_or(after_root);
+    let suffix = if source.is_empty() {
+        path
+    } else {
+        let Some(suffix) = path.strip_prefix(&format!("{source}/")) else {
+            return Ok(None);
+        };
+        suffix
+    };
+    let suffix = relative(suffix, false)?;
+    Ok((recursive || !suffix.contains('/')).then_some(suffix))
 }
 
 struct Rule {
@@ -18,6 +49,43 @@ struct Rule {
     destination: PathBuf,
     recursive: bool,
     pattern: String,
+    platforms: u32,
+}
+
+fn platforms(save: &CloudMetadata) -> Result<u32, CloudError> {
+    let Some(platforms) = save.field("platforms") else {
+        return Ok(u32::MAX);
+    };
+    let entries = platforms
+        .entries()
+        .ok_or(CloudError::Invalid("Auto-Cloud platforms"))?;
+    let mut mask = 0;
+    let mut keys = BTreeSet::new();
+    for (key, value) in entries {
+        if !keys.insert(key) {
+            return Err(CloudError::Invalid("duplicate Auto-Cloud platform"));
+        }
+        mask |= match value.text() {
+            Some("Windows") => 1,
+            Some("MacOS") => 2,
+            Some("Linux") => 4,
+            _ => return Err(CloudError::Invalid("unsupported Auto-Cloud platform")),
+        };
+    }
+    if mask == 0 {
+        return Err(CloudError::Invalid("empty Auto-Cloud platforms"));
+    }
+    Ok(mask)
+}
+
+// Publisher paths are root-relative even when serialized with one leading '/'.
+// Remote filenames still use the stricter relative() validation below.
+fn publisher_path(value: &str, steam_id: u64) -> Result<String, CloudError> {
+    let value = substitute(value, steam_id).replace('\\', "/");
+    if value.starts_with("//") {
+        return Err(CloudError::Invalid("Auto-Cloud network path"));
+    }
+    relative(value.strip_prefix('/').unwrap_or(&value), true)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -50,7 +118,7 @@ fn fields(node: &CloudMetadata, allowed: &[&str]) -> Result<(), CloudError> {
     Ok(())
 }
 
-fn relative(value: &str, allow_empty: bool) -> Result<String, CloudError> {
+pub(super) fn relative(value: &str, allow_empty: bool) -> Result<String, CloudError> {
     if value.chars().any(char::is_control) || value.contains([':', '%', '{', '}', '*', '?']) {
         return Err(CloudError::Invalid("Auto-Cloud path"));
     }
@@ -80,7 +148,7 @@ fn root(name: &str, home: &Path, install: &Path) -> Result<PathBuf, CloudError> 
         "MacHome" => Ok(home.to_owned()),
         "MacAppSupport" => Ok(home.join("Library/Application Support")),
         "MacDocuments" => Ok(home.join("Documents")),
-        "GameInstall" => Ok(install.to_owned()),
+        "GameInstall" | "gameinstall" => Ok(install.to_owned()),
         _ => Err(CloudError::Invalid("unsupported macOS Auto-Cloud root")),
     }
 }
@@ -127,12 +195,10 @@ impl MacCloudPaths {
             None => &[],
         };
         let mut rules = Vec::new();
+        let mut foreign = Vec::new();
         for (_, save) in saves {
             fields(save, &["root", "path", "pattern", "recursive", "platforms"])?;
-            // Platform-specific rule syntax is preserved but not guessed here.
-            if save.field("platforms").is_some() {
-                return Err(CloudError::Invalid("unsupported Auto-Cloud platform rule"));
-            }
+            let platforms = platforms(save)?;
             let source_root = text(save, "root")?;
             let source_path = text(save, "path")?;
             let pattern = text(save, "pattern")?;
@@ -143,11 +209,19 @@ impl MacCloudPaths {
             {
                 return Err(CloudError::Invalid("unsupported Auto-Cloud wildcard"));
             }
-            let recursive = match text(save, "recursive")? {
-                "0" => false,
-                "1" => true,
+            let recursive = match save.field("recursive").map(CloudMetadata::text) {
+                None | Some(Some("0")) => false,
+                Some(Some("1")) => true,
                 _ => return Err(CloudError::Invalid("Auto-Cloud recursion")),
             };
+            if platforms & 2 == 0 {
+                foreign.push((
+                    canonical_root(source_root).to_owned(),
+                    publisher_path(source_path, steam_id)?,
+                    recursive,
+                ));
+                continue;
+            }
             let mut local_root = source_root;
             let mut local_path = source_path.to_owned();
             let mut matched = false;
@@ -165,13 +239,34 @@ impl MacCloudPaths {
                 }
                 fields(
                     override_,
-                    &["root", "os", "oscompare", "useinstead", "pathtransforms"],
+                    &[
+                        "root",
+                        "os",
+                        "oscompare",
+                        "useinstead",
+                        "pathtransforms",
+                        "addpath",
+                    ],
                 )?;
                 if matched {
                     return Err(CloudError::Invalid("ambiguous Auto-Cloud override"));
                 }
                 matched = true;
                 local_root = text(override_, "useinstead")?;
+                if let Some(addpath) = override_.field("addpath") {
+                    let prefix = publisher_path(
+                        addpath
+                            .text()
+                            .ok_or(CloudError::Invalid("Auto-Cloud added path"))?,
+                        steam_id,
+                    )?;
+                    if !prefix.is_empty() {
+                        if override_.field("pathtransforms").is_some() {
+                            return Err(CloudError::Invalid("ambiguous Auto-Cloud path transform"));
+                        }
+                        local_path = format!("{prefix}/{}", publisher_path(&local_path, steam_id)?);
+                    }
+                }
                 if let Some(transforms) = override_.field("pathtransforms") {
                     for (_, transform) in transforms
                         .entries()
@@ -198,23 +293,21 @@ impl MacCloudPaths {
             }
             // Valve serializes some override replacements with a leading slash.
             // It is relative to the new root, never an absolute filesystem path.
-            let source = relative(&substitute(source_path, steam_id), true)?;
-            let local = relative(
-                substitute(&local_path, steam_id).trim_start_matches('/'),
-                true,
-            )?;
+            let source = publisher_path(source_path, steam_id)?;
+            let local = publisher_path(&local_path, steam_id)?;
             rules.push(Rule {
-                root: source_root.to_owned(),
+                root: canonical_root(source_root).to_owned(),
                 source,
                 destination: root(local_root, home, install)?.join(local),
                 recursive,
                 pattern: pattern.to_owned(),
+                platforms,
             });
         }
         if rules.is_empty() {
             return Err(CloudError::Invalid("empty Auto-Cloud rules"));
         }
-        Ok(Self { rules })
+        Ok(Self { rules, foreign })
     }
 
     /// Existing files can outlive a publisher's current wildcard. Keep their
@@ -233,30 +326,25 @@ impl MacCloudPaths {
         if platforms & 2 == 0 {
             return Ok(None);
         }
-        self.path_for_name(name)?
-            .map(Some)
-            .ok_or(CloudError::Invalid("unmapped Auto-Cloud file"))
+        if let Some(path) = self.path_for_name(name)? {
+            return Ok(Some(path));
+        }
+        // Older files may carry an all-platform mask even though the current
+        // publisher rule explicitly confines their namespace to another OS.
+        for (root, source, recursive) in &self.foreign {
+            if rule_suffix(name, root, source, *recursive)?.is_some() {
+                return Ok(None);
+            }
+        }
+        Err(CloudError::Invalid("unmapped Auto-Cloud file"))
     }
 
     fn path_for_name(&self, name: &str) -> Result<Option<PathBuf>, CloudError> {
         let mut selected = None;
         for rule in &self.rules {
-            let Some(after_root) = name.strip_prefix(&format!("%{}%", rule.root)) else {
+            let Some(suffix) = rule_suffix(name, &rule.root, &rule.source, rule.recursive)? else {
                 continue;
             };
-            let path = after_root.strip_prefix('/').unwrap_or(after_root);
-            let suffix = if rule.source.is_empty() {
-                path
-            } else {
-                let Some(suffix) = path.strip_prefix(&format!("{}/", rule.source)) else {
-                    continue;
-                };
-                suffix
-            };
-            let suffix = relative(suffix, false)?;
-            if !rule.recursive && suffix.contains('/') {
-                continue;
-            }
             let destination = rule.destination.join(suffix);
             if selected
                 .as_ref()
@@ -365,7 +453,9 @@ impl MacCloudPaths {
                     let separator = if rule.source.is_empty() { "" } else { "/" };
                     let remote = format!("%{}%{}{separator}{suffix}", rule.root, rule.source);
                     if let Some(previous) = selected.get(&path) {
-                        if !known_paths.contains(&path) && previous.name != remote {
+                        if !known_paths.contains(&path)
+                            && (previous.name != remote || previous.platforms != rule.platforms)
+                        {
                             return Err(CloudError::Invalid("ambiguous Auto-Cloud source"));
                         }
                         continue;
@@ -375,7 +465,7 @@ impl MacCloudPaths {
                         LocalCloudFile {
                             name: remote,
                             path,
-                            platforms: u32::MAX,
+                            platforms: rule.platforms,
                         },
                     );
                 }
@@ -401,7 +491,7 @@ impl MacCloudPaths {
     }
 }
 
-fn plain_path(path: &Path) -> Result<bool, CloudError> {
+pub(super) fn plain_path(path: &Path) -> Result<bool, CloudError> {
     let mut exists = true;
     for parent in path.ancestors() {
         match fs::symlink_metadata(parent) {
@@ -442,6 +532,154 @@ fn wildcard(pattern: &str, name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn authenticated_publisher_fixtures_map_mac_paths() {
+        for (json, remote, local) in [
+            (
+                include_str!("fixtures/1145360.json"),
+                "%WinMyDocuments%Saved Games/Hades/Profile1.sav",
+                "Library/Application Support/Supergiant Games/Hades/Profile1.sav",
+            ),
+            (
+                include_str!("fixtures/774171.json"),
+                "%MacHome%Steam/MuseDash/slot.sav",
+                "Steam/MuseDash/slot.sav",
+            ),
+            (
+                include_str!("fixtures/1809540.json"),
+                "%WinAppDataLocalLow%RedCandleGames/NineSols/slot.dat",
+                "Library/Application Support/RedCandleGames/NineSols/slot.dat",
+            ),
+            (
+                include_str!("fixtures/1062160.json"),
+                "%WinAppDataLocalLow%Dry Cactus/Poly Bridge 2/SaveSlots/slot.dat",
+                "Library/Application Support/Dry Cactus/Poly Bridge 2/SaveSlots/slot.dat",
+            ),
+            (
+                include_str!("fixtures/225260.json"),
+                "%MacAppSupport%Doublefine/BrutalLegend/76561197960265770/slot.sav",
+                "Library/Application Support/Doublefine/BrutalLegend/76561197960265770/slot.sav",
+            ),
+            (
+                include_str!("fixtures/2239150.json"),
+                "%WinAppDataLocalLow%Grizzly Games/Thronefall/slot.sav",
+                "Library/Application Support/Grizzly Games/Thronefall/slot.sav",
+            ),
+        ] {
+            let metadata = serde_json::from_str(json).unwrap();
+            let home = Path::new("/Users/fixture");
+            let resolver = MacCloudPaths::new(
+                &metadata,
+                0x011000010000002a,
+                home,
+                Path::new("/Games/fixture"),
+            )
+            .unwrap();
+            assert_eq!(
+                resolver.destination(remote, 2).unwrap(),
+                Some(home.join(local))
+            );
+        }
+    }
+
+    #[test]
+    fn lowercase_gameinstall_uses_canonical_remote_root_and_addpath() {
+        for (json, remote, destination) in [
+            (
+                include_str!("fixtures/504230.json"),
+                "%GameInstall%Saves/0.celeste",
+                "/Users/fixture/Library/Application Support/Celeste/Saves/0.celeste",
+            ),
+            (
+                include_str!("fixtures/1585220.json"),
+                "%GameInstall%save.json",
+                "/Games/fixture/save.json",
+            ),
+        ] {
+            let metadata = serde_json::from_str(json).unwrap();
+            let resolver = MacCloudPaths::new(
+                &metadata,
+                0x011000010000002a,
+                Path::new("/Users/fixture"),
+                Path::new("/Games/fixture"),
+            )
+            .unwrap();
+            assert_eq!(
+                resolver.destination(remote, 2).unwrap(),
+                Some(PathBuf::from(destination))
+            );
+        }
+    }
+
+    #[test]
+    fn platform_specific_rules_discover_only_mac_files_with_mac_mask() {
+        let metadata = serde_json::from_str(include_str!("fixtures/774171.json")).unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path().canonicalize().unwrap();
+        fs::create_dir_all(home.join("Steam/MuseDash/nested")).unwrap();
+        fs::write(home.join("Steam/MuseDash/slot.sav"), b"mac").unwrap();
+        fs::write(home.join("Steam/MuseDash/nested/slot.sav"), b"ignored").unwrap();
+        let resolver = MacCloudPaths::new(&metadata, 0x011000010000002a, &home, &home).unwrap();
+        let selected = resolver.local_files(&[]).unwrap();
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].platforms, 2);
+        assert_eq!(selected[0].name, "%MacHome%Steam/MuseDash/slot.sav");
+        let foreign = file("%WinAppDataLocal%Steam/MuseDash/windows.sav");
+        assert_eq!(resolver.existing_file(&foreign).unwrap(), None);
+        assert_eq!(resolver.local_files(&[foreign]).unwrap(), selected);
+        assert!(resolver.destination("%Unknown%slot.sav", u32::MAX).is_err());
+    }
+
+    #[test]
+    fn publisher_path_normalization_never_allows_traversal_or_network_paths() {
+        for bad in [
+            "/../escape",
+            "\\\\server\\share",
+            "//server/share",
+            "C:\\save",
+            "/{unknown}/save",
+            "a/../../save",
+        ] {
+            assert!(publisher_path(bad, 0x011000010000002a).is_err(), "{bad}");
+        }
+        assert_eq!(
+            publisher_path("/saves/", 0x011000010000002a).unwrap(),
+            "saves"
+        );
+        assert!(relative("/saves/file", false).is_err());
+    }
+
+    #[test]
+    fn invalid_platform_lists_and_foreign_only_rules_never_become_empty_saves() {
+        for list in [
+            value("MacOS"),
+            object(vec![]),
+            object(vec![("1", value("Unknown"))]),
+            object(vec![("1", value("MacOS")), ("1", value("Windows"))]),
+            object(vec![("1", value("Windows"))]),
+        ] {
+            let mut metadata = metadata();
+            let CloudMetadata::Object(top) = &mut metadata else {
+                unreachable!()
+            };
+            let CloudMetadata::Object(saves) = &mut top[0].1 else {
+                unreachable!()
+            };
+            let CloudMetadata::Object(rule) = &mut saves[0].1 else {
+                unreachable!()
+            };
+            rule.push(("platforms".into(), list));
+            assert!(
+                MacCloudPaths::new(
+                    &metadata,
+                    0x011000010000002a,
+                    Path::new("/Users/fixture"),
+                    Path::new("/Games/fixture")
+                )
+                .is_err()
+            );
+        }
+    }
     fn value(s: &str) -> CloudMetadata {
         CloudMetadata::Value(s.into())
     }

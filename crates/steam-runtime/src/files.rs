@@ -10,6 +10,7 @@ pub(crate) struct Prepared {
     pub profile: PathBuf,
     pub report: PathBuf,
     pub endpoints: [(String, String); 2],
+    pub storage: Option<crate::NativeStorage>,
 }
 impl Drop for Prepared {
     fn drop(&mut self) {
@@ -17,6 +18,36 @@ impl Drop for Prepared {
     }
 }
 impl Prepared {
+    pub fn home(&self) -> PathBuf {
+        self.storage
+            .as_ref()
+            .map_or_else(|| self.run_directory.join("home"), |s| s.home.clone())
+    }
+    pub fn enable_storage(&mut self, storage: &crate::NativeStorage) -> Result<(), Error> {
+        crate::cloud::safe_storage_path(&storage.home)?;
+        let steam = storage.home.join("Library/Application Support/Steam");
+        let app = steam.join(format!(
+            "userdata/{}/{}",
+            storage.account_id as u32, storage.app_id
+        ));
+        for path in [app.join("remote"), steam.join("appcache")] {
+            crate::cloud::safe_storage_path(&path)?;
+            private_directory(&path)?;
+        }
+        use std::io::Write;
+        let extra = format!(
+            "\n(allow file-read* (subpath {}))\n(allow file-write* (subpath {}) (subpath {}))\n",
+            quote(&storage.home)?,
+            quote(&app)?,
+            quote(&steam.join("appcache"))?
+        );
+        fs::OpenOptions::new()
+            .append(true)
+            .open(&self.profile)?
+            .write_all(extra.as_bytes())?;
+        self.storage = Some(storage.clone());
+        Ok(())
+    }
     pub fn consumer_environment(&self, service: &str) -> std::collections::HashMap<String, String> {
         let mut environment: std::collections::HashMap<_, _> =
             self.endpoints.iter().cloned().collect();
@@ -58,6 +89,7 @@ pub(crate) fn prepare(
         std::net::TcpListener::bind("127.0.0.1:0")?,
     ];
     let prepared = Prepared {
+        storage: None,
         directory,
         profile: run_directory.join("host.sb"),
         report: config
@@ -179,6 +211,13 @@ mod atomic_tests {
         assert!(root.join("home/cache/runtime").canonicalize().is_ok());
         assert!(fs::read(root.join("home/saves/slot.dat")).is_err());
         assert!(fs::read(root.join("home/Library/Application Support/Steam/fixture")).is_err());
+        if std::env::var_os("FORGE_SANDBOX_STORAGE_FIXTURE").is_some() {
+            let steam = root.join("home/sdk/Library/Application Support/Steam");
+            assert!(fs::write(steam.join("userdata/42/42/remote/slot"), b"allowed").is_ok());
+            assert!(fs::write(steam.join("userdata/42/43/slot"), b"wrong app").is_err());
+            assert!(fs::write(steam.join("userdata/43/42/slot"), b"wrong account").is_err());
+            assert!(fs::write(steam.join("config/loginusers.vdf"), b"credentials").is_err());
+        }
     }
 
     #[cfg(target_os = "macos")]
@@ -218,6 +257,41 @@ mod atomic_tests {
             .arg(executable)
             .args(["files::atomic_tests::sandbox_access_child", "--exact"])
             .env("FORGE_SANDBOX_ACCESS_FIXTURE", &root)
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stdout)
+        );
+        let storage = crate::NativeStorage {
+            home: config.home.join("sdk"),
+            account_id: 0x011000010000002a,
+            app_id: 42,
+        };
+        let steam = storage.home.join("Library/Application Support/Steam");
+        for path in ["userdata/42/43", "userdata/43/42", "config"] {
+            fs::create_dir_all(steam.join(path)).unwrap();
+        }
+        let run = root.join("run");
+        fs::create_dir_all(&run).unwrap();
+        let mut prepared = Prepared {
+            directory: runtime,
+            run_directory: run.clone(),
+            profile: run.join("profile"),
+            report: run.join("report"),
+            endpoints: Default::default(),
+            storage: None,
+        };
+        fs::write(&prepared.profile, &profile).unwrap();
+        prepared.enable_storage(&storage).unwrap();
+        let result = std::process::Command::new("/usr/bin/sandbox-exec")
+            .args(["-f"])
+            .arg(&prepared.profile)
+            .arg(std::env::current_exe().unwrap())
+            .args(["files::atomic_tests::sandbox_access_child", "--exact"])
+            .env("FORGE_SANDBOX_ACCESS_FIXTURE", &root)
+            .env("FORGE_SANDBOX_STORAGE_FIXTURE", "1")
             .output()
             .unwrap();
         assert!(

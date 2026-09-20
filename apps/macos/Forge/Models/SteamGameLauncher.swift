@@ -133,7 +133,7 @@ private enum NativeGameLauncher {
     private nonisolated static func resolveExecutable(path: String, isApplicationBundle: Bool) throws -> URL {
         let target = URL(fileURLWithPath: path).resolvingSymlinksInPath()
         let executable: URL
-        var declaredMachO = false
+        var recognizedMachO = false
         if isApplicationBundle {
             guard let bundle = Bundle(url: target), let binary = bundle.executableURL else {
                 throw GameLaunchFailure.invalidApplication
@@ -142,16 +142,18 @@ private enum NativeGameLauncher {
             guard executable.path.hasPrefix(target.path + "/") else {
                 throw GameLaunchFailure.invalidApplication
             }
-            declaredMachO = bundle.executableArchitectures?.isEmpty == false
+            recognizedMachO = bundle.executableArchitectures?.isEmpty == false
         } else {
             executable = target
+            let architectures = CFBundleCopyExecutableArchitecturesForURL(executable as CFURL) as? [NSNumber]
+            recognizedMachO = architectures?.isEmpty == false
         }
         guard try executable.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else {
             throw GameLaunchFailure.notExecutable
         }
-        // Some Steam manifests omit Executable on valid Mac bundle binaries.
-        // Repair only the declared Mach-O after verification, which can reset its mode.
-        if declaredMachO && !FileManager.default.isExecutableFile(atPath: executable.path) {
+        // Some Steam manifests omit Executable on valid Mac binaries, bundled or standalone.
+        // Repair only the selected Mach-O after verification, which can reset its mode.
+        if recognizedMachO && !FileManager.default.isExecutableFile(atPath: executable.path) {
             try Task.checkCancellation()
             let attributes = try FileManager.default.attributesOfItem(atPath: executable.path)
             guard let mode = attributes[.posixPermissions] as? NSNumber else {

@@ -19,9 +19,15 @@ pub(super) trait CloudLifecycle {
     fn started(&mut self) -> Result<(), Error>;
     fn finished(&mut self);
     fn aborted(&mut self);
+    fn native_storage(&self) -> Result<Option<crate::NativeStorage>, Error> {
+        Ok(None)
+    }
 }
 
 impl CloudLifecycle for cloud::Session {
+    fn native_storage(&self) -> Result<Option<crate::NativeStorage>, Error> {
+        cloud::Session::native_storage(self)
+    }
     fn prepare(&mut self) -> Result<(), Error> {
         cloud::Session::prepare(self)
     }
@@ -243,6 +249,11 @@ fn run_game(
 ) -> Result<(), Error> {
     if let Some(cloud) = cloud.as_deref_mut() {
         cloud.prepare()?;
+        *shared
+            .launch
+            .storage
+            .lock()
+            .map_err(|_| Error::InvalidSession)? = cloud.native_storage()?;
     }
     let runtime = Arc::new(prepare()?);
     let app_id = shared.state.lock().unwrap().snapshot.app_id.to_string();

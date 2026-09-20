@@ -215,6 +215,84 @@ mod tests {
     }
 
     #[test]
+    fn sdk_download_projection_restart_and_deletion_use_the_cloud_vault() {
+        let (_temp, mut session, mut source) = fixture();
+        session.config.root = session.config.root.with_file_name("sdk-cloud");
+        session.vault = Vault::open(
+            &session.config.root,
+            scope(&session.config, session.credentials.steam_id),
+        )
+        .unwrap();
+        session.vault.set_preferences(Preferences {
+            account_enabled: Some(true),
+            game_enabled: Some(true),
+        });
+        session.context = Some(Context::new(
+            &session.config,
+            session.credentials.steam_id,
+            CloudMetadata::Object(vec![
+                ("quota".into(), CloudMetadata::Value("1000000".into())),
+                ("maxnumfiles".into(), CloudMetadata::Value("1000".into())),
+            ]),
+        ));
+        source.listing.files[0].name = "slot.sav".into();
+        let listing = source.listing.clone();
+        session.context_mut().unwrap().listing = listing.clone();
+        let runtime = session.runtime.clone();
+        let remote = runtime
+            .block_on(session.read_remote(&mut source, &listing))
+            .unwrap();
+        session.set_listing(listing, remote.clone()).unwrap();
+        let local = session.capture_before_launch().unwrap().unwrap();
+        assert!(local.0.is_empty());
+        assert_eq!(
+            session.reconcile_launch(&local, &remote, None).unwrap(),
+            Decision::Download
+        );
+        let storage = session.native_storage().unwrap().unwrap();
+        assert!(!storage.home.starts_with(&session.config.root));
+        let path = session.context().unwrap().bindings["slot.sav"].path.clone();
+        assert_eq!(std::fs::read(&path).unwrap(), FIRST);
+        let config = session.config.clone();
+        let credentials = session.credentials.clone();
+        let control = session.control.clone();
+        drop(session);
+        let mut session = Session::open(
+            config,
+            credentials,
+            uuid::Uuid::new_v4().to_string(),
+            control,
+        )
+        .unwrap();
+        std::fs::write(&path, SECOND).unwrap();
+        let local = session.capture_before_launch().unwrap().unwrap();
+        assert_eq!(
+            session.vault.read_content(&local.0["slot.sav"]).unwrap(),
+            SECOND
+        );
+        assert_eq!(
+            session.vault.decision(&local, &remote).unwrap(),
+            Decision::KeepLocal
+        );
+        let changed = session.vault.stage(b"another device", 7).unwrap();
+        let divergent = RemoteView {
+            revision: "2".into(),
+            files: Manifest([("slot.sav".into(), changed)].into()),
+        };
+        assert_eq!(
+            session.vault.decision(&local, &divergent).unwrap(),
+            Decision::Conflict
+        );
+        std::fs::remove_file(&path).unwrap();
+        let deleted = session.capture_before_launch().unwrap().unwrap();
+        assert!(deleted.0.is_empty());
+        assert_eq!(
+            session.vault.decision(&deleted, &remote).unwrap(),
+            Decision::KeepLocal
+        );
+    }
+
+    #[test]
     fn activation_without_early_capture_preserves_files_and_later_capture_reads_current_bytes() {
         let (_temp, mut session, source) = fixture();
         // The shared fixture uses synthetic ownership names. Start an empty
