@@ -23,7 +23,10 @@ final class EpicModel {
     private(set) var isFriendsPresented = false
     private(set) var accountName: String?
     private(set) var games: [EpicGame] = [] {
-        didSet { filteredLibraryCache = nil }
+        didSet {
+            libraryOrderCache = nil
+            filteredLibraryCache = nil
+        }
     }
 
     private(set) var selectedGame: EpicGame?
@@ -41,13 +44,18 @@ final class EpicModel {
     private(set) var isUninstalling = false
     private(set) var isVerifyingBeforeLaunch = false
     private(set) var launchLibraryID: String?
-    private(set) var installations: [EpicInstallReceipt] = []
+    private(set) var installations: [EpicInstallReceipt] = [] {
+        didSet { filteredLibraryCache = nil }
+    }
     var errorMessage: String?
     var storageWarning: String? {
         get { rememberedSession.storageWarning }
         set { rememberedSession.storageWarning = newValue }
     }
     var searchText = ""
+    var filter: StorefrontLibraryFilter = .all
+    // Epic exposes playtime only in individual game details, not in its library.
+    var availableFilters: [StorefrontLibraryFilter] { [.all, .installed, .macOS] }
     var rememberSession: Bool {
         get { rememberedSession.rememberSession }
         set { rememberedSession.rememberSession = newValue }
@@ -78,7 +86,8 @@ final class EpicModel {
     @ObservationIgnored private var progressTask: Task<Void, Never>?
     @ObservationIgnored private var downloadCancellationRequested = false
     @ObservationIgnored private var lastDownload: (game: EpicGame, platform: String, directory: URL)?
-    @ObservationIgnored private var filteredLibraryCache: (query: String, games: [EpicGame])?
+    @ObservationIgnored private var libraryOrderCache: [EpicGame]?
+    @ObservationIgnored private var filteredLibraryCache: (query: String, filter: StorefrontLibraryFilter, games: [EpicGame])?
 
     init(
         directory: URL = AppIdentity.libraryDirectory,
@@ -150,21 +159,38 @@ final class EpicModel {
         }
     }
 
-    /// Cached per query so repeated body evaluations do not re-sort the library.
+    /// Search and filters reuse the library's name order.
     var filteredGames: [EpicGame] {
+        // Observe dependencies even when the cached result is reused.
+        let source = games
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let cached = filteredLibraryCache, cached.query == query { return cached.games }
-        let filtered = Self.filterAndSort(games, query: query)
-        filteredLibraryCache = (query, filtered)
-        return filtered
-    }
-
-    static func filterAndSort(_ games: [EpicGame], query: String) -> [EpicGame] {
-        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        return games.filter { query.isEmpty || $0.title.localizedStandardContains(query) }.sorted {
-            let comparison = $0.title.localizedStandardCompare($1.title)
-            return comparison == .orderedSame ? $0.libraryID < $1.libraryID : comparison == .orderedAscending
+        let selectedFilter = filter
+        let receipts = selectedFilter == .installed ? installations : []
+        if let cached = filteredLibraryCache, cached.query == query, cached.filter == selectedFilter {
+            return cached.games
         }
+        let ordered: [EpicGame]
+        if let cached = libraryOrderCache {
+            ordered = cached
+        } else {
+            ordered = source.sorted {
+                let comparison = $0.title.localizedStandardCompare($1.title)
+                return comparison == .orderedSame ? $0.libraryID < $1.libraryID : comparison == .orderedAscending
+            }
+            libraryOrderCache = ordered
+        }
+        let installedLibraryIDs = Set(receipts.map(\.libraryID))
+        let filtered = query.isEmpty && selectedFilter == .all ? ordered : ordered.filter { game in
+            guard query.isEmpty || game.title.localizedStandardContains(query) else { return false }
+            switch selectedFilter {
+            case .all: return true
+            case .installed: return installedLibraryIDs.contains(game.libraryID)
+            case .played: return false
+            case .macOS: return game.macos
+            }
+        }
+        filteredLibraryCache = (query, selectedFilter, filtered)
+        return filtered
     }
 
     func start() async {
@@ -356,6 +382,7 @@ final class EpicModel {
         launchLibraryID = nil
         closeGame()
         searchText = ""
+        filter = .all
         errorMessage = nil
         storageWarning = nil
         isConnecting = false

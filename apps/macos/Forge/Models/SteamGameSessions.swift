@@ -24,6 +24,7 @@ final class SteamGameSessions {
         var connection = SteamSupervisorConnection.connected
         var host = SteamHostState.online
         var cloud = CloudStatus()
+        var rosetta: SteamRosettaRequest?
         var running: Bool { phase == .running }
     }
 
@@ -61,6 +62,7 @@ final class SteamGameSessions {
     var isBusy: Bool { isRecovering || active != nil || cloudProbeReserved }
     private var cloudProbeReserved = false
     private var revokedAccounts: Set<UInt64> = []
+    private var cancelledRosetta: RosettaPrompt?
 
     var cloudPrompt: Session? {
         guard let active, active.phase == .preparing,
@@ -102,7 +104,7 @@ final class SteamGameSessions {
                 do {
                     _ = try await recoverAndObserve(onRunning: {})
                 } catch {
-                    recoveryError = SteamModel.message(error)
+                    if !Task.isCancelled { recoveryError = SteamModel.message(error) }
                 }
                 finish()
             }
@@ -162,6 +164,35 @@ final class SteamGameSessions {
             throw SteamError.Failure(reason: "backend.steam.runtime.invalidSession")
         }
         try await client.chooseCloud(accountId: accountId, decisionId: active.cloud.decisionId, choice: choice)
+    }
+
+    struct RosettaPrompt: Equatable, Identifiable {
+        let id: UUID
+        let accountId: UInt64
+        let decisionId: UInt64
+    }
+
+    func rosettaPrompt(accountId: UInt64) -> RosettaPrompt? {
+        guard let active, active.phase == .preparing, active.accountId == accountId,
+              !revokedAccounts.contains(accountId), let request = active.rosetta else { return nil }
+        let prompt = RosettaPrompt(id: active.id, accountId: accountId, decisionId: request.decisionId)
+        return prompt == cancelledRosetta ? nil : prompt
+    }
+
+    func resumeAfterRosetta(_ prompt: RosettaPrompt) async throws {
+        guard rosettaPrompt(accountId: prompt.accountId) == prompt, let client = activeClient else {
+            throw SteamError.Failure(reason: "backend.steam.runtime.invalidSession")
+        }
+        try Task.checkCancellation()
+        try await client.resumeAfterRosetta(accountId: prompt.accountId, decisionId: prompt.decisionId)
+    }
+
+    func cancelRosetta(_ prompt: RosettaPrompt) {
+        guard rosettaPrompt(accountId: prompt.accountId) == prompt else { return }
+        cancelledRosetta = prompt
+        // Observation survives cancellation until the supervisor confirms its
+        // terminal state. Mark the operation cancelled to suppress a user error.
+        operation?.cancel()
     }
 
     func revokeCloud(accountId: UInt64) async throws {
@@ -289,6 +320,7 @@ final class SteamGameSessions {
                 if active?.host != snapshot.host { active?.host = snapshot.host }
                 let cloud = CloudStatus(snapshot)
                 if active?.cloud != cloud { active?.cloud = cloud }
+                if active?.rosetta != snapshot.rosetta { active?.rosetta = snapshot.rosetta }
                 rememberCloud(snapshot)
                 if isRecovering { isRecovering = false }
                 if recoveryError != nil { recoveryError = nil }
@@ -308,6 +340,7 @@ final class SteamGameSessions {
     }
 
     private func finish() {
+        cancelledRosetta = nil
         active = nil
         activeClient = nil
         appliedRevocations.removeAll()

@@ -27,14 +27,56 @@ if ! cmp -s "$RUNTIME_PACKAGE" "$RUNTIME_DESTINATION/runtime.zip"; then
 fi
 export CARGO_TARGET_DIR="$PROJECT_ROOT/build/steam-native-target"
 cargo build --locked --manifest-path "$PROJECT_ROOT/crates/steam-native/Cargo.toml" \
-    --workspace --bins --lib --profile "$PROFILE_NAME"
+    --workspace --bins --lib --profile "$PROFILE_NAME" --target aarch64-apple-darwin
+cargo build --locked --manifest-path "$PROJECT_ROOT/crates/steam-native/Cargo.toml" \
+    -p forge-steam-native --bin forge-steam-sdk --profile "$PROFILE_NAME" --target x86_64-apple-darwin
+cargo build --locked --manifest-path "$PROJECT_ROOT/crates/steam-native/Cargo.toml" \
+    -p forge-steam-discovery-adapter --lib --profile "$PROFILE_NAME" --target x86_64-apple-darwin
+ARM_BUILD="$CARGO_TARGET_DIR/aarch64-apple-darwin/$PROFILE_DIRECTORY"
+INTEL_BUILD="$CARGO_TARGET_DIR/x86_64-apple-darwin/$PROFILE_DIRECTORY"
 DESTINATION="$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/Helpers/SteamNative"
 mkdir -p "$DESTINATION"
-cp "$CARGO_TARGET_DIR/$PROFILE_DIRECTORY/forge-steam-host" "$DESTINATION/"
-cp "$CARGO_TARGET_DIR/$PROFILE_DIRECTORY/libforge_steam_discovery_adapter.dylib" "$DESTINATION/"
+cp "$ARM_BUILD/forge-steam-host" "$DESTINATION/forge-steam-host"
+cp "$ARM_BUILD/forge-steam-sdk" "$DESTINATION/forge-steam-sdk-arm64"
+cp "$INTEL_BUILD/forge-steam-sdk" "$DESTINATION/forge-steam-sdk-x86_64"
+ADAPTER="$DESTINATION/libforge_steam_discovery_adapter.dylib"
+/usr/bin/lipo -create "$ARM_BUILD/libforge_steam_discovery_adapter.dylib" \
+    "$INTEL_BUILD/libforge_steam_discovery_adapter.dylib" -output "$ADAPTER"
 IDENTITY="${EXPANDED_CODE_SIGN_IDENTITY:?A stable Apple signing identity is required}"
 /usr/bin/codesign --force --sign "$IDENTITY" --options runtime \
     --identifier com.zagrios.forge.steam-host \
     --entitlements "$PROJECT_ROOT/packaging/steam-host.entitlements" "$DESTINATION/forge-steam-host"
 /usr/bin/codesign --force --sign "$IDENTITY" \
-    --identifier com.zagrios.forge.steam-discovery "$DESTINATION/libforge_steam_discovery_adapter.dylib"
+    --identifier com.zagrios.forge.steam-discovery "$ADAPTER"
+for ARCHITECTURE in arm64 x86_64; do
+    /usr/bin/codesign --force --sign "$IDENTITY" --options runtime \
+        --identifier "com.zagrios.forge.steam-sdk-$ARCHITECTURE" \
+        --entitlements "$PROJECT_ROOT/packaging/steam-host.entitlements" \
+        "$DESTINATION/forge-steam-sdk-$ARCHITECTURE"
+done
+
+# Opening this Intel-only app through LaunchServices lets macOS present its
+# Rosetta installer. A direct --probe invocation never starts the app run loop.
+ROSETTA_SOURCE="$PROJECT_ROOT/packaging/rosetta"
+ROSETTA_BUILD="$PROJECT_ROOT/build/rosetta"
+ROSETTA_APP="$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/Helpers/Forge Rosetta.app"
+mkdir -p "$ROSETTA_BUILD" "$ROSETTA_APP/Contents/MacOS"
+ROSETTA_EXECUTABLE="$ROSETTA_BUILD/ForgeRosetta"
+SDK_PATH="$(xcrun --sdk macosx --show-sdk-path)"
+MINIMUM_MACOS="${MACOSX_DEPLOYMENT_TARGET:-14.0}"
+BUILD_SETTINGS="$SDK_PATH|$MINIMUM_MACOS"
+PREVIOUS_SETTINGS="$(cat "$ROSETTA_BUILD/settings" 2>/dev/null || true)"
+if [[ ! -f "$ROSETTA_EXECUTABLE" \
+    || "$ROSETTA_SOURCE/main.m" -nt "$ROSETTA_EXECUTABLE" \
+    || "$0" -nt "$ROSETTA_EXECUTABLE" \
+    || "$BUILD_SETTINGS" != "$PREVIOUS_SETTINGS" ]]; then
+    xcrun --sdk macosx clang -arch x86_64 -isysroot "$SDK_PATH" \
+        "-mmacosx-version-min=$MINIMUM_MACOS" -fobjc-arc -O2 -Wall -Wextra -Werror \
+        -framework AppKit "$ROSETTA_SOURCE/main.m" -o "$ROSETTA_EXECUTABLE"
+    printf '%s\n' "$BUILD_SETTINGS" > "$ROSETTA_BUILD/settings"
+fi
+cp "$ROSETTA_EXECUTABLE" "$ROSETTA_APP/Contents/MacOS/ForgeRosetta"
+if ! cmp -s "$ROSETTA_SOURCE/Info.plist" "$ROSETTA_APP/Contents/Info.plist"; then
+    cp "$ROSETTA_SOURCE/Info.plist" "$ROSETTA_APP/Contents/Info.plist"
+fi
+/usr/bin/codesign --force --sign "$IDENTITY" --options runtime "$ROSETTA_APP"

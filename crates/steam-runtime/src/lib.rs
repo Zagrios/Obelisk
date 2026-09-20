@@ -1,4 +1,5 @@
 //! Safe launcher-side supervision. Native ABI code lives in the separate helper.
+mod architecture;
 pub mod cloud;
 mod files;
 pub mod package;
@@ -70,6 +71,10 @@ pub enum Error {
     Timeout,
     #[error("backend.steam.runtime.storageFailed")]
     Storage,
+    #[error("backend.steam.runtime.incompatibleArchitecture")]
+    IncompatibleArchitecture,
+    #[error("backend.steam.runtime.rosettaUnavailable")]
+    RosettaUnavailable,
 }
 impl From<std::io::Error> for Error {
     fn from(_: std::io::Error) -> Self {
@@ -94,6 +99,7 @@ pub struct Launch {
     credentials: Mutex<Option<Credentials>>,
     cancelled: Arc<AtomicBool>,
     storage: Mutex<Option<NativeStorage>>,
+    architecture: Mutex<Option<architecture::Architecture>>,
 }
 #[derive(Clone)]
 pub struct NativeStorage {
@@ -107,6 +113,7 @@ impl Launch {
             credentials: Mutex::new(Some(credentials)),
             cancelled: Arc::new(AtomicBool::new(false)),
             storage: Mutex::new(None),
+            architecture: Mutex::new(None),
         }
     }
     pub fn cancel(&self) {
@@ -148,6 +155,13 @@ impl Launch {
         }
         let id = credentials.steam_id;
         let mut prepared = files::prepare(config, &self.cancelled)?;
+        if let Some(architecture) = *self
+            .architecture
+            .lock()
+            .map_err(|_| Error::InvalidSession)?
+        {
+            prepared.architecture = architecture;
+        }
         if let Some(storage) = self
             .storage
             .lock()
@@ -478,6 +492,7 @@ mod tests {
             service: "fixture".into(),
             report: root.join("report.json"),
             _prepared: files::Prepared {
+                architecture: crate::architecture::Architecture::Arm64,
                 storage: None,
                 directory: root.into(),
                 run_directory: root.join("scratch"),

@@ -4,6 +4,126 @@ use std::ffi::{CStr, CString, c_char, c_void};
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 
+/// Replace this architecture-specific helper with the selected slice of a game.
+/// No shell or platform wrapper gets a chance to strip the game's dyld variables.
+pub fn exec_game(arguments: &[std::ffi::OsString]) -> std::io::Result<()> {
+    use std::{
+        fs::File,
+        io::{Read, Write},
+        os::fd::{AsRawFd, FromRawFd},
+    };
+    // The supervisor treats EOF as successful exec. Retain a separate descriptor
+    // that closes atomically on exec, while the game itself gets null stdout.
+    // SAFETY: duplicate this helper's inherited stdout; ownership transfers below.
+    let descriptor = unsafe { libc::fcntl(1, libc::F_DUPFD_CLOEXEC, 3) };
+    if descriptor < 0 {
+        let error = std::io::Error::last_os_error();
+        let _ = std::io::stdout().write_all(b"exec-failed\n");
+        return Err(error);
+    }
+    // SAFETY: successful fcntl returned a new owned descriptor.
+    let mut control = unsafe { File::from_raw_fd(descriptor) };
+    let result = (|| {
+        let null = File::options().read(true).write(true).open("/dev/null")?;
+        // SAFETY: valid null descriptor, redirecting only this helper's stdout.
+        if unsafe { libc::dup2(null.as_raw_fd(), 1) } < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        // The supervisor first persists ownership of this PID, then grants exec.
+        // Losing that parent before its acknowledgement must never launch a game.
+        let mut admission = [0];
+        std::io::stdin().read_exact(&mut admission)?;
+        if admission != *b"1" {
+            return Err(std::io::Error::from_raw_os_error(libc::EINVAL));
+        }
+        // SAFETY: valid readable null descriptor; the game must not inherit the
+        // private admission pipe or any bytes remaining in it.
+        if unsafe { libc::dup2(null.as_raw_fd(), 0) } < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        exec_game_inner(arguments)
+    })();
+    // Successful SETEXEC cannot reach this write. Normal setup/exec failures
+    // always send an explicit bounded marker before closing the control pipe.
+    let _ = control.write_all(b"exec-failed\n");
+    result
+}
+
+fn exec_game_inner(arguments: &[std::ffi::OsString]) -> std::io::Result<()> {
+    let strings = arguments
+        .iter()
+        .map(|argument| CString::new(argument.as_os_str().as_bytes()))
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|_| std::io::Error::from_raw_os_error(libc::EINVAL))?;
+    let executable = strings
+        .first()
+        .ok_or_else(|| std::io::Error::from_raw_os_error(libc::EINVAL))?;
+    let mut argv: Vec<_> = strings.iter().map(|s| s.as_ptr().cast_mut()).collect();
+    argv.push(std::ptr::null_mut());
+    let mut attributes = std::ptr::null_mut();
+    // SAFETY: writable opaque attribute storage, initialized before any use.
+    let status = unsafe { libc::posix_spawnattr_init(&mut attributes) };
+    if status != 0 {
+        return Err(std::io::Error::from_raw_os_error(status));
+    }
+    let result = (|| {
+        // CPU_ARCH_ABI64 | CPU_TYPE_X86/ARM, from mach/machine.h.
+        #[cfg(target_arch = "x86_64")]
+        let mut architecture = 0x0100_0007;
+        #[cfg(target_arch = "aarch64")]
+        let mut architecture = 0x0100_000c;
+        let mut accepted = 0;
+        // SAFETY: initialized attributes and exactly one valid CPU preference.
+        let status = unsafe {
+            libc::posix_spawnattr_setbinpref_np(
+                &mut attributes,
+                1,
+                &mut architecture,
+                &mut accepted,
+            )
+        };
+        if status != 0 || accepted != 1 {
+            return Err(std::io::Error::from_raw_os_error(if status == 0 {
+                libc::EINVAL
+            } else {
+                status
+            }));
+        }
+        // SAFETY: SETEXEC replaces this PID, retaining supervisor parentage.
+        let status = unsafe {
+            libc::posix_spawnattr_setflags(&mut attributes, libc::POSIX_SPAWN_SETEXEC as i16)
+        };
+        if status != 0 {
+            return Err(std::io::Error::from_raw_os_error(status));
+        }
+        unsafe extern "C" {
+            fn _NSGetEnviron() -> *mut *mut *mut c_char;
+        }
+        // SAFETY: argv is NUL terminated and all owned strings remain live. This
+        // startup path has not modified the inherited environment or cwd. The
+        // process environment is passed verbatim, including non-UTF8 values.
+        let status = unsafe {
+            libc::posix_spawn(
+                std::ptr::null_mut(),
+                executable.as_ptr(),
+                std::ptr::null(),
+                &attributes,
+                argv.as_ptr(),
+                *_NSGetEnviron(),
+            )
+        };
+        // Successful SETEXEC never returns. Refuse an unexpected returned zero.
+        Err(std::io::Error::from_raw_os_error(if status == 0 {
+            libc::EIO
+        } else {
+            status
+        }))
+    })();
+    // SAFETY: attribute initialization succeeded; only failed exec returns here.
+    unsafe { libc::posix_spawnattr_destroy(&mut attributes) };
+    result
+}
+
 unsafe extern "C" {
     fn _dyld_image_count() -> u32;
     fn _dyld_get_image_name(index: u32) -> *const c_char;
@@ -23,12 +143,14 @@ impl Library {
     }
 
     pub fn symbol(&self, name: &CStr) -> Result<*mut c_void> {
+        self.optional_symbol(name)
+            .ok_or_else(|| format!("missing export: {}", name.to_string_lossy()).into())
+    }
+
+    pub fn optional_symbol(&self, name: &CStr) -> Option<*mut c_void> {
         // SAFETY: valid open handle and NUL-terminated symbol name.
         let pointer = unsafe { libc::dlsym(self.0, name.as_ptr()) };
-        if pointer.is_null() {
-            return Err(format!("missing export: {}", name.to_string_lossy()).into());
-        }
-        Ok(pointer)
+        (!pointer.is_null()).then_some(pointer)
     }
 }
 

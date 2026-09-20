@@ -5,11 +5,22 @@ import XCTest
 
 @MainActor
 final class EpicModelTests: XCTestCase {
-    func testLibrarySearchIgnoresAccentsAndSortsNamesWithStableIdentifiers() {
+    func testLibrarySearchIgnoresAccentsAndSortsNamesWithStableIdentifiers() async throws {
         let games = [game("z", title: "Portal"), game("b", title: "Étoiles"), game("a", title: "Portal")]
-        XCTAssertEqual(EpicModel.filterAndSort(games, query: "").map(\.appName), ["b", "a", "z"])
-        XCTAssertEqual(EpicModel.filterAndSort(games, query: "  etoile  ").map(\.appName), ["b"])
-        XCTAssertTrue(EpicModel.filterAndSort(games, query: "absent").isEmpty)
+        let root = FileManager.default.temporaryDirectory.appending(path: "ForgeEpicSearch-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let stored = credentials("current")
+        let session = EpicTestSession(credentials: stored, games: games)
+        let model = EpicModel(directory: root, keychain: EpicMemoryStore(stored), restore: { _ in session })
+        await model.start()
+        defer { model.signOut() }
+
+        XCTAssertEqual(model.filteredGames.map(\.appName), ["b", "a", "z"])
+        model.searchText = "  etoile  "
+        XCTAssertEqual(model.filteredGames.map(\.appName), ["b"])
+        model.searchText = "absent"
+        XCTAssertTrue(model.filteredGames.isEmpty)
     }
 
     func testRestoreRunsOnceAndSavesRotatedRefreshToken() async {

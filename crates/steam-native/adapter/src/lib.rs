@@ -1,6 +1,9 @@
 //! Redirect exactly one bootstrap lookup; never replace any Steamworks result.
-#[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
-compile_error!("The discovery experiment requires ARM64 macOS");
+#[cfg(not(all(
+    target_os = "macos",
+    any(target_arch = "aarch64", target_arch = "x86_64")
+)))]
+compile_error!("The discovery adapter requires 64-bit macOS");
 use std::ffi::{CStr, c_char};
 type Lookup = unsafe extern "C" fn(u32, *const c_char, *mut u32) -> i32;
 unsafe extern "C" {

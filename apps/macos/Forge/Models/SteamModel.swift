@@ -71,6 +71,8 @@ final class SteamModel {
     var rememberSession = true
     var searchText = ""
     var sort: SteamLibrarySort = .lastPlayed
+    var filter: StorefrontLibraryFilter = .all
+    var availableFilters: [StorefrontLibraryFilter] { StorefrontLibraryFilter.allCases }
     var guardKind: SteamGuardKind = .deviceConfirmation
 
     private(set) var selectedGame: SteamGame?
@@ -96,7 +98,9 @@ final class SteamModel {
     var verifyBeforeLaunch: Bool {
         didSet { preferences.set(verifyBeforeLaunch, forKey: Self.verifyBeforeLaunchPreferenceKey) }
     }
-    private(set) var installations: [SteamInstallReceipt] = []
+    private(set) var installations: [SteamInstallReceipt] = [] {
+        didSet { filteredLibraryCache = nil }
+    }
 
     @ObservationIgnored private let directory: URL
     @ObservationIgnored private let keychain: any SteamCredentialStore
@@ -105,6 +109,8 @@ final class SteamModel {
     @ObservationIgnored private let beginLogin: @Sendable (SteamLoginStart) async throws -> any SteamLoginProtocol
     let gameSessions: SteamGameSessions
     let cloud: SteamCloudModel
+    let rosetta: SteamRosettaModel
+    let libraryPlatforms = SteamLibraryPlatforms()
     @ObservationIgnored private let preferences: UserDefaults
     @ObservationIgnored private var session: (any SteamSessionProtocol)?
     @ObservationIgnored private var login: (any SteamLoginProtocol)?
@@ -132,7 +138,10 @@ final class SteamModel {
     @ObservationIgnored private var progressTask: Task<Void, Never>?
     @ObservationIgnored private var lastDownload: (game: SteamGame, platform: String, language: String, directory: URL)?
     @ObservationIgnored private var libraryOrderCache: [SteamLibrarySort: [SteamGame]] = [:]
-    @ObservationIgnored private var filteredLibraryCache: (query: String, sort: SteamLibrarySort, games: [SteamGame])?
+    @ObservationIgnored private var filteredLibraryCache: (
+        query: String, sort: SteamLibrarySort, filter: StorefrontLibraryFilter,
+        platforms: [UInt32: [String]], games: [SteamGame]
+    )?
 
     init(
         directory: URL,
@@ -166,6 +175,7 @@ final class SteamModel {
             ? true : preferences.bool(forKey: Self.verifyBeforeLaunchPreferenceKey)
         self.gameSessions = gameSessions
         self.cloud = SteamCloudModel(root: directory.appending(path: "SteamCloud").path, sessions: gameSessions)
+        self.rosetta = SteamRosettaModel(sessions: gameSessions)
         wakeObserver = SystemWakeObservation { [weak self] in
             Task { @MainActor [weak self] in self?.retryFriends() }
         }
@@ -262,11 +272,16 @@ final class SteamModel {
 
     var filteredGames: [SteamGame] {
         // Read every observable input even on cache hits so the library keeps
-        // updating after a search, a sort change, or a refreshed session.
+        // updating after search, filters, installation changes or platform replies.
         let source = games
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         let order = sort
-        if let cached = filteredLibraryCache, cached.query == query, cached.sort == order {
+        let selectedFilter = filter
+        let receipts = selectedFilter == .installed ? installations : []
+        // Dictionary snapshots share storage until the next metadata batch changes it.
+        let platforms = selectedFilter == .macOS ? libraryPlatforms.platforms : [:]
+        if let cached = filteredLibraryCache, cached.query == query, cached.sort == order,
+           cached.filter == selectedFilter, cached.platforms == platforms {
             return cached.games
         }
         let ordered: [SteamGame]
@@ -276,8 +291,17 @@ final class SteamModel {
             ordered = Self.filterAndSort(source, query: "", sort: order)
             libraryOrderCache[order] = ordered
         }
-        let filtered = query.isEmpty ? ordered : ordered.filter { $0.name.localizedStandardContains(query) }
-        filteredLibraryCache = (query, order, filtered)
+        let installedAppIds = Set(receipts.map(\.appId))
+        let filtered = query.isEmpty && selectedFilter == .all ? ordered : ordered.filter { game in
+            guard query.isEmpty || game.name.localizedStandardContains(query) else { return false }
+            switch selectedFilter {
+            case .all: return true
+            case .installed: return installedAppIds.contains(game.appId)
+            case .played: return game.lastPlayed > 0 || game.playtimeMinutes > 0
+            case .macOS: return platforms[game.appId]?.contains("macos") == true
+            }
+        }
+        filteredLibraryCache = (query, order, selectedFilter, platforms, filtered)
         return filtered
     }
 
@@ -443,6 +467,7 @@ final class SteamModel {
             }
             stopFriends()
             session?.shutdown()
+            libraryPlatforms.reset()
             session = connected
             sessionCredentials = credentials
             displayName = nil
@@ -459,6 +484,7 @@ final class SteamModel {
             isRestoring = false
             loadInstallations()
             cloud.connect(credentials)
+            rosetta.connect(accountId: credentials.steamId)
             do {
                 if persist { try await keychain.save(credentials) }
                 else if !rememberSession { try await keychain.remove() }
@@ -565,12 +591,14 @@ final class SteamModel {
 
     private func reloadGames(_ session: any SteamSessionProtocol, generation current: Int) async {
         guard current == generation && self.session === session && !Task.isCancelled else { return }
+        libraryPlatforms.reset()
         isLoadingGames = true
         do {
             let loaded = try await session.games()
             guard current == generation && self.session === session else { return }
             games = loaded
             isLoadingGames = false
+            libraryPlatforms.load(appIds: loaded.map(\.appId), session: session)
         } catch {
             guard current == generation && self.session === session else { return }
             isLoadingGames = false
@@ -607,6 +635,7 @@ final class SteamModel {
               friends?.connection != .authenticationRequired else { return }
         stopFriends()
         friends?.connection = .interrupted
+        libraryPlatforms.reset()
         session?.shutdown()
         let previous = session
         session = nil
@@ -646,10 +675,12 @@ final class SteamModel {
                         continue
                     case .authenticationRequired:
                         observed.shutdown()
+                        self.libraryPlatforms.reset()
                         self.session = nil
                         return
                     case .disconnected:
                         observed.shutdown()
+                        self.libraryPlatforms.reset()
                         self.session = nil
                         active = nil
                     }
@@ -666,6 +697,7 @@ final class SteamModel {
                             replacement.shutdown()
                             return
                         }
+                        self.libraryPlatforms.reset()
                         self.session = replacement
                         self.cloud.resume()
                         active = replacement
@@ -737,6 +769,8 @@ final class SteamModel {
     }
 
     func signOut() {
+        libraryPlatforms.reset()
+        rosetta.connect(accountId: nil)
         cloud.signedOut()
         generation += 1
         detailGeneration += 1
@@ -768,6 +802,7 @@ final class SteamModel {
         lastDownload = nil
         challenge = nil
         searchText = ""
+        filter = .all
         errorMessage = nil
         storageWarning = nil
         isConnecting = false

@@ -4,7 +4,7 @@ struct LibraryView: View {
     @Bindable var model: AppModel
     @Environment(\.colorScheme) private var colorScheme
 
-    private let columns = [GridItem(.adaptive(minimum: 220, maximum: 340), spacing: 18)]
+    private let columns = [GridItem(.adaptive(minimum: 220, maximum: 340), spacing: 18, alignment: .top)]
 
     private var isStore: Bool { model.selection.isStorefront }
 

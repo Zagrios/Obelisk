@@ -2,7 +2,7 @@
 
 Forge's existing Launch button starts a separate Rust supervisor, which starts
 the Steam host before the native macOS game. It passes the session already held
-by `SteamModel` through a one-time private stdin pipe. No extra screen, login, Keychain query or user action is involved.
+by `SteamModel` through a one-time private stdin pipe. No extra login or Keychain query is involved. After Cloud reconciliation, Intel games can present the [Rosetta requirement](steam-rosetta-intel.md) if translation is unavailable.
 
 The app bundles a minimal, hash-pinned Valve runtime archive. The host loads its
 original libraries from a verified private cache prepared from that archive. It
@@ -38,8 +38,9 @@ fixed the failure. A regression test covers all three consumers' environment.
   account sign-out, and it restores an existing session when Forge starts.
   Authentication failure, cancellation before spawning or failed SDK validation
   cleans up the host and scratch home.
-- `scripts/build-steam-native.sh` builds and signs both helpers in Forge's bundle.
-  Only the helper has the entitlements needed to load Valve libraries and use
+- `scripts/build-steam-native.sh` builds and signs the ARM host, both SDK consumers,
+  the universal adapter and the Intel Rosetta application in Forge's bundle.
+  Only the Steam helpers have the entitlements needed to load Valve libraries and use
   DYLD discovery. Forge's Keychain identity remains unchanged.
 
 Credential values never enter process arguments, environment variables, reports
@@ -345,15 +346,18 @@ them in Forge. No installed Steam client is read, including on first launch.
 Updating the pinned engine still requires ABI and compatibility validation; a
 mismatched version fails before private ABI calls.
 
-The SDK check currently requires Silksong's modern flat Steamworks interfaces.
-Other SDK versions, games without `libsteam_api.dylib`, Intel games, hardened games
-that reject the adapter need compatibility work. Concurrent Steam game sessions
+The SDK check supports the modern flat Steamworks interfaces and one recognized
+legacy SDK profile. The Intel consumer and Rosetta flow are implemented; their
+real Dead Cells path remains unverified. Other SDK versions, games without
+`libsteam_api.dylib`, and hardened games that reject the adapter need compatibility
+work. Concurrent Steam game sessions
 are blocked until their compatibility is validated.
 Private endpoints use ephemeral loopback ports; the host binds after allocation,
 so another process taking the port can cause a failed launch. Valve libraries are
 embedded in the local app bundle; they are not versioned in the repository.
 
-Steam Cloud is not integrated. The game uses its normal local save location.
+Steam Cloud is integrated; current AutoCloud and ordinary SDK storage evidence
+is recorded in [the September 20 compatibility report](steam-cloud-compatibility-2026-09-20.md).
 The supervisor preserves new sessions across Forge closure or crash. The
 September 18 manual Silksong check confirms action-state recovery after normal
 Forge closure and reopening, followed by the action-state change after game exit.

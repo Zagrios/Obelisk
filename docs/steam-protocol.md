@@ -25,6 +25,15 @@ After authorization, `SteamSession` has the CM servers verify the token. The Ste
 
 `Player.GetOwnedGames` supplies names, play history, and icons for the signed-in account. The grid sorts by last played, then by name. Downloading checks licenses separately, then Steam authorizes each depot key and manifest access code. An error is never treated as a successfully loaded empty library.
 
+Once the library arrives, Forge loads declared operating systems in the background
+through PICS, in batches of up to 50 games. Each batch uses the existing metadata
+cache and publishes its results to the library model, including macOS, Windows,
+and Linux declarations. Hovering a card only reveals its cached logo and makes no
+request. These library-wide values are also available for filtering. An empty
+declaration means unknown compatibility; a failed batch remains unresolved and
+does not discard other batches or hide the library. Refreshing the library or
+changing the session cancels the old load and rejects late responses.
+
 Thumbnails come from Steam's CDN, with a visual fallback when a game has no cover art. The details page loads community announcements through the public `GetNewsForApp` API. Excerpts are displayed as text without executing HTML. The full article is available through its HTTPS link.
 
 ## Cargo dependencies

@@ -10,6 +10,8 @@ use std::{
     time::{Duration, Instant},
 };
 use steam_runtime::protocol::SdkStage;
+mod api;
+use api::{Api, Interface};
 macro_rules! call {
     ($f:ident($($arg:expr),* $(,)?)) => {{
         // SAFETY: flat Steamworks C signatures; checked non-null interfaces and
@@ -49,17 +51,9 @@ pub fn verify(
     })
 }
 
-fn verify_storage_files(api: &Library, files: &[(String, std::path::PathBuf)]) -> Result<()> {
+fn verify_storage_files(api: &Api, files: &[(String, std::path::PathBuf)]) -> Result<()> {
     use std::ffi::CString;
-    let get = symbol!(
-        api,
-        c"SteamAPI_SteamRemoteStorage_v016",
-        unsafe extern "C" fn() -> *mut c_void
-    );
-    let storage = call!(get());
-    if storage.is_null() {
-        return Err("RemoteStorage missing".into());
-    }
+    let storage = api.interface(Interface::Storage)?;
     let count = symbol!(
         api,
         c"SteamAPI_ISteamRemoteStorage_GetFileCount",
@@ -108,16 +102,8 @@ fn verify_storage_files(api: &Library, files: &[(String, std::path::PathBuf)]) -
     }
 }
 
-fn storage_quota(api: &Library) -> Result<(u64, u64)> {
-    let get = symbol!(
-        api,
-        c"SteamAPI_SteamRemoteStorage_v016",
-        unsafe extern "C" fn() -> *mut c_void
-    );
-    let storage = call!(get());
-    if storage.is_null() {
-        return Err("RemoteStorage missing".into());
-    }
+fn storage_quota(api: &Api) -> Result<(u64, u64)> {
+    let storage = api.interface(Interface::Storage)?;
     let get_quota = symbol!(
         api,
         c"SteamAPI_ISteamRemoteStorage_GetQuota",
@@ -141,7 +127,7 @@ fn verify_with(
     engine_path: &std::path::Path,
     app: u32,
     stage: &mut impl FnMut(SdkStage) -> Result<()>,
-    extra: impl FnOnce(&Library) -> Result<()>,
+    extra: impl FnOnce(&Api) -> Result<()>,
 ) -> Result<bool> {
     crate::pinned_client(engine_path)?;
     let mut identity = [0; 8];
@@ -151,22 +137,11 @@ fn verify_with(
         return Err("Invalid SDK verification request".into());
     }
     stage(SdkStage::Library)?;
-    let api = Library::open(api_path)?;
-    let init = symbol!(
-        api,
-        c"SteamAPI_InitFlat",
-        unsafe extern "C" fn(*mut c_char) -> i32
-    );
+    let library = Library::open(api_path)?;
     stage(SdkStage::Initialize)?;
-    let mut error = [0_i8; 1024];
-    if call!(init(error.as_mut_ptr())) != 0 {
-        return Err("Steamworks initialization failed".into());
-    }
-    let result = verify_interfaces(&api, engine_path, expected, app, stage)
-        .and_then(|asynchronous| extra(&api).map(|()| asynchronous));
-    let shutdown = symbol!(api, c"SteamAPI_Shutdown", unsafe extern "C" fn());
-    call!(shutdown());
-    result
+    let api = Api::initialize(library, api_path)?;
+    verify_interfaces(&api, engine_path, expected, app, stage)
+        .and_then(|asynchronous| extra(&api).map(|()| asynchronous))
 }
 
 #[cfg(debug_assertions)]
@@ -179,15 +154,7 @@ pub fn storage_probe(
 ) -> Result<()> {
     let mut quota = (0, 0);
     let verification = verify_with(api, engine, app, &mut |_| Ok(()), |api| {
-        let get = symbol!(
-            api,
-            c"SteamAPI_SteamRemoteStorage_v016",
-            unsafe extern "C" fn() -> *mut c_void
-        );
-        let storage = call!(get());
-        if storage.is_null() {
-            return Err("RemoteStorage missing".into());
-        }
+        let storage = api.interface(Interface::Storage)?;
         let get_quota = symbol!(
             api,
             c"SteamAPI_ISteamRemoteStorage_GetQuota",
@@ -283,7 +250,7 @@ pub fn storage_probe(
         Ok(())
     });
     if let Err(error) = verification {
-        crate::host::emit(
+        crate::events::emit(
             output,
             &steam_runtime::protocol::Event::StorageFailure {
                 reason: error.to_string(),
@@ -291,7 +258,7 @@ pub fn storage_probe(
         )?;
         return Err(error);
     }
-    crate::host::emit(
+    crate::events::emit(
         output,
         &steam_runtime::protocol::Event::StorageVerified {
             total: quota.0,
@@ -301,7 +268,7 @@ pub fn storage_probe(
     )
 }
 fn verify_interfaces(
-    api: &Library,
+    api: &Api,
     engine_path: &std::path::Path,
     expected: u64,
     app: u32,
@@ -315,38 +282,10 @@ fn verify_interfaces(
         return Err("Unexpected Steam engine image".into());
     }
     stage(SdkStage::Interfaces)?;
-    let get_user = symbol!(
-        api,
-        c"SteamAPI_SteamUser_v023",
-        unsafe extern "C" fn() -> *mut c_void
-    );
-    let get_apps = symbol!(
-        api,
-        c"SteamAPI_SteamApps_v008",
-        unsafe extern "C" fn() -> *mut c_void
-    );
-    let get_utils = symbol!(
-        api,
-        c"SteamAPI_SteamUtils_v010",
-        unsafe extern "C" fn() -> *mut c_void
-    );
-    let get_stats = symbol!(
-        api,
-        c"SteamAPI_SteamUserStats_v012",
-        unsafe extern "C" fn() -> *mut c_void
-    );
-    let (user, apps, utils, stats) = (
-        call!(get_user()),
-        call!(get_apps()),
-        call!(get_utils()),
-        call!(get_stats()),
-    );
-    if [user, apps, utils, stats]
-        .iter()
-        .any(|value| value.is_null())
-    {
-        return Err("Missing Steamworks interface".into());
-    }
+    let user = api.interface(Interface::User)?;
+    let apps = api.interface(Interface::Apps)?;
+    let utils = api.interface(Interface::Utils)?;
+    let stats = api.interface(Interface::Stats)?;
     stage(SdkStage::Account)?;
     let online = symbol!(
         api,
@@ -413,4 +352,151 @@ fn verify_interfaces(
     }
     // The player-count endpoint is optional; verified account/license are required.
     Ok(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    const ACCOUNT: u64 = 76561198000000001;
+    const APP: u32 = 588650;
+
+    struct Fixture(std::path::PathBuf, bool);
+    impl Fixture {
+        fn new(defines: &[&str]) -> Self {
+            static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+            let path = std::env::temp_dir().join(format!(
+                "forge-sdk-fixture-{}-{}.dylib",
+                std::process::id(),
+                NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ));
+            let output = std::process::Command::new("/usr/bin/clang")
+                .args(["-dynamiclib", "-Wall", "-Werror"])
+                .args(defines.iter().map(|define| format!("-D{define}")))
+                .arg(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/tests/fixtures/steam_api.c"
+                ))
+                .arg("-o")
+                .arg(&path)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            Self(path.canonicalize().unwrap(), defines.contains(&"LEGACY"))
+        }
+        fn initialize(&self) -> Result<Api> {
+            let library = Library::open(&self.0)?;
+            if self.1 {
+                Api::initialize_legacy_fixture(library)
+            } else {
+                Api::initialize(library, &self.0)
+            }
+        }
+        fn verify(&self, api: &Api, account: u64, app: u32) -> Result<bool> {
+            verify_interfaces(api, &self.0, account, app, &mut |_| Ok(()))
+        }
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+
+    #[test]
+    fn legacy_sdk_verifies_identity_without_modern_interface_exports() -> Result<()> {
+        let fixture = Fixture::new(&["LEGACY"]);
+        assert!(fixture.verify(&fixture.initialize()?, ACCOUNT, APP)?);
+        Ok(())
+    }
+
+    #[test]
+    fn unrecognized_legacy_library_is_rejected_before_initialization() -> Result<()> {
+        let fixture = Fixture::new(&["LEGACY"]);
+        assert!(Api::initialize(Library::open(&fixture.0)?, &fixture.0).is_err());
+        let library = Library::open(&fixture.0)?;
+        let client = symbol!(
+            &library,
+            c"SteamClient",
+            unsafe extern "C" fn() -> *mut c_void
+        );
+        assert!(call!(client()).is_null());
+        Ok(())
+    }
+
+    #[test]
+    fn modern_sdk_keeps_identity_license_and_callback_verification() -> Result<()> {
+        let fixture = Fixture::new(&[]);
+        let api = fixture.initialize()?;
+        assert!(fixture.verify(&api, ACCOUNT, APP)?);
+        assert!(fixture.verify(&api, ACCOUNT + 1, APP).is_err());
+        assert!(fixture.verify(&api, ACCOUNT, APP + 1).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn legacy_sdk_rejects_wrong_identity_and_license() -> Result<()> {
+        let fixture = Fixture::new(&["LEGACY"]);
+        let api = fixture.initialize()?;
+        assert!(fixture.verify(&api, ACCOUNT + 1, APP).is_err());
+        assert!(fixture.verify(&api, ACCOUNT, APP + 1).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn missing_required_interfaces_never_pass_verification() -> Result<()> {
+        for defines in [vec!["MISSING_USER"], vec!["LEGACY", "MISSING_USER"]] {
+            let fixture = Fixture::new(&defines);
+            let api = fixture.initialize()?;
+            assert!(fixture.verify(&api, ACCOUNT, APP).is_err());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn failed_or_missing_initialization_never_falls_back_to_success() {
+        for defines in [
+            vec!["MISSING_INIT"],
+            vec!["LEGACY", "MISSING_INIT"],
+            vec!["MODERN_INIT_FAIL"],
+            vec!["LEGACY", "LEGACY_INIT_FAIL"],
+        ] {
+            let fixture = Fixture::new(&defines);
+            assert!(fixture.initialize().is_err());
+        }
+    }
+
+    #[test]
+    fn legacy_and_modern_sdk_read_the_projected_storage_bytes() -> Result<()> {
+        for defines in [vec![], vec!["LEGACY"]] {
+            let fixture = Fixture::new(&defines);
+            let api = fixture.initialize()?;
+            assert_eq!(storage_quota(&api)?, (1000000, 900000));
+            let save = fixture.0.with_extension("save");
+            std::fs::write(&save, b"save")?;
+            let result = verify_storage_files(&api, &[("fixture.dat".into(), save.clone())]);
+            std::fs::remove_file(save)?;
+            result?;
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn sdk_shutdown_runs_when_verification_rejects_an_account() -> Result<()> {
+        let fixture = Fixture::new(&["LEGACY"]);
+        let api = fixture.initialize()?;
+        assert!(fixture.verify(&api, ACCOUNT + 1, APP).is_err());
+        let online = symbol!(
+            &api,
+            c"SteamAPI_ISteamUser_BLoggedOn",
+            unsafe extern "C" fn(*mut c_void) -> bool
+        );
+        let user = api.interface(Interface::User)?;
+        assert!(call!(online(user)));
+        drop(api);
+        assert!(!call!(online(user)));
+        Ok(())
+    }
 }

@@ -48,12 +48,7 @@ impl Client {
         if let Some(saved) = storage::read(root)?
             && !saved.finished()
             && (probe(helper, saved.supervisor.pid)?.as_ref() == Some(&saved.supervisor)
-                || saved
-                    .game
-                    .as_ref()
-                    .map(|game| probe(helper, game.pid).map(|actual| actual.as_ref() == Some(game)))
-                    .transpose()?
-                    .unwrap_or(saved.phase == Phase::Running))
+                || owns_live_child(&saved, helper, probe)?)
         {
             return Err(Error::SessionBusy);
         }
@@ -160,19 +155,16 @@ impl Client {
         orphan.reconnecting = false;
         orphan.host = HostState::Lost;
         orphan.revision += 1;
-        match &orphan.game {
-            Some(game) if (self.probe)(&self.helper, game.pid)?.as_ref() == Some(game) => {
-                // Exceptional supervisor loss: keep all guards until that exact
-                // process exits. Never attempt to replace the game's Steam host.
-                if after.is_some() {
-                    std::thread::sleep(Duration::from_millis(500));
-                }
+        if owns_live_child(&orphan, &self.helper, self.probe)? {
+            // Exceptional supervisor loss preserves even a helper that has not
+            // yet replaced itself. Never restart or cancel its accepted launch.
+            if after.is_some() {
+                std::thread::sleep(Duration::from_millis(500));
             }
-            None if orphan.phase == Phase::Running => return Err(Error::SessionBusy),
-            _ => {
-                orphan.phase = Phase::Finished;
-                orphan.exit_code = None;
-            }
+        } else {
+            orphan.phase = Phase::Finished;
+            orphan.exit_code = None;
+            orphan.starting = None;
         }
         Ok(orphan)
     }
@@ -218,7 +210,29 @@ impl Client {
         )
     }
 
+    pub fn resume_after_rosetta(&self, account_id: u64, decision_id: u64) -> Result<(), Error> {
+        let response = self.account_command(
+            account_id,
+            Command::ResumeAfterRosetta {
+                id: self.id.clone(),
+                account_id,
+                decision_id,
+            },
+        )?;
+        if response.rosetta.is_some() {
+            return Err(Error::RosettaUnavailable);
+        }
+        if response.finished() && response.phase != Phase::Finished {
+            return Err(Error::InvalidSession);
+        }
+        Ok(())
+    }
+
     fn cloud_command(&self, account_id: u64, command: Command) -> Result<(), Error> {
+        self.account_command(account_id, command).map(|_| ())
+    }
+
+    fn account_command(&self, account_id: u64, command: Command) -> Result<Snapshot, Error> {
         let saved = storage::read_id(&self.root, &self.id)?.ok_or(Error::Unavailable)?;
         if account_id == 0
             || saved.id != self.id
@@ -233,9 +247,39 @@ impl Client {
             .as_ref()
             .is_none_or(|old| old.revision <= response.revision)
         {
-            *last = Some(response);
+            *last = Some(response.clone());
         }
-        Ok(())
+        Ok(response)
+    }
+}
+
+fn owns_live_child(snapshot: &Snapshot, helper: &Path, probe: Probe) -> Result<bool, Error> {
+    if let Some(game) = &snapshot.game
+        && probe(helper, game.pid)?.as_ref() == Some(game)
+    {
+        return Ok(true);
+    }
+    match &snapshot.starting {
+        Some(StartingGame::Process {
+            identity,
+            executable,
+        }) => {
+            let Some(actual) = probe(helper, identity.pid)? else {
+                return Ok(false);
+            };
+            // SETEXEC keeps PID, UID and kernel birth time, but changes the
+            // executable. Permit only the recorded wrapper or intended game.
+            Ok(actual == *identity
+                || actual.pid == identity.pid
+                    && actual.uid == identity.uid
+                    && actual.birth_seconds == identity.birth_seconds
+                    && actual.birth_microseconds == identity.birth_microseconds
+                    && Path::new(&actual.executable) == executable)
+        }
+        None if snapshot.game.is_none() && snapshot.phase == Phase::Running => {
+            Err(Error::SessionBusy)
+        }
+        None => Ok(false),
     }
 }
 
@@ -409,6 +453,7 @@ mod cloud_commands {
             account_id: 123,
             supervisor: identity(1),
             game: None,
+            starting: None,
             socket: root.path().join("absent.sock"),
             phase: Phase::Preparing,
             cloud: crate::cloud::Status {
@@ -427,6 +472,7 @@ mod cloud_commands {
             error: None,
             revision: 1,
             reconnecting: false,
+            rosetta: None,
         };
         storage::write(root.path(), &snapshot).unwrap();
         let client = Client {

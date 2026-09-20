@@ -143,8 +143,9 @@ impl Launch {
                 let mut host = process::Child::spawn(command)?;
                 credentials.write(host.input.as_mut().ok_or(Error::StartFailed)?)?;
                 self.wait_for_host(&mut host, config.app_id, &mut events)?;
-                let mut command =
-                    std::process::Command::new(prepared.directory.join(crate::package::HOST));
+                let mut command = std::process::Command::new(
+                    prepared.directory.join(prepared.architecture.helper()),
+                );
                 command
                     .arg("check-storage")
                     .arg(&config.steam_api)

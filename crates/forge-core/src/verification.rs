@@ -80,9 +80,10 @@ pub fn worker_limit() -> usize {
 /// parallelism, bounded to four disk readers. Every reader has stopped before
 /// this returns, so the caller may begin repairing files immediately.
 ///
-/// Verified bytes, verified whole files and the current name are published on
-/// `reporter` as they are counted. Those updates run inline under the
-/// scheduler's lock, so the reporter's callback must not reenter this verifier.
+/// Inspection bytes, verified whole files and the current name are published
+/// on `reporter` as they are counted. Whole-file validation stays separate from
+/// inspection progress, so corrupt files never count as reusable. Updates run
+/// inline under the reporter's lock; its callback must not reenter this verifier.
 pub fn verify_files<T>(
     root: &Path,
     files: &[T],
@@ -107,11 +108,48 @@ pub fn verify_with_workers<T>(
 where
     T: VerificationFile + Sync,
 {
-    schedule(
+    cancel.check()?;
+    reporter.update(|status| status.verification_bytes = Some(0));
+    let verified = schedule(
         files,
         cancel,
         |file| confined_path(root, file),
-        |path, file: &T, cancel| install::verify_sha1_file(path, file.size(), file.sha1(), cancel),
+        |path, file: &T, cancel| {
+            let mut inspected = 0_u64;
+            let mut report = |bytes: u64| {
+                // The file can change while it is read. Its contribution must
+                // never exceed the size in the manifest.
+                let bytes = bytes.min(file.size().saturating_sub(inspected));
+                inspected += bytes;
+                reporter.update(|status| {
+                    status.verification_bytes =
+                        Some(status.verification_bytes.unwrap_or(0).saturating_add(bytes));
+                    status.current_file.replace_range(.., file.name());
+                });
+            };
+            let valid = install::verify_sha1_file_with_progress(
+                path,
+                file.size(),
+                file.sha1(),
+                cancel,
+                &mut report,
+            )?;
+            // Missing and wrong-size files are inspected without being read.
+            // Their full size still belongs to this pass's progress denominator.
+            let remaining = file.size().saturating_sub(inspected);
+            if remaining != 0 {
+                reporter.update(|status| {
+                    status.verification_bytes = Some(
+                        status
+                            .verification_bytes
+                            .unwrap_or(0)
+                            .saturating_add(remaining),
+                    );
+                    status.current_file.replace_range(.., file.name());
+                });
+            }
+            Ok(valid)
+        },
         |bytes, files, name| {
             reporter.update(|status| {
                 status.completed_bytes = bytes;
@@ -127,7 +165,11 @@ where
         ScheduleError::WorkerFailed
         | ScheduleError::InvalidTotalSize
         | ScheduleError::InvalidFileCount => VerificationError::SchedulerFailed,
-    })
+    })?;
+    // Repair uses validated bytes and may inspect partial chunks of its own.
+    // Do not let the initial scan's numerator leak into that phase.
+    reporter.update(|status| status.verification_bytes = None);
+    Ok(verified)
 }
 
 /// Resolved before a file is reported, so an unsafe name never reaches a reader.
@@ -360,12 +402,27 @@ mod tests {
             "the reused total is the scheduler's own count, not a second fold"
         );
         let events = events.lock().unwrap();
+        let scanned: Vec<_> = events
+            .iter()
+            .filter_map(|event| event.verification_bytes)
+            .collect();
+        assert_eq!(scanned.first(), Some(&0));
+        assert_eq!(
+            scanned.last(),
+            Some(&(4 * bytes.len() as u64)),
+            "corrupt, truncated and missing files advance inspection without becoming reusable"
+        );
+        assert!(
+            scanned.windows(2).all(|pair| pair[0] <= pair[1]),
+            "concurrent readers must publish monotonic inspection progress"
+        );
         // Counters only ever move forward, whichever reader published them.
         assert!(events.windows(2).all(|pair| {
             pair[0].completed_bytes <= pair[1].completed_bytes
                 && pair[0].completed_files <= pair[1].completed_files
         }));
         let last = events.last().unwrap();
+        assert_eq!(last.verification_bytes, None, "the scan ends before repair");
         assert_eq!(
             (last.completed_bytes, last.completed_files),
             (bytes.len() as u64, 2)
@@ -373,6 +430,63 @@ mod tests {
         assert!(
             events.iter().all(|event| event.current_file != "folder"),
             "a directory entry is never handed to a reader"
+        );
+    }
+
+    #[test]
+    fn large_file_reports_partial_inspection_before_becoming_reusable() {
+        let root = tempfile::tempdir().unwrap();
+        let bytes = vec![0x7b; 6 * 1024 * 1024 + 73];
+        fs::write(root.path().join("large.pak"), &bytes).unwrap();
+        let total_bytes = bytes.len() as u64;
+        let cancel = CancelToken::new();
+        let callback_cancel = cancel.clone();
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&events);
+        let reporter = Reporter::new(
+            DownloadProgress {
+                total_bytes,
+                ..Default::default()
+            },
+            move |snapshot| {
+                if snapshot
+                    .verification_bytes
+                    .is_some_and(|bytes| bytes > 0 && bytes < total_bytes)
+                {
+                    callback_cancel.cancel();
+                }
+                sink.lock().unwrap().push(snapshot);
+            },
+        );
+
+        let result = verify_with_workers(
+            root.path(),
+            &[entry("large.pak", &bytes)],
+            &cancel,
+            &reporter,
+            1,
+        );
+
+        assert!(
+            matches!(result, Err(VerificationError::Cancelled)),
+            "inspection progress must be published while the file is still being hashed"
+        );
+        let events = events.lock().unwrap();
+        let partial = events
+            .iter()
+            .find(|event| {
+                event
+                    .verification_bytes
+                    .is_some_and(|bytes| bytes > 0 && bytes < total_bytes)
+            })
+            .expect("a large file must publish progress before its hash is complete");
+        assert_eq!(partial.current_file, "large.pak");
+        assert_eq!((partial.completed_bytes, partial.completed_files), (0, 0));
+        assert!(
+            events
+                .iter()
+                .all(|event| { event.completed_bytes == 0 && event.completed_files == 0 }),
+            "cancelled inspection must never count the unfinished file as reusable"
         );
     }
 

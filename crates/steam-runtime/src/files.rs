@@ -5,6 +5,7 @@ use std::{
 };
 
 pub(crate) struct Prepared {
+    pub architecture: crate::architecture::Architecture,
     pub directory: PathBuf,
     pub run_directory: PathBuf,
     pub profile: PathBuf,
@@ -89,6 +90,7 @@ pub(crate) fn prepare(
         std::net::TcpListener::bind("127.0.0.1:0")?,
     ];
     let prepared = Prepared {
+        architecture: crate::architecture::Architecture::for_library(&config.steam_api)?,
         storage: None,
         directory,
         profile: run_directory.join("host.sb"),
@@ -276,6 +278,7 @@ mod atomic_tests {
         let run = root.join("run");
         fs::create_dir_all(&run).unwrap();
         let mut prepared = Prepared {
+            architecture: crate::architecture::Architecture::Arm64,
             directory: runtime,
             run_directory: run.clone(),
             profile: run.join("profile"),

@@ -122,6 +122,9 @@ pub struct DownloadProgress {
     pub phase: DownloadPhase,
     /// Verified, installed or reusable uncompressed bytes.
     pub completed_bytes: u64,
+    /// Inspection progress during the initial file scan, including bytes whose
+    /// hash is still pending. Separate from reusable bytes; absent during repair.
+    pub verification_bytes: Option<u64>,
     pub total_bytes: u64,
     /// Compressed bytes received during this invocation, including manifests.
     pub network_bytes: u64,

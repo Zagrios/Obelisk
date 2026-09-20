@@ -1628,6 +1628,8 @@ public protocol SteamGameSessionProtocol: AnyObject, Sendable {
     
     func chooseCloud(accountId: UInt64, decisionId: UInt64, choice: SteamCloudChoice) async throws 
     
+    func resumeAfterRosetta(accountId: UInt64, decisionId: UInt64) async throws 
+    
     func revokeCloud(accountId: UInt64) async throws 
     
     func snapshot(after: UInt64?) async throws  -> SteamGameSnapshot
@@ -1700,6 +1702,22 @@ open func chooseCloud(accountId: UInt64, decisionId: UInt64, choice: SteamCloudC
             rustFutureFunc: {
                 uniffi_forge_bridge_fn_method_steamgamesession_choose_cloud(
                         self.uniffiCloneHandle(),FfiConverterUInt64.lower(accountId),FfiConverterUInt64.lower(decisionId),FfiConverterTypeSteamCloudChoice_lower(choice)
+                )
+            },
+            pollFunc: ffi_forge_bridge_rust_future_poll_void,
+            completeFunc: ffi_forge_bridge_rust_future_complete_void,
+            freeFunc: ffi_forge_bridge_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeSteamError_lift
+        )
+}
+    
+open func resumeAfterRosetta(accountId: UInt64, decisionId: UInt64)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_forge_bridge_fn_method_steamgamesession_resume_after_rosetta(
+                        self.uniffiCloneHandle(),FfiConverterUInt64.lower(accountId),FfiConverterUInt64.lower(decisionId)
                 )
             },
             pollFunc: ffi_forge_bridge_rust_future_poll_void,
@@ -1988,7 +2006,7 @@ public protocol SteamNativeLaunchProtocol: AnyObject, Sendable {
     func cancel() 
     
     func probeStorage(configuration: SteamNativeConfiguration, transfers: Bool) async throws  -> String
-
+    
     func startGame(configuration: SteamNativeConfiguration, target: SteamSupervisedTarget, sessionDirectory: String) async throws  -> SteamGameSession
     
 }
@@ -2077,7 +2095,7 @@ open func probeStorage(configuration: SteamNativeConfiguration, transfers: Bool)
             errorHandler: FfiConverterTypeSteamError_lift
         )
 }
-
+    
 open func startGame(configuration: SteamNativeConfiguration, target: SteamSupervisedTarget, sessionDirectory: String)async throws  -> SteamGameSession  {
     return
         try  await uniffiRustCallAsync(
@@ -2151,7 +2169,7 @@ public protocol SteamSessionProtocol: AnyObject, Sendable {
     func cancelDownload() 
     
     func cloudAutocloudMetadata() async throws  -> String
-
+    
     /**
      * Explicit diagnostic operation using this already-authenticated session.
      * It downloads a verified backup; no Cloud mutation or game launch occurs.
@@ -2183,6 +2201,11 @@ public protocol SteamSessionProtocol: AnyObject, Sendable {
      * Suspends on the CM watch channel; no content-query mutex is held.
      */
     func nextFriends(afterRevision: UInt64) async  -> SteamFriendsSnapshot
+    
+    /**
+     * Declared application platforms in batches; an empty platform list means unknown.
+     */
+    func platforms(appIds: [UInt32]) async throws  -> [SteamGamePlatforms]
     
     func profile() async throws  -> SteamProfile
     
@@ -2299,7 +2322,7 @@ open func cloudAutocloudMetadata()async throws  -> String  {
             errorHandler: FfiConverterTypeSteamError_lift
         )
 }
-
+    
     /**
      * Explicit diagnostic operation using this already-authenticated session.
      * It downloads a verified backup; no Cloud mutation or game launch occurs.
@@ -2477,6 +2500,25 @@ open func nextFriends(afterRevision: UInt64)async  -> SteamFriendsSnapshot  {
             liftFunc: FfiConverterTypeSteamFriendsSnapshot_lift,
             errorHandler: nil
             
+        )
+}
+    
+    /**
+     * Declared application platforms in batches; an empty platform list means unknown.
+     */
+open func platforms(appIds: [UInt32])async throws  -> [SteamGamePlatforms]  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_forge_bridge_fn_method_steamsession_platforms(
+                        self.uniffiCloneHandle(),FfiConverterSequenceUInt32.lower(appIds)
+                )
+            },
+            pollFunc: ffi_forge_bridge_rust_future_poll_rust_buffer,
+            completeFunc: ffi_forge_bridge_rust_future_complete_rust_buffer,
+            freeFunc: ffi_forge_bridge_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterSequenceTypeSteamGamePlatforms.lift,
+            errorHandler: FfiConverterTypeSteamError_lift
         )
 }
     
@@ -3838,6 +3880,60 @@ public func FfiConverterTypeSteamGameDetails_lower(_ value: SteamGameDetails) ->
 }
 
 
+public struct SteamGamePlatforms: Equatable, Hashable {
+    public var appId: UInt32
+    public var platforms: [String]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(appId: UInt32, platforms: [String]) {
+        self.appId = appId
+        self.platforms = platforms
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SteamGamePlatforms: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSteamGamePlatforms: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SteamGamePlatforms {
+        return
+            try SteamGamePlatforms(
+                appId: FfiConverterUInt32.read(from: &buf), 
+                platforms: FfiConverterSequenceString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SteamGamePlatforms, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.appId, into: &buf)
+        FfiConverterSequenceString.write(value.platforms, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSteamGamePlatforms_lift(_ buf: RustBuffer) throws -> SteamGamePlatforms {
+    return try FfiConverterTypeSteamGamePlatforms.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSteamGamePlatforms_lower(_ value: SteamGamePlatforms) -> RustBuffer {
+    return FfiConverterTypeSteamGamePlatforms.lower(value)
+}
+
+
 public struct SteamGameSnapshot: Equatable, Hashable {
     public var id: String
     public var appId: UInt32
@@ -3853,10 +3949,11 @@ public struct SteamGameSnapshot: Equatable, Hashable {
     public var exitCode: Int32?
     public var error: String?
     public var revision: UInt64
+    public var rosetta: SteamRosettaRequest?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(id: String, appId: UInt32, accountId: UInt64, phase: SteamGamePhase, cloudPhase: SteamCloudPhase, cloudDecisionId: UInt64, cloudError: String?, cloudDecisionToken: String?, cloudAllowedChoices: [SteamCloudChoice], connection: SteamSupervisorConnection, host: SteamHostState, exitCode: Int32?, error: String?, revision: UInt64) {
+    public init(id: String, appId: UInt32, accountId: UInt64, phase: SteamGamePhase, cloudPhase: SteamCloudPhase, cloudDecisionId: UInt64, cloudError: String?, cloudDecisionToken: String?, cloudAllowedChoices: [SteamCloudChoice], connection: SteamSupervisorConnection, host: SteamHostState, exitCode: Int32?, error: String?, revision: UInt64, rosetta: SteamRosettaRequest?) {
         self.id = id
         self.appId = appId
         self.accountId = accountId
@@ -3871,6 +3968,7 @@ public struct SteamGameSnapshot: Equatable, Hashable {
         self.exitCode = exitCode
         self.error = error
         self.revision = revision
+        self.rosetta = rosetta
     }
 
     
@@ -3902,7 +4000,8 @@ public struct FfiConverterTypeSteamGameSnapshot: FfiConverterRustBuffer {
                 host: FfiConverterTypeSteamHostState.read(from: &buf), 
                 exitCode: FfiConverterOptionInt32.read(from: &buf), 
                 error: FfiConverterOptionString.read(from: &buf), 
-                revision: FfiConverterUInt64.read(from: &buf)
+                revision: FfiConverterUInt64.read(from: &buf), 
+                rosetta: FfiConverterOptionTypeSteamRosettaRequest.read(from: &buf)
         )
     }
 
@@ -3921,6 +4020,7 @@ public struct FfiConverterTypeSteamGameSnapshot: FfiConverterRustBuffer {
         FfiConverterOptionInt32.write(value.exitCode, into: &buf)
         FfiConverterOptionString.write(value.error, into: &buf)
         FfiConverterUInt64.write(value.revision, into: &buf)
+        FfiConverterOptionTypeSteamRosettaRequest.write(value.rosetta, into: &buf)
     }
 }
 
@@ -4329,6 +4429,56 @@ public func FfiConverterTypeSteamProfile_lift(_ buf: RustBuffer) throws -> Steam
 #endif
 public func FfiConverterTypeSteamProfile_lower(_ value: SteamProfile) -> RustBuffer {
     return FfiConverterTypeSteamProfile.lower(value)
+}
+
+
+public struct SteamRosettaRequest: Equatable, Hashable {
+    public var decisionId: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(decisionId: UInt64) {
+        self.decisionId = decisionId
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SteamRosettaRequest: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSteamRosettaRequest: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SteamRosettaRequest {
+        return
+            try SteamRosettaRequest(
+                decisionId: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SteamRosettaRequest, into buf: inout [UInt8]) {
+        FfiConverterUInt64.write(value.decisionId, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSteamRosettaRequest_lift(_ buf: RustBuffer) throws -> SteamRosettaRequest {
+    return try FfiConverterTypeSteamRosettaRequest.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSteamRosettaRequest_lower(_ value: SteamRosettaRequest) -> RustBuffer {
+    return FfiConverterTypeSteamRosettaRequest.lower(value)
 }
 
 
@@ -6246,6 +6396,30 @@ fileprivate struct FfiConverterOptionTypeSteamFriendGame: FfiConverterRustBuffer
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeSteamRosettaRequest: FfiConverterRustBuffer {
+    typealias SwiftType = SteamRosettaRequest?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeSteamRosettaRequest.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeSteamRosettaRequest.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeSteamTransfer: FfiConverterRustBuffer {
     typealias SwiftType = SteamTransfer?
 
@@ -6462,6 +6636,31 @@ fileprivate struct FfiConverterSequenceTypeSteamGame: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeSteamGame.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeSteamGamePlatforms: FfiConverterRustBuffer {
+    typealias SwiftType = [SteamGamePlatforms]
+
+    public static func write(_ value: [SteamGamePlatforms], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSteamGamePlatforms.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SteamGamePlatforms] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SteamGamePlatforms]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSteamGamePlatforms.read(from: &buf))
         }
         return seq
     }
@@ -6902,6 +7101,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_forge_bridge_checksum_method_steamsession_next_friends() != 47572) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_forge_bridge_checksum_method_steamsession_platforms() != 3422) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_forge_bridge_checksum_method_steamsession_profile() != 21523) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -6936,6 +7138,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_forge_bridge_checksum_method_steamgamesession_choose_cloud() != 26563) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_forge_bridge_checksum_method_steamgamesession_resume_after_rosetta() != 27347) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_forge_bridge_checksum_method_steamgamesession_revoke_cloud() != 6119) {

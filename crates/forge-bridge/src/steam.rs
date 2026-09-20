@@ -196,6 +196,19 @@ impl From<client::OwnedGame> for SteamGame {
     }
 }
 #[derive(Clone, Debug, uniffi::Record)]
+pub struct SteamGamePlatforms {
+    pub app_id: u32,
+    pub platforms: Vec<String>,
+}
+impl From<client::GamePlatforms> for SteamGamePlatforms {
+    fn from(game: client::GamePlatforms) -> Self {
+        Self {
+            app_id: game.app_id,
+            platforms: game.platforms,
+        }
+    }
+}
+#[derive(Clone, Debug, uniffi::Record)]
 pub struct SteamGameDetails {
     pub app_id: u32,
     pub name: String,
@@ -317,36 +330,18 @@ impl SteamSession {
             reason: "Invalid Cloud preference report".into(),
         })
     }
-    #[cfg(debug_assertions)]
-    pub async fn cloud_interruption_probe(
+    /// Declared application platforms in batches; an empty platform list means unknown.
+    pub async fn platforms(
         &self,
-        app_id: u32,
-        directory: String,
-    ) -> Result<String, SteamError> {
+        app_ids: Vec<u32>,
+    ) -> Result<Vec<SteamGamePlatforms>, SteamError> {
         Ok(self
             .client
-            .cloud_interruption_probe(app_id, Path::new(&directory))
-            .await?)
-    }
-
-    #[cfg(debug_assertions)]
-    pub async fn cloud_sdk_candidates(&self) -> Result<String, SteamError> {
-        Ok(self.client.cloud_sdk_candidates().await?)
-    }
-    #[cfg(debug_assertions)]
-    pub async fn cloud_autocloud_metadata(&self) -> Result<String, SteamError> {
-        Ok(self.client.cloud_autocloud_metadata().await?)
-    }
-    #[cfg(debug_assertions)]
-    pub async fn cloud_transfer_probe(
-        &self,
-        app_id: u32,
-        directory: String,
-    ) -> Result<String, SteamError> {
-        Ok(self
-            .client
-            .cloud_transfer_probe(app_id, Path::new(&directory))
-            .await?)
+            .platforms(&app_ids)
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect())
     }
     pub async fn details(
         &self,
@@ -423,6 +418,40 @@ impl SteamSession {
     }
     pub fn cancel_download(&self) {
         self.client.cancel_download();
+    }
+}
+
+// Gate the entire export: UniFFI otherwise generates Release wrappers for
+// methods that Rust removes through their individual cfg attributes.
+#[cfg(debug_assertions)]
+#[uniffi::export(async_runtime = "tokio")]
+impl SteamSession {
+    pub async fn cloud_interruption_probe(
+        &self,
+        app_id: u32,
+        directory: String,
+    ) -> Result<String, SteamError> {
+        Ok(self
+            .client
+            .cloud_interruption_probe(app_id, Path::new(&directory))
+            .await?)
+    }
+
+    pub async fn cloud_sdk_candidates(&self) -> Result<String, SteamError> {
+        Ok(self.client.cloud_sdk_candidates().await?)
+    }
+    pub async fn cloud_autocloud_metadata(&self) -> Result<String, SteamError> {
+        Ok(self.client.cloud_autocloud_metadata().await?)
+    }
+    pub async fn cloud_transfer_probe(
+        &self,
+        app_id: u32,
+        directory: String,
+    ) -> Result<String, SteamError> {
+        Ok(self
+            .client
+            .cloud_transfer_probe(app_id, Path::new(&directory))
+            .await?)
     }
 }
 

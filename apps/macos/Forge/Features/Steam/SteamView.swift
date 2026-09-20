@@ -7,18 +7,22 @@ struct SteamView: View {
         StorefrontPage { titleBar } content: { content }
         .task { await model.start() }
         .sheet(isPresented: Binding(
-            get: { model.cloud.promptPresented },
+            get: { model.cloud.promptPresented || model.rosetta.prompt != nil },
             set: { _ in }
         )) {
-            SteamCloudPromptView(
-                title: cloudPromptTitle,
-                message: L10n.string(model.cloud.promptMessage),
-                busy: model.cloud.promptWorking,
-                onCancel: { model.cloud.respond(.cancel) },
-                onChooseLocal: { model.cloud.respond(.local) },
-                onChooseCloud: { model.cloud.respond(.cloud) }
-            )
-            .interactiveDismissDisabled()
+            if model.rosetta.prompt != nil {
+                SteamRosettaPromptView(model: model.rosetta)
+            } else {
+                SteamCloudPromptView(
+                    title: cloudPromptTitle,
+                    message: L10n.string(model.cloud.promptMessage),
+                    busy: model.cloud.promptWorking,
+                    onCancel: { model.cloud.respond(.cancel) },
+                    onChooseLocal: { model.cloud.respond(.local) },
+                    onChooseCloud: { model.cloud.respond(.cloud) }
+                )
+                .interactiveDismissDisabled()
+            }
         }
         .onChange(of: model.gameSessions.isBusy) { _, isBusy in
             if !isBusy { model.cloud.resume() }
@@ -81,6 +85,8 @@ struct SteamView: View {
                     action: { model.sort = sort }
                 )
             },
+            filter: $model.filter,
+            availableFilters: model.availableFilters,
             showsLibraryControls: model.isConnected && model.selectedGame == nil,
             isConnected: model.isConnected
         ) {
@@ -102,23 +108,45 @@ struct SteamView: View {
                 SteamTransferView(transfer: transfer, isDownloading: model.isDownloading, cancel: model.cancelDownload)
             }
 
+            if model.filter == .macOS && model.libraryPlatforms.hasFailures {
+                HStack(spacing: 12) {
+                    Text(L10n.string("ui.filter.platforms_unavailable"))
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                    Button(L10n.string("ui.common.retry"), action: model.refresh)
+                        .forgeButtonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(model.isLoadingGames || model.libraryPlatforms.isLoading)
+                }
+            }
+
             let filtered = model.filteredGames
             if model.isLoadingGames && model.games.isEmpty {
                 ProgressView(L10n.string("ui.library.fetching")).frame(maxWidth: .infinity, minHeight: 260)
+            } else if filtered.isEmpty && model.filter == .macOS && model.libraryPlatforms.isLoading {
+                ProgressView(L10n.string("ui.filter.loading_platforms")).frame(maxWidth: .infinity, minHeight: 260)
             } else if filtered.isEmpty {
-                StorefrontEmptyLibrary(searchText: $model.searchText, refresh: model.refresh)
+                StorefrontEmptyLibrary(searchText: $model.searchText, filter: $model.filter, refresh: model.refresh)
             } else {
                 LazyVGrid(columns: StorefrontLibrary.gridColumns, alignment: .leading, spacing: 24) {
                     ForEach(filtered, id: \.appId) { game in
                         let lastPlayed = SteamFormatting.lastPlayed(game.lastPlayed)
-                        LibraryGridCard(title: game.name, subtitle: lastPlayed, open: { model.open(game) }) {
+                        LibraryGridCard(
+                            title: game.name,
+                            subtitle: lastPlayed,
+                            platform: .preferred(platforms: model.libraryPlatforms.platforms[game.appId] ?? []),
+                            open: { model.open(game) }
+                        ) {
                             SteamArtwork(appId: game.appId, iconHash: game.iconHash)
                         }
                         .help(L10n.string("ui.steam.game_help", game.name, SteamFormatting.playtime(game.playtimeMinutes)))
                         .accessibilityLabel(L10n.string("ui.steam.game_accessibility", game.name, lastPlayed))
                     }
                 }
-                if model.isLoadingGames { ProgressView().controlSize(.small) }
+                if model.isLoadingGames || (model.filter == .macOS && model.libraryPlatforms.isLoading) {
+                    ProgressView().controlSize(.small)
+                }
             }
         }
     }

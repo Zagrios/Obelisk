@@ -244,6 +244,18 @@ pub fn verify_sha1_file(
     expected: &[u8],
     cancel: &CancelToken,
 ) -> Result<bool, InstallError> {
+    verify_sha1_file_with_progress(path, size, expected, cancel, |_| {})
+}
+
+/// Reports bytes read in bounded batches, without treating them as validated
+/// content. Cancellation is still checked before every 64 KiB read.
+pub(crate) fn verify_sha1_file_with_progress(
+    path: &Path,
+    size: u64,
+    expected: &[u8],
+    cancel: &CancelToken,
+    mut progress: impl FnMut(u64),
+) -> Result<bool, InstallError> {
     let mut file = match File::open(path) {
         Ok(file) => file,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
@@ -254,6 +266,7 @@ pub fn verify_sha1_file(
     }
     let mut hasher = Sha1::new();
     let mut buffer = [0_u8; 64 * 1024];
+    let mut pending = 0_u64;
     loop {
         cancel.check()?;
         let count = file.read(&mut buffer)?;
@@ -261,6 +274,14 @@ pub fn verify_sha1_file(
             break;
         }
         hasher.update(&buffer[..count]);
+        pending += count as u64;
+        if pending >= 1024 * 1024 {
+            progress(pending);
+            pending = 0;
+        }
+    }
+    if pending != 0 {
+        progress(pending);
     }
     Ok(hasher.finalize()[..] == *expected)
 }

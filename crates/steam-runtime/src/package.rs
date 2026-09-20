@@ -17,7 +17,13 @@ use std::{
 const MANIFEST: &str = include_str!("../runtime-manifest.json");
 pub(crate) const HOST: &str = "forge-steam-host";
 pub(crate) const ADAPTER: &str = "libforge_steam_discovery_adapter.dylib";
-pub(crate) const HELPERS: [&str; 2] = [HOST, ADAPTER];
+pub(crate) const SDK_ARM64: &str = "forge-steam-sdk-arm64";
+pub(crate) const SDK_INTEL: &str = "forge-steam-sdk-x86_64";
+pub(crate) const HELPERS: [&str; 4] = [HOST, ADAPTER, SDK_ARM64, SDK_INTEL];
+
+fn executable_helper(name: &str) -> bool {
+    matches!(name, HOST | SDK_ARM64 | SDK_INTEL)
+}
 
 #[derive(Deserialize)]
 pub struct Manifest {
@@ -81,7 +87,7 @@ fn verify_file(root: &Path, entry: &PayloadFile, cancelled: &AtomicBool) -> Resu
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        if entry.path == HOST && metadata.permissions().mode() & 0o100 == 0 {
+        if executable_helper(&entry.path) && metadata.permissions().mode() & 0o100 == 0 {
             return Err(Error::VersionMismatch);
         }
     }
@@ -226,7 +232,7 @@ fn prepare_with(
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            if name == HOST && metadata.permissions().mode() & 0o100 == 0 {
+            if executable_helper(name) && metadata.permissions().mode() & 0o100 == 0 {
                 return Err(Error::Unavailable);
             }
         }

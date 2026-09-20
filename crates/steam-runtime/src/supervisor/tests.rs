@@ -1,4 +1,6 @@
 use super::*;
+#[path = "rosetta_tests.rs"]
+mod rosetta;
 use crate::{Error, HostState, protocol::Credentials};
 use std::{
     fs,
@@ -752,6 +754,7 @@ mod idle_admission {
                 account_id: 123,
                 supervisor: process(1001),
                 game,
+                starting: None,
                 socket: root.join("unused-socket"),
                 phase,
                 host: HostState::Lost,
@@ -760,6 +763,7 @@ mod idle_admission {
                 revision: 1,
                 cloud: cloud::Status::default(),
                 reconnecting: false,
+                rosetta: None,
             },
         )
         .unwrap();
@@ -784,6 +788,128 @@ mod idle_admission {
             // A rejected maintenance attempt releases both acquired locks.
             assert_locks_released(&sessions);
         }
+    }
+
+    fn starting_fixture(root: &Path, starting: StartingGame, live: &[Identity]) -> PathBuf {
+        let helper = fixture(root, Phase::Preparing, None, live);
+        let sessions = root.join("sessions");
+        let mut snapshot = storage::read(&sessions).unwrap().unwrap();
+        snapshot.starting = Some(starting);
+        storage::write(&sessions, &snapshot).unwrap();
+        helper
+    }
+
+    fn starting_process() -> StartingGame {
+        StartingGame::Process {
+            identity: process(1002),
+            executable: "/disposable/intended-game".into(),
+        }
+    }
+
+    #[test]
+    fn dead_supervisor_keeps_starting_wrapper_and_its_exec_replacement_reserved() {
+        for after_exec in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let mut live = process(1002);
+            if after_exec {
+                live.executable = "/disposable/intended-game".into();
+            }
+            let helper = starting_fixture(root.path(), starting_process(), &[live]);
+            let sessions = root.path().join("sessions");
+            assert!(matches!(
+                Client::idle_guard_with(&sessions, &helper, inspect_table),
+                Err(Error::SessionBusy)
+            ));
+            let client = Client::recover_with(&sessions, &helper, inspect_table)
+                .unwrap()
+                .expect("an accepted child remains recoverable without its supervisor");
+            let snapshot = client.snapshot(None).unwrap();
+            assert!(!snapshot.finished());
+            assert_eq!(snapshot.account_id, 123);
+            assert_eq!(snapshot.starting, Some(starting_process()));
+            assert!(matches!(
+                client::start_command(
+                    &helper,
+                    &credentials(),
+                    request(root.path(), "/forge-no-game-fixture", &[], 42),
+                    &AtomicBool::new(false),
+                    Process::new("/forge-no-supervisor-fixture"),
+                    inspect_table,
+                ),
+                Err(Error::SessionBusy)
+            ));
+            // Only a fresh negative process inspection releases the orphan.
+            fs::write(&helper, b"[]").unwrap();
+            let finished = client.snapshot(Some(snapshot.revision)).unwrap();
+            assert!(finished.finished());
+            assert!(finished.starting.is_none());
+            drop(Client::idle_guard_with(&sessions, &helper, inspect_table).unwrap());
+            assert_locks_released(&sessions);
+        }
+    }
+
+    #[test]
+    fn starting_child_pid_reuse_does_not_reserve_an_unrelated_process() {
+        for after_exec in [false, true] {
+            for change in 0..3 {
+                let root = tempfile::tempdir().unwrap();
+                let mut live = process(1002);
+                if after_exec {
+                    live.executable = "/disposable/intended-game".into();
+                }
+                match change {
+                    0 => live.birth_seconds += 1,
+                    1 => live.birth_microseconds += 1,
+                    _ => live.uid += 1,
+                }
+                let helper = starting_fixture(root.path(), starting_process(), &[live]);
+                let sessions = root.path().join("sessions");
+                assert!(
+                    Client::recover_with(&sessions, &helper, inspect_table)
+                        .unwrap()
+                        .is_none()
+                );
+                drop(Client::idle_guard_with(&sessions, &helper, inspect_table).unwrap());
+            }
+        }
+    }
+
+    #[test]
+    fn failed_starting_child_inspection_preserves_recovery_and_maintenance_guard() {
+        fn failed_child(_: &Path, pid: u32) -> Result<Option<Identity>, Error> {
+            if pid == 1002 {
+                Err(Error::Unavailable)
+            } else {
+                Ok(None)
+            }
+        }
+        let root = tempfile::tempdir().unwrap();
+        let helper = starting_fixture(root.path(), starting_process(), &[]);
+        let sessions = root.path().join("sessions");
+        assert!(matches!(
+            Client::idle_guard_with(&sessions, &helper, failed_child),
+            Err(Error::Unavailable)
+        ));
+        let client = Client::recover_with(&sessions, &helper, failed_child)
+            .unwrap()
+            .unwrap();
+        let snapshot = client.snapshot(None).unwrap();
+        assert!(!snapshot.finished());
+        assert!(snapshot.reconnecting);
+        assert_eq!(snapshot.starting, Some(starting_process()));
+    }
+
+    #[test]
+    fn older_snapshots_without_starting_child_still_decode() {
+        let root = tempfile::tempdir().unwrap();
+        fixture(root.path(), Phase::Preparing, None, &[]);
+        let snapshot = storage::read(&root.path().join("sessions"))
+            .unwrap()
+            .unwrap();
+        let mut json = serde_json::to_value(&snapshot).unwrap();
+        json.as_object_mut().unwrap().remove("starting");
+        let decoded: Snapshot = serde_json::from_value(json).unwrap();
+        assert_eq!(decoded, snapshot);
     }
 
     #[test]

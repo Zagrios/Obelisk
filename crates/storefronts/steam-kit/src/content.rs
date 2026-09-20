@@ -429,8 +429,8 @@ impl DiskInstall {
         let partial_root = ensure_directory(&root, &partial_relative)?;
         let manifest = Arc::clone(&self.manifest);
         // Readers finish before the repair loop can replace any game files.
-        // Reports include only valid whole files; missing/corrupt files contribute
-        // bytes later as their chunks are repaired and checked.
+        // Reusable bytes include only valid whole files; inspection progress is
+        // reported separately while a large file is still being hashed.
         let verified =
             verification::verify_files(&root, &manifest.files, &self.cancel, &self.reporter)?;
         let mut reused_bytes = verified.reused_bytes;

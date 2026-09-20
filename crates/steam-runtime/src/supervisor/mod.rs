@@ -21,6 +21,16 @@ pub struct Identity {
     pub executable: String,
 }
 
+/// Durable ownership between spawning an architecture helper and observing its
+/// replacement by the game. Missing inspection never proves that child exited.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum StartingGame {
+    Process {
+        identity: Identity,
+        executable: PathBuf,
+    },
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Target {
     pub executable: PathBuf,
@@ -55,6 +65,8 @@ pub struct Snapshot {
     pub account_id: u64,
     pub supervisor: Identity,
     pub game: Option<Identity>,
+    #[serde(default)]
+    pub starting: Option<StartingGame>,
     pub socket: PathBuf,
     pub phase: Phase,
     pub host: HostState,
@@ -66,6 +78,13 @@ pub struct Snapshot {
     /// Client-side confidence in the control connection, never persisted.
     #[serde(skip)]
     pub reconnecting: bool,
+    #[serde(default)]
+    pub rosetta: Option<RosettaRequest>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RosettaRequest {
+    pub decision_id: u64,
 }
 impl Snapshot {
     pub fn finished(&self) -> bool {
@@ -91,6 +110,11 @@ enum Command {
     Revoke {
         id: String,
         account_id: u64,
+    },
+    ResumeAfterRosetta {
+        id: String,
+        account_id: u64,
+        decision_id: u64,
     },
 }
 

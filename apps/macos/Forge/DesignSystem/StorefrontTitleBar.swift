@@ -16,6 +16,8 @@ struct StorefrontTitleBar<AccountMenu: View>: View {
     @Binding private var searchText: String
     let sortTitle: String
     let sortOptions: [StorefrontSortOption]
+    @Binding private var filter: StorefrontLibraryFilter
+    let availableFilters: [StorefrontLibraryFilter]
     let showsLibraryControls: Bool
     let isConnected: Bool
     private let accountMenu: AccountMenu
@@ -34,6 +36,8 @@ struct StorefrontTitleBar<AccountMenu: View>: View {
         searchText: Binding<String>,
         sortTitle: String = L10n.string("ui.sort.name"),
         sortOptions: [StorefrontSortOption] = [],
+        filter: Binding<StorefrontLibraryFilter> = .constant(.all),
+        availableFilters: [StorefrontLibraryFilter] = [],
         showsLibraryControls: Bool = true,
         isConnected: Bool,
         @ViewBuilder accountMenu: () -> AccountMenu
@@ -44,6 +48,8 @@ struct StorefrontTitleBar<AccountMenu: View>: View {
         self._searchText = searchText
         self.sortTitle = sortTitle
         self.sortOptions = sortOptions
+        self._filter = filter
+        self.availableFilters = availableFilters
         self.showsLibraryControls = showsLibraryControls
         self.isConnected = isConnected
         self.accountMenu = accountMenu()
@@ -104,6 +110,10 @@ struct StorefrontTitleBar<AccountMenu: View>: View {
                 .accessibilityValue(sortTitle)
                 .accessibilityIdentifier("storefront-sort-menu")
                 .help(L10n.string("ui.sort.library"))
+
+                if !availableFilters.isEmpty {
+                    filterMenu
+                }
 
                 searchField
             }
@@ -200,6 +210,35 @@ struct StorefrontTitleBar<AccountMenu: View>: View {
         .frame(height: 38)
         .modifier(StorefrontControlGlass())
         .frame(minWidth: 160, idealWidth: 240, maxWidth: 300)
+    }
+
+    private var filterMenu: some View {
+        Menu {
+            Picker(L10n.string("ui.filter.library"), selection: $filter) {
+                ForEach(availableFilters) { option in
+                    Text(option.title)
+                        .tag(option)
+                        .accessibilityIdentifier("storefront-filter-option-\(option.id)")
+                }
+            }
+            .pickerStyle(.inline)
+            .labelsHidden()
+        } label: {
+            Image(systemName: filter == .all ? "line.3.horizontal.decrease" : "line.3.horizontal.decrease.circle.fill")
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(.primary)
+                .frame(width: 38, height: 38)
+                .modifier(StorefrontControlGlass())
+                .contentShape(Circle())
+        }
+        .menuStyle(.button)
+        .forgeButtonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .accessibilityLabel(L10n.string("ui.filter.library_named", title))
+        .accessibilityValue(filter.title)
+        .accessibilityIdentifier("storefront-filter-menu")
+        .help(L10n.string("ui.filter.library"))
     }
 }
 

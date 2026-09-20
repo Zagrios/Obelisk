@@ -177,7 +177,9 @@ impl Client {
                     debug_assert!(snapshot.completed_files <= snapshot.total_files);
                     progress.update(|progress| {
                         progress.state = snapshot.phase.into();
-                        progress.completed_bytes = snapshot.completed_bytes;
+                        progress.completed_bytes = snapshot
+                            .verification_bytes
+                            .unwrap_or(snapshot.completed_bytes);
                         progress.total_bytes = snapshot.total_bytes;
                         progress.network_bytes =
                             network_bytes.saturating_add(snapshot.network_bytes);

@@ -25,6 +25,12 @@ struct GameCard: View {
                     .foregroundStyle(tint.opacity(0.85))
             }
             .frame(height: 145)
+            .overlay(alignment: .bottomTrailing) {
+                if isHovered {
+                    GamePlatformBadge(platform: isNative ? .macOS : .windows)
+                        .padding(10)
+                }
+            }
 
             VStack(alignment: .leading, spacing: 7) {
                 Text(game.title)

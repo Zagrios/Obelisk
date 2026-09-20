@@ -1,7 +1,7 @@
 //! Account-scoped orchestration. Authentication, CM messages and content formats
 //! remain independently usable; no UI or platform keychain code lives here.
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::Path,
     sync::{Arc, Mutex, PoisonError},
     time::{Duration, Instant},
@@ -33,6 +33,12 @@ const MAX_RECEIPT_BYTES: usize = 1024 * 1024;
 const APP_INFO_TTL: Duration = Duration::from_secs(60);
 
 pub use crate::cm::OwnedGameInfo as OwnedGame;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GamePlatforms {
+    pub app_id: u32,
+    pub platforms: Vec<String>,
+}
 
 #[derive(Debug, thiserror::Error)]
 #[error("{0}")]
@@ -206,6 +212,20 @@ pub struct Client {
 }
 
 impl Client {
+    #[cfg(test)]
+    pub(crate) fn with_test_connection(cm: SteamConnection) -> Self {
+        Self {
+            http: http_client().unwrap(),
+            friends: cm.friends_source(),
+            connection_abort: cm.abort_handle(),
+            cloud_authorized: std::sync::atomic::AtomicBool::new(true),
+            cm: AsyncMutex::new(cm),
+            catalog: AsyncMutex::new(None),
+            app_infos: Mutex::new(HashMap::new()),
+            downloads: Transfers::default(),
+        }
+    }
+
     pub async fn connect(
         account_name: &str,
         steam_id: u64,
@@ -285,19 +305,21 @@ impl Client {
         cm: &mut SteamConnection,
         app_id: u32,
     ) -> Result<Arc<AppInfo>, ClientError> {
-        let cached = self
-            .app_infos
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .get(&app_id)
-            .filter(|(fetched, _)| fetched.elapsed() < APP_INFO_TTL)
-            .map(|(_, app)| Arc::clone(app));
-        if let Some(app) = cached {
+        if let Some(app) = self.cached_app(app_id) {
             return Ok(app);
         }
         let app = Arc::new(cm.app_info(app_id).await.map_err(client_error)?);
         self.remember_app(&app);
         Ok(app)
+    }
+
+    fn cached_app(&self, app_id: u32) -> Option<Arc<AppInfo>> {
+        self.app_infos
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(&app_id)
+            .filter(|(fetched, _)| fetched.elapsed() < APP_INFO_TTL)
+            .map(|(_, app)| Arc::clone(app))
     }
 
     fn remember_app(&self, app: &Arc<AppInfo>) {
@@ -324,6 +346,61 @@ impl Client {
 
     pub fn progress(&self) -> Option<TransferProgress> {
         self.downloads.snapshot()
+    }
+
+    /// Declared platforms in bounded PICS batches, without expanding licenses.
+    /// Returns each nonzero ID once, in request order. Empty means unknown;
+    /// transport, access and malformed metadata errors remain request failures.
+    pub async fn platforms(&self, app_ids: &[u32]) -> Result<Vec<GamePlatforms>, ClientError> {
+        let mut seen = HashSet::new();
+        let app_ids: Vec<_> = app_ids
+            .iter()
+            .copied()
+            .filter(|id| *id != 0 && seen.insert(*id))
+            .collect();
+        let mut result = Vec::with_capacity(app_ids.len());
+        for batch in app_ids.chunks(50) {
+            let mut apps: HashMap<_, _> = batch
+                .iter()
+                .filter_map(|id| self.cached_app(*id).map(|app| (*id, app)))
+                .collect();
+            let mut missing: Vec<_> = batch
+                .iter()
+                .copied()
+                .filter(|id| !apps.contains_key(id))
+                .collect();
+            if !missing.is_empty() {
+                let mut cm = self.cm.lock().await;
+                // Another content query may have populated the cache while we waited.
+                missing.retain(|id| {
+                    if let Some(app) = self.cached_app(*id) {
+                        apps.insert(*id, app);
+                        false
+                    } else {
+                        true
+                    }
+                });
+                if !missing.is_empty() {
+                    for app in cm.app_infos(&missing).await.map_err(client_error)? {
+                        if missing.contains(&app.app_id) {
+                            let app = Arc::new(app);
+                            self.remember_app(&app);
+                            apps.insert(app.app_id, app);
+                        }
+                    }
+                }
+            }
+            // Release the CM lock between batches so foreground content can proceed.
+            result.extend(batch.iter().map(|id| {
+                GamePlatforms {
+                    app_id: *id,
+                    platforms: apps
+                        .get(id)
+                        .map_or_else(Vec::new, |app| app.os_list.clone()),
+                }
+            }));
+        }
+        Ok(result)
     }
 
     pub async fn details(&self, app_id: u32, language: &str) -> Result<GameDetails, ClientError> {
@@ -611,7 +688,10 @@ impl Client {
                     *status = TransferProgress {
                         app_id: base.app_id,
                         state: progress.phase.into(),
-                        completed_bytes: base.completed + progress.completed_bytes,
+                        completed_bytes: base.completed
+                            + progress
+                                .verification_bytes
+                                .unwrap_or(progress.completed_bytes),
                         total_bytes: base.total_estimate.saturating_sub(size)
                             + progress.total_bytes,
                         network_bytes: base.network + bytes.network,

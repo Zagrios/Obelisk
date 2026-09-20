@@ -5,6 +5,7 @@ import Foundation
 // model cancels instead of making a network request or polling a fake cache.
 extension SteamSessionProtocol {
     func archiveCloud(config: SteamCloudConfiguration) async throws {}
+    func platforms(appIds: [UInt32]) async throws -> [SteamGamePlatforms] { [] }
     #if DEBUG
     func cloudAutocloudMetadata() async throws -> String {
         throw CocoaError(.featureUnsupported)

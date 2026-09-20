@@ -29,6 +29,8 @@ struct EpicView: View {
             accountName: model.accountName,
             searchText: $model.searchText,
             sortOptions: [StorefrontSortOption(id: "name", title: L10n.string("ui.sort.by_name"), isSelected: true, action: {})],
+            filter: $model.filter,
+            availableFilters: model.availableFilters,
             showsLibraryControls: model.isConnected && model.selectedGame == nil,
             isConnected: model.isConnected
         ) {
@@ -55,13 +57,14 @@ struct EpicView: View {
             if model.isLoadingGames && model.games.isEmpty {
                 ProgressView(L10n.string("ui.library.fetching")).frame(maxWidth: .infinity, minHeight: 260)
             } else if filtered.isEmpty {
-                StorefrontEmptyLibrary(searchText: $model.searchText, refresh: model.refresh)
+                StorefrontEmptyLibrary(searchText: $model.searchText, filter: $model.filter, refresh: model.refresh)
             } else {
                 LazyVGrid(columns: StorefrontLibrary.gridColumns, alignment: .leading, spacing: 24) {
                     ForEach(filtered, id: \.libraryID) { game in
                         LibraryGridCard(
                             title: game.title,
                             subtitle: game.developer.isEmpty ? nil : game.developer,
+                            platform: .preferred(macos: game.macos, windows: game.windows),
                             open: { model.open(game) }
                         ) {
                             EpicArtwork(imageURL: game.imageUrl)

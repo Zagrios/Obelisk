@@ -1,4 +1,4 @@
-use forge_steam_native::{host, native, sdk};
+use forge_steam_native::{host, native};
 use steam_runtime::protocol::{Event, Failure};
 
 fn main() {
@@ -21,16 +21,6 @@ fn run() -> i32 {
         return 2;
     };
     let result = match args.get(1).map(String::as_str) {
-        #[cfg(debug_assertions)]
-        Some("check-storage") if args.len() == 6 => args[4].parse::<u32>().ok().map(|app| {
-            sdk::storage_probe(
-                args[2].as_ref(),
-                args[3].as_ref(),
-                app,
-                args[5] == "read",
-                &mut output,
-            )
-        }),
         // Offline packaging validation: load pinned libraries and resolve the
         // engine factories only. No global user, credentials or network login.
         Some("verify-runtime") if args.len() == 3 => {
@@ -40,19 +30,6 @@ fn run() -> i32 {
             .parse::<u32>()
             .ok()
             .map(|app| host::serve(args[2].as_ref(), app, &args[4], &mut output)),
-        Some("check") if args.len() == 5 => args[4].parse::<u32>().ok().map(|app| {
-            let asynchronous_request =
-                sdk::verify(args[2].as_ref(), args[3].as_ref(), app, |stage| {
-                    host::emit(&mut output, &Event::SdkStage { stage })
-                })?;
-            host::emit(
-                &mut output,
-                &Event::SdkVerified {
-                    app_id: app,
-                    asynchronous_request,
-                },
-            )
-        }),
         _ => None,
     };
     match result {
@@ -61,11 +38,7 @@ fn run() -> i32 {
             let _ = host::emit(
                 &mut output,
                 &Event::Failed {
-                    reason: if args.get(1).is_some_and(|mode| mode == "check") {
-                        Failure::Sdk
-                    } else {
-                        Failure::Engine
-                    },
+                    reason: Failure::Engine,
                 },
             );
             1

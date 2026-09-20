@@ -1,8 +1,15 @@
-#[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
-compile_error!("The pinned native Steam engine requires ARM64 macOS");
+#[cfg(not(all(
+    target_os = "macos",
+    any(target_arch = "aarch64", target_arch = "x86_64")
+)))]
+compile_error!("The native Steam helpers require 64-bit macOS");
 
+#[cfg(target_arch = "aarch64")]
 pub mod abi;
+pub mod events;
+#[cfg(target_arch = "aarch64")]
 pub mod host;
+#[cfg(target_arch = "aarch64")]
 pub mod mach;
 pub mod native;
 pub mod sdk;

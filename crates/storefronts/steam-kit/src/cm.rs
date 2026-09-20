@@ -21,6 +21,8 @@ use crate::{friends, kv, proto};
 mod cloud;
 #[cfg(test)]
 mod login_tests;
+#[cfg(test)]
+mod platforms_tests;
 
 const PROTOCOL: u32 = 65_581;
 const PROTO_MASK: u32 = 0x8000_0000;

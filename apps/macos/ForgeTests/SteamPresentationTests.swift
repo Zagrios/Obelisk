@@ -190,6 +190,43 @@ final class SteamPresentationTests: XCTestCase {
     }
 
     @MainActor
+    func testLibraryLoadsAllPlatformsInBackgroundBeforeAnyGameIsOpened() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let details = FixtureResponses<DetailsRequest, SteamGameDetails>()
+        let platforms = FixtureResponses<[UInt32], [SteamGamePlatforms]>()
+        let session = FixtureSteamSession(games: fixtureGames, details: details,
+                                          platforms: { try await platforms.request($0.sorted()) })
+        let model = SteamModel(directory: root, keychain: FixtureCredentialStore(), connect: { _ in session },
+                               news: { _ in [] }, localeIdentifier: "fr-FR", gameSessions: SteamGameSessions())
+
+        await model.start()
+        let appIDs = fixtureGames.map(\.appId).sorted()
+        try await eventually { await platforms.wasRequested(appIDs) }
+        XCTAssertEqual(model.filteredGames.map(\.appId), fixtureGames.map(\.appId))
+        XCTAssertFalse(model.isLoadingGames, "Platform metadata must not block the library")
+        XCTAssertTrue(model.libraryPlatforms.isLoading)
+        XCTAssertTrue(model.libraryPlatforms.platforms.isEmpty)
+        XCTAssertNil(model.selectedGame)
+        XCTAssertNil(model.details)
+        for appID in appIDs {
+            let requests = await details.numberOfRequests(DetailsRequest(appId: appID, language: "french"))
+            XCTAssertEqual(requests, 0, "Library metadata must not open game details")
+        }
+
+        await platforms.release(appIDs, value: [
+            SteamGamePlatforms(appId: 620, platforms: ["macos", "windows"]),
+            SteamGamePlatforms(appId: 570, platforms: ["windows"]),
+            SteamGamePlatforms(appId: 440, platforms: ["linux"])
+        ])
+        try await eventually { !model.libraryPlatforms.isLoading }
+        XCTAssertEqual(model.libraryPlatforms.platforms, [620: ["macos", "windows"], 570: ["windows"], 440: ["linux"]])
+        XCTAssertFalse(model.libraryPlatforms.hasFailures)
+        let requests = await platforms.numberOfRequests(appIDs)
+        XCTAssertEqual(requests, 1)
+    }
+
+    @MainActor
     func testVerticalScrollerStaysVisibleAcrossLibraryLoadingDetailAndLoadedNews() async throws {
         for size in [NSSize(width: 900, height: 700), NSSize(width: 903, height: 728)] {
             try await verifyScrollerStability(size: size)
@@ -734,6 +771,52 @@ final class SteamPresentationTests: XCTestCase {
     }
 
     @MainActor
+    func testRosettaPromptSurvivesNavigationAndCancellationRestoresLaunchWithoutAnError() async throws {
+        let game = RecoveredGameFixture(appID: 620, phase: .preparing, cloudPhase: .ready)
+        await game.requireRosetta(decisionId: 17)
+        let fixture = try await launchFixture(verify: false, game: game)
+        defer { fixture.cleanUp() }
+        let model = fixture.model
+        model.primaryAction()
+        try await eventually { model.rosetta.prompt != nil }
+        let prompt = model.rosetta.prompt
+        XCTAssertFalse(model.primaryActionAvailable)
+        XCTAssertFalse(model.canUninstallSelectedGame)
+        model.backToLibrary()
+        XCTAssertEqual(model.rosetta.prompt, prompt)
+        model.open(fixtureGames[1])
+        XCTAssertEqual(model.rosetta.prompt, prompt)
+        model.primaryAction()
+        XCTAssertEqual(model.gameSessions.active?.appId, 620)
+        model.rosetta.cancel()
+        try await eventually { await game.cancellations == 1 }
+        XCTAssertNil(model.rosetta.prompt)
+        XCTAssertTrue(model.gameSessions.isBusy)
+        await game.fail(reason: "backend.steam.runtime.cancelled")
+        try await eventually { !model.gameSessions.isBusy && !model.isLaunching }
+        XCTAssertNil(model.errorMessage)
+    }
+
+    @MainActor
+    func testSigningOutDismissesRosettaAndRetainsPreparationUntilSupervisorFinishes() async throws {
+        let game = RecoveredGameFixture(appID: 620, phase: .preparing, cloudPhase: .ready)
+        await game.requireRosetta(decisionId: 17)
+        let fixture = try await launchFixture(verify: false, game: game)
+        defer { fixture.cleanUp() }
+        let model = fixture.model
+        model.primaryAction()
+        try await eventually { model.rosetta.prompt != nil }
+        model.signOut()
+        XCTAssertNil(model.rosetta.prompt)
+        XCTAssertTrue(model.gameSessions.isBusy)
+        try await eventually { await game.cancellations == 1 }
+        await game.fail(reason: "backend.steam.runtime.cancelled")
+        try await eventually { !model.gameSessions.isBusy }
+        XCTAssertNil(model.errorMessage)
+        XCTAssertFalse(model.isLaunching)
+    }
+
+    @MainActor
     func testPostGameConflictPresentsImmediatelyWithoutInlineMessageOrNetworkReplay() async throws {
         let game = RecoveredGameFixture(appID: 620)
         let fixture = try await launchFixture(verify: false, game: game)
@@ -1265,17 +1348,22 @@ private actor FixtureResponses<Key: Hashable & Sendable, Value: Sendable> {
 private final class FixtureSteamSession: SteamSessionProtocol, Sendable {
     private let library: [SteamGame]
     private let responses: FixtureResponses<DetailsRequest, SteamGameDetails>
+    private let platformsHandler: @Sendable ([UInt32]) async throws -> [SteamGamePlatforms]
     private let downloadHandler: @Sendable (DownloadRequest) async throws -> SteamInstallation
     private let launchHandler: @Sendable (UInt32, String, String) async throws -> SteamLaunchPlan
 
-    init(games: [SteamGame], details: FixtureResponses<DetailsRequest, SteamGameDetails>, download: @escaping @Sendable (DownloadRequest) async throws -> SteamInstallation = { _ in throw FixtureFailure.downloadNotExpected }, launchPlan: @escaping @Sendable (UInt32, String, String) async throws -> SteamLaunchPlan = { _, _, _ in throw FixtureFailure.launchNotExpected }) {
+    init(games: [SteamGame], details: FixtureResponses<DetailsRequest, SteamGameDetails>, platforms: @escaping @Sendable ([UInt32]) async throws -> [SteamGamePlatforms] = { _ in [] }, download: @escaping @Sendable (DownloadRequest) async throws -> SteamInstallation = { _ in throw FixtureFailure.downloadNotExpected }, launchPlan: @escaping @Sendable (UInt32, String, String) async throws -> SteamLaunchPlan = { _, _, _ in throw FixtureFailure.launchNotExpected }) {
         library = games
         responses = details
+        platformsHandler = platforms
         downloadHandler = download
         launchHandler = launchPlan
     }
 
     func games() async throws -> [SteamGame] { library }
+    func platforms(appIds: [UInt32]) async throws -> [SteamGamePlatforms] {
+        try await platformsHandler(appIds)
+    }
     func profile() async throws -> SteamProfile { SteamProfile(displayName: nil, avatarUrl: nil) }
     func details(appId: UInt32, language: String) async throws -> SteamGameDetails {
         try await responses.request(DetailsRequest(appId: appId, language: language))

@@ -24,6 +24,9 @@ impl Fixture {
         fs::write(&config.steam_api, b"fixture SDK").unwrap();
         for name in HELPERS {
             fs::write(config.helpers.join(name), name).unwrap();
+            if executable_helper(name) {
+                executable(&config.helpers.join(name));
+            }
         }
         executable(&config.helpers.join(HELPERS[0]));
         let data = b"fixture runtime bytes";

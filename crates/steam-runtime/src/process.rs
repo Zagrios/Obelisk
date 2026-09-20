@@ -71,7 +71,7 @@ impl Child {
         Self::spawn(Self::checker_command(prepared, config, service))
     }
     fn checker_command(prepared: &Prepared, config: &Config, service: &str) -> Command {
-        let mut command = Command::new(prepared.directory.join(crate::package::HOST));
+        let mut command = Command::new(prepared.directory.join(prepared.architecture.helper()));
         command
             .arg("check")
             .arg(&config.steam_api)
@@ -215,6 +215,7 @@ mod tests {
     fn host_sdk_and_game_share_the_private_ipc_endpoints() {
         let temporary = tempfile::tempdir().unwrap();
         let prepared = Prepared {
+            architecture: crate::architecture::Architecture::Arm64,
             storage: None,
             directory: temporary.path().join("engine"),
             run_directory: temporary.path().join("run"),
@@ -238,6 +239,10 @@ mod tests {
         let service = "com.zagrios.forge.discovery.fixture";
         let host = Child::host_command(&prepared, &config, service);
         let sdk = Child::checker_command(&prepared, &config, service);
+        assert_eq!(
+            sdk.get_program(),
+            prepared.directory.join("forge-steam-sdk-arm64").as_os_str()
+        );
         let game = prepared.consumer_environment(service);
         for key in ["Steam3Master", "SteamClientService"] {
             let expected = std::ffi::OsStr::new(&game[key]);

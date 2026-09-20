@@ -46,21 +46,6 @@ impl SteamNativeLaunch {
     pub fn cancel(&self) {
         self.launch.cancel();
     }
-    #[cfg(debug_assertions)]
-    pub async fn probe_storage(
-        &self,
-        configuration: SteamNativeConfiguration,
-        transfers: bool,
-    ) -> Result<String, SteamError> {
-        let launch = self.launch.clone();
-        tokio::task::spawn_blocking(move || {
-            launch
-                .probe_storage(configuration.into(), transfers)
-                .map_err(Into::into)
-        })
-        .await
-        .map_err(|_| steam_runtime::Error::StartFailed)?
-    }
     pub async fn start_game(
         &self,
         configuration: SteamNativeConfiguration,
@@ -90,6 +75,26 @@ impl SteamNativeLaunch {
             Ok(Arc::new(SteamGameSession {
                 client: Arc::new(client),
             }))
+        })
+        .await
+        .map_err(|_| steam_runtime::Error::StartFailed)?
+    }
+}
+
+// Exclude both the diagnostic method and its generated UniFFI wrappers in Release.
+#[cfg(debug_assertions)]
+#[uniffi::export(async_runtime = "tokio")]
+impl SteamNativeLaunch {
+    pub async fn probe_storage(
+        &self,
+        configuration: SteamNativeConfiguration,
+        transfers: bool,
+    ) -> Result<String, SteamError> {
+        let launch = self.launch.clone();
+        tokio::task::spawn_blocking(move || {
+            launch
+                .probe_storage(configuration.into(), transfers)
+                .map_err(Into::into)
         })
         .await
         .map_err(|_| steam_runtime::Error::StartFailed)?
@@ -181,6 +186,12 @@ pub struct SteamGameSnapshot {
     pub exit_code: Option<i32>,
     pub error: Option<String>,
     pub revision: u64,
+    pub rosetta: Option<SteamRosettaRequest>,
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct SteamRosettaRequest {
+    pub decision_id: u64,
 }
 
 impl From<steam_runtime::supervisor::Snapshot> for SteamGameSnapshot {
@@ -209,6 +220,9 @@ impl From<steam_runtime::supervisor::Snapshot> for SteamGameSnapshot {
             exit_code: s.exit_code,
             error: s.error,
             revision: s.revision,
+            rosetta: s.rosetta.map(|r| SteamRosettaRequest {
+                decision_id: r.decision_id,
+            }),
         }
     }
 }
@@ -230,6 +244,21 @@ impl SteamGameSession {
     }
     pub fn cancel_preparation(&self) {
         self.client.cancel_preparation();
+    }
+
+    pub async fn resume_after_rosetta(
+        &self,
+        account_id: u64,
+        decision_id: u64,
+    ) -> Result<(), SteamError> {
+        let client = self.client.clone();
+        tokio::task::spawn_blocking(move || {
+            client
+                .resume_after_rosetta(account_id, decision_id)
+                .map_err(Into::into)
+        })
+        .await
+        .map_err(|_| steam_runtime::Error::StartFailed)?
     }
 
     pub async fn choose_cloud(

@@ -384,6 +384,11 @@ actor RecoveredGameFixture: SteamGameSessionProtocol {
         let choice: SteamCloudChoice
     }
 
+    struct RosettaDecision: Equatable, Sendable {
+        let accountID: UInt64
+        let decisionID: UInt64
+    }
+
     nonisolated let sessionID = UUID().uuidString
     private var current: SteamGameSnapshot
     private var observationFailure = false
@@ -391,12 +396,17 @@ actor RecoveredGameFixture: SteamGameSessionProtocol {
     private(set) var cancellations = 0
     private(set) var revocations: [UInt64] = []
     private(set) var cloudChoices: [CloudDecision] = []
+    private(set) var rosettaResumes: [RosettaDecision] = []
+    private(set) var rosettaChecks: [RosettaDecision] = []
+    private var rosettaResumeFailure = false
+    private var rosettaFailuresRemaining = 0
+    private var rosettaError: String?
 
     init(appID: UInt32 = 42, accountID: UInt64 = 42, phase: SteamGamePhase = .running,
          cloudPhase: SteamCloudPhase = .idle, decisionID: UInt64 = 0) {
         current = SteamGameSnapshot(id: sessionID, appId: appID, accountId: accountID, phase: phase,
                                     cloudPhase: cloudPhase, cloudDecisionId: decisionID, cloudError: nil, cloudDecisionToken: nil, cloudAllowedChoices: [], connection: .connected,
-                                    host: .online, exitCode: nil, error: nil, revision: 1)
+                                    host: .online, exitCode: nil, error: nil, revision: 1, rosetta: nil)
     }
 
     nonisolated func cancelPreparation() { Task { await recordCancellation() } }
@@ -407,6 +417,26 @@ actor RecoveredGameFixture: SteamGameSessionProtocol {
     }
 
     func revokeCloud(accountId: UInt64) async throws { revocations.append(accountId) }
+
+    func resumeAfterRosetta(accountId: UInt64, decisionId: UInt64) async throws {
+        rosettaChecks.append(.init(accountID: accountId, decisionID: decisionId))
+        if let rosettaError { throw SteamError.Failure(reason: rosettaError) }
+        if rosettaResumeFailure || rosettaFailuresRemaining > 0 {
+            rosettaFailuresRemaining = max(0, rosettaFailuresRemaining - 1)
+            throw SteamError.Failure(reason: "backend.steam.runtime.rosettaUnavailable")
+        }
+        rosettaResumes.append(.init(accountID: accountId, decisionID: decisionId))
+    }
+
+    func failRosettaResume(_ fail: Bool) { rosettaResumeFailure = fail }
+    func failNextRosettaResumes(_ count: Int) { rosettaFailuresRemaining = count }
+    func failRosettaWith(_ error: String) { rosettaError = error }
+
+    func requireRosetta(decisionId: UInt64?) {
+        current.rosetta = decisionId.map { SteamRosettaRequest(decisionId: $0) }
+        current.revision += 1
+        wake()
+    }
 
     func snapshot(after: UInt64?) async throws -> SteamGameSnapshot {
         try Task.checkCancellation()
@@ -441,6 +471,14 @@ actor RecoveredGameFixture: SteamGameSessionProtocol {
         current.connection = .connected
         current.exitCode = exitCode
         current.error = nil
+        current.revision += 1
+        wake()
+    }
+
+    func fail(reason: String) {
+        current.phase = .failed
+        current.error = reason
+        current.exitCode = nil
         current.revision += 1
         wake()
     }
