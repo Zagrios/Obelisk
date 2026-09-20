@@ -1,0 +1,47 @@
+{
+  "observed_at": "2026-09-19T14:58:52.825707+00:00",
+  "cycle": {
+    "observed_at": "2026-09-19T14:58:52.822644+00:00",
+    "changed_file_indices": [],
+    "missing_file_indices": [],
+    "remote_revision": "54",
+    "needs_work": true,
+    "pending": false,
+    "game_guard": true,
+    "history_count": 1,
+    "snapshots": [
+      {
+        "phase": "Running",
+        "cloud": {
+          "phase": "Ready",
+          "id": 2,
+          "error": null
+        },
+        "host": "online",
+        "exit_code": null,
+        "error": null
+      }
+    ],
+    "transactions": [],
+    "forge_running": true,
+    "game_running": true,
+    "supervisor_or_host_running": true
+  },
+  "cycle_scope": "Authenticated launch reached Running / Cloud Ready. No game-produced save change or modified-byte exit/upload has been observed. Gameplay assistance requested because Unity ignored automated input.",
+  "application_contains_settlement_changes": false,
+  "settlement_validation": {
+    "red_regression_reproduced": true,
+    "upload_tests_passed": 15,
+    "main_workspace_tests_passed": 354,
+    "native_workspace_tests_passed": 4,
+    "focused_clippy": "passed -D warnings",
+    "authenticated_settlement_tested": false,
+    "swift_and_app_rebuild": "not run while real game awaits operator"
+  },
+  "source_sha256": {
+    "crates/storefronts/steam-kit/src/cloud/upload.rs": "f56639cb0ac17cc22c00a441df9b26788dd28fef11a307b3f8c3448f59a22e59",
+    "crates/storefronts/steam-kit/src/cloud/upload/tests.rs": "6b900257a3ad782fb84f76859716fd24840e387fc5769e9c5916a94a6bd35087",
+    "crates/storefronts/steam-kit/src/cm/cloud.rs": "38c623f760098c8aee6832696470835c7a1f3361e152dac87c1eebec5396783a",
+    "crates/steam-runtime/src/cloud/session.rs": "5d7af723efa4012ec57e1cd0e393b27c145349fada0c018da13be7dbd8ee89ae"
+  }
+}

@@ -26,6 +26,7 @@ gog-kit.workspace = true
 uniffi = { workspace = true, features = ["tokio"] }
 thiserror.workspace = true
 tokio.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

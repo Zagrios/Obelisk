@@ -1,0 +1,52 @@
+{
+  "observed_at": "2026-09-19T19:48:48.239414+00:00",
+  "change": "Present captured postgame conflicts immediately and suppress the separate inline conflict message.",
+  "regression_failed_before_ui_fix": true,
+  "regression_log": "build/immediate-cloud-conflict-red.log",
+  "validation": {
+    "command": "./scripts/test.sh",
+    "exit_code": 0,
+    "main_workspace_rust_passed": 363,
+    "native_rust_passed": 4,
+    "swift_executed": 220,
+    "swift_skipped": 9,
+    "swift_failures": 0,
+    "bundled_runtime_isolation_passed": true,
+    "localization_keys": 539,
+    "formatting_passed": true,
+    "strict_clippy_passed": true,
+    "app_signatures_passed": true,
+    "log": "build/immediate-cloud-conflict-suite.log"
+  },
+  "covered_cases": [
+    "sheet available before supervisor completion",
+    "no inline conflict text",
+    "no network replay before presentation",
+    "old snapshots remain readable",
+    "cancel before and after handoff",
+    "choice blocked until supervisor handoff",
+    "explicit retry after failed choice",
+    "account-scoped conflict"
+  ],
+  "resolution_contract": "Existing durable decision token is forwarded; resolution still revalidates its captured context and a fresh remote view before applying the selected version.",
+  "evidence_scope": "Automated lifecycle regressions. No new real-game conflict was created after the UI fix.",
+  "source_sha256": {
+    "crates/steam-runtime/src/cloud.rs": "0ca39e60df986ca21b28d3dcf19c796bf382edc8291f93118430e12f60b51014",
+    "crates/steam-runtime/src/cloud/session.rs": "f21675af7c1de504ea7367670320752377fbb2a969535b2981b90d94158cfb8d",
+    "crates/forge-bridge/src/steam_native.rs": "0f9ce5a2a92b3c34b83a1565e9ad92d78c7d99595ffe7fd3d9c5248f27bfca82",
+    "apps/macos/Forge/Models/SteamCloudModel.swift": "c26231afb7bf0e5e73b13adde1026530f194b076708ee8302cd4379b06e41861",
+    "apps/macos/Forge/Models/SteamGameSessions.swift": "7b5c1273090563259f3a0cb0fc9a85392160f31586c5c91e70545c5bf4d89f5b",
+    "apps/macos/Forge/Features/Steam/SteamView.swift": "9faffd8da8f66d73c8a3d63eac0009b585af74a3402d8601310a3bed2c8582cf",
+    "apps/macos/ForgeTests/SteamCloudModelTests.swift": "34b1c59cf9488175a7328ad4873527550167c6ccfb0d3e4ea96b6ba59969471e",
+    "apps/macos/ForgeTests/SteamPresentationTests.swift": "33e21c0d82b9f4a83abfdaa0d16f252fcdc174a97fe95c6401cc58a5a9a06023"
+  },
+  "rebuilt_app": {
+    "command": "./scripts/run.sh",
+    "exit_code": 0,
+    "normal_launch_without_diagnostic_arguments": true,
+    "silksong_detail_observed": true,
+    "launch_button_visible": true,
+    "inline_conflict_message_absent": true,
+    "new_real_game_launch": false
+  }
+}

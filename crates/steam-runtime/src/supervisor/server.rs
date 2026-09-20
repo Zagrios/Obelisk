@@ -12,15 +12,43 @@ use std::{
     time::Duration,
 };
 
+// Keep lifecycle admission testable without giving a disposable fixture access
+// to account credentials, network transports or the production Cloud vault.
+pub(super) trait CloudLifecycle {
+    fn prepare(&mut self) -> Result<(), Error>;
+    fn started(&mut self) -> Result<(), Error>;
+    fn finished(&mut self);
+    fn aborted(&mut self);
+}
+
+impl CloudLifecycle for cloud::Session {
+    fn prepare(&mut self) -> Result<(), Error> {
+        cloud::Session::prepare(self)
+    }
+    fn started(&mut self) -> Result<(), Error> {
+        cloud::Session::started(self)
+    }
+    fn finished(&mut self) {
+        cloud::Session::finished(self);
+    }
+    fn aborted(&mut self) {
+        cloud::Session::aborted(self);
+    }
+}
+
 struct State {
     snapshot: Snapshot,
     spawned: bool,
 }
 struct Shared {
     state: Mutex<State>,
+    // Cloud callbacks update state. Keep the spawn/cancel gate separate so a
+    // durable started() operation can publish status without locking itself out.
+    admission: Mutex<()>,
     changed: Condvar,
     root: PathBuf,
     launch: Arc<Launch>,
+    cloud: Arc<cloud::Control>,
 }
 impl Shared {
     fn update(&self, change: impl FnOnce(&mut Snapshot)) {
@@ -42,14 +70,63 @@ pub fn serve(input: impl Read, output: impl Write, inspect: Inspect) -> Result<(
 
 pub(super) fn serve_with(
     input: impl Read,
+    output: impl Write,
+    inspect: Inspect,
+    prepare: impl FnOnce(&Launch, Config) -> Result<Runtime, Error>,
+) -> Result<(), Error> {
+    serve_with_factory(
+        input,
+        output,
+        inspect,
+        prepare,
+        |config, credentials, id, control| match (config, credentials) {
+            (Some(config), Some(credentials)) => {
+                Ok(Some(
+                    Box::new(cloud::Session::new(config, credentials, id, control)?)
+                        as Box<dyn CloudLifecycle>,
+                ))
+            }
+            (None, None) => Ok(None),
+            _ => Err(Error::InvalidSession),
+        },
+    )
+}
+
+#[cfg(test)]
+pub(super) fn serve_with_cloud(
+    input: impl Read,
+    output: impl Write,
+    inspect: Inspect,
+    prepare: impl FnOnce(&Launch, Config) -> Result<Runtime, Error>,
+    cloud: Box<dyn CloudLifecycle>,
+) -> Result<(), Error> {
+    serve_with_factory(input, output, inspect, prepare, |_, _, _, _| {
+        Ok(Some(cloud))
+    })
+}
+
+fn serve_with_factory(
+    input: impl Read,
     mut output: impl Write,
     inspect: Inspect,
     prepare: impl FnOnce(&Launch, Config) -> Result<Runtime, Error>,
+    make_cloud: impl FnOnce(
+        Option<cloud::Config>,
+        Option<Credentials>,
+        String,
+        Arc<cloud::Control>,
+    ) -> Result<Option<Box<dyn CloudLifecycle>>, Error>,
 ) -> Result<(), Error> {
     let mut input = input;
     let credentials = Credentials::read(&mut input)?;
     let request: Request = storage::packet(input)?;
-    if uuid::Uuid::parse_str(&request.id).is_err() || request.config.app_id == 0 {
+    if uuid::Uuid::parse_str(&request.id).is_err()
+        || request.config.app_id == 0
+        || request
+            .cloud
+            .as_ref()
+            .is_some_and(|cloud| cloud.app_id != request.config.app_id)
+    {
         return Err(Error::InvalidSession);
     }
     let _lock = storage::lock(&request.root, "owner.lock")?;
@@ -71,6 +148,11 @@ pub(super) fn serve_with(
         .tempdir_in("/tmp")?;
     let socket = socket_dir.path().join("control");
     let listener = UnixListener::bind(&socket)?;
+    // Both owners retain secrets only in zeroizing Credentials values. Neither
+    // the supervisor journal nor the serialized request contains credentials.
+    let cloud_credentials = request.cloud.as_ref().map(|_| credentials.clone());
+    let account_id = credentials.steam_id;
+    let session_id = request.id.clone();
     let snapshot = Snapshot {
         id: request.id,
         app_id: request.config.app_id,
@@ -83,17 +165,27 @@ pub(super) fn serve_with(
         exit_code: None,
         error: None,
         revision: 1,
+        cloud: cloud::Status::default(),
         reconnecting: false,
     };
     storage::write(&request.root, &snapshot)?;
-    let shared = Arc::new(Shared {
-        state: Mutex::new(State {
-            snapshot,
-            spawned: false,
-        }),
-        changed: Condvar::new(),
-        root: request.root,
-        launch: Arc::new(Launch::new(credentials)),
+    let shared = Arc::new_cyclic(|weak: &std::sync::Weak<Shared>| {
+        let observer = weak.clone();
+        Shared {
+            state: Mutex::new(State {
+                snapshot,
+                spawned: false,
+            }),
+            admission: Mutex::new(()),
+            changed: Condvar::new(),
+            root: request.root,
+            launch: Arc::new(Launch::new(credentials)),
+            cloud: Arc::new(cloud::Control::new(account_id, move |status| {
+                if let Some(shared) = observer.upgrade() {
+                    shared.update(|snapshot| snapshot.cloud = status);
+                }
+            })),
+        }
     });
     let finished = Arc::new(AtomicBool::new(false));
     let listening = {
@@ -105,9 +197,25 @@ pub(super) fn serve_with(
     // revokes an accepted launch or ownership of its game.
     let _ = storage::send(&mut output, &shared.state.lock().unwrap().snapshot);
     drop(output);
-    let outcome = run_game(&request.target, &shared, inspect, || {
-        prepare(&shared.launch, request.config)
-    });
+    let outcome = (|| {
+        let mut cloud = make_cloud(
+            request.cloud,
+            cloud_credentials,
+            session_id,
+            shared.cloud.clone(),
+        )?;
+        let lifecycle = cloud
+            .as_mut()
+            .map(|cloud| cloud.as_mut() as &mut dyn CloudLifecycle);
+        let result = run_game(&request.target, &shared, inspect, lifecycle, || {
+            prepare(&shared.launch, request.config)
+        });
+        let abort = result.is_err() && !shared.state.lock().unwrap().spawned;
+        if abort && let Some(cloud) = cloud.as_mut() {
+            cloud.aborted();
+        }
+        result
+    })();
     if let Err(error) = outcome {
         shared.update(|s| {
             s.phase = Phase::Failed;
@@ -130,8 +238,12 @@ fn run_game(
     target: &Target,
     shared: &Arc<Shared>,
     inspect: Inspect,
+    mut cloud: Option<&mut dyn CloudLifecycle>,
     prepare: impl FnOnce() -> Result<Runtime, Error>,
 ) -> Result<(), Error> {
+    if let Some(cloud) = cloud.as_deref_mut() {
+        cloud.prepare()?;
+    }
     let runtime = Arc::new(prepare()?);
     let app_id = shared.state.lock().unwrap().snapshot.app_id.to_string();
     let mut command = Process::new(&target.executable);
@@ -149,12 +261,15 @@ fn run_game(
     let mut game = {
         // Cancel and spawn have one linearization point. Cancellation after this
         // succeeds never kills a game, including sign-out and UI disconnection.
-        let mut state = shared.state.lock().unwrap();
+        let _admission = shared.admission.lock().unwrap();
         if shared.launch.cancelled.load(Ordering::Acquire) {
             return Err(Error::Cancelled);
         }
+        if let Some(cloud) = cloud.as_deref_mut() {
+            cloud.started()?;
+        }
         let game = command.spawn().map_err(|_| Error::StartFailed)?;
-        state.spawned = true;
+        shared.state.lock().unwrap().spawned = true;
         game
     };
     let identity = inspect(game.id());
@@ -190,8 +305,17 @@ fn run_game(
     };
     runtime.stopped(Some(exit));
     let _ = observation.join();
+    if let Some(cloud) = cloud {
+        shared.update(|s| {
+            s.phase = Phase::Finalizing;
+            s.host = HostState::Stopped;
+            s.exit_code = Some(exit);
+        });
+        cloud.finished();
+    }
     shared.update(|s| {
         s.phase = Phase::Finished;
+        s.host = HostState::Stopped;
         s.exit_code = Some(exit);
     });
     Ok(())
@@ -226,9 +350,9 @@ fn respond(mut stream: UnixStream, shared: &Shared) -> Result<(), Error> {
     stream.set_read_timeout(Some(Duration::from_secs(2)))?;
     stream.set_write_timeout(Some(Duration::from_secs(2)))?;
     let command: Command = storage::packet(&stream)?;
-    let mut state = shared.state.lock().unwrap();
     match command {
         Command::Observe { id, after } => {
+            let mut state = shared.state.lock().unwrap();
             if state.snapshot.id != id {
                 return Err(Error::InvalidSession);
             }
@@ -241,17 +365,46 @@ fn respond(mut stream: UnixStream, shared: &Shared) -> Result<(), Error> {
                     .unwrap()
                     .0;
             }
+            let snapshot = state.snapshot.clone();
+            drop(state);
+            return storage::send(&mut stream, &snapshot);
         }
         Command::Cancel { id } => {
-            if state.snapshot.id != id {
-                return Err(Error::InvalidSession);
-            }
-            if !state.spawned {
+            let _admission = shared.admission.lock().unwrap();
+            let preparing = {
+                let state = shared.state.lock().unwrap();
+                if state.snapshot.id != id {
+                    return Err(Error::InvalidSession);
+                }
+                !state.spawned
+            };
+            if preparing {
+                shared.cloud.cancel();
                 shared.launch.cancel();
             }
         }
+        Command::CloudChoice {
+            id,
+            account_id,
+            decision_id,
+            choice,
+        } => {
+            let state = shared.state.lock().unwrap();
+            if state.snapshot.id != id || state.snapshot.account_id != account_id {
+                return Err(Error::InvalidSession);
+            }
+            drop(state);
+            shared.cloud.respond(decision_id, choice)?;
+        }
+        Command::Revoke { id, account_id } => {
+            let state = shared.state.lock().unwrap();
+            if state.snapshot.id != id || state.snapshot.account_id != account_id {
+                return Err(Error::InvalidSession);
+            }
+            drop(state);
+            shared.cloud.revoke(account_id)?;
+        }
     }
-    let snapshot = state.snapshot.clone();
-    drop(state);
+    let snapshot = shared.state.lock().unwrap().snapshot.clone();
     storage::send(&mut stream, &snapshot)
 }

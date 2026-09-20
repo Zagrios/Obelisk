@@ -1,0 +1,59 @@
+{
+  "operation": "cloud_blob_collection_verified_cache_and_allowed_choices",
+  "recorded_at": "2026-09-19T21:56:24.769264+00:00",
+  "source_sha256": {
+    "apps/macos/Forge/Bridge/Generated/ForgeBridge.swift": "07aeefc1811578dde39dc7a8f8d1ba9ba78ab212672f4fce0730175208bb8e05",
+    "apps/macos/Forge/Models/SteamCloudModel.swift": "ada08a11ed6ff10354dfc32ba185ad3c4632f5c8330f9529f79059832de14284",
+    "apps/macos/Forge/Models/SteamGameSessions.swift": "9ee1b70aadb8d735232057df333d78e7529d7b769bd048ef75596a46680be5ea",
+    "apps/macos/ForgeTests/SteamGameSessionsTests.swift": "cf0d0c43c7fc58e5c5c2521ee704ec4813e6f8dcc542f1cfd302da45063db950",
+    "apps/macos/ForgeTests/SteamPresentationTests.swift": "fb1ffbe5faa0abefafc92bff8a54fa6b974c5cb132a3bc1195543f5c65498f4c",
+    "crates/forge-bridge/src/steam_native.rs": "217312457ae0bf5d1a6af52a800e368c69e1081ebc78f6dd14b9a4b9eb41c163",
+    "crates/steam-cloud/src/vault.rs": "653b95efd2e15123f6f9e25e6bf5e3209f9f8adbb88c20deddfc9421cfa96730",
+    "crates/steam-cloud/src/vault/migration.rs": "25ebad18b8136a0ebca27bbfed0624f8ed83d3574f9e58155499d6d2d029d3e3",
+    "crates/steam-cloud/src/vault/projection/tests.rs": "390585406a215770ea49dd5df6662e612f422355692ce84a5d3a63be19ce69b0",
+    "crates/steam-cloud/tests/coordinator.rs": "09a7e4a4a6c445786f31a4ee752ae0bb39bd52bcefe0f3657379d034ee9fd94e",
+    "crates/steam-runtime/src/cloud.rs": "820cfc43114722977ccfbd6d6e2b507cb1c51541806799e02e7ddf0cea99f67f",
+    "crates/steam-runtime/src/cloud/session.rs": "2e33cbe92ec59b5963ed441a419f5e23cda2ebfc3327a7ef229a944442a71de1",
+    "crates/steam-runtime/src/cloud/session/remote.rs": "eec1abb0d7593e46e53cd226aa3c2a2d942aaa11291880a39226c91e4c3a8950",
+    "crates/steam-runtime/src/supervisor/client.rs": "8df95125246bf562cb8abc6526fcaf6b6178bacc808ab5128e5e7ae944e46fcd",
+    "crates/storefronts/steam-kit/src/cloud.rs": "5c17c3b0154c8a899434a0452031c1a94cdf304461680401b24cd9a7644ad2e9",
+    "crates/storefronts/steam-kit/src/cloud/preferences.rs": "c9f2ebc33322b384d284a8d749e59160352f93a4eb6df49e13b3aa82acfafe11",
+    "crates/storefronts/steam-kit/src/cloud/read.rs": "5200333dd7e89324f47d1cee83b5b32e7b668a9799e82f8d93c4152b8fbb9469",
+    "crates/storefronts/steam-kit/src/cm/cloud.rs": "5aa629b5f78031efca68417019d5ff7e317994e3d3077fd56d2c008a1715d6b0"
+  },
+  "validation": {
+    "script": "./scripts/test.sh",
+    "exit_code": 0,
+    "main_workspace_rust_passed": 376,
+    "native_workspace_rust_passed": 4,
+    "swift_executed": 220,
+    "swift_skipped": 9,
+    "swift_failures": 0,
+    "bundled_runtime_isolation": "passed",
+    "formatting": "passed",
+    "strict_clippy": "passed",
+    "localization_keys": 539,
+    "app_signature": "passed",
+    "log": "build/cloud-maintenance-suite-final.log"
+  },
+  "proof": [
+    "Automatic collection retains durable and in-memory conflict/exit references, Vault baseline/local/pending data and active guards; unrelated game save bytes stay intact.",
+    "An unchanged remote file is downloaded once across repeated comparisons and a full Session restart; upload verification downloads again even with a valid cache.",
+    "Missing bytes or changed SHA-1 require a download; changes during listing recheck, wrong accounts, cancelled reads and corrupt upload readback cannot succeed from the cache.",
+    "Preference cache invalidates on configuration-file, account and app changes; absent configuration remains unknown.",
+    "Swift uses the published choices even when the error key changes; Rust rejects unadvertised choices without changing the decision id."
+  ],
+  "limits": [
+    "Synthetic Cloud sources and disposable local fixtures; no authenticated transfer or gameplay benchmark performed.",
+    "Existing upload journals and payloads remain outside blob collection; uncertain transaction evidence is preserved."
+  ],
+  "snapshot_pointer": "build/cloud-maintenance-before.txt",
+  "scoped_diff": "build/cloud-maintenance.diff",
+  "app_validation": {
+    "run_script_exit_code": 0,
+    "log": "build/cloud-maintenance-run.log",
+    "old_pid": 90869,
+    "new_process": "47452 /Users/mathieu/Documents/Github/Zagrios/forge/build/xcode/Build/Products/Debug/Forge.app/Contents/MacOS/Forge",
+    "observation": "Authenticated Steam library and Silksong detail show Lancer without error after graceful quit and reopening the rebuilt app. No real game launched."
+  }
+}

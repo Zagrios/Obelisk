@@ -54,6 +54,8 @@ pub(crate) struct RequestFriendPersonaStates {}
 pub(crate) struct Logon {
     #[prost(uint32, tag = "1")]
     pub protocol_version: u32,
+    #[prost(uint32, tag = "2")]
+    pub deprecated_obfuscated_private_ip: u32,
     #[prost(uint32, tag = "5")]
     pub package_version: u32,
     #[prost(string, tag = "6")]
@@ -62,6 +64,8 @@ pub(crate) struct Logon {
     pub os_type: u32,
     #[prost(bool, tag = "8")]
     pub remember_password: bool,
+    #[prost(message, optional, tag = "11")]
+    pub obfuscated_private_ip: Option<LoginAddress>,
     #[prost(string, tag = "50")]
     pub account_name: String,
     #[prost(string, tag = "96")]
@@ -70,6 +74,13 @@ pub(crate) struct Logon {
     pub supports_rate_limit: bool,
     #[prost(string, tag = "108")]
     pub access_token: String,
+}
+
+/// CMsgIPAddress's IPv4 form, used as a non-secret client login identifier.
+#[derive(Clone, PartialEq, prost::Message)]
+pub(crate) struct LoginAddress {
+    #[prost(fixed32, tag = "1")]
+    pub v4: u32,
 }
 
 #[derive(Clone, PartialEq, prost::Message)]

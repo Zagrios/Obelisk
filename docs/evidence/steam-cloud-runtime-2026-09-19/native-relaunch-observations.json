@@ -1,0 +1,58 @@
+{
+  "observed_at": "2026-09-19T17:58:41.692232+00:00",
+  "status": "inspection_induced_relaunch_identified",
+  "app_id": 1030300,
+  "timeline_local_utc_offset": "+02:00",
+  "timeline": [
+    {
+      "time": "19:51:57.399",
+      "event": "Forge-supervised game PID 34033 checked in, launchedByLS=0."
+    },
+    {
+      "time": "19:52:20.124",
+      "event": "PID 34033 exited. User confirmed closing Silksong."
+    },
+    {
+      "time": "19:52:23.695",
+      "event": "Agent invoked game.getAXStateAndScreenshot() on the now-closed app."
+    },
+    {
+      "time": "19:52:23.706",
+      "event": "LaunchServices requested a fresh game process, PID 34060."
+    },
+    {
+      "time": "19:52:24.404",
+      "event": "Official Steam started, PID 34063."
+    }
+  ],
+  "first_game_log": [
+    "Steam initializing",
+    "Selected online subsystem SteamOnlineSubsystem",
+    "Steam stats received.",
+    "Shutting down Steam API."
+  ],
+  "second_game_log": [
+    "Application was not launched through Steam! Shutting down...",
+    "SteamAPI_Init() failed; ipcserver init failed .",
+    "Steam failed to initialize"
+  ],
+  "sources": [
+    "Current task tool-call timestamps",
+    "macOS process/LaunchServices logs restricted to the incident interval",
+    "Private preserved Player.log and Player-prev.log",
+    "Forge native launch report and supervisor snapshot",
+    "User confirmation of manual game closure"
+  ],
+  "conclusion": "The second launch coincided with the agent UI observation after the original app exited. It bypassed the Forge supervisor and its Steam environment. The original supervised game initialized Steam successfully. No production launch regression was established.",
+  "production_code_changed": false,
+  "workflow_correction": "Do not use the app-bound UI inspector after the user closes the game. Use supervisor state, process identity and read-only file observations for finalization.",
+  "post_incident_checks": {
+    "local_files_matching_deck": 18,
+    "file_count": 18,
+    "revision": "65",
+    "needs_work": false,
+    "pending": false,
+    "game_guard": false,
+    "game_host_or_official_steam_running": false
+  }
+}

@@ -29,6 +29,7 @@ struct SteamGameDetailView: View {
                 SteamArtwork(appId: game.appId, portrait: false, iconHash: game.iconHash)
             } action: {
                 HStack(spacing: 10) {
+                    let cancelsSynchronization = model.cloud.canCancelSynchronization(for: game.appId)
                     SteamGameActionButton(
                         title: model.primaryActionTitle,
                         symbol: model.primaryActionSymbol,
@@ -36,12 +37,19 @@ struct SteamGameDetailView: View {
                         isTransferring: model.activeTransferAppId == game.appId,
                         isAvailable: model.primaryActionAvailable,
                         action: model.primaryAction,
-                        cancel: model.cancelDownload
+                        cancel: {
+                            if cancelsSynchronization { model.cloud.respond(.cancel) }
+                            else { model.cancelDownload() }
+                        },
+                        isCancellable: cancelsSynchronization,
+                        isIndeterminate: model.isSynchronizingSaves
                     )
                     if let receipt {
-                        GameManagementButton(gameName: game.name, isAvailable: model.canUninstallSelectedGame) {
-                            model.uninstall(receipt)
-                        }
+                        GameManagementButton(
+                            gameName: game.name,
+                            isAvailable: model.canUninstallSelectedGame,
+                            uninstall: { model.uninstall(receipt) }
+                        )
                         .id(receipt.id + receipt.directory)
                     }
                 }
@@ -49,6 +57,23 @@ struct SteamGameDetailView: View {
 
             if let message = model.gameSessionMessage {
                 Text(message).font(.system(size: 12)).foregroundStyle(.secondary)
+            }
+
+            let cloudMessage = model.cloud.message(for: game.appId)
+            let cloudPending = model.cloud.hasPending(for: game.appId)
+            if !model.isSynchronizingSaves && (cloudMessage != nil || cloudPending) {
+                HStack(spacing: 8) {
+                    if let cloudMessage {
+                        Text(cloudMessage).font(.system(size: 12)).foregroundStyle(.secondary)
+                    }
+                    if cloudPending {
+                        Button(L10n.string("ui.common.retry")) {
+                            model.cloud.retryPending(appId: game.appId)
+                        }
+                        .forgeButtonStyle(.borderless)
+                        .controlSize(.small)
+                    }
+                }
             }
 
             if model.isLoadingDetails {
@@ -126,9 +151,31 @@ struct SteamGameActionButton: View {
     let action: () -> Void
     let cancel: () -> Void
     var isCancellable = false
+    var isIndeterminate = false
+
+    /// An indeterminate step (a pre-launch Cloud sync) outranks a byte-counted
+    /// transfer: it has no fraction and no per-file title to show.
+    private enum Mode { case idle, transferring, indeterminate }
+    private var mode: Mode {
+        if isIndeterminate { .indeterminate } else if isTransferring { .transferring } else { .idle }
+    }
 
     private var showsProgress: Bool {
-        isTransferring && (transfer?.isInProgress ?? true)
+        switch mode {
+        case .indeterminate: true
+        case .transferring: transfer?.isInProgress ?? true
+        case .idle: false
+        }
+    }
+    private var helpText: String {
+        mode == .indeterminate ? title : transfer?.progressSummary ?? title
+    }
+    private var accessibilityText: String {
+        switch mode {
+        case .indeterminate: title
+        case .transferring: transfer?.progressSummary ?? L10n.string("ui.transfer.preparing_accessibility")
+        case .idle: ""
+        }
     }
 
     var body: some View {
@@ -149,9 +196,12 @@ struct SteamGameActionButton: View {
 
             Button(action: action) {
                 Group {
-                    if isTransferring {
+                    switch mode {
+                    case .indeterminate:
+                        Text(title)
+                    case .transferring:
                         Text(transfer?.buttonTitle ?? L10n.string("ui.transfer.preparing_short"))
-                    } else {
+                    case .idle:
                         Label(title, systemImage: symbol)
                     }
                 }
@@ -161,7 +211,7 @@ struct SteamGameActionButton: View {
             .buttonStyle(ForgePrimaryButtonStyle(scale: 1.25))
             .overlay(alignment: .bottom) {
                 if showsProgress {
-                    SteamButtonProgress(fraction: transfer?.progressFraction)
+                    SteamButtonProgress(fraction: mode == .indeterminate ? nil : transfer?.progressFraction)
                         .frame(height: 3)
                         .padding(.horizontal, 12)
                         .padding(.bottom, 5)
@@ -169,9 +219,9 @@ struct SteamGameActionButton: View {
                         .accessibilityHidden(true)
                 }
             }
-            .disabled(!isAvailable || isTransferring)
-            .help(transfer?.progressSummary ?? title)
-            .accessibilityValue(isTransferring ? (transfer?.progressSummary ?? L10n.string("ui.transfer.preparing_accessibility")) : "")
+            .disabled(!isAvailable || mode != .idle)
+            .help(helpText)
+            .accessibilityValue(accessibilityText)
         }
         .fixedSize()
     }

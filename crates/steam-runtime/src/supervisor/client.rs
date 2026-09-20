@@ -26,7 +26,42 @@ pub struct Client {
     probe: Probe,
     last: Mutex<Option<Snapshot>>,
 }
+
+/// Excludes launch admission while maintenance handles stores left by a dead
+/// supervisor. Construction checks the kernel identities, including birth time.
+pub struct IdleGuard {
+    _starting: fs::File,
+    _owner: fs::File,
+}
 impl Client {
+    pub fn idle_guard(root: &Path, helper: &Path) -> Result<IdleGuard, Error> {
+        Self::idle_guard_with(root, helper, inspect)
+    }
+
+    pub(super) fn idle_guard_with(
+        root: &Path,
+        helper: &Path,
+        probe: Probe,
+    ) -> Result<IdleGuard, Error> {
+        let starting = storage::lock(root, "start.lock")?;
+        let owner = storage::lock(root, "owner.lock")?;
+        if let Some(saved) = storage::read(root)?
+            && !saved.finished()
+            && (probe(helper, saved.supervisor.pid)?.as_ref() == Some(&saved.supervisor)
+                || saved
+                    .game
+                    .as_ref()
+                    .map(|game| probe(helper, game.pid).map(|actual| actual.as_ref() == Some(game)))
+                    .transpose()?
+                    .unwrap_or(saved.phase == Phase::Running))
+        {
+            return Err(Error::SessionBusy);
+        }
+        Ok(IdleGuard {
+            _starting: starting,
+            _owner: owner,
+        })
+    }
     pub fn recover(root: &Path, helper: &Path) -> Result<Option<Self>, Error> {
         paced(Self::recover_with(root, helper, inspect))
     }
@@ -154,6 +189,53 @@ impl Client {
                 },
             );
         }
+    }
+
+    pub fn cloud_choice(
+        &self,
+        account_id: u64,
+        decision_id: u64,
+        choice: crate::cloud::Choice,
+    ) -> Result<(), Error> {
+        self.cloud_command(
+            account_id,
+            Command::CloudChoice {
+                id: self.id.clone(),
+                account_id,
+                decision_id,
+                choice,
+            },
+        )
+    }
+
+    pub fn revoke_cloud(&self, account_id: u64) -> Result<(), Error> {
+        self.cloud_command(
+            account_id,
+            Command::Revoke {
+                id: self.id.clone(),
+                account_id,
+            },
+        )
+    }
+
+    fn cloud_command(&self, account_id: u64, command: Command) -> Result<(), Error> {
+        let saved = storage::read_id(&self.root, &self.id)?.ok_or(Error::Unavailable)?;
+        if account_id == 0
+            || saved.id != self.id
+            || saved.account_id != account_id
+            || (self.probe)(&self.helper, saved.supervisor.pid)?.as_ref() != Some(&saved.supervisor)
+        {
+            return Err(Error::InvalidSession);
+        }
+        let response = exchange(&saved, &command)?;
+        let mut last = self.last.lock().unwrap();
+        if last
+            .as_ref()
+            .is_none_or(|old| old.revision <= response.revision)
+        {
+            *last = Some(response);
+        }
+        Ok(())
     }
 }
 
@@ -302,4 +384,108 @@ fn paced<T>(result: Result<T, Error>) -> Result<T, Error> {
         std::thread::sleep(Duration::from_millis(500));
     }
     result
+}
+
+#[cfg(test)]
+mod cloud_commands {
+    use super::*;
+
+    fn identity(birth_seconds: u64) -> Identity {
+        Identity {
+            pid: 42,
+            uid: 501,
+            birth_seconds,
+            birth_microseconds: 0,
+            executable: "/fixture/supervisor".into(),
+        }
+    }
+
+    fn fixture(probe: Probe) -> (tempfile::TempDir, Client) {
+        let root = tempfile::tempdir().unwrap();
+        let id = uuid::Uuid::new_v4().to_string();
+        let snapshot = Snapshot {
+            id: id.clone(),
+            app_id: 42,
+            account_id: 123,
+            supervisor: identity(1),
+            game: None,
+            socket: root.path().join("absent.sock"),
+            phase: Phase::Preparing,
+            cloud: crate::cloud::Status {
+                phase: crate::cloud::Phase::Conflict,
+                id: 7,
+                error: None,
+                decision_token: None,
+                allowed_choices: vec![
+                    crate::cloud::Choice::Local,
+                    crate::cloud::Choice::Cloud,
+                    crate::cloud::Choice::Cancel,
+                ],
+            },
+            host: HostState::Stopped,
+            exit_code: None,
+            error: None,
+            revision: 1,
+            reconnecting: false,
+        };
+        storage::write(root.path(), &snapshot).unwrap();
+        let client = Client {
+            root: root.path().into(),
+            helper: "/fixture/supervisor".into(),
+            id,
+            probe,
+            last: Mutex::new(None),
+        };
+        (root, client)
+    }
+
+    fn must_not_probe(_: &Path, _: u32) -> Result<Option<Identity>, Error> {
+        panic!("a mismatched account or session must fail before process inspection");
+    }
+
+    #[test]
+    fn rejects_another_account_before_sending_choice_or_revocation() {
+        let (_root, client) = fixture(must_not_probe);
+        assert!(matches!(
+            client.cloud_choice(456, 7, crate::cloud::Choice::Local),
+            Err(Error::InvalidSession)
+        ));
+        assert!(matches!(
+            client.revoke_cloud(456),
+            Err(Error::InvalidSession)
+        ));
+    }
+
+    #[test]
+    fn rejects_a_replaced_session_record_before_process_inspection() {
+        let (root, client) = fixture(must_not_probe);
+        let mut replacement = storage::read(root.path()).unwrap().unwrap();
+        replacement.id = uuid::Uuid::new_v4().to_string();
+        storage::write(root.path(), &replacement).unwrap();
+        fs::copy(
+            root.path().join(format!("{}.json", replacement.id)),
+            root.path().join(format!("{}.json", client.id)),
+        )
+        .unwrap();
+        assert!(matches!(
+            client.revoke_cloud(123),
+            Err(Error::InvalidSession)
+        ));
+    }
+
+    #[test]
+    fn rejects_reused_pid_before_sending_choice_or_revocation() {
+        fn replaced(_: &Path, _: u32) -> Result<Option<Identity>, Error> {
+            Ok(Some(identity(2)))
+        }
+        let (_root, client) = fixture(replaced);
+        assert!(matches!(
+            client.cloud_choice(123, 7, crate::cloud::Choice::Cloud),
+            Err(Error::InvalidSession)
+        ));
+        assert!(matches!(
+            client.revoke_cloud(123),
+            Err(Error::InvalidSession)
+        ));
+    }
 }

@@ -87,7 +87,7 @@ fn quote(path: &Path) -> Result<String, Error> {
     serde_json::to_string(path.to_str().ok_or(Error::Storage)?).map_err(|_| Error::Storage)
 }
 fn sandbox(config: &Config, directory: &Path) -> Result<String, Error> {
-    Ok(format!(
+    let mut profile = format!(
         "(version 1)\n(allow default)\n(deny file-write*)\n(allow file-write* (literal \"/dev/null\"))\n(deny file-read* (subpath {}) (subpath {}))\n(deny process-exec)\n(allow process-exec (literal {}))\n(deny mach-lookup (global-name-regex \".*[Ss]team.*\") (global-name \"com.apple.coreservices.launchservicesd\") (global-name \"com.apple.lsd.mapdb\"))\n",
         quote(&config.home.join("Library/Application Support/Steam"))?,
         quote(
@@ -96,7 +96,27 @@ fn sandbox(config: &Config, directory: &Path) -> Result<String, Error> {
                 .join("Library/Application Support/com.zagrios.forge")
         )?,
         quote(&directory.join(crate::package::HOST))?
-    ))
+    );
+    // A fresh, read-only native generation cannot inspect the ordinary saves
+    // owned by Rust. Permit only the pinned runtime under the real home. The
+    // native host never receives root-0 API storage or any save projection.
+    profile.push_str(&format!(
+        "(deny file-read* (subpath {}))\n(allow file-read* (subpath {}))\n",
+        quote(&config.home)?,
+        quote(directory)?
+    ));
+    // realpath on the host executable needs metadata for each ancestor. Grant
+    // those exact directories, without granting enumeration or save contents.
+    for ancestor in directory.ancestors().skip(1) {
+        profile.push_str(&format!(
+            "(allow file-read-metadata (literal {}))\n",
+            quote(ancestor)?
+        ));
+    }
+    for root in &config.cloud_save_roots {
+        profile.push_str(&format!("(deny file-read* (subpath {}))\n", quote(root)?));
+    }
+    Ok(profile)
 }
 /// Durability is explicit: session recovery requires fsync, diagnostics do not.
 #[derive(Clone, Copy)]
@@ -148,6 +168,64 @@ pub(crate) fn failure_report(
 mod atomic_tests {
     use super::*;
     use std::io::Write;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn sandbox_access_child() {
+        let Some(root) = std::env::var_os("FORGE_SANDBOX_ACCESS_FIXTURE") else {
+            return;
+        };
+        let root = PathBuf::from(root);
+        assert!(root.join("home/cache/runtime").canonicalize().is_ok());
+        assert!(fs::read(root.join("home/saves/slot.dat")).is_err());
+        assert!(fs::read(root.join("home/Library/Application Support/Steam/fixture")).is_err());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn sandbox_allows_runtime_path_resolution_but_denies_save_contents() {
+        let root = tempfile::tempdir().unwrap();
+        let root = root.path().canonicalize().unwrap();
+        let home = root.join("home");
+        let runtime = home.join("cache/runtime");
+        fs::create_dir_all(&runtime).unwrap();
+        fs::create_dir_all(home.join("saves")).unwrap();
+        fs::create_dir_all(home.join("Library/Application Support/Steam")).unwrap();
+        fs::write(home.join("saves/slot.dat"), b"fixture save").unwrap();
+        fs::write(
+            home.join("Library/Application Support/Steam/fixture"),
+            b"fixture installation",
+        )
+        .unwrap();
+        let config = Config {
+            helpers: runtime.clone(),
+            package: root.join("unused"),
+            cache: home.join("cache"),
+            diagnostics: root.join("logs"),
+            steam_api: root.join("unused"),
+            home,
+            app_id: 42,
+            cloud_save_roots: vec![],
+        };
+        let executable = std::env::current_exe().unwrap();
+        let profile = format!(
+            "{}\n(allow process-exec (literal {}))",
+            sandbox(&config, &runtime).unwrap(),
+            quote(&executable).unwrap()
+        );
+        let result = std::process::Command::new("/usr/bin/sandbox-exec")
+            .args(["-p", &profile])
+            .arg(executable)
+            .args(["files::atomic_tests::sandbox_access_child", "--exact"])
+            .env("FORGE_SANDBOX_ACCESS_FIXTURE", &root)
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stdout)
+        );
+    }
 
     #[test]
     fn incomplete_atomic_writes_preserve_the_previous_file_and_remove_temporary_files() {

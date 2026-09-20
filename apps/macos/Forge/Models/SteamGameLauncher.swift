@@ -18,7 +18,9 @@ enum SteamGameLauncher {
             cache: home.appending(path: "Library/Caches/com.zagrios.forge/SteamRuntime").path,
             diagnostics: home.appending(path: "Library/Logs/Forge/Steam").path,
             steamApi: api.path,
-            home: home.path
+            home: home.path,
+            cloudDirectory: cloudDirectory,
+            installDirectory: plan.installDirectory
         )
         let supervisedTarget = try await Task.detached(priority: .userInitiated) {
             try NativeGameLauncher.supervisedTarget(plan.target)
@@ -37,6 +39,10 @@ enum SteamGameLauncher {
 
     static var sessionDirectory: String {
         AppIdentity.libraryDirectory.appending(path: "SteamSessions").path
+    }
+
+    static var cloudDirectory: String {
+        AppIdentity.libraryDirectory.appending(path: "SteamCloud").path
     }
 
     static var helpersDirectory: URL {

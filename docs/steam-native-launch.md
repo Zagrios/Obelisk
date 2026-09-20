@@ -98,8 +98,8 @@ replacement during recovery, using scripted supervisor snapshots.
 These controls are separate from authenticated Silksong checks. The September 17
 [session validation report](evidence/steam-session-lifecycle-2026-09-17.json) records
 237 main-workspace Rust tests, one native test, 183 Swift tests with nine skips
-and no failures, app signature verification and isolated runtime loading. No
-real game or save was used to validate these session changes.
+and no failures, app signature verification and isolated runtime loading. That
+automated validation did not use a real game or save.
 
 ## Surviving Forge closure and crash
 
@@ -167,10 +167,13 @@ supervisor loss, PID identity mismatch, and recovered Swift actions/guards.
 [Refinement validation](evidence/steam-supervisor-refinement-2026-09-17.json)
 adds lost acknowledgements, control reconnection, lock deadlines, unreadable
 metadata, socket removal, atomic-write rollback and equal-size/equal-mtime tampering.
-These tests launch disposable processes, not Silksong. The user separately
-reported successful Silksong quit/reopen and action-state checks before this
-refinement; these latest changes have not been retested with a real game. Existing games
-launched by the previous implementation have no recoverable supervisor record.
+These automated tests launch disposable processes. On September 18, 2026, the
+user reported a successful Silksong retest after the refinement: Forge showed
+"En cours" after launch, still showed "En cours" after closing and reopening
+Forge while the game remained open, then showed "Lancé" after the game closed.
+See the [manual lifecycle check](#manual-lifecycle-check-september-18-2026) below.
+Existing games launched by the previous implementation have no recoverable
+supervisor record.
 
 ## Bundled runtime preparation
 
@@ -293,6 +296,22 @@ Clippy with warnings denied, formatting, 514 localization keys, the macOS build
 and the Apple signature checks also passed. Detailed outputs are retained locally
 under `build/steam-native-integration-baseline/`.
 
+### Manual lifecycle check, September 18, 2026
+
+The user retested Silksong with the refined supervisor and reported this sequence.
+The action labels below preserve the wording of the report:
+
+1. Start Silksong from Forge: "En cours".
+2. Close Forge, then reopen it while Silksong remains open: "En cours".
+3. Close Silksong: "Lancé".
+
+This confirms the user-observed running state, its recovery after normal Forge
+closure and reopening, and the action-state change after game exit. The report
+does not include new diagnostic logs or process traces. Crash recovery, blocked
+relaunch/install operations and host teardown retain their separate automated
+coverage; this manual check does not validate Steam Cloud, achievements, playtime
+or multiplayer.
+
 ## Research cleanup
 
 The standalone `experiments/` directory was removed on September 16, 2026 after
@@ -335,6 +354,8 @@ so another process taking the port can cause a failed launch. Valve libraries ar
 embedded in the local app bundle; they are not versioned in the repository.
 
 Steam Cloud is not integrated. The game uses its normal local save location.
-The supervisor preserves new sessions across Forge closure or crash. Authenticated
-Silksong validation of this new ownership path, achievements, playtime and
-online-game behavior remain separate checks.
+The supervisor preserves new sessions across Forge closure or crash. The
+September 18 manual Silksong check confirms action-state recovery after normal
+Forge closure and reopening, followed by the action-state change after game exit.
+Crash recovery is covered by automated disposable-process tests. Achievements,
+playtime and online-game behavior remain separate checks.

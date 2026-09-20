@@ -1,0 +1,25 @@
+{
+  "observed_at": "2026-09-19T19:39:44.035151+00:00",
+  "user_reported_real_mac_deck_conflict": true,
+  "user_choice": "local",
+  "confirmed_remote_revision": "67",
+  "baseline_file_count": 17,
+  "physical_files_matching_verified_baseline": 17,
+  "missing_baseline_files": 0,
+  "pending": false,
+  "game_guard": false,
+  "needs_work": false,
+  "transactions": [
+    {
+      "phase": "Verified",
+      "uploads": 2,
+      "deletes": 1
+    },
+    {
+      "phase": "Verified",
+      "uploads": 2,
+      "deletes": 0
+    }
+  ],
+  "evidence_scope": "Local files compared with the production baseline established by verified Cloud readback; no additional remote request in this observation."
+}

@@ -1,13 +1,13 @@
 //! A per-game supervisor owns the host and game, independently of the UI.
-//! Credentials cross only the initial stdin pipe. Reattachment is read-only.
+//! Credentials cross only the initial stdin pipe. Control uses session/account IDs.
 mod client;
 mod server;
 mod storage;
 #[cfg(test)]
 mod tests;
 
-use crate::{Config, HostState};
-pub use client::{Client, start};
+use crate::{Config, HostState, cloud};
+pub use client::{Client, IdleGuard, start};
 use serde::{Deserialize, Serialize};
 pub use server::serve;
 use std::{collections::HashMap, path::PathBuf};
@@ -35,12 +35,15 @@ pub struct Request {
     pub id: String,
     pub config: Config,
     pub target: Target,
+    #[serde(default)]
+    pub cloud: Option<cloud::Config>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Phase {
     Preparing,
     Running,
+    Finalizing,
     Finished,
     Failed,
 }
@@ -58,6 +61,8 @@ pub struct Snapshot {
     pub exit_code: Option<i32>,
     pub error: Option<String>,
     pub revision: u64,
+    #[serde(default)]
+    pub cloud: cloud::Status,
     /// Client-side confidence in the control connection, never persisted.
     #[serde(skip)]
     pub reconnecting: bool,
@@ -70,8 +75,23 @@ impl Snapshot {
 
 #[derive(Serialize, Deserialize)]
 enum Command {
-    Observe { id: String, after: Option<u64> },
-    Cancel { id: String },
+    Observe {
+        id: String,
+        after: Option<u64>,
+    },
+    Cancel {
+        id: String,
+    },
+    CloudChoice {
+        id: String,
+        account_id: u64,
+        decision_id: u64,
+        choice: cloud::Choice,
+    },
+    Revoke {
+        id: String,
+        account_id: u64,
+    },
 }
 
 // Native process inspection remains in steam-native; safe Rust never calls the

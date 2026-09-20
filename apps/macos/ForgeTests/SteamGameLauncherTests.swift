@@ -29,7 +29,7 @@ final class SteamGameLauncherTests: XCTestCase {
             }
         }
         XCTAssertFalse(FileManager.default.isExecutableFile(atPath: binary.path))
-        let plan = SteamLaunchPlan(appId: 42, platform: "macos", target: LaunchTarget(executable: app.path,
+        let plan = SteamLaunchPlan(appId: 42, platform: "macos", installDirectory: "/fixture", target: LaunchTarget(executable: app.path,
                                    arguments: [], workingDirectory: root.path, isApplicationBundle: true))
         try await SteamGameLauncher.launchForTesting(plan)
         XCTAssertTrue(FileManager.default.isExecutableFile(atPath: binary.path))
@@ -51,7 +51,7 @@ final class SteamGameLauncherTests: XCTestCase {
         let app = try nonExecutableBundle(root: root, binarySource: source)
         let binary = app.appending(path: "Contents/MacOS/game")
         do {
-            try await SteamGameLauncher.launchForTesting(SteamLaunchPlan(appId: 42, platform: "macos", target: LaunchTarget(executable: app.path,
+            try await SteamGameLauncher.launchForTesting(SteamLaunchPlan(appId: 42, platform: "macos", installDirectory: "/fixture", target: LaunchTarget(executable: app.path,
                 arguments: [], workingDirectory: root.path, isApplicationBundle: true)))
             XCTFail("Invalid content must not be made executable")
         } catch GameLaunchFailure.notExecutable {
@@ -68,7 +68,7 @@ final class SteamGameLauncherTests: XCTestCase {
         try "#!/bin/sh\nfor n in $(seq 1 300); do [ -e \"$1\" ] && exit 0; sleep 0.01; done\nexit 9\n"
             .write(to: executable, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
-        let plan = SteamLaunchPlan(appId: 42, platform: "macos", target: LaunchTarget(executable: executable.path,
+        let plan = SteamLaunchPlan(appId: 42, platform: "macos", installDirectory: "/fixture", target: LaunchTarget(executable: executable.path,
             arguments: [release.path], workingDirectory: root.path, isApplicationBundle: false))
         var running = false
         var finished = false
@@ -96,7 +96,7 @@ final class SteamGameLauncherTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let executables = ["/usr/bin/true", "/usr/bin/false", root.appending(path: "missing").path]
         for executable in (0..<10).flatMap({ _ in executables }) {
-            let plan = SteamLaunchPlan(appId: 42, platform: "macos", target: LaunchTarget(executable: executable,
+            let plan = SteamLaunchPlan(appId: 42, platform: "macos", installDirectory: "/fixture", target: LaunchTarget(executable: executable,
                 arguments: [], workingDirectory: root.path, isApplicationBundle: false))
             do {
                 try await SteamGameLauncher.launchForTesting(plan) { event in
@@ -156,7 +156,7 @@ final class SteamGameLauncherTests: XCTestCase {
 
     @MainActor
     func testWindowsLaunchExplainsMissingRuntime() async throws {
-        let plan = SteamLaunchPlan(appId: 42, platform: "windows", target: LaunchTarget(executable: "/unavailable/game.exe", arguments: [], workingDirectory: "/unavailable", isApplicationBundle: false))
+        let plan = SteamLaunchPlan(appId: 42, platform: "windows", installDirectory: "/fixture", target: LaunchTarget(executable: "/unavailable/game.exe", arguments: [], workingDirectory: "/unavailable", isApplicationBundle: false))
         do {
             try await SteamGameLauncher.launchForTesting(plan)
             XCTFail("A Windows executable requires a compatibility runtime")
@@ -293,7 +293,7 @@ final class SteamGameLauncherTests: XCTestCase {
     private func verifyLaunch(executable: URL, root: URL, isBundle: Bool) async throws {
         let captured = root.appending(path: "captured.txt")
         let literal = "spaces ; $(touch unexpected) & 'quotes'"
-        let plan = SteamLaunchPlan(appId: 42, platform: "macos", target: LaunchTarget(executable: executable.path, arguments: [captured.path, literal], workingDirectory: root.path, isApplicationBundle: isBundle))
+        let plan = SteamLaunchPlan(appId: 42, platform: "macos", installDirectory: "/fixture", target: LaunchTarget(executable: executable.path, arguments: [captured.path, literal], workingDirectory: root.path, isApplicationBundle: isBundle))
         try await SteamGameLauncher.launchForTesting(plan)
         let deadline = ContinuousClock.now + .seconds(3)
         while (try? String(contentsOf: captured, encoding: .utf8).hasSuffix("\n")) != true {

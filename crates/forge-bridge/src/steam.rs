@@ -42,6 +42,13 @@ impl From<client::ClientError> for SteamError {
         }
     }
 }
+impl From<steam_kit::cloud::CloudError> for SteamError {
+    fn from(error: steam_kit::cloud::CloudError) -> Self {
+        Self::Failure {
+            reason: error.to_string(),
+        }
+    }
+}
 
 #[derive(Clone, uniffi::Record)]
 pub struct SteamCredentials {
@@ -210,6 +217,7 @@ pub struct SteamInstallation {
 pub struct SteamLaunchPlan {
     pub app_id: u32,
     pub platform: String,
+    pub install_directory: String,
     pub target: LaunchTarget,
 }
 #[derive(Clone, Debug, uniffi::Record)]
@@ -294,6 +302,48 @@ impl SteamSession {
             avatar_url: profile.avatar_url,
         })
     }
+    /// Explicit diagnostic operation using this already-authenticated session.
+    /// It downloads a verified backup; no Cloud mutation or game launch occurs.
+    pub async fn cloud_backup(&self, app_id: u32, directory: String) -> Result<String, SteamError> {
+        Ok(self
+            .client
+            .cloud_backup(app_id, Path::new(&directory))
+            .await?)
+    }
+    /// Returns only Cloud preferences and source revision, never roaming data.
+    pub async fn cloud_preferences(&self, app_id: u32) -> Result<String, SteamError> {
+        let preferences = self.client.cloud_preferences(app_id).await?;
+        serde_json::to_string(&preferences).map_err(|_| SteamError::Failure {
+            reason: "Invalid Cloud preference report".into(),
+        })
+    }
+    #[cfg(debug_assertions)]
+    pub async fn cloud_interruption_probe(
+        &self,
+        app_id: u32,
+        directory: String,
+    ) -> Result<String, SteamError> {
+        Ok(self
+            .client
+            .cloud_interruption_probe(app_id, Path::new(&directory))
+            .await?)
+    }
+
+    #[cfg(debug_assertions)]
+    pub async fn cloud_sdk_candidates(&self) -> Result<String, SteamError> {
+        Ok(self.client.cloud_sdk_candidates().await?)
+    }
+    #[cfg(debug_assertions)]
+    pub async fn cloud_transfer_probe(
+        &self,
+        app_id: u32,
+        directory: String,
+    ) -> Result<String, SteamError> {
+        Ok(self
+            .client
+            .cloud_transfer_probe(app_id, Path::new(&directory))
+            .await?)
+    }
     pub async fn details(
         &self,
         app_id: u32,
@@ -342,8 +392,27 @@ impl SteamSession {
         Ok(SteamLaunchPlan {
             app_id: plan.app_id,
             platform: plan.platform,
+            install_directory: directory,
             target: plan.target.into(),
         })
+    }
+    pub async fn archive_cloud(
+        &self,
+        config: crate::steam_native::SteamCloudConfiguration,
+    ) -> Result<(), SteamError> {
+        let rules = self
+            .client
+            .cloud_archive_metadata(config.app_id)
+            .await
+            .map_err(steam_runtime::cloud::Failure::from)?;
+        if let Some((metadata, listing)) = rules {
+            tokio::task::spawn_blocking(move || {
+                steam_runtime::cloud::archive_with_rules(&config.into(), metadata, listing)
+            })
+            .await
+            .map_err(|_| steam_runtime::Error::Storage)??;
+        }
+        Ok(())
     }
     pub fn download_progress(&self) -> Option<SteamTransfer> {
         self.client.progress().map(Into::into)

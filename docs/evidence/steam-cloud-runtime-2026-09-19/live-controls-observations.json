@@ -1,0 +1,1158 @@
+{
+  "date": "2026-09-19",
+  "scope": "Disposable live local storage and offline synchronization control; no authenticated Cloud or production integration",
+  "runtime_sha256": "035722a42c74989fa38c7efe0d735fdb38444e1102c92246652b5d913d019840",
+  "runs": [
+    {
+      "mode": "local-live-mutation",
+      "exit_code": 0,
+      "events": [
+        {
+          "authenticated": false,
+          "event": "client_interface_inventory",
+          "interface": "SteamClient020",
+          "phase": "live-mutate"
+        },
+        {
+          "event": "fixture_identity_requested",
+          "result": 5,
+          "phase": "live-mutate"
+        },
+        {
+          "connected": false,
+          "event": "global_user",
+          "logged_on": false,
+          "pipe": 1,
+          "user": 1,
+          "phase": "live-mutate"
+        },
+        {
+          "account_id_is_zero": false,
+          "account_type": 1,
+          "event": "identity",
+          "instance": 1,
+          "is_zero": false,
+          "universe": 1,
+          "phase": "live-mutate"
+        },
+        {
+          "event": "utils_inventory",
+          "phase": "live-mutate"
+        },
+        {
+          "after": 480,
+          "before": 0,
+          "event": "fixture_pipe_app",
+          "option": 0,
+          "result": 480,
+          "phase": "live-mutate"
+        },
+        {
+          "event": "storage_interface_inventory",
+          "interface": "IClientRemoteStorage",
+          "phase": "live-mutate"
+        },
+        {
+          "event": "storage_interface_inventory",
+          "interface": "ISteamRemoteStorage016",
+          "phase": "live-mutate"
+        },
+        {
+          "event": "cache_load_requested",
+          "phase": "live-mutate"
+        },
+        {
+          "callbacks": 14,
+          "event": "cache_observation_window",
+          "milliseconds": 2000,
+          "phase": "live-mutate"
+        },
+        {
+          "bytes": 39,
+          "event": "live_write",
+          "interface": "private",
+          "name": "forge-offline-probe.dat",
+          "result": 1,
+          "phase": "live-mutate"
+        },
+        {
+          "bytes": 39,
+          "event": "file_read",
+          "matches_fixture": true,
+          "name": "forge-offline-probe.dat",
+          "phase": "live-mutate"
+        },
+        {
+          "bytes": 39,
+          "event": "public_file_read",
+          "matches_fixture": true,
+          "name": "forge-offline-probe.dat",
+          "phase": "live-mutate"
+        },
+        {
+          "bytes": 56,
+          "event": "live_write",
+          "interface": "public",
+          "name": "forge-offline-probe.dat",
+          "result": 1,
+          "phase": "live-mutate"
+        },
+        {
+          "bytes": 56,
+          "event": "file_read",
+          "matches_fixture": true,
+          "name": "forge-offline-probe.dat",
+          "phase": "live-mutate"
+        },
+        {
+          "bytes": 56,
+          "event": "public_file_read",
+          "matches_fixture": true,
+          "name": "forge-offline-probe.dat",
+          "phase": "live-mutate"
+        },
+        {
+          "bytes": 56,
+          "event": "live_write",
+          "interface": "private",
+          "name": "forge-offline-live.dat",
+          "result": 1,
+          "phase": "live-mutate"
+        },
+        {
+          "bytes": 56,
+          "event": "file_read",
+          "matches_fixture": true,
+          "name": "forge-offline-live.dat",
+          "phase": "live-mutate"
+        },
+        {
+          "bytes": 56,
+          "event": "public_file_read",
+          "matches_fixture": true,
+          "name": "forge-offline-live.dat",
+          "phase": "live-mutate"
+        },
+        {
+          "accepted": true,
+          "event": "private_file_delete",
+          "name": "forge-offline-probe.dat",
+          "phase": "live-mutate"
+        },
+        {
+          "bytes": 56,
+          "event": "file_read",
+          "matches_fixture": true,
+          "name": "forge-offline-live.dat",
+          "phase": "live-mutate"
+        },
+        {
+          "bytes": 56,
+          "event": "public_file_read",
+          "matches_fixture": true,
+          "name": "forge-offline-live.dat",
+          "phase": "live-mutate"
+        },
+        {
+          "deleted_file_on_disk": false,
+          "deleted_file_visible": false,
+          "direct_read_matches": true,
+          "event": "live_final_state",
+          "file_count": 1,
+          "phase": "live-mutate"
+        },
+        {
+          "event": "live_cache_checkpoint",
+          "record_present": true,
+          "wait_milliseconds": 28,
+          "phase": "live-mutate"
+        },
+        {
+          "event": "local_file_change_count",
+          "value": 0,
+          "phase": "live-mutate"
+        },
+        {
+          "callbacks": [],
+          "event": "post_mutation_callbacks",
+          "phase": "live-mutate"
+        },
+        {
+          "event": "fixture_native_index",
+          "vdf": "\"480\"\n{\n\t\"ChangeNumber\"\t\t\"0\"\n\t\"OSType\"\t\t\"-102\"\n\t\"forge-offline-probe.dat\"\n\t{\n\t\t\"root\"\t\t\"0\"\n\t\t\"size\"\t\t\"56\"\n\t\t\"localtime\"\t\t\"1789811640\"\n\t\t\"time\"\t\t\"1789811640\"\n\t\t\"remotetime\"\t\t\"0\"\n\t\t\"sha\"\t\t\"bd8f4fcb8d3ed72a2528e880e879697129768fa3\"\n\t\t\"syncstate\"\t\t\"3\"\n\t\t\"persiststate\"\t\t\"2\"\n\t\t\"platformstosync2\"\t\t\"-1\"\n\t}\n\t\"forge-offline-live.dat\"\n\t{\n\t\t\"root\"\t\t\"0\"\n\t\t\"size\"\t\t\"56\"\n\t\t\"localtime\"\t\t\"1789811640\"\n\t\t\"time\"\t\t\"1789811640\"\n\t\t\"remotetime\"\t\t\"0\"\n\t\t\"sha\"\t\t\"bd8f4fcb8d3ed72a2528e880e879697129768fa3\"\n\t\t\"syncstate\"\t\t\"3\"\n\t\t\"persiststate\"\t\t\"0\"\n\t\t\"platformstosync2\"\t\t\"-1\"\n\t}\n}\n",
+          "phase": "live-mutate"
+        },
+        {
+          "authenticated": false,
+          "event": "client_interface_inventory",
+          "interface": "SteamClient020",
+          "phase": "live-read"
+        },
+        {
+          "event": "fixture_identity_requested",
+          "result": 5,
+          "phase": "live-read"
+        },
+        {
+          "connected": false,
+          "event": "global_user",
+          "logged_on": false,
+          "pipe": 1,
+          "user": 1,
+          "phase": "live-read"
+        },
+        {
+          "account_id_is_zero": false,
+          "account_type": 1,
+          "event": "identity",
+          "instance": 1,
+          "is_zero": false,
+          "universe": 1,
+          "phase": "live-read"
+        },
+        {
+          "event": "utils_inventory",
+          "phase": "live-read"
+        },
+        {
+          "after": 480,
+          "before": 0,
+          "event": "fixture_pipe_app",
+          "option": 0,
+          "result": 480,
+          "phase": "live-read"
+        },
+        {
+          "event": "storage_interface_inventory",
+          "interface": "IClientRemoteStorage",
+          "phase": "live-read"
+        },
+        {
+          "event": "storage_interface_inventory",
+          "interface": "ISteamRemoteStorage016",
+          "phase": "live-read"
+        },
+        {
+          "event": "cache_load_requested",
+          "phase": "live-read"
+        },
+        {
+          "callbacks": 14,
+          "event": "cache_observation_window",
+          "milliseconds": 2000,
+          "phase": "live-read"
+        },
+        {
+          "bytes": 56,
+          "event": "file_read",
+          "matches_fixture": true,
+          "name": "forge-offline-live.dat",
+          "phase": "live-read"
+        },
+        {
+          "bytes": 56,
+          "event": "public_file_read",
+          "matches_fixture": true,
+          "name": "forge-offline-live.dat",
+          "phase": "live-read"
+        },
+        {
+          "deleted_file_on_disk": false,
+          "deleted_file_visible": false,
+          "direct_read_matches": true,
+          "event": "live_final_state",
+          "file_count": 1,
+          "phase": "live-read"
+        },
+        {
+          "event": "local_file_change_count",
+          "value": 0,
+          "phase": "live-read"
+        },
+        {
+          "callbacks": [],
+          "event": "post_mutation_callbacks",
+          "phase": "live-read"
+        },
+        {
+          "event": "fixture_native_index",
+          "vdf": "\"480\"\n{\n\t\"ChangeNumber\"\t\t\"0\"\n\t\"OSType\"\t\t\"-102\"\n\t\"forge-offline-probe.dat\"\n\t{\n\t\t\"root\"\t\t\"0\"\n\t\t\"size\"\t\t\"56\"\n\t\t\"localtime\"\t\t\"1789811640\"\n\t\t\"time\"\t\t\"1789811640\"\n\t\t\"remotetime\"\t\t\"0\"\n\t\t\"sha\"\t\t\"bd8f4fcb8d3ed72a2528e880e879697129768fa3\"\n\t\t\"syncstate\"\t\t\"3\"\n\t\t\"persiststate\"\t\t\"2\"\n\t\t\"platformstosync2\"\t\t\"-1\"\n\t}\n\t\"forge-offline-live.dat\"\n\t{\n\t\t\"root\"\t\t\"0\"\n\t\t\"size\"\t\t\"56\"\n\t\t\"localtime\"\t\t\"1789811640\"\n\t\t\"time\"\t\t\"1789811640\"\n\t\t\"remotetime\"\t\t\"0\"\n\t\t\"sha\"\t\t\"bd8f4fcb8d3ed72a2528e880e879697129768fa3\"\n\t\t\"syncstate\"\t\t\"3\"\n\t\t\"persiststate\"\t\t\"0\"\n\t\t\"platformstosync2\"\t\t\"-1\"\n\t}\n}\n",
+          "phase": "live-read"
+        }
+      ],
+      "phases": [
+        {
+          "phase": "live-mutate",
+          "exit_code": 0
+        },
+        {
+          "phase": "live-read",
+          "exit_code": 0
+        }
+      ],
+      "stderr_present": false,
+      "timeout": false,
+      "elapsed_seconds": 12.937,
+      "synthetic_appinfo": true,
+      "synthetic_identity_requested": true,
+      "synthetic_cache": false,
+      "runtime_version": "1788652215",
+      "authenticated": false,
+      "external_network": "denied by sandbox",
+      "real_home_reads": "denied by sandbox",
+      "scratch": "<scratch>",
+      "source_sha256": {
+        "crates/steam-native/examples/cloud_storage_probe.rs": "5d8cdd453571d887a923970417b4fed96363a872d2144422a2a48e015dc0528a",
+        "crates/steam-native/examples/cloud_storage_probe/live_storage.rs": "eeac0f2f5088d6cbd61c73553442fc9cceceb9bec2d6aa8f9528759f76842d0a",
+        "crates/steam-native/examples/cloud_storage_probe/sync_controls.rs": "ef26776cf0f36d3d974fe958da29c892e00f37f7eb50057f18fe9d9897fb9589",
+        "scripts/probe-steam-cloud.py": "050e9635254ae8a733814b495707bf43eca93130578935904887c93fbbda6c1e",
+        "crates/steam-runtime/runtime-manifest.json": "a1d546376b92ab4148549332f1884e0f570471bcd39a2b6ea942cd1b6464cab7"
+      },
+      "native_cache_observations": [
+        "[2026-09-19 11:53:58] [AppID 480] Starting sync (init,)",
+        "[2026-09-19 11:53:58] [U:1:1] [AppID 480] Init cache request complete",
+        "[2026-09-19 11:53:59] [AppID 480] YldWriteCacheDirectoryToFile - empty vector, deleting '<scratch>/home/Library/Application Support/Steam/userdata/1/480/remotecache.vdf'",
+        "[2026-09-19 11:54:00] [AppID 480] YldWriteCacheDirectoryToFile - saved to '<scratch>/home/Library/Application Support/Steam/userdata/1/480/remotecache.vdf'",
+        "[2026-09-19 11:54:04] [AppID 480] Starting sync (init,)",
+        "[2026-09-19 11:54:04] [U:1:1] [AppID 480] Init cache request complete",
+        "[2026-09-19 11:54:04] [AppID 480] YldWriteCacheDirectoryToFile - saved to '<scratch>/home/Library/Application Support/Steam/userdata/1/480/remotecache.vdf'"
+      ],
+      "fixture": {
+        "bytes": 56,
+        "sha256": "f6d0f3dc8a43444532cb5c7c837cf9b9dec4092a3af9c3af108cdebe089ce736"
+      },
+      "scratch_retained": false
+    },
+    {
+      "mode": "sync-controls",
+      "exit_code": 0,
+      "events": [
+        {
+          "authenticated": false,
+          "event": "client_interface_inventory",
+          "interface": "SteamClient020",
+          "phase": "sync-download"
+        },
+        {
+          "event": "fixture_identity_requested",
+          "result": 5,
+          "phase": "sync-download"
+        },
+        {
+          "connected": false,
+          "event": "global_user",
+          "logged_on": false,
+          "pipe": 1,
+          "user": 1,
+          "phase": "sync-download"
+        },
+        {
+          "account_id_is_zero": false,
+          "account_type": 1,
+          "event": "identity",
+          "instance": 1,
+          "is_zero": false,
+          "universe": 1,
+          "phase": "sync-download"
+        },
+        {
+          "event": "storage_interface_inventory",
+          "interface": "IClientRemoteStorage",
+          "phase": "sync-download"
+        },
+        {
+          "event": "storage_interface_inventory",
+          "interface": "ISteamRemoteStorage016",
+          "phase": "sync-download"
+        },
+        {
+          "accepted": true,
+          "direction": 1,
+          "event": "sync_request",
+          "options": 0,
+          "phase": "sync-download"
+        },
+        {
+          "event": "sync_in_progress",
+          "value": false,
+          "phase": "sync-download"
+        },
+        {
+          "event": "sync_callback",
+          "id": 1040011,
+          "raw_u32": null,
+          "size": 260,
+          "phase": "sync-download"
+        },
+        {
+          "event": "sync_callback",
+          "id": 1040011,
+          "raw_u32": null,
+          "size": 260,
+          "phase": "sync-download"
+        },
+        {
+          "event": "sync_callback",
+          "id": 1040011,
+          "raw_u32": null,
+          "size": 260,
+          "phase": "sync-download"
+        },
+        {
+          "event": "sync_callback",
+          "id": 1260019,
+          "raw_u32": null,
+          "size": 260,
+          "phase": "sync-download"
+        },
+        {
+          "event": "sync_callback",
+          "id": 1260013,
+          "raw_u32": null,
+          "size": 1,
+          "phase": "sync-download"
+        },
+        {
+          "event": "sync_callback",
+          "id": 1060046,
+          "raw_u32": null,
+          "size": 1,
+          "phase": "sync-download"
+        },
+        {
+          "event": "sync_callback",
+          "id": 1040021,
+          "raw_u32": null,
+          "size": 1,
+          "phase": "sync-download"
+        },
+        {
+          "event": "sync_callback",
+          "id": 1010055,
+          "raw_u32": null,
+          "size": 1,
+          "phase": "sync-download"
+        },
+        {
+          "event": "sync_callback",
+          "id": 1270022,
+          "raw_u32": null,
+          "size": 1,
+          "phase": "sync-download"
+        },
+        {
+          "event": "sync_callback",
+          "id": 1040043,
+          "raw_u32": null,
+          "size": 16,
+          "phase": "sync-download"
+        },
+        {
+          "event": "sync_callback",
+          "id": 1250004,
+          "raw_u32": null,
+          "size": 8,
+          "phase": "sync-download"
+        },
+        {
+          "event": "sync_callback",
+          "id": 1270036,
+          "raw_u32": null,
+          "size": 1,
+          "phase": "sync-download"
+        },
+        {
+          "event": "sync_callback",
+          "id": 1250001,
+          "raw_u32": [
+            480,
+            21,
+            0
+          ],
+          "size": 12,
+          "phase": "sync-download"
+        },
+        {
+          "callback_observed": true,
+          "event": "offline_sync_observation",
+          "idle": true,
+          "milliseconds": 160,
+          "result_word": 21,
+          "phase": "sync-download"
+        },
+        {
+          "authenticated": false,
+          "event": "client_interface_inventory",
+          "interface": "SteamClient020",
+          "phase": "sync-upload"
+        },
+        {
+          "event": "fixture_identity_requested",
+          "result": 5,
+          "phase": "sync-upload"
+        },
+        {
+          "connected": false,
+          "event": "global_user",
+          "logged_on": false,
+          "pipe": 1,
+          "user": 1,
+          "phase": "sync-upload"
+        },
+        {
+          "account_id_is_zero": false,
+          "account_type": 1,
+          "event": "identity",
+          "instance": 1,
+          "is_zero": false,
+          "universe": 1,
+          "phase": "sync-upload"
+        },
+        {
+          "event": "storage_interface_inventory",
+          "interface": "IClientRemoteStorage",
+          "phase": "sync-upload"
+        },
+        {
+          "event": "storage_interface_inventory",
+          "interface": "ISteamRemoteStorage016",
+          "phase": "sync-upload"
+        },
+        {
+          "accepted": true,
+          "direction": 2,
+          "event": "sync_request",
+          "options": 0,
+          "phase": "sync-upload"
+        },
+        {
+          "event": "sync_in_progress",
+          "value": false,
+          "phase": "sync-upload"
+        },
+        {
+          "event": "sync_callback",
+          "id": 1040043,
+          "raw_u32": null,
+          "size": 16,
+          "phase": "sync-upload"
+        },
+        {
+          "event": "sync_callback",
+          "id": 1040011,
+          "raw_u32": null,
+          "size": 260,
+          "phase": "sync-upload"
+        },
+        {
+          "event": "sync_callback",
+          "id": 1040011,
+          "raw_u32": null,
+          "size": 260,
+          "phase": "sync-upload"
+        },
+        {
+          "event": "sync_callback",
+          "id": 1040011,
+          "raw_u32": null,
+          "size": 260,
+          "phase": "sync-upload"
+        },
+        {
+          "event": "sync_callback",
+          "id": 1260019,
+          "raw_u32": null,
+          "size": 260,
+          "phase": "sync-upload"
+        },
+        {
+          "event": "sync_callback",
+          "id": 1260013,
+          "raw_u32": null,
+          "size": 1,
+          "phase": "sync-upload"
+        },
+        {
+          "event": "sync_callback",
+          "id": 1060046,
+          "raw_u32": null,
+          "size": 1,
+          "phase": "sync-upload"
+        },
+        {
+          "event": "sync_callback",
+          "id": 1040021,
+          "raw_u32": null,
+          "size": 1,
+          "phase": "sync-upload"
+        },
+        {
+          "event": "sync_callback",
+          "id": 1010055,
+          "raw_u32": null,
+          "size": 1,
+          "phase": "sync-upload"
+        },
+        {
+          "event": "sync_callback",
+          "id": 1270022,
+          "raw_u32": null,
+          "size": 1,
+          "phase": "sync-upload"
+        },
+        {
+          "event": "sync_callback",
+          "id": 1040043,
+          "raw_u32": null,
+          "size": 16,
+          "phase": "sync-upload"
+        },
+        {
+          "event": "sync_callback",
+          "id": 1250004,
+          "raw_u32": null,
+          "size": 8,
+          "phase": "sync-upload"
+        },
+        {
+          "event": "sync_callback",
+          "id": 1250002,
+          "raw_u32": [
+            480,
+            21,
+            0
+          ],
+          "size": 12,
+          "phase": "sync-upload"
+        },
+        {
+          "callback_observed": true,
+          "event": "offline_sync_observation",
+          "idle": true,
+          "milliseconds": 167,
+          "result_word": 21,
+          "phase": "sync-upload"
+        },
+        {
+          "authenticated": false,
+          "event": "client_interface_inventory",
+          "interface": "SteamClient020",
+          "phase": "sync-cancel"
+        },
+        {
+          "event": "fixture_identity_requested",
+          "result": 5,
+          "phase": "sync-cancel"
+        },
+        {
+          "connected": false,
+          "event": "global_user",
+          "logged_on": false,
+          "pipe": 1,
+          "user": 1,
+          "phase": "sync-cancel"
+        },
+        {
+          "account_id_is_zero": false,
+          "account_type": 1,
+          "event": "identity",
+          "instance": 1,
+          "is_zero": false,
+          "universe": 1,
+          "phase": "sync-cancel"
+        },
+        {
+          "event": "storage_interface_inventory",
+          "interface": "IClientRemoteStorage",
+          "phase": "sync-cancel"
+        },
+        {
+          "event": "storage_interface_inventory",
+          "interface": "ISteamRemoteStorage016",
+          "phase": "sync-cancel"
+        },
+        {
+          "accepted": true,
+          "direction": 1,
+          "event": "sync_request",
+          "options": 0,
+          "phase": "sync-cancel"
+        },
+        {
+          "event": "sync_cancel_requested",
+          "phase": "sync-cancel"
+        },
+        {
+          "event": "sync_in_progress",
+          "value": false,
+          "phase": "sync-cancel"
+        },
+        {
+          "event": "sync_callback",
+          "id": 1040043,
+          "raw_u32": null,
+          "size": 16,
+          "phase": "sync-cancel"
+        },
+        {
+          "event": "sync_callback",
+          "id": 1040011,
+          "raw_u32": null,
+          "size": 260,
+          "phase": "sync-cancel"
+        },
+        {
+          "event": "sync_callback",
+          "id": 1040011,
+          "raw_u32": null,
+          "size": 260,
+          "phase": "sync-cancel"
+        },
+        {
+          "event": "sync_callback",
+          "id": 1040011,
+          "raw_u32": null,
+          "size": 260,
+          "phase": "sync-cancel"
+        },
+        {
+          "event": "sync_callback",
+          "id": 1260019,
+          "raw_u32": null,
+          "size": 260,
+          "phase": "sync-cancel"
+        },
+        {
+          "event": "sync_callback",
+          "id": 1260013,
+          "raw_u32": null,
+          "size": 1,
+          "phase": "sync-cancel"
+        },
+        {
+          "event": "sync_callback",
+          "id": 1060046,
+          "raw_u32": null,
+          "size": 1,
+          "phase": "sync-cancel"
+        },
+        {
+          "event": "sync_callback",
+          "id": 1040021,
+          "raw_u32": null,
+          "size": 1,
+          "phase": "sync-cancel"
+        },
+        {
+          "event": "sync_callback",
+          "id": 1010055,
+          "raw_u32": null,
+          "size": 1,
+          "phase": "sync-cancel"
+        },
+        {
+          "event": "sync_callback",
+          "id": 1270022,
+          "raw_u32": null,
+          "size": 1,
+          "phase": "sync-cancel"
+        },
+        {
+          "event": "sync_callback",
+          "id": 1250004,
+          "raw_u32": null,
+          "size": 8,
+          "phase": "sync-cancel"
+        },
+        {
+          "event": "sync_callback",
+          "id": 1040043,
+          "raw_u32": null,
+          "size": 16,
+          "phase": "sync-cancel"
+        },
+        {
+          "event": "sync_callback",
+          "id": 1250001,
+          "raw_u32": [
+            480,
+            21,
+            0
+          ],
+          "size": 12,
+          "phase": "sync-cancel"
+        },
+        {
+          "callback_observed": true,
+          "event": "offline_sync_observation",
+          "idle": true,
+          "milliseconds": 170,
+          "result_word": 21,
+          "phase": "sync-cancel"
+        }
+      ],
+      "phases": [
+        {
+          "phase": "sync-download",
+          "exit_code": 0
+        },
+        {
+          "phase": "sync-upload",
+          "exit_code": 0
+        },
+        {
+          "phase": "sync-cancel",
+          "exit_code": 0
+        }
+      ],
+      "stderr_present": false,
+      "timeout": false,
+      "elapsed_seconds": 11.626,
+      "synthetic_appinfo": true,
+      "synthetic_identity_requested": true,
+      "synthetic_cache": false,
+      "runtime_version": "1788652215",
+      "authenticated": false,
+      "external_network": "denied by sandbox",
+      "real_home_reads": "denied by sandbox",
+      "scratch": "<scratch>",
+      "source_sha256": {
+        "crates/steam-native/examples/cloud_storage_probe.rs": "5d8cdd453571d887a923970417b4fed96363a872d2144422a2a48e015dc0528a",
+        "crates/steam-native/examples/cloud_storage_probe/live_storage.rs": "eeac0f2f5088d6cbd61c73553442fc9cceceb9bec2d6aa8f9528759f76842d0a",
+        "crates/steam-native/examples/cloud_storage_probe/sync_controls.rs": "ef26776cf0f36d3d974fe958da29c892e00f37f7eb50057f18fe9d9897fb9589",
+        "scripts/probe-steam-cloud.py": "050e9635254ae8a733814b495707bf43eca93130578935904887c93fbbda6c1e",
+        "crates/steam-runtime/runtime-manifest.json": "a1d546376b92ab4148549332f1884e0f570471bcd39a2b6ea942cd1b6464cab7"
+      },
+      "native_cache_observations": [
+        "[2026-09-19 11:53:58] [AppID 480] Starting sync (down,)",
+        "[2026-09-19 11:53:58] [AppID 480] Failed sync for 'down,' [login=false][offlineMode=false]",
+        "[2026-09-19 11:53:58] [AppID 480] YldWriteCacheDirectoryToFile - empty vector, deleting '<scratch>/home/Library/Application Support/Steam/userdata/1/480/remotecache.vdf'",
+        "[2026-09-19 11:54:02] [AppID 480] Starting sync (up,)",
+        "[2026-09-19 11:54:02] [AppID 480] Failed sync for 'up,' [login=false][offlineMode=false]",
+        "[2026-09-19 11:54:02] [AppID 480] YldWriteCacheDirectoryToFile - empty vector, deleting '<scratch>/home/Library/Application Support/Steam/userdata/1/480/remotecache.vdf'",
+        "[2026-09-19 11:54:05] [AppID 480] Starting sync (down,)",
+        "[2026-09-19 11:54:05] [AppID 480] Failed sync for 'down,' [login=false][offlineMode=false]",
+        "[2026-09-19 11:54:06] [AppID 480] YldWriteCacheDirectoryToFile - empty vector, deleting '<scratch>/home/Library/Application Support/Steam/userdata/1/480/remotecache.vdf'"
+      ],
+      "scratch_retained": false
+    },
+    {
+      "mode": "local-storage",
+      "exit_code": 0,
+      "events": [
+        {
+          "authenticated": false,
+          "event": "client_interface_inventory",
+          "interface": "SteamClient020",
+          "phase": "local-write"
+        },
+        {
+          "event": "fixture_identity_requested",
+          "result": 5,
+          "phase": "local-write"
+        },
+        {
+          "connected": false,
+          "event": "global_user",
+          "logged_on": false,
+          "pipe": 1,
+          "user": 1,
+          "phase": "local-write"
+        },
+        {
+          "account_id_is_zero": false,
+          "account_type": 1,
+          "event": "identity",
+          "instance": 1,
+          "is_zero": false,
+          "universe": 1,
+          "phase": "local-write"
+        },
+        {
+          "event": "storage_interface_inventory",
+          "interface": "IClientRemoteStorage",
+          "phase": "local-write"
+        },
+        {
+          "event": "storage_interface_inventory",
+          "interface": "ISteamRemoteStorage016",
+          "phase": "local-write"
+        },
+        {
+          "available": 1048576,
+          "event": "quota",
+          "known": true,
+          "total": 1048576,
+          "phase": "local-write"
+        },
+        {
+          "event": "sync_state",
+          "value": 8,
+          "phase": "local-write"
+        },
+        {
+          "app_id": 480,
+          "event": "resolve_path",
+          "path": "<scratch>/home/Library/Application Support/Steam/userdata/1/480/remote/forge-offline-probe.dat",
+          "resolved": true,
+          "root": 0,
+          "phase": "local-write"
+        },
+        {
+          "event": "cache_load_requested",
+          "phase": "local-write"
+        },
+        {
+          "callbacks": 18,
+          "event": "cache_observation_window",
+          "milliseconds": 2000,
+          "phase": "local-write"
+        },
+        {
+          "accepted": true,
+          "event": "file_write",
+          "result": 1,
+          "phase": "local-write"
+        },
+        {
+          "event": "local_cache_checkpoint",
+          "fixture_record_present": true,
+          "wait_milliseconds": 58,
+          "phase": "local-write"
+        },
+        {
+          "event": "file_count",
+          "value": 1,
+          "phase": "local-write"
+        },
+        {
+          "bytes": 39,
+          "event": "file_read",
+          "matches_fixture": true,
+          "name": "forge-offline-probe.dat",
+          "phase": "local-write"
+        },
+        {
+          "authenticated": false,
+          "event": "client_interface_inventory",
+          "interface": "SteamClient020",
+          "phase": "local-read"
+        },
+        {
+          "event": "fixture_identity_requested",
+          "result": 5,
+          "phase": "local-read"
+        },
+        {
+          "connected": false,
+          "event": "global_user",
+          "logged_on": false,
+          "pipe": 1,
+          "user": 1,
+          "phase": "local-read"
+        },
+        {
+          "account_id_is_zero": false,
+          "account_type": 1,
+          "event": "identity",
+          "instance": 1,
+          "is_zero": false,
+          "universe": 1,
+          "phase": "local-read"
+        },
+        {
+          "event": "storage_interface_inventory",
+          "interface": "IClientRemoteStorage",
+          "phase": "local-read"
+        },
+        {
+          "event": "storage_interface_inventory",
+          "interface": "ISteamRemoteStorage016",
+          "phase": "local-read"
+        },
+        {
+          "available": 1048576,
+          "event": "quota",
+          "known": true,
+          "total": 1048576,
+          "phase": "local-read"
+        },
+        {
+          "event": "sync_state",
+          "value": 8,
+          "phase": "local-read"
+        },
+        {
+          "app_id": 480,
+          "event": "resolve_path",
+          "path": "<scratch>/home/Library/Application Support/Steam/userdata/1/480/remote/forge-offline-probe.dat",
+          "resolved": true,
+          "root": 0,
+          "phase": "local-read"
+        },
+        {
+          "bytes": 39,
+          "event": "direct_file_read",
+          "matches_fixture": true,
+          "phase": "local-read"
+        },
+        {
+          "event": "cache_load_requested",
+          "phase": "local-read"
+        },
+        {
+          "callbacks": 18,
+          "event": "cache_observation_window",
+          "milliseconds": 2000,
+          "phase": "local-read"
+        },
+        {
+          "event": "file_count",
+          "value": 1,
+          "phase": "local-read"
+        },
+        {
+          "bytes": 39,
+          "event": "file_read",
+          "matches_fixture": true,
+          "name": "forge-offline-probe.dat",
+          "phase": "local-read"
+        }
+      ],
+      "phases": [
+        {
+          "phase": "local-write",
+          "exit_code": 0
+        },
+        {
+          "phase": "local-read",
+          "exit_code": 0
+        }
+      ],
+      "stderr_present": false,
+      "timeout": false,
+      "elapsed_seconds": 11.898,
+      "synthetic_appinfo": true,
+      "synthetic_identity_requested": true,
+      "synthetic_cache": false,
+      "runtime_version": "1788652215",
+      "authenticated": false,
+      "external_network": "denied by sandbox",
+      "real_home_reads": "denied by sandbox",
+      "scratch": "<scratch>",
+      "source_sha256": {
+        "crates/steam-native/examples/cloud_storage_probe.rs": "5d8cdd453571d887a923970417b4fed96363a872d2144422a2a48e015dc0528a",
+        "crates/steam-native/examples/cloud_storage_probe/live_storage.rs": "eeac0f2f5088d6cbd61c73553442fc9cceceb9bec2d6aa8f9528759f76842d0a",
+        "crates/steam-native/examples/cloud_storage_probe/sync_controls.rs": "ef26776cf0f36d3d974fe958da29c892e00f37f7eb50057f18fe9d9897fb9589",
+        "scripts/probe-steam-cloud.py": "050e9635254ae8a733814b495707bf43eca93130578935904887c93fbbda6c1e",
+        "crates/steam-runtime/runtime-manifest.json": "a1d546376b92ab4148549332f1884e0f570471bcd39a2b6ea942cd1b6464cab7"
+      },
+      "native_cache_observations": [
+        "[2026-09-19 11:53:58] [AppID 480] Starting sync (init,)",
+        "[2026-09-19 11:53:58] [U:1:1] [AppID 480] Init cache request complete",
+        "[2026-09-19 11:53:58] [AppID 480] YldWriteCacheDirectoryToFile - empty vector, deleting '<scratch>/home/Library/Application Support/Steam/userdata/1/480/remotecache.vdf'",
+        "[2026-09-19 11:54:00] [AppID 480] YldWriteCacheDirectoryToFile - saved to '<scratch>/home/Library/Application Support/Steam/userdata/1/480/remotecache.vdf'",
+        "[2026-09-19 11:54:04] [AppID 480] Starting sync (init,)",
+        "[2026-09-19 11:54:04] [U:1:1] [AppID 480] Init cache request complete",
+        "[2026-09-19 11:54:04] [AppID 480] YldWriteCacheDirectoryToFile - saved to '<scratch>/home/Library/Application Support/Steam/userdata/1/480/remotecache.vdf'"
+      ],
+      "fixture": {
+        "bytes": 39,
+        "sha256": "c49cc578c123fe8274b04f62dfa436d666208dfd2fe29d36de9952396eb38f3c"
+      },
+      "scratch_retained": false
+    }
+  ],
+  "new_interface_methods": {
+    "IClientUtils": [
+      {
+        "offset": "0x8c9f14",
+        "slot": 0
+      },
+      {
+        "offset": "0x8ca288",
+        "slot": 1
+      },
+      {
+        "offset": "0x8ca5fc",
+        "slot": 2
+      },
+      {
+        "offset": "0x8ca970",
+        "slot": 3
+      },
+      {
+        "offset": "0x8cace4",
+        "slot": 4
+      },
+      {
+        "offset": "0x8cae50",
+        "slot": 5
+      },
+      {
+        "offset": "0x8cafbc",
+        "slot": 6
+      },
+      {
+        "offset": "0x8cb11c",
+        "slot": 7
+      },
+      {
+        "offset": "0x8cb48c",
+        "slot": 8
+      },
+      {
+        "offset": "0x8cb7fc",
+        "slot": 9
+      },
+      {
+        "offset": "0x8cb968",
+        "slot": 10
+      },
+      {
+        "offset": "0x8cbad0",
+        "slot": 11
+      },
+      {
+        "offset": "0x8cbca0",
+        "slot": 12
+      },
+      {
+        "offset": "0x8cbe6c",
+        "slot": 13
+      },
+      {
+        "offset": "0x8cbfd8",
+        "slot": 14
+      },
+      {
+        "offset": "0x8cc144",
+        "slot": 15
+      },
+      {
+        "offset": "0x8cc2fc",
+        "slot": 16
+      },
+      {
+        "offset": "0x8cc45c",
+        "slot": 17
+      },
+      {
+        "offset": "0x8cc5c8",
+        "slot": 18
+      },
+      {
+        "offset": "0x8cc76c",
+        "slot": 19
+      }
+    ]
+  },
+  "limitations": [
+    "Public/private calls share one process; no separate SDK game",
+    "Sync requests fail without login; no remote transfer",
+    "Cancellation may race an already completed offline failure",
+    "No unique request ID in observed completion callback",
+    "No Dynamic game reload or remote baseline acknowledgement",
+    "No autonomous sync suppression established"
+  ]
+}

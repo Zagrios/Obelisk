@@ -1,0 +1,95 @@
+{
+  "recorded_at": "2026-09-19T11:58:08.000305+00:00",
+  "app_id": 1030300,
+  "initial_local_state": {
+    "file_count": 1,
+    "save_files": 0,
+    "only_file": "AppConfig.ini",
+    "sha256": "6ab422646af66a1f2235ce2e054364222dd7045117c7aad01255bd0b35b85a9a"
+  },
+  "authentication": "existing in-app Steam session restored through normal flow",
+  "remote": {
+    "change_before": 52,
+    "change_after": 52,
+    "persisted_files": 18,
+    "raw_bytes": 3806866,
+    "all_download_sha1_and_sizes_verified": true,
+    "independent_backup_readback_verified": true,
+    "quota": {
+      "existing_bytes": 3806866,
+      "existing_files": 18,
+      "max_bytes": 100000000,
+      "max_files": 256
+    }
+  },
+  "local_restore": {
+    "rust_coordinator_used": true,
+    "mapped_from_live_ufs": true,
+    "files_restored": 18,
+    "all_files_independently_read_back": true,
+    "existing_config_preserved": true,
+    "game_stopped_at_apply": true,
+    "all_18_files_still_match_cloud_after_game_exit": true
+  },
+  "game": {
+    "launched_by_forge": true,
+    "pid": 76443,
+    "native_account_confirmed_in_game_log": true,
+    "steam_stats_received": true,
+    "saved_profile_seen_by_user": true,
+    "saved_profile_seen_in_subsequent_screenshot": true,
+    "profile_slot": 1,
+    "profile_play_time_display": "21h02",
+    "saved_world_loaded": false,
+    "exited_after_menu_check": true,
+    "runtime_and_supervisor_exited": true
+  },
+  "remote_mutations": 0,
+  "credentials_or_signed_urls_in_report": false,
+  "not_validated": [
+    "upload",
+    "post-exit Cloud finalization",
+    "remote receive on another device",
+    "native SDK shared storage",
+    "Dynamic sync"
+  ],
+  "source_sha256": {
+    "crates/storefronts/steam-kit/src/cloud.rs": "1abd25e14d632e7ad6d1e6650f4e3ec5dd73ad63fbbaa630358531f6fa38ee7a",
+    "crates/storefronts/steam-kit/src/cloud/read.rs": "877d59bab30f11ca7abb223d3937c78fbc713b9edb903dfcda403e40bfb838c6",
+    "crates/storefronts/steam-kit/src/cloud/paths.rs": "bbd2b0c5dac6133ae06d8f19e07139e4b6e2c31cb54099597aee9f35d4a94e41",
+    "crates/storefronts/steam-kit/src/cloud/wire.rs": "5bb9fa30d91e52d2914368bd23631ce3a9946a2790e666c780c56fb51afc5be9",
+    "crates/storefronts/steam-kit/src/cm/cloud.rs": "e81747a7806f54f2ad3071ff8a24e8ba391f5322528bada9354a52b5c85292c0",
+    "crates/storefronts/steam-kit/src/client/cloud.rs": "18a474c776c3e5ad19fac8a2de58cd0791b0e39bb69e4b756992cd4456247718",
+    "crates/storefronts/steam-kit/examples/restore_cloud_backup.rs": "7281f34021947afefe957cc93d9bae5c1d3faaa9efec7d066dee256903db256e",
+    "crates/forge-bridge/src/steam.rs": "fcf877f10067128b661e87bc767f6c66729a85e1ef3e10a4bd26ac32cf324071",
+    "apps/macos/Forge/Models/SteamModel.swift": "a5eac68c1a7e260b2ba17e64b6da0c76925973cd3c54435e7b756215df11623d",
+    "apps/macos/ForgeTests/SteamSessionTestDefaults.swift": "5d79f1f90424ab92d3d9b58ab846fdfa81c85ae5f27a0c3ba96d40fe275b2610"
+  },
+  "verification": {
+    "focused_cloud_tests": 6,
+    "main_workspace_rust_passed": 300,
+    "native_workspace_rust_passed": 4,
+    "rust_ignored_in_normal_run": 6,
+    "rust_format_and_clippy": "passed",
+    "localization_keys": 519,
+    "swift_initial_compile_failure": "Updated the shared SteamSessionProtocol test default for the new bridge method.",
+    "swift_ui_environment_observation": "The scroller stability test failed twice while Silksong was open, then passed without code changes after the game exited. The full Swift suite was restarted with the game stopped.",
+    "swift_final": {
+      "executed": 209,
+      "skipped": 9,
+      "failures": 0
+    },
+    "signature": "passed",
+    "isolated_runtime": {
+      "passed": 1,
+      "failed": 0,
+      "official_steam_installation_reads_denied": true
+    },
+    "logs_sha256": {
+      "steam-cloud-live-workspace-tests.log": "e5914833b1a788fce3b9548cf1509ff1594e1c849eea4351aa7a04a83313650f",
+      "steam-cloud-live-swift-final.log": "e1bf439533047803b09eed5b2afee44c1258da8e04d4724609524e97da1a539c",
+      "steam-cloud-live-signature.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "steam-cloud-live-isolation.log": "346e02d544030b596f5635706546e656b292f5c80eee57fab481e4910e6216cb"
+    }
+  }
+}

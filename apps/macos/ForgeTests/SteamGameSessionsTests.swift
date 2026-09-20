@@ -4,6 +4,19 @@ import XCTest
 
 final class SteamGameSessionsTests: XCTestCase {
     @MainActor
+    func testCloudProbeReservationExcludesGameLaunchAndInstallationMutations() throws {
+        let sessions = SteamGameSessions(recoverExisting: false)
+        XCTAssertTrue(sessions.reserveCloudProbe())
+        XCTAssertFalse(sessions.reserveCloudProbe())
+        XCTAssertTrue(sessions.protects(42))
+        XCTAssertTrue(sessions.protects(570))
+        assertLaunchRejected(sessions)
+        sessions.finishCloudProbe()
+        XCTAssertFalse(sessions.isBusy)
+        XCTAssertFalse(sessions.protects(42))
+    }
+
+    @MainActor
     func testAdmissionProtectsPreparationSynchronouslyAndFailureNeverStartsOrRecovers() async throws {
         let preparation = GameSessionGate<SteamGameSessions.Launch>()
         var starts = 0
@@ -244,6 +257,101 @@ final class SteamGameSessionsTests: XCTestCase {
     }
 
     @MainActor
+    func testSignOutDuringHandoffRevokesBeforeExposingCloudDecision() async throws {
+        let handoff = GameSessionGate<RecoveredGameFixture>()
+        let game = RecoveredGameFixture(phase: .preparing, cloudPhase: .conflict, decisionID: 17)
+        let sessions = SteamGameSessions(startSession: { _, _ in try await handoff.wait() })
+        let task = try XCTUnwrap(sessions.launch(appId: 42, prepare: { gameLaunch() }))
+        try await eventually { await handoff.requests == 1 }
+
+        try await sessions.revokeCloud(accountId: 42)
+        task.cancel()
+        XCTAssertTrue(sessions.protects(42))
+        await handoff.resolve(game)
+        try await eventually { await game.revocations == [42] }
+        try await eventually { sessions.active?.cloud.phase == .conflict }
+        XCTAssertNil(sessions.cloudPrompt)
+        XCTAssertTrue(sessions.protects(42))
+
+        await game.finish()
+        await task.value
+        XCTAssertFalse(sessions.isBusy)
+        let revocations = await game.revocations
+        XCTAssertEqual(revocations, [42])
+    }
+
+    @MainActor
+    func testCloudChoiceRequiresCurrentAccountAndForwardsCurrentDecision() async throws {
+        let game = RecoveredGameFixture(phase: .preparing, cloudPhase: .conflict, decisionID: 17)
+        let sessions = SteamGameSessions(startSession: { _, _ in game })
+        let task = try XCTUnwrap(sessions.launch(appId: 42, prepare: { gameLaunch() }))
+        try await eventually { sessions.cloudPrompt?.cloud.decisionId == 17 }
+
+        do {
+            try await sessions.chooseCloud(.local, accountId: 99)
+            XCTFail("A different account must not answer the Cloud decision")
+        } catch {}
+        let rejectedChoices = await game.cloudChoices
+        XCTAssertTrue(rejectedChoices.isEmpty)
+
+        try await sessions.chooseCloud(.cloud, accountId: 42)
+        let choices = await game.cloudChoices
+        XCTAssertEqual(choices, [.init(accountID: 42, decisionID: 17, choice: .cloud)])
+        try await sessions.revokeCloud(accountId: 42)
+        do {
+            try await sessions.chooseCloud(.local, accountId: 42)
+            XCTFail("A revoked account must not answer the Cloud decision")
+        } catch {}
+        let choicesAfterSignOut = await game.cloudChoices
+        XCTAssertEqual(choicesAfterSignOut, choices)
+
+        await game.finish()
+        await task.value
+    }
+
+    @MainActor
+    func testCancellingCloudCheckCancelsPreparationWithoutInventingDecision() async throws {
+        let game = RecoveredGameFixture(phase: .preparing, cloudPhase: .checking)
+        let sessions = SteamGameSessions(startSession: { _, _ in game })
+        let task = try XCTUnwrap(sessions.launch(appId: 42, prepare: { gameLaunch() }))
+        try await eventually { sessions.cloudPrompt?.cloud.phase == .checking }
+
+        try await sessions.chooseCloud(.cancel, accountId: 42)
+        try await eventually { await game.cancellations == 1 }
+        let choices = await game.cloudChoices
+        XCTAssertTrue(choices.isEmpty)
+        XCTAssertTrue(sessions.protects(42))
+        await game.finish()
+        await task.value
+    }
+
+    @MainActor
+    func testFinalizingProtectsInstallationUntilFinishedAndRetainsPendingCloudStatus() async throws {
+        let game = RecoveredGameFixture()
+        let sessions = SteamGameSessions(startSession: { _, _ in game })
+        let task = try XCTUnwrap(sessions.launch(appId: 42, prepare: { gameLaunch() }))
+        try await eventually { sessions.active?.running == true }
+        await game.update(phase: .finalizing, cloudPhase: .syncing)
+        try await eventually { sessions.active?.phase == .finalizing }
+
+        XCTAssertTrue(sessions.isBusy)
+        XCTAssertTrue(sessions.protects(42))
+        XCTAssertFalse(sessions.active?.running ?? true)
+        assertLaunchRejected(sessions)
+        XCTAssertNil(sessions.cloudPrompt)
+
+        await game.update(cloudPhase: .pending, cloudError: "backend.steam.cloud.network")
+        await game.finish()
+        await task.value
+        XCTAssertFalse(sessions.isBusy)
+        XCTAssertFalse(sessions.protects(42))
+        var status = SteamGameSessions.CloudStatus()
+        status.phase = .pending
+        status.error = "backend.steam.cloud.network"
+        XCTAssertEqual(sessions.lastCloud, .init(appId: 42, accountId: 42, status: status))
+    }
+
+    @MainActor
     private func assertLaunchRejected(_ sessions: SteamGameSessions, file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertNil(sessions.launch(appId: 570, prepare: {
             XCTFail("A rejected launch must not prepare", file: file, line: line)
@@ -263,26 +371,42 @@ final class SteamGameSessionsTests: XCTestCase {
 
 func gameLaunch(_ appId: UInt32 = 42) -> SteamGameSessions.Launch {
     SteamGameSessions.Launch(
-        plan: SteamLaunchPlan(appId: appId, platform: "macos", target: LaunchTarget(executable: "/fixture/game", arguments: [], workingDirectory: "/fixture", isApplicationBundle: false)),
+        plan: SteamLaunchPlan(appId: appId, platform: "macos", installDirectory: "/fixture", target: LaunchTarget(executable: "/fixture/game", arguments: [], workingDirectory: "/fixture", isApplicationBundle: false)),
         credentials: SteamCredentials(accountName: "Fixture", steamId: 42, refreshToken: "fixture-only-never-sent")
     )
 }
 
 /// Uses the production snapshot interface; tests cannot mutate the session owner.
 actor RecoveredGameFixture: SteamGameSessionProtocol {
+    struct CloudDecision: Equatable, Sendable {
+        let accountID: UInt64
+        let decisionID: UInt64
+        let choice: SteamCloudChoice
+    }
+
     nonisolated let sessionID = UUID().uuidString
     private var current: SteamGameSnapshot
     private var observationFailure = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
     private(set) var cancellations = 0
+    private(set) var revocations: [UInt64] = []
+    private(set) var cloudChoices: [CloudDecision] = []
 
-    init(appID: UInt32 = 42) {
-        current = SteamGameSnapshot(id: sessionID, appId: appID, phase: .running, connection: .connected,
+    init(appID: UInt32 = 42, accountID: UInt64 = 42, phase: SteamGamePhase = .running,
+         cloudPhase: SteamCloudPhase = .idle, decisionID: UInt64 = 0) {
+        current = SteamGameSnapshot(id: sessionID, appId: appID, accountId: accountID, phase: phase,
+                                    cloudPhase: cloudPhase, cloudDecisionId: decisionID, cloudError: nil, cloudDecisionToken: nil, cloudAllowedChoices: [], connection: .connected,
                                     host: .online, exitCode: nil, error: nil, revision: 1)
     }
 
     nonisolated func cancelPreparation() { Task { await recordCancellation() } }
     private func recordCancellation() { cancellations += 1 }
+
+    func chooseCloud(accountId: UInt64, decisionId: UInt64, choice: SteamCloudChoice) async throws {
+        cloudChoices.append(.init(accountID: accountId, decisionID: decisionId, choice: choice))
+    }
+
+    func revokeCloud(accountId: UInt64) async throws { revocations.append(accountId) }
 
     func snapshot(after: UInt64?) async throws -> SteamGameSnapshot {
         try Task.checkCancellation()
@@ -296,18 +420,28 @@ actor RecoveredGameFixture: SteamGameSessionProtocol {
         return current
     }
 
-    func update(host: SteamHostState? = nil, connection: SteamSupervisorConnection? = nil) {
-        current = SteamGameSnapshot(id: current.id, appId: current.appId, phase: current.phase,
-                                    connection: connection ?? current.connection, host: host ?? current.host,
-                                    exitCode: current.exitCode, error: current.error, revision: current.revision + 1)
+    func update(host: SteamHostState? = nil, connection: SteamSupervisorConnection? = nil,
+                phase: SteamGamePhase? = nil, cloudPhase: SteamCloudPhase? = nil, cloudError: String? = nil,
+                decisionToken: String? = nil, allowedChoices: [SteamCloudChoice] = []) {
+        if let host { current.host = host }
+        if let connection { current.connection = connection }
+        if let phase { current.phase = phase }
+        if let cloudPhase { current.cloudPhase = cloudPhase }
+        if let cloudError { current.cloudError = cloudError }
+        current.cloudDecisionToken = decisionToken
+        current.cloudAllowedChoices = allowedChoices
+        current.revision += 1
         wake()
     }
 
     func failObservation() { observationFailure = true; wake() }
 
     func finish(exitCode: Int32 = 0) {
-        current = SteamGameSnapshot(id: current.id, appId: current.appId, phase: .finished, connection: .connected,
-                                    host: current.host, exitCode: exitCode, error: nil, revision: current.revision + 1)
+        current.phase = .finished
+        current.connection = .connected
+        current.exitCode = exitCode
+        current.error = nil
+        current.revision += 1
         wake()
     }
 

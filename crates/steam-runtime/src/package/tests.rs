@@ -10,6 +10,7 @@ impl Fixture {
     fn new() -> Self {
         let root = tempfile::tempdir().unwrap();
         let config = Config {
+            cloud_save_roots: vec![],
             helpers: root.path().join("helpers"),
             package: root.path().join("runtime.zip"),
             cache: root.path().join("cache"),
@@ -302,6 +303,7 @@ fn bundled_runtime_loads_without_steam_installation_access() {
     let bundle = PathBuf::from(std::env::var_os("FORGE_STEAM_BUNDLE").expect("FORGE_STEAM_BUNDLE"));
     let root = tempfile::tempdir().unwrap();
     let config = Config {
+        cloud_save_roots: vec![],
         helpers: bundle.join("Contents/Helpers/SteamNative"),
         package: bundle.join("Contents/Resources/SteamRuntime/runtime.zip"),
         cache: root.path().join("cache"),

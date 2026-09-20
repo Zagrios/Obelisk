@@ -17,11 +17,13 @@ zip = { version = "=8.2.0", default-features = false, features = ["deflate-flate
 # zip pulls flate2 without a backend; this selects rust_backend for the
 # standalone steam-native workspace, where no other crate unifies it in.
 flate2.workspace = true
-reqwest = { workspace = true, optional = true }
-tokio = { workspace = true, optional = true }
+reqwest.workspace = true
+tokio.workspace = true
+steam-kit.workspace = true
+steam-cloud.workspace = true
 
 [features]
-packaging = ["dep:reqwest", "dep:tokio"]
+packaging = []
 
 [[bin]]
 name = "forge-steam-runtime-package"

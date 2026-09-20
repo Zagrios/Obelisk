@@ -56,9 +56,11 @@ fn native_supervisor_acknowledges_and_reports_preparation_failure_without_valve(
     });
     let client = launch
         .start_supervised(Request {
+            cloud: None,
             id: String::new(),
             root: root.0.join("sessions"),
             config: Config {
+                cloud_save_roots: vec![],
                 app_id: 42,
                 helpers: helper.parent().unwrap().into(),
                 package: root.0.join("missing.zip"),

@@ -1,0 +1,65 @@
+{
+  "observed_at": "2026-09-20T11:13:57.228887+00:00",
+  "app_id": 1030300,
+  "scope": "Real Silksong launch, user-produced save, automatic verified upload and user-confirmed Steam Deck recovery after Cloud performance and current-format changes.",
+  "user_confirmations": {
+    "deck_closed_and_cloud_current_before_mac_launch": true,
+    "mac_save_and_normal_game_exit": true,
+    "deck_recovers_mac_progress": true
+  },
+  "build": {
+    "command": "./scripts/run.sh",
+    "exit_code": 0,
+    "log": "build/cloud-retest-run.log"
+  },
+  "before": {
+    "remote_revision": "67",
+    "physical_files": 17,
+    "baseline_mismatches": 0,
+    "pending": false
+  },
+  "prelaunch": {
+    "cloud_phase": "Ready",
+    "remote_revision": "67",
+    "local_save_files_unchanged": true,
+    "game_session_phase": "Running",
+    "synchro_cloud_button_observed": true,
+    "conflict_observed": false
+  },
+  "after": {
+    "remote_revision": "68",
+    "physical_files": 17,
+    "changed_existing_files": 2,
+    "uploads": 2,
+    "deletes": 0,
+    "upload_schema": 3,
+    "upload_phase": "Verified",
+    "unanswered_mutation": false,
+    "staged_upload": false,
+    "baseline_equals_fresh_verified_remote": true,
+    "local_manifest_equals_baseline": true,
+    "physical_file_hash_mismatches": 0,
+    "session_phase": "Finished",
+    "cloud_phase": "Synced",
+    "exit_code": 0,
+    "pending": false,
+    "game_guard": false,
+    "needs_work": false,
+    "game_running": false,
+    "host_running": false,
+    "forge_ui": "Lancer / Sauvegardes Cloud \u00e0 jour"
+  },
+  "limits": [
+    "The Steam Deck result is the user report; the agent did not inspect the Deck filesystem.",
+    "No changed remote bytes were needed during this Mac preflight.",
+    "This normal lifecycle does not revalidate conflict, offline, interrupted transfer, lost confirmation, SDK/FileShare or Dynamic Cloud.",
+    "No before/after performance benchmark was run."
+  ],
+  "source_sha256": {
+    "crates/steam-runtime/src/cloud/session.rs": "70ca4881e5dd6c2b502bd6a4def14298f0f0065ee7425037a8f01844d9e9b5dd",
+    "crates/storefronts/steam-kit/src/cloud/downloads.rs": "1f125782687824d49befb4bd90b4b025531bbe29fad8e13fce7e48d3f6843b9d",
+    "crates/storefronts/steam-kit/src/cloud/upload.rs": "e50f8a8abf5f6084f060c506394d37d41090ef00984221c5893befad5d747e73",
+    "crates/steam-cloud/src/vault.rs": "7c58671bd506d84615bfac7c182da385321a1dbda9e8a8f4915ab784b14acd40"
+  },
+  "private_backup_pointer": "build/cloud-retest-root.txt"
+}

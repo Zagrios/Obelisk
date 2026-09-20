@@ -1,0 +1,73 @@
+{
+  "date": "2026-09-19",
+  "operation": "disposable_cloud_upload_readback_delete",
+  "status": "verified",
+  "app_id": 1030300,
+  "remote": {
+    "before_revision": 52,
+    "uploaded_revision": 53,
+    "cleaned_revision": 54,
+    "original_file_count": 18,
+    "original_remote_contents_preserved": true,
+    "fixture_removed": true
+  },
+  "preferences": {
+    "account_enabled": true,
+    "game_enabled": true,
+    "revision": 241
+  },
+  "local": {
+    "file_count": 18,
+    "bytes": 3806866,
+    "sha256_unchanged": true,
+    "scanner_selected": 18,
+    "scanner_matches_remote": 18
+  },
+  "transactions": [
+    "Verified",
+    "Verified"
+  ],
+  "runtime_running_during_transfer": false,
+  "normal_launch_sync_active": false,
+  "verification": {
+    "full_script": "build/steam-cloud-transfer-tests.log",
+    "full_main_workspace_passed": 313,
+    "full_native_workspace_passed": 4,
+    "full_swift_total": 210,
+    "full_swift_skipped": 9,
+    "full_swift_failed": 0,
+    "full_runtime_isolation_passed": 1,
+    "later_build": "build/steam-cloud-transfer-build.log",
+    "final_steam_kit_all_targets": "build/steam-cloud-transfer-final-rust.log",
+    "final_steam_kit_passed": 95,
+    "final_steam_kit_ignored": 5,
+    "clippy": "steam-kit all targets and native Cloud probe passed with -D warnings",
+    "final_build": "build/steam-cloud-transfer-build-final.log",
+    "native_local_storage_regression": "build/steam-cloud-local-regression.log"
+  },
+  "limits": [
+    "No product prelaunch or postexit Cloud lifecycle",
+    "No detached upload or pending-work recovery validation",
+    "Ambiguous batches are blocked rather than automatically resent",
+    "Metadata subset only; foreign-platform collisions and tombstones fail closed",
+    "No account-switch projection or save history UI",
+    "No general native transfer exclusion or Dynamic validation"
+  ],
+  "source_sha256_at_evidence_write": {
+    "crates/storefronts/steam-kit/src/cloud.rs": "995dedb58c48742849ef9f27a4cfbb1ecce52b1fadc87c41e1cad47ab27ae5db",
+    "crates/storefronts/steam-kit/src/cloud/paths.rs": "2f97db83b7071d30f94577fcb2b09d683fa6a13b2764a3d4b62e2e249a01d24c",
+    "crates/storefronts/steam-kit/src/cloud/preferences.rs": "b830b99abdf21805ec3eaee838535315b5c981a1f3455927127ca669028f4a6b",
+    "crates/storefronts/steam-kit/src/cloud/upload.rs": "dd35b39d8a59eaef231a91c002a11178d8960d3bc4818915b93d229b0763b05f",
+    "crates/storefronts/steam-kit/src/cloud/upload/tests.rs": "a1afbbcad4f8d2d4c6c7a157e5c9658fa7ad056e4514c88db50b1b50439949d5",
+    "crates/storefronts/steam-kit/src/cloud/wire.rs": "c60d1936f413e126933171ddb5fefdf3ad8b1137d5f059d149541d97989ed2ca",
+    "crates/storefronts/steam-kit/src/cm/cloud.rs": "1978a394eea5c0b41dbfd613b5383ecead0b421edd5c6cde1be5f4d228479c19",
+    "crates/storefronts/steam-kit/src/client/cloud.rs": "200c92e6b8e43283f3eb36ab6e3113224e34241960cb7943bb4da80faa941c9c",
+    "crates/storefronts/steam-kit/src/client.rs": "2b67c90f618d672b1965a2b28d1a2820dbdad42022cd17668a334f592c864f40",
+    "crates/forge-bridge/src/steam.rs": "64a4ba9c1620bbf2f3ac30e0243dd4141a5a051c4761e8f813171cf2d0d4209f",
+    "apps/macos/Forge/Models/SteamModel.swift": "747c58b6fcdd29a610a377b36bc660966c25f69c6204fc7339c59db914016a91",
+    "apps/macos/Forge/Models/SteamGameSessions.swift": "fe4e5abde4331ca10a6cffa572543a22b46bc3dce7c0bd800f606a4b2a49193e",
+    "apps/macos/ForgeTests/SteamGameSessionsTests.swift": "0d039ca295f3ef37d9cc694c9414220241b11521c21895aab221d7a12960bd9d",
+    "crates/storefronts/steam-kit/examples/inspect_cloud_saves.rs": "ea76ba6b8886056d694b659eebeb4543a0969843d905c636fa6be3764b663165"
+  },
+  "source_note": "Upload probe preceded the final scanner collision regression and diagnostic SDK fixture; final source fingerprints are recorded here separately from the validation chronology."
+}

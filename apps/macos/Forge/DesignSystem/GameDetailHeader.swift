@@ -11,6 +11,7 @@ struct GameManagementButton: View {
             Button(L10n.string("ui.game.uninstall"), systemImage: "trash", role: .destructive) {
                 confirmsUninstall = true
             }
+            .disabled(!isAvailable)
         } label: {
             Image(systemName: "gearshape.fill")
                 .font(.system(size: 18, weight: .semibold))

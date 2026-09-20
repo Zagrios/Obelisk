@@ -8937,6 +8937,331 @@
           }
         }
       }
+    },
+    "ui.steam.cloud.working": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Synchronizing saves…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Synchronisation des sauvegardes…"
+          }
+        }
+      }
+    },
+    "ui.steam.cloud.choose_local": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use the local version"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utiliser la version locale"
+          }
+        }
+      }
+    },
+    "ui.steam.cloud.choose_cloud": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use the Cloud version"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utiliser la version Cloud"
+          }
+        }
+      }
+    },
+    "ui.steam.cloud.launch_anyway": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Launch anyway"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lancer quand même"
+          }
+        }
+      }
+    },
+    "ui.steam.cloud.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam Cloud"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam Cloud"
+          }
+        }
+      }
+    },
+    "ui.steam.cloud.pending": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cloud synchronization pending"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Synchronisation Cloud en attente"
+          }
+        }
+      }
+    },
+    "ui.steam.cloud.synced": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cloud saves up to date"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sauvegardes Cloud à jour"
+          }
+        }
+      }
+    },
+    "ui.steam.cloud.disabled": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cloud synchronization disabled"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Synchronisation Cloud désactivée"
+          }
+        }
+      }
+    },
+    "backend.steam.cloud.network": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam Cloud is unreachable. Your local saves are preserved."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam Cloud est inaccessible. Vos sauvegardes locales sont conservées."
+          }
+        }
+      }
+    },
+    "backend.steam.cloud.authentication": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconnect the account that owns these saves to synchronize them."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconnectez le compte propriétaire de ces sauvegardes pour les synchroniser."
+          }
+        }
+      }
+    },
+    "backend.steam.cloud.preferences": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cloud synchronization is disabled or its preferences could not be verified."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La synchronisation Cloud est désactivée ou ses préférences n’ont pas pu être vérifiées."
+          }
+        }
+      }
+    },
+    "backend.steam.cloud.unsupported": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This game’s Cloud save rules are not supported yet."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les règles de sauvegarde Cloud de ce jeu ne sont pas encore prises en charge."
+          }
+        }
+      }
+    },
+    "backend.steam.cloud.conflict": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The local and Cloud saves have both changed. Choose which version to use."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les sauvegardes locales et Cloud ont toutes deux changé. Choisissez la version à utiliser."
+          }
+        }
+      }
+    },
+    "backend.steam.cloud.storage": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The saves could not be safely archived or verified."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les sauvegardes n’ont pas pu être archivées ou vérifiées en toute sécurité."
+          }
+        }
+      }
+    },
+    "backend.steam.cloud.ownership": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "These local saves belong to another account and could not be safely switched."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ces sauvegardes locales appartiennent à un autre compte et n’ont pas pu être échangées en toute sécurité."
+          }
+        }
+      }
+    },
+    "backend.steam.cloud.recovery": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "An interrupted save operation needs recovery before continuing."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Une opération de sauvegarde interrompue doit être récupérée avant de continuer."
+          }
+        }
+      }
+    },
+    "backend.steam.cloud.uncertain": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cloud synchronization failed. Your local saves are preserved. Forge will try again at the next launch."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La synchronisation Cloud a échoué. Vos sauvegardes locales sont conservées. Forge réessaiera au prochain lancement."
+          }
+        }
+      }
+    },
+    "backend.steam.cloud.changed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The saves changed after the last comparison. Retry to compare the current versions."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les sauvegardes ont changé depuis la dernière comparaison. Réessayez pour comparer les versions actuelles."
+          }
+        }
+      }
+    },
+    "backend.steam.cloud.quota": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam cannot accept these saves now. Free up Cloud space or retry later."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam ne peut pas accepter ces sauvegardes pour le moment. Libérez de l’espace Cloud ou réessayez plus tard."
+          }
+        }
+      }
+    },
+    "ui.steam.cloud.sync_short": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cloud Sync"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Synchro Cloud"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

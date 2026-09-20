@@ -3,6 +3,7 @@
 
 pub mod auth;
 pub mod client;
+pub mod cloud;
 pub mod cm;
 pub mod content;
 pub mod friends;

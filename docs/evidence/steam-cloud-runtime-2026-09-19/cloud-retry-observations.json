@@ -1,0 +1,58 @@
+{
+  "observed_at": "2026-09-19T20:48:06.244376+00:00",
+  "policy": "After a failed upload, read a fresh complete verified Cloud view and compare again. Do not permanently block solely on a missing server receipt.",
+  "user_authorized_gamenative_style_retry": true,
+  "automatic_attempt_limit": 3,
+  "retry_delays_seconds": [
+    1,
+    2
+  ],
+  "total_budget_seconds": 120,
+  "retains_old_transaction_without_marking_it_successful": true,
+  "pending_exit_upload_before_next_game_launch": true,
+  "verified_cases": [
+    "lost batch admission or file mutation receipt after reopen",
+    "lost batch closure receipt",
+    "unchanged Cloud admits a new attempt",
+    "identical remote content converges",
+    "remote divergence requires explicit choice",
+    "Cloud choice does not reupload old local data",
+    "deletion retry",
+    "late local completion is stale",
+    "authorization, preferences, game and content guards",
+    "explicit local intent retained",
+    "strict response checks retained"
+  ],
+  "validation": {
+    "command": "./scripts/test.sh",
+    "exit_code": 0,
+    "main_workspace_rust_passed": 369,
+    "native_rust_passed": 4,
+    "swift_executed": 220,
+    "swift_skipped": 9,
+    "swift_failures": 0,
+    "bundled_runtime_isolation_passed": true,
+    "formatting_passed": true,
+    "strict_clippy_passed": true,
+    "localization_keys": 539,
+    "app_signatures_passed": true,
+    "log": "build/cloud-retry-suite.log"
+  },
+  "evidence_scope": "Automated synthetic journals and local fixtures. No authenticated missing-receipt trial or new real-game run. This policy does not prove server cancellation of an earlier operation.",
+  "source_sha256": {
+    "crates/steam-cloud/src/retry.rs": "20817939f61e7857b73d67f65aff97f9d4adf53c5b69d4dd114e9a6409d1fd68",
+    "crates/steam-cloud/src/vault.rs": "bc3eeb647d23dca8b667f241fbe4cc01f10b682d98e01e82097afe17fcf3b39b",
+    "crates/steam-cloud/tests/coordinator.rs": "6c6a5b8bbe5a5c61892fd588a92023394d82907a4dee66e39f75aae518347b48",
+    "crates/steam-runtime/src/cloud.rs": "ab1b064dee3e0a423ba3a453b8795759f2adaf4d91e6186a10d1154fc2263607",
+    "crates/steam-runtime/src/cloud/session.rs": "d10627e5bf3861e146f5c355f0e2e1ec9b342452329107eca3af5b8bfbe384e6",
+    "crates/storefronts/steam-kit/src/cloud/upload.rs": "ba80bc00c59aea1b2cdf8ace92634e4d47b551dade43ee8d09602e8805dcb92c",
+    "apps/macos/Forge/Resources/Localizable.xcstrings": "f480a0f9892912d66ad8484b92661368fd3fedbfb0469f5dc908b5c46cf191c1"
+  },
+  "rebuilt_app": {
+    "command": "./scripts/run.sh",
+    "exit_code": 0,
+    "normal_launch_without_diagnostic_arguments": true,
+    "steam_library_and_silksong_launch_button_observed": true,
+    "new_real_game_launch": false
+  }
+}

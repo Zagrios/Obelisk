@@ -1,0 +1,364 @@
+{
+  "date": "2026-09-19",
+  "runtime_version": "1788652215",
+  "steamclient_sha256": "035722a42c74989fa38c7efe0d735fdb38444e1102c92246652b5d913d019840",
+  "scope": "Offline disposable native storage probe; no product Cloud integration",
+  "source_sha256": {
+    "crates/steam-native/examples/cloud_storage_probe.rs": "fcc2588464fdd716e70b35706204a8f1bd5a6e0a95465b02cc9ab5bf7c5675d2",
+    "scripts/probe-steam-cloud.py": "e6bcf58b54bf5bd414be88769af7b1c546886707887239338666a4877ddf0400",
+    "crates/steam-runtime/runtime-manifest.json": "a1d546376b92ab4148549332f1884e0f570471bcd39a2b6ea942cd1b6464cab7"
+  },
+  "runs": [
+    {
+      "mode": "storage-inventory",
+      "exit_code": 0,
+      "events": [
+        {
+          "authenticated": false,
+          "event": "client_interface_inventory",
+          "interface": "SteamClient020",
+          "phase": "storage-inventory"
+        },
+        {
+          "connected": false,
+          "event": "global_user",
+          "logged_on": false,
+          "pipe": 1,
+          "user": 1,
+          "phase": "storage-inventory"
+        },
+        {
+          "account_id_is_zero": true,
+          "account_type": 1,
+          "event": "identity",
+          "instance": 1,
+          "is_zero": false,
+          "universe": 1,
+          "phase": "storage-inventory"
+        },
+        {
+          "event": "storage_interface_inventory",
+          "interface": "IClientRemoteStorage",
+          "phase": "storage-inventory"
+        },
+        {
+          "event": "storage_interface_inventory",
+          "interface": "ISteamRemoteStorage016",
+          "phase": "storage-inventory"
+        }
+      ],
+      "phases": [
+        {
+          "phase": "storage-inventory",
+          "exit_code": 0
+        }
+      ],
+      "stderr_present": false,
+      "timeout": false,
+      "elapsed_seconds": 4.055,
+      "runtime_version": "1788652215",
+      "authenticated": false,
+      "external_network": "denied by sandbox",
+      "real_home_reads": "denied by sandbox",
+      "scratch": "<scratch>",
+      "scratch_retained": false
+    },
+    {
+      "mode": "local-storage",
+      "exit_code": 1,
+      "events": [
+        {
+          "authenticated": false,
+          "event": "client_interface_inventory",
+          "interface": "SteamClient020",
+          "phase": "local-write"
+        },
+        {
+          "connected": false,
+          "event": "global_user",
+          "logged_on": false,
+          "pipe": 1,
+          "user": 1,
+          "phase": "local-write"
+        },
+        {
+          "account_id_is_zero": true,
+          "account_type": 1,
+          "event": "identity",
+          "instance": 1,
+          "is_zero": false,
+          "universe": 1,
+          "phase": "local-write"
+        },
+        {
+          "event": "storage_interface_inventory",
+          "interface": "IClientRemoteStorage",
+          "phase": "local-write"
+        },
+        {
+          "event": "storage_interface_inventory",
+          "interface": "ISteamRemoteStorage016",
+          "phase": "local-write"
+        },
+        {
+          "available": null,
+          "event": "quota",
+          "known": false,
+          "total": null,
+          "phase": "local-write"
+        },
+        {
+          "event": "sync_state",
+          "value": 0,
+          "phase": "local-write"
+        },
+        {
+          "app_id": 480,
+          "event": "resolve_path",
+          "path": "<scratch>/home/Library/Application Support/Steam/userdata/0/480/remote/forge-offline-probe.dat",
+          "resolved": true,
+          "root": 0,
+          "phase": "local-write"
+        },
+        {
+          "accepted": false,
+          "event": "file_write",
+          "result": 25,
+          "phase": "local-write"
+        },
+        {
+          "detail": "Offline fixture write was rejected",
+          "event": "probe_error",
+          "phase": "local-write"
+        }
+      ],
+      "phases": [
+        {
+          "phase": "local-write",
+          "exit_code": 1
+        }
+      ],
+      "stderr_present": false,
+      "timeout": false,
+      "elapsed_seconds": 4.162,
+      "runtime_version": "1788652215",
+      "authenticated": false,
+      "external_network": "denied by sandbox",
+      "real_home_reads": "denied by sandbox",
+      "scratch": "<scratch>",
+      "scratch_retained": false
+    },
+    {
+      "mode": "local-projection",
+      "exit_code": 1,
+      "events": [
+        {
+          "authenticated": false,
+          "event": "client_interface_inventory",
+          "interface": "SteamClient020",
+          "phase": "project-write"
+        },
+        {
+          "connected": false,
+          "event": "global_user",
+          "logged_on": false,
+          "pipe": 1,
+          "user": 1,
+          "phase": "project-write"
+        },
+        {
+          "account_id_is_zero": true,
+          "account_type": 1,
+          "event": "identity",
+          "instance": 1,
+          "is_zero": false,
+          "universe": 1,
+          "phase": "project-write"
+        },
+        {
+          "event": "storage_interface_inventory",
+          "interface": "IClientRemoteStorage",
+          "phase": "project-write"
+        },
+        {
+          "event": "storage_interface_inventory",
+          "interface": "ISteamRemoteStorage016",
+          "phase": "project-write"
+        },
+        {
+          "available": null,
+          "event": "quota",
+          "known": false,
+          "total": null,
+          "phase": "project-write"
+        },
+        {
+          "event": "sync_state",
+          "value": 0,
+          "phase": "project-write"
+        },
+        {
+          "app_id": 480,
+          "event": "resolve_path",
+          "path": "<scratch>/home/Library/Application Support/Steam/userdata/0/480/remote/forge-offline-probe.dat",
+          "resolved": true,
+          "root": 0,
+          "phase": "project-write"
+        },
+        {
+          "bytes": 39,
+          "event": "forge_projected_fixture",
+          "phase": "project-write"
+        },
+        {
+          "bytes": 39,
+          "event": "direct_file_read",
+          "matches_fixture": true,
+          "phase": "project-write"
+        },
+        {
+          "event": "cache_load_requested",
+          "phase": "project-write"
+        },
+        {
+          "callbacks": 7,
+          "event": "cache_observation_window",
+          "milliseconds": 2000,
+          "phase": "project-write"
+        },
+        {
+          "event": "file_count",
+          "value": 0,
+          "phase": "project-write"
+        },
+        {
+          "bytes": 0,
+          "event": "file_read",
+          "matches_fixture": false,
+          "phase": "project-write"
+        },
+        {
+          "detail": "Offline fixture read did not match",
+          "event": "probe_error",
+          "phase": "project-write"
+        },
+        {
+          "authenticated": false,
+          "event": "client_interface_inventory",
+          "interface": "SteamClient020",
+          "phase": "project-read"
+        },
+        {
+          "connected": false,
+          "event": "global_user",
+          "logged_on": false,
+          "pipe": 1,
+          "user": 1,
+          "phase": "project-read"
+        },
+        {
+          "account_id_is_zero": true,
+          "account_type": 1,
+          "event": "identity",
+          "instance": 1,
+          "is_zero": false,
+          "universe": 1,
+          "phase": "project-read"
+        },
+        {
+          "event": "storage_interface_inventory",
+          "interface": "IClientRemoteStorage",
+          "phase": "project-read"
+        },
+        {
+          "event": "storage_interface_inventory",
+          "interface": "ISteamRemoteStorage016",
+          "phase": "project-read"
+        },
+        {
+          "available": null,
+          "event": "quota",
+          "known": false,
+          "total": null,
+          "phase": "project-read"
+        },
+        {
+          "event": "sync_state",
+          "value": 0,
+          "phase": "project-read"
+        },
+        {
+          "app_id": 480,
+          "event": "resolve_path",
+          "path": "<scratch>/home/Library/Application Support/Steam/userdata/0/480/remote/forge-offline-probe.dat",
+          "resolved": true,
+          "root": 0,
+          "phase": "project-read"
+        },
+        {
+          "bytes": 39,
+          "event": "direct_file_read",
+          "matches_fixture": true,
+          "phase": "project-read"
+        },
+        {
+          "event": "cache_load_requested",
+          "phase": "project-read"
+        },
+        {
+          "callbacks": 7,
+          "event": "cache_observation_window",
+          "milliseconds": 2000,
+          "phase": "project-read"
+        },
+        {
+          "event": "file_count",
+          "value": 0,
+          "phase": "project-read"
+        },
+        {
+          "bytes": 0,
+          "event": "file_read",
+          "matches_fixture": false,
+          "phase": "project-read"
+        },
+        {
+          "detail": "Offline fixture read did not match",
+          "event": "probe_error",
+          "phase": "project-read"
+        }
+      ],
+      "phases": [
+        {
+          "phase": "project-write",
+          "exit_code": 1
+        },
+        {
+          "phase": "project-read",
+          "exit_code": 1
+        }
+      ],
+      "stderr_present": false,
+      "timeout": false,
+      "elapsed_seconds": 11.477,
+      "runtime_version": "1788652215",
+      "authenticated": false,
+      "external_network": "denied by sandbox",
+      "real_home_reads": "denied by sandbox",
+      "scratch": "<scratch>",
+      "fixture": {
+        "bytes": 39,
+        "sha256": "c49cc578c123fe8274b04f62dfa436d666208dfd2fe29d36de9952396eb38f3c"
+      },
+      "scratch_retained": false
+    }
+  ],
+  "not_proven": [
+    "API writes and indexed readback",
+    "initialized-account persistence",
+    "remote transfer",
+    "single synchronization owner",
+    "Auto-Cloud lifecycle",
+    "Dynamic callbacks and reload"
+  ]
+}

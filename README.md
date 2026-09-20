@@ -23,6 +23,8 @@ A macOS game library app. **Forge is a working name.** The interface uses SwiftU
 
 GOG sign-in is still to be implemented. Launching Windows games requires the planned Wine engine. Multiplayer and controller support will have separate modules.
 
+Steam Cloud's [Rust coordinator](docs/steam-cloud-coordinator.md) synchronizes supported macOS AutoCloud saves before launch and after game exit. The detached supervisor completes the exit check even when Forge is closed. Divergent saves require an explicit Local/Cloud choice. An [authenticated lifecycle validation](docs/steam-cloud-lifecycle.md) exercised Silksong with the interface closed. SDK RemoteStorage persistence, FileShare and Dynamic Cloud remain unsupported.
+
 ## Languages
 
 The interface supports English and French. It follows the system language and falls back to English when the requested language is unavailable. English is the source language.
@@ -45,9 +47,9 @@ The details page places the size next to playtime and the main button on the rig
 
 Verification reads all existing file contents, with up to four readers and accelerated SHA-1 calculation on Apple Silicon. It keeps valid files and reports its own progress. Game bytes actually downloaded are counted separately. Forge still contacts Steam to check for updates. A cached manifest is reused if it is still current. An invalid cache is fetched again.
 
-On Apple silicon, launching starts Forge's Rust host with the already-loaded session, then the macOS game. Silksong has been validated with the genuine Steamworks library, account/license checks and stats received in the game, without opening Steam or requesting Keychain access again. Forge now bundles the pinned Valve libraries, acquired directly from fixed Valve CDN packages during the build. It never imports an installed Steam client, including on first launch. Other games and SDK versions need compatibility testing. See [native Steam launches](docs/steam-native-launch.md). Steam Cloud is not integrated.
+On Apple silicon, launching starts Forge's Rust host with the already-loaded session, then the macOS game. Silksong has been validated with the genuine Steamworks library, account/license checks and stats received in the game, without opening Steam or requesting Keychain access again. Forge now bundles the pinned Valve libraries, acquired directly from fixed Valve CDN packages during the build. It never imports an installed Steam client, including on first launch. Other games and SDK versions need compatibility testing. See [native Steam launches](docs/steam-native-launch.md). AutoCloud transfers belong to Rust; the native host cannot read the game's ordinary save roots.
 
-This first version downloads the public branch, including depots for the selected platform and owned DLC. If Steam does not recognize the system language, or a translated depot is missing, Forge uses English. Private branches, Workshop, Steam Cloud, and install script execution are not integrated. Depots containing symbolic links are explicitly rejected. Updates retain old files that are no longer used.
+This first version downloads the public branch, including depots for the selected platform and owned DLC. If Steam does not recognize the system language, or a translated depot is missing, Forge uses English. Private branches, Workshop, SDK/Dynamic Cloud, and install script execution are not integrated. Depots containing symbolic links are explicitly rejected. Updates retain old files that are no longer used.
 
 The protocols are implemented in `steam-kit` based on a study of the public SteamKit and DepotDownloader sources. Forge runs neither of these programs nor SteamCMD. See [the protocol and dependencies](docs/steam-protocol.md) for sources, validation, and exact limitations.
 

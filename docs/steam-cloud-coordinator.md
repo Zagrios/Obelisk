@@ -1,0 +1,76 @@
+# Rust Cloud coordinator
+
+September 19, 2026. `steam-cloud` implements local storage and synchronization policy. `steam-runtime::cloud` connects that policy to the authenticated CM adapter, production launcher, detached supervisor and Swift interface for supported macOS AutoCloud rules.
+
+`steam-kit::cm::AppInfo` retains the complete UFS tree in `cloud`, including rules, root overrides, unknown fields and duplicate child keys. The metadata resolver selects macOS files without game-specific paths. Earlier [download/restoration](steam-cloud-authenticated-validation.md) and [upload/readback](steam-cloud-authenticated-upload.md) validations are now complemented by a [real detached launch/exit cycle](steam-cloud-lifecycle.md).
+
+## Implemented behavior
+
+- `reconcile` compares complete local and remote manifests with the last confirmed baseline. Content equality includes hashes, lengths, platform flags and missing files. Divergent initial versions require a choice. Timestamps do not choose a winner.
+- `Vault` stores verified bytes under SHA-256 names and one current local snapshot per account for account switching. Baseline, pending upload and replacement-journal references independently protect their bytes. There is no version list or manual-restore API.
+- A selected file has an explicit absolute local binding, separate from its remote name. Capture adopts unowned paths into the current account. Account switching archives the previous owner's complete version before a journaled projection of the next account's set. Unknown ownership and filesystem aliases are refused; recovery preserves unrelated edits.
+- Cloud replacement preserves its preimage and persists its replacement plan before modifying files. All incoming files are staged on their destination volumes before replacement. Deletions are journaled as part of the complete set. Recovery accepts only destinations matching the preimage or the intended result. An unrelated edit blocks recovery and stays intact.
+- Choosing Local in a conflict records the remote view against which the choice was made. An unchanged remote view preserves this choice on the next comparison. A changed view requires another decision.
+- Upload admission persists an uncertain operation before returning an adapter permit. Completion requires a positive server acknowledgement and matching complete readback. An ambiguous transaction is never replayed. After a failed attempt, `recompare_pending` permits a new plan following a complete verified remote observation, retaining the last confirmed baseline and explicit local choice. It does not assert that the old server operation was cancelled.
+- Account-wide authorization generations invalidate older permits after sign-out, including permits for another Cloud App ID. The journal never contains a credential. Closing an interface does not revoke authorization.
+- Account and game preferences must both be known and enabled before a transfer is admitted. Preferences must be refreshed after reopening the vault. Local recovery state remains independent of these settings.
+- A persisted game-session guard prevents capture, replacement and upload admission while the game runs. It remains set across sign-out and reopening. Only the matching session's actual exit may clear it.
+- `RetryBudget` includes requests and confirmation in one monotonic 120-second budget. There are at most three attempts, with waits of one then two seconds after transient failures. Action-required failures defer immediately. Both launch preparation and finalization use this budget.
+- Automatic blob collection runs between supervisor operations, including successful completion and deferred finalization. It retains the current account snapshot, baseline, local intent, both sides of pending uploads, and manifests referenced by durable and in-memory context or an outstanding choice. Collection is blocked while a game or replacement is active. It deletes only unreferenced archive blobs, never game saves or upload journals. A cleanup failure is deferred without changing a completed synchronization into a failure.
+
+## Storage and adapter contract
+
+The caller supplies a dedicated Forge-owned archive directory:
+
+```text
+<archive>/owner.lock
+<archive>/owners.json
+<archive>/<SteamID64>/authorization.json
+<archive>/<SteamID64>/<CloudAppID>/state.json
+<archive>/<SteamID64>/<CloudAppID>/context.json
+<archive>/<SteamID64>/<CloudAppID>/blobs/<SHA256>
+```
+
+One conservative archive-wide OS lock serializes writers, including logical games sharing a Cloud App ID and accounts sharing physical paths. The journal records the logical App ID of each pending upload. Local files and containing directories are synced when the plan, replacement or deletion is published. A journal write failure invalidates the in-memory owner until it is reopened, since rename might already have succeeded before directory sync failed.
+
+The CM adapter authenticates the actual session to the requested SteamID and builds a complete verified view of the managed Mac files. Comparisons reuse archived bytes only after checking their SHA-256 integrity and matching the current Steam SHA-1 and length; a complete fresh listing is checked again afterward. Missing or changed content is downloaded. Post-upload verification bypasses the cache: the adapter downloads every surviving file once, including foreign-platform files, and hands verified bytes to the coordinator for staging. The coordinator publishes the managed Mac subset only after the adapter has rechecked the complete listing and durably recorded successful verification. A partial callback stream cannot confirm an upload.
+
+CM download-plan requests remain serialized. HTTP bodies run in groups of at most four files with at most 32 MiB of advertised raw content per group; a larger file runs alone. Each transfer retains its existing size and integrity bounds. Dropping the operation drops all readers, and authorization is checked before each CM/HTTP request and before delivering bytes. HTTP connections and verified preference results are reused within a supervisor session; preferences still require fresh account-scoped listings before and after each read. Foreign-platform entries remain preserved in the full listing. Cloud App ID redirects remain unsupported and are refused. `RemoteView` cannot be built directly from an unresolved CM delta. Its SHA-256 identities require verified bytes; a remote SHA-1 string is not a SHA-256 identity.
+
+Normal preflight establishes local ownership before transfer and captures local bytes after obtaining the remote view. Recovery of earlier pending work retains the early snapshot as well. Disabled/offline launches still capture before game admission. Identical archive content is verified once per manifest check; verification is not cached across transitions or restarts. Only the current development formats are supported: archive schema 2 without history or pending-status fields, upload schema 3, ownership records with remote-name metadata, and contexts with the removal marker. No legacy migration or manual-restore compatibility remains. An unsupported journal is rejected without rewriting or automatically deleting it.
+
+The caller must obtain a coherent game write boundary before capture or apply. The file checks detect some concurrent changes but cannot prove quiescence. Only stopped games are admitted by this implementation. It offers no Dynamic write barrier or permission to replace saves in a running game.
+
+The save resolver must select all relevant files and destinations, including potential new remote files, before passing bindings to this module. Remote names are never used as filesystem paths by the archive. Selected parents must already exist. Symlinks and hard links are refused. Case and Unicode collisions are checked on the destination filesystem before replacement. This is not a defense against a malicious same-user process racing every filesystem operation.
+
+Current bounds are 100,000 manifest entries, 4,096 bytes per remote key, 64 MiB per journal and 256 MiB per file. File I/O uses bounded in-memory buffers. These are explicit implementation limits, not claims about Steam's quotas or support for every game's save size.
+
+## Production lifecycle
+
+The supervisor compares local, remote and last confirmed versions before native-host preparation. Equal content proceeds. Remote-only changes are archived and applied. Local changes remain local until the actual game exit. Divergence requires a Local/Cloud choice bound to the displayed revision. Recoverable prelaunch failures offer Retry, Cancel and Launch anyway; an ownership or recovery failure cannot be bypassed. Rust publishes allowed choices in the status and validates responses against that same list. Swift uses those choices rather than deriving policy from localization keys. Older snapshots without a choice list grant no choices until a current status arrives.
+
+After actual process exit and native-host teardown, the supervisor captures an immutable exit version and starts its bounded upload/reconciliation loop. Closing Forge only detaches the observer. Signing out revokes further network work for that account without terminating the game: the exit bytes remain in that account's archive. Uncertain uploads stay pending unless their durable adapter journal proves that the prior transaction is terminal or never sent. A fresh listing alone does not justify resending an ambiguous request.
+
+On account connection or network return, maintenance visits only that account's pending stores. It holds launch admission locks and checks supervisor/game process identities before clearing a stale game guard. Conflicts remain pending while the interface is closed; the next account connection presents them. Decision tokens bind the account, game, desired bytes and remote view.
+
+Upload journals now retain failed-batch closure receipts separately from unanswered file mutations. A known batch may be closed and reconciled after all file requests have received replies, including after interruption during an HTTP body transfer before its commit request. Reconciliation reads the complete remote view after the closure acknowledgement. After a lost batch ID or unanswered file commit/deletion, the runtime now follows the user-approved fresh-comparison retry policy. The old journal remains unchanged and is not replayed; a verified current remote view is required before retiring its local pending reference. Closure does not imply rollback, successful upload, or cancellation of a metadata request still in flight. The exact support boundary is recorded in [the settlement contract](steam-cloud-upload-settlement.md).
+
+The gear menu exposes uninstall only. Uninstall archives selected local files before removal, keeps synchronization state and does not create a new upload. A durable removal-intent marker prevents missing install-contained files from becoming implicit Cloud deletions on reinstall, including a partially failed removal. Retrying a partial uninstall retains missing files in the current account snapshot while capturing surviving files' current bytes. Existing immutable pending uploads remain resumable, including conflict resolution after uninstall; choosing Cloud without local projection additionally requires that the installation is actually absent.
+
+Schema 2 replaces the former four-entry history with one local snapshot. Schema-1 journals migrate under the archive lock, validating the old entries and retaining the latest recorded set. Migration preserves pending operations, baseline, local intent, game guards and interrupted replacement plans. A private compatibility reader can finish a restore already admitted by an older version; no API admits a new one. Migration does not delete game saves or old blobs. The next safe lifecycle boundary collects blobs no longer referenced by synchronization state.
+
+The native host has a fresh private home, cannot write outside `/dev/null`, and cannot read the real home or installation save roots. Only its pinned runtime and exact ancestor metadata are permitted under the real home. The ancestor exception allows executable canonicalization; it does not grant save contents or directory enumeration. This keeps ordinary AutoCloud transfers under Rust ownership.
+
+## Remaining support boundaries
+
+Unrecognized override forms, unsupported platform rules and Cloud App ID redirects fail explicitly. SDK root-0 RemoteStorage persistence, FileShare and Dynamic suspension/wake/reload remain separate work. No native writable Cloud cache is enabled, and a successful AutoCloud lifecycle is not evidence that those APIs persist saves.
+
+## Verification
+
+The crate tests use only temporary directories and synthetic manifests. They cover complete-set divergence and deletions, current-format validation, current-account snapshot retention, Cloud replacement interruption at every replacement boundary and before journal completion, reopening, external-edit preservation, ownership and path aliases, preferences, sign-out fencing, uncertain remote outcomes, garbage collection and bounded three-attempt retry timing. `steam-kit` has a separate metadata-preservation test.
+
+These isolated tests establish deterministic policy and local transaction recovery. Separate authenticated tests establish the CM transfer and the real Silksong lifecycle described above. They do not establish compatibility with every game's metadata, SDK/Dynamic Cloud or durability across a physical power loss.
+
+Run the focused tests with `cargo test --locked -p steam-cloud`. The repository's `scripts/test.sh` also includes this crate through its workspace checks.
+
+The earlier standalone coordinator validation is retained in [its observation report](evidence/steam-cloud-runtime-2026-09-19/coordinator-observations.json). Current production lifecycle evidence and validation scope are recorded in [the lifecycle report](steam-cloud-lifecycle.md).

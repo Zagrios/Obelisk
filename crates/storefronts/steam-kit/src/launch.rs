@@ -86,6 +86,7 @@ mod tests {
             free_to_download: false,
             depots: vec![],
             launch_configs: configs,
+            cloud: None,
         }
     }
     fn config(executable: &str, os: &str, kind: &str) -> LaunchConfig {

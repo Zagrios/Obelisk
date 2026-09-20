@@ -3,6 +3,7 @@ members = [
     "crates/forge-core",
     "crates/forge-bridge",
     "crates/steam-runtime",
+    "crates/steam-cloud",
     "crates/storefronts/steam-kit",
     "crates/storefronts/epic-kit",
     "crates/storefronts/gog-kit",
@@ -19,6 +20,7 @@ publish = false
 [workspace.dependencies]
 forge-core = { path = "crates/forge-core" }
 steam-runtime = { path = "crates/steam-runtime" }
+steam-cloud = { path = "crates/steam-cloud" }
 steam-kit = { path = "crates/storefronts/steam-kit" }
 epic-kit = { path = "crates/storefronts/epic-kit" }
 gog-kit = { path = "crates/storefronts/gog-kit" }

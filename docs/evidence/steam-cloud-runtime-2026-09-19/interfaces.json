@@ -1,0 +1,536 @@
+{
+  "runtime_version": "1788652215",
+  "steamclient_sha256": "035722a42c74989fa38c7efe0d735fdb38444e1102c92246652b5d913d019840",
+  "image_relative_methods": {
+    "SteamClient020": [
+      {
+        "offset": "0x7c96d4",
+        "slot": 0
+      },
+      {
+        "offset": "0x7c96f0",
+        "slot": 1
+      },
+      {
+        "offset": "0x7c9724",
+        "slot": 2
+      },
+      {
+        "offset": "0x7c9750",
+        "slot": 3
+      },
+      {
+        "offset": "0x7c9784",
+        "slot": 4
+      },
+      {
+        "offset": "0x7c97c4",
+        "slot": 5
+      },
+      {
+        "offset": "0x7c97e0",
+        "slot": 6
+      },
+      {
+        "offset": "0x7c97fc",
+        "slot": 7
+      },
+      {
+        "offset": "0x7c9830",
+        "slot": 8
+      },
+      {
+        "offset": "0x7c984c",
+        "slot": 9
+      },
+      {
+        "offset": "0x7c985c",
+        "slot": 10
+      },
+      {
+        "offset": "0x7c9878",
+        "slot": 11
+      },
+      {
+        "offset": "0x7c9894",
+        "slot": 12
+      },
+      {
+        "offset": "0x7c98a8",
+        "slot": 13
+      },
+      {
+        "offset": "0x7c98c4",
+        "slot": 14
+      },
+      {
+        "offset": "0x7c98e0",
+        "slot": 15
+      },
+      {
+        "offset": "0x7c98fc",
+        "slot": 16
+      },
+      {
+        "offset": "0x7c9918",
+        "slot": 17
+      },
+      {
+        "offset": "0x7c9934",
+        "slot": 18
+      }
+    ],
+    "IClientRemoteStorage": [
+      {
+        "offset": "0x8fb410",
+        "slot": 0
+      },
+      {
+        "offset": "0x8fb5f8",
+        "slot": 1
+      },
+      {
+        "offset": "0x8fb7ac",
+        "slot": 2
+      },
+      {
+        "offset": "0x8fb978",
+        "slot": 3
+      },
+      {
+        "offset": "0x8fbb64",
+        "slot": 4
+      },
+      {
+        "offset": "0x8fbd48",
+        "slot": 5
+      },
+      {
+        "offset": "0x8fbf3c",
+        "slot": 6
+      },
+      {
+        "offset": "0x8fc0f0",
+        "slot": 7
+      },
+      {
+        "offset": "0x8fc2a4",
+        "slot": 8
+      },
+      {
+        "offset": "0x8fc458",
+        "slot": 9
+      },
+      {
+        "offset": "0x8fc60c",
+        "slot": 10
+      },
+      {
+        "offset": "0x8fc7c0",
+        "slot": 11
+      },
+      {
+        "offset": "0x8fc974",
+        "slot": 12
+      },
+      {
+        "offset": "0x8fcb48",
+        "slot": 13
+      },
+      {
+        "offset": "0x8fccfc",
+        "slot": 14
+      },
+      {
+        "offset": "0x8fceb0",
+        "slot": 15
+      },
+      {
+        "offset": "0x8fd034",
+        "slot": 16
+      },
+      {
+        "offset": "0x8fd1b8",
+        "slot": 17
+      },
+      {
+        "offset": "0x8fd370",
+        "slot": 18
+      },
+      {
+        "offset": "0x8fd514",
+        "slot": 19
+      },
+      {
+        "offset": "0x8fd710",
+        "slot": 20
+      },
+      {
+        "offset": "0x8fd8e0",
+        "slot": 21
+      },
+      {
+        "offset": "0x8fdaf0",
+        "slot": 22
+      },
+      {
+        "offset": "0x8fdc74",
+        "slot": 23
+      },
+      {
+        "offset": "0x8fdde0",
+        "slot": 24
+      },
+      {
+        "offset": "0x8fdf64",
+        "slot": 25
+      },
+      {
+        "offset": "0x8fe0e4",
+        "slot": 26
+      },
+      {
+        "offset": "0x8fe268",
+        "slot": 27
+      },
+      {
+        "offset": "0x8fe3ec",
+        "slot": 28
+      },
+      {
+        "offset": "0x8fe56c",
+        "slot": 29
+      },
+      {
+        "offset": "0x8fe728",
+        "slot": 30
+      },
+      {
+        "offset": "0x8fe8dc",
+        "slot": 31
+      },
+      {
+        "offset": "0x8feaac",
+        "slot": 32
+      },
+      {
+        "offset": "0x8fecb4",
+        "slot": 33
+      },
+      {
+        "offset": "0x8feeb0",
+        "slot": 34
+      },
+      {
+        "offset": "0x8ff01c",
+        "slot": 35
+      },
+      {
+        "offset": "0x8ff1a0",
+        "slot": 36
+      },
+      {
+        "offset": "0x8ff3e8",
+        "slot": 37
+      },
+      {
+        "offset": "0x8ff638",
+        "slot": 38
+      },
+      {
+        "offset": "0x8ff868",
+        "slot": 39
+      },
+      {
+        "offset": "0x8ffa0c",
+        "slot": 40
+      },
+      {
+        "offset": "0x8ffba8",
+        "slot": 41
+      },
+      {
+        "offset": "0x8ffd44",
+        "slot": 42
+      },
+      {
+        "offset": "0x8ffee0",
+        "slot": 43
+      },
+      {
+        "offset": "0x90007c",
+        "slot": 44
+      },
+      {
+        "offset": "0x900218",
+        "slot": 45
+      },
+      {
+        "offset": "0x9003bc",
+        "slot": 46
+      },
+      {
+        "offset": "0x900558",
+        "slot": 47
+      },
+      {
+        "offset": "0x9006f4",
+        "slot": 48
+      },
+      {
+        "offset": "0x9008b0",
+        "slot": 49
+      },
+      {
+        "offset": "0x900a6c",
+        "slot": 50
+      },
+      {
+        "offset": "0x900bf0",
+        "slot": 51
+      },
+      {
+        "offset": "0x900dac",
+        "slot": 52
+      },
+      {
+        "offset": "0x900f50",
+        "slot": 53
+      },
+      {
+        "offset": "0x90112c",
+        "slot": 54
+      },
+      {
+        "offset": "0x9012d0",
+        "slot": 55
+      },
+      {
+        "offset": "0x90148c",
+        "slot": 56
+      },
+      {
+        "offset": "0x901648",
+        "slot": 57
+      },
+      {
+        "offset": "0x901804",
+        "slot": 58
+      },
+      {
+        "offset": "0x901988",
+        "slot": 59
+      },
+      {
+        "offset": "0x901b2c",
+        "slot": 60
+      },
+      {
+        "offset": "0x901cb0",
+        "slot": 61
+      },
+      {
+        "offset": "0x901e8c",
+        "slot": 62
+      },
+      {
+        "offset": "0x9020bc",
+        "slot": 63
+      },
+      {
+        "offset": "0x902270",
+        "slot": 64
+      },
+      {
+        "offset": "0x902424",
+        "slot": 65
+      },
+      {
+        "offset": "0x9025d8",
+        "slot": 66
+      },
+      {
+        "offset": "0x90278c",
+        "slot": 67
+      },
+      {
+        "offset": "0x902980",
+        "slot": 68
+      },
+      {
+        "offset": "0x902b54",
+        "slot": 69
+      },
+      {
+        "offset": "0x902cb4",
+        "slot": 70
+      },
+      {
+        "offset": "0x902e14",
+        "slot": 71
+      },
+      {
+        "offset": "0x902f94",
+        "slot": 72
+      },
+      {
+        "offset": "0x903118",
+        "slot": 73
+      },
+      {
+        "offset": "0x90329c",
+        "slot": 74
+      },
+      {
+        "offset": "0x903420",
+        "slot": 75
+      },
+      {
+        "offset": "0x9035f0",
+        "slot": 76
+      },
+      {
+        "offset": "0x903798",
+        "slot": 77
+      },
+      {
+        "offset": "0x90393c",
+        "slot": 78
+      },
+      {
+        "offset": "0x903af8",
+        "slot": 79
+      },
+      {
+        "offset": "0x903c7c",
+        "slot": 80
+      },
+      {
+        "offset": "0x903ddc",
+        "slot": 81
+      },
+      {
+        "offset": "0x903f3c",
+        "slot": 82
+      },
+      {
+        "offset": "0x9040c0",
+        "slot": 83
+      },
+      {
+        "offset": "0x904220",
+        "slot": 84
+      },
+      {
+        "offset": "0x904368",
+        "slot": 85
+      },
+      {
+        "offset": "0x9044ec",
+        "slot": 86
+      },
+      {
+        "offset": "0x9046d0",
+        "slot": 87
+      },
+      {
+        "offset": "0x904854",
+        "slot": 88
+      }
+    ],
+    "ISteamRemoteStorage016": [
+      {
+        "offset": "0x7e22d0",
+        "slot": 0
+      },
+      {
+        "offset": "0x7e232c",
+        "slot": 1
+      },
+      {
+        "offset": "0x7e2370",
+        "slot": 2
+      },
+      {
+        "offset": "0x7e242c",
+        "slot": 3
+      },
+      {
+        "offset": "0x7e2470",
+        "slot": 4
+      },
+      {
+        "offset": "0x7e24b0",
+        "slot": 5
+      },
+      {
+        "offset": "0x7e24ec",
+        "slot": 6
+      },
+      {
+        "offset": "0x7e2528",
+        "slot": 7
+      },
+      {
+        "offset": "0x7e2564",
+        "slot": 8
+      },
+      {
+        "offset": "0x7e25a4",
+        "slot": 9
+      },
+      {
+        "offset": "0x7e25e0",
+        "slot": 10
+      },
+      {
+        "offset": "0x7e2608",
+        "slot": 11
+      },
+      {
+        "offset": "0x7e2630",
+        "slot": 12
+      },
+      {
+        "offset": "0x7e2658",
+        "slot": 13
+      },
+      {
+        "offset": "0x7e2694",
+        "slot": 14
+      },
+      {
+        "offset": "0x7e26d0",
+        "slot": 15
+      },
+      {
+        "offset": "0x7e270c",
+        "slot": 16
+      },
+      {
+        "offset": "0x7e2748",
+        "slot": 17
+      },
+      {
+        "offset": "0x7e2784",
+        "slot": 18
+      },
+      {
+        "offset": "0x7e27bc",
+        "slot": 19
+      },
+      {
+        "offset": "0x7e2818",
+        "slot": 20
+      },
+      {
+        "offset": "0x7e2854",
+        "slot": 21
+      },
+      {
+        "offset": "0x7e2864",
+        "slot": 22
+      }
+    ]
+  }
+}

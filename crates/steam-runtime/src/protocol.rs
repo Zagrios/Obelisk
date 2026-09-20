@@ -2,7 +2,7 @@
 use std::io::{Read, Write};
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
-#[derive(Zeroize, ZeroizeOnDrop)]
+#[derive(Clone, Zeroize, ZeroizeOnDrop)]
 pub struct Credentials {
     pub steam_id: u64,
     pub account_name: String,

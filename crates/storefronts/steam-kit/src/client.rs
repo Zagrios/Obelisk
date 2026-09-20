@@ -21,6 +21,7 @@ use crate::{
     cm::{AppInfo, ContentServer, DepotInfo, SteamConnection, supports_platform},
     content::{CancelToken, ContentClient, ContentError, DepotDownload},
 };
+mod cloud;
 
 pub use forge_core::transfer::TransferState;
 
@@ -47,8 +48,7 @@ pub enum ClientConnectError {
 
 impl From<crate::cm::CmError> for ClientConnectError {
     fn from(error: crate::cm::CmError) -> Self {
-        if matches!(&error, crate::cm::CmError::Rejected { result, .. } if crate::friends::authentication_required(*result))
-        {
+        if error.authentication_required() {
             Self::AuthenticationRequired(client_error(error))
         } else {
             Self::Other(client_error(error))
@@ -198,6 +198,7 @@ pub struct Client {
     cm: AsyncMutex<SteamConnection>,
     friends: crate::friends::FriendsEventSource,
     connection_abort: tokio::task::AbortHandle,
+    cloud_authorized: std::sync::atomic::AtomicBool,
     /// Owned app IDs expanded through PICS licenses, filled on first content query.
     catalog: AsyncMutex<Option<Arc<HashSet<u32>>>>,
     app_infos: Mutex<HashMap<u32, (Instant, Arc<AppInfo>)>>,
@@ -221,6 +222,7 @@ impl Client {
             http,
             friends: cm.friends_source(),
             connection_abort: cm.abort_handle(),
+            cloud_authorized: std::sync::atomic::AtomicBool::new(true),
             cm: AsyncMutex::new(cm),
             catalog: AsyncMutex::new(None),
             app_infos: Mutex::new(HashMap::new()),
@@ -235,6 +237,8 @@ impl Client {
     /// Works even while a download owns the CM query mutex. Observers wake
     /// before the worker is aborted, and the old socket cannot keep reconnecting.
     pub fn shutdown(&self) {
+        self.cloud_authorized
+            .store(false, std::sync::atomic::Ordering::Release);
         self.friends.disconnect(false);
         self.connection_abort.abort();
         self.downloads.cancel();
@@ -940,6 +944,7 @@ mod tests {
             free_to_download: false,
             os_list: vec!["windows".into(), "macos".into()],
             launch_configs: vec![],
+            cloud: None,
             depots: vec![
                 depot(1, "", None, None),
                 depot(2, "windows", Some("english"), None),
@@ -971,6 +976,7 @@ mod tests {
             free_to_download: false,
             os_list: vec!["windows".into(), "macos".into()],
             launch_configs: vec![],
+            cloud: None,
             depots,
         }
     }

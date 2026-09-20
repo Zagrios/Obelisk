@@ -104,6 +104,7 @@ final class SteamModel {
     @ObservationIgnored private let loadNews: @Sendable (UInt32) async throws -> [SteamNews]
     @ObservationIgnored private let beginLogin: @Sendable (SteamLoginStart) async throws -> any SteamLoginProtocol
     let gameSessions: SteamGameSessions
+    let cloud: SteamCloudModel
     @ObservationIgnored private let preferences: UserDefaults
     @ObservationIgnored private var session: (any SteamSessionProtocol)?
     @ObservationIgnored private var login: (any SteamLoginProtocol)?
@@ -164,6 +165,7 @@ final class SteamModel {
         self.verifyBeforeLaunch = preferences.object(forKey: Self.verifyBeforeLaunchPreferenceKey) == nil
             ? true : preferences.bool(forKey: Self.verifyBeforeLaunchPreferenceKey)
         self.gameSessions = gameSessions
+        self.cloud = SteamCloudModel(root: directory.appending(path: "SteamCloud").path, sessions: gameSessions)
         wakeObserver = SystemWakeObservation { [weak self] in
             Task { @MainActor [weak self] in self?.retryFriends() }
         }
@@ -188,7 +190,7 @@ final class SteamModel {
     /// Every installation-mutating entry point asks this, so a new one cannot
     /// silently gain permission to touch a running game's files.
     private func canModifyInstallation(of appId: UInt32?) -> Bool {
-        !isDownloading && !isLaunching && !isUninstalling && !gameSessions.protects(appId)
+        !isDownloading && !isLaunching && !isUninstalling && !cloud.isBusy && !gameSessions.protects(appId)
     }
 
     var canResumeDownload: Bool {
@@ -223,7 +225,12 @@ final class SteamModel {
         }
     }
 
+    var isSynchronizingSaves: Bool {
+        selectedGame.map { cloud.isSynchronizing(for: $0.appId) } ?? false
+    }
+
     var primaryActionTitle: String {
+        if isSynchronizingSaves { return L10n.string("ui.steam.cloud.sync_short") }
         if gameSessions.isRecovering { return L10n.string("model.steam.recoveringSession") }
         if selectedGameSession?.running == true { return L10n.string("model.steam.running") }
         if isUninstalling && uninstallAppId == selectedGame?.appId { return L10n.string("model.game.uninstalling") }
@@ -451,6 +458,7 @@ final class SteamModel {
             isConnecting = false
             isRestoring = false
             loadInstallations()
+            cloud.connect(credentials)
             do {
                 if persist { try await keychain.save(credentials) }
                 else if !rememberSession { try await keychain.remove() }
@@ -460,6 +468,9 @@ final class SteamModel {
             }
             guard current == generation else { return }
             await reloadGames(connected, generation: current)
+            #if DEBUG
+            await runCloudBackupIfRequested(connected, generation: current)
+            #endif
         } catch {
             guard current == generation && !Task.isCancelled else { return }
             isConnecting = false
@@ -472,6 +483,61 @@ final class SteamModel {
         let current = generation
         Task { await reloadGames(session, generation: current) }
     }
+
+    #if DEBUG
+    /// Opt-in developer probe. It consumes the normal in-memory session and
+    /// writes only sanitized results. No credential leaves this process.
+    private func runCloudBackupIfRequested(_ connected: any SteamSessionProtocol, generation current: Int) async {
+        // Ordered by precedence: the first flag present wins, and a plain
+        // backup is the default. Flag and report name stay in one row so a new
+        // probe cannot pick up another probe's filename.
+        let probes: [(flag: String, report: String)] = [
+            ("--steam-cloud-sdk-candidates", "cloud-sdk-candidates.json"),
+            ("--steam-cloud-preferences", "cloud-preferences-result.json"),
+            ("--steam-cloud-interruption-probe", "cloud-interruption-result.json"),
+            ("--steam-cloud-transfer-probe", "cloud-transfer-result.json"),
+            ("--steam-cloud-backup", "cloud-backup-result.json"),
+        ]
+        let arguments = ProcessInfo.processInfo.arguments
+        let probe = probes.first { arguments.contains($0.flag) } ?? probes[probes.count - 1]
+        guard let index = arguments.firstIndex(of: probe.flag),
+              arguments.count > index + 2, let appID = UInt32(arguments[index + 1]),
+              appID != 0, current == generation, session === connected,
+              let native = connected as? SteamSession else { return }
+        let directory = URL(fileURLWithPath: arguments[index + 2], isDirectory: true)
+        let report = directory.appending(path: probe.report)
+        do {
+            let json: String
+            switch probe.flag {
+            case "--steam-cloud-sdk-candidates":
+                json = try await native.cloudSdkCandidates()
+            case "--steam-cloud-preferences":
+                json = try await native.cloudPreferences(appId: appID)
+            case "--steam-cloud-interruption-probe":
+                guard !cloud.isBusy, gameSessions.reserveCloudProbe() else { throw CocoaError(.featureUnsupported) }
+                json = try await native.cloudInterruptionProbe(appId: appID, directory: directory.path)
+                // Keep game admission fenced while the interrupted diagnostic
+                // awaits a process restart, including after a diagnostic error.
+                let result = try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+                if result?["status"] as? String == "verified" { gameSessions.finishCloudProbe() }
+            case "--steam-cloud-transfer-probe":
+                guard gameSessions.reserveCloudProbe() else { throw CocoaError(.featureUnsupported) }
+                defer { gameSessions.finishCloudProbe() }
+                json = try await native.cloudTransferProbe(appId: appID, directory: directory.path)
+            default:
+                json = try await native.cloudBackup(appId: appID, directory: directory.path)
+            }
+            guard current == generation, session === connected else { return }
+            try Data(json.utf8).write(to: report, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: report.path)
+        } catch {
+            // Steam errors contain only typed diagnostics, not request URLs.
+            guard current == generation, session === connected else { return }
+            let data = try? JSONSerialization.data(withJSONObject: ["status": "failed", "reason": error.localizedDescription])
+            try? data?.write(to: report, options: .atomic)
+        }
+    }
+    #endif
 
     private func reloadGames(_ session: any SteamSessionProtocol, generation current: Int) async {
         guard current == generation && self.session === session && !Task.isCancelled else { return }
@@ -577,6 +643,7 @@ final class SteamModel {
                             return
                         }
                         self.session = replacement
+                        self.cloud.resume()
                         active = replacement
                         revision = 0
                         Task { [weak self] in
@@ -646,6 +713,7 @@ final class SteamModel {
     }
 
     func signOut() {
+        cloud.signedOut()
         generation += 1
         detailGeneration += 1
         stopFriends()
@@ -865,6 +933,7 @@ final class SteamModel {
             self.isVerifyingBeforeLaunch = false
             self.launchAppId = nil
             self.launchTask = nil
+            self.cloud.resume()
             guard let error, !(error is CancellationError),
                   gameWasRunning || (!Task.isCancelled && !self.downloadCancellationRequested) else { return }
             self.errorMessage = Self.message(error)
@@ -882,7 +951,7 @@ final class SteamModel {
     }
 
     func uninstall(_ receipt: SteamInstallReceipt) {
-        guard isConnected, canModifyInstallation(of: receipt.appId),
+        guard isConnected, let session, let removalAccount = steamId, canModifyInstallation(of: receipt.appId),
               installations.contains(receipt), let file = receiptsURL else { return }
         let current = generation
         let remaining = installations.filter { $0 != receipt }
@@ -897,10 +966,24 @@ final class SteamModel {
             }
             do {
                 guard current == generation && !Task.isCancelled else { return }
-                try await GameInstallationManager.uninstall(
-                    directory: receipt.directory, expectedDirectoryName: "steam-\(receipt.appId)-\(receipt.platform)",
-                    protecting: directory, receiptFile: file, remaining: remaining
-                )
+                try await cloud.archive(receipt, session: session)
+                guard current == generation && !Task.isCancelled else { return }
+                do {
+                    try await GameInstallationManager.uninstall(
+                        directory: receipt.directory, expectedDirectoryName: "steam-\(receipt.appId)-\(receipt.platform)",
+                        protecting: directory, receiptFile: file, remaining: remaining
+                    )
+                } catch {
+                    // Receipt persistence can fail after the directory was
+                    // removed. The Cloud fence must still record that removal.
+                    if !FileManager.default.fileExists(atPath: receipt.directory) {
+                        try await cloud.removed(receipt, accountId: removalAccount)
+                    }
+                    throw error
+                }
+                // Record the original account even if it signed out while the
+                // file operation was completing. Removal is never a Cloud delete.
+                try await cloud.removed(receipt, accountId: removalAccount)
                 guard current == generation else {
                     // A reconnected account may have loaded its receipts before
                     // the removal completed. Refresh only its own receipt file.

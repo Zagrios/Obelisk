@@ -6,7 +6,33 @@ struct SteamView: View {
     var body: some View {
         StorefrontPage { titleBar } content: { content }
         .task { await model.start() }
+        .sheet(isPresented: Binding(
+            get: { model.cloud.promptPresented },
+            set: { _ in }
+        )) {
+            SteamCloudPromptView(
+                title: cloudPromptTitle,
+                message: L10n.string(model.cloud.promptMessage),
+                busy: model.cloud.promptWorking,
+                onCancel: { model.cloud.respond(.cancel) },
+                onChooseLocal: { model.cloud.respond(.local) },
+                onChooseCloud: { model.cloud.respond(.cloud) }
+            )
+            .interactiveDismissDisabled()
+        }
+        .onChange(of: model.gameSessions.isBusy) { _, isBusy in
+            if !isBusy { model.cloud.resume() }
+        }
         .errorAlert(L10n.string("ui.store.steam"), message: $model.errorMessage)
+    }
+
+    private var cloudPromptTitle: String {
+        let title = L10n.string("ui.steam.cloud.title")
+        guard let appId = model.cloud.promptAppId else { return title }
+        let name = model.games.first { $0.appId == appId }?.name
+            ?? model.installations.first { $0.appId == appId }?.name
+            ?? String(appId)
+        return "\(title) · \(name)"
     }
 
     private var content: some View {
@@ -14,6 +40,17 @@ struct SteamView: View {
             StorefrontWarningBanner(message: $model.storageWarning)
 
             if model.isConnected {
+                if model.cloud.failurePresented {
+                    SteamCloudFailureView(
+                        title: cloudPromptTitle,
+                        message: model.cloud.promptMessage,
+                        busy: model.cloud.promptWorking,
+                        canLaunchAnyway: model.cloud.canLaunchAnyway,
+                        onRetry: { model.cloud.respond(.retry) },
+                        onCancel: { model.cloud.respond(.cancel) },
+                        onLaunchAnyway: { model.cloud.respond(.launchAnyway) }
+                    )
+                }
                 if let game = model.selectedGame {
                     SteamGameDetailView(model: model, game: game)
                 } else {

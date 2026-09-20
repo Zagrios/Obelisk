@@ -1,4 +1,5 @@
 //! Safe launcher-side supervision. Native ABI code lives in the separate helper.
+pub mod cloud;
 mod files;
 pub mod package;
 #[cfg(feature = "packaging")]
@@ -30,6 +31,8 @@ pub fn sha(path: &std::path::Path) -> std::io::Result<String> {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("{0}")]
+    Cloud(cloud::Failure),
     #[error("backend.steam.runtime.sessionBusy")]
     SessionBusy,
     #[error("backend.steam.runtime.cancelled")]
@@ -68,6 +71,8 @@ pub struct Config {
     pub steam_api: PathBuf,
     pub home: PathBuf,
     pub app_id: u32,
+    #[serde(default)]
+    pub cloud_save_roots: Vec<PathBuf>,
 }
 
 pub struct Launch {

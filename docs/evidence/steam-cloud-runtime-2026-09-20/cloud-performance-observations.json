@@ -1,0 +1,75 @@
+{
+  "recorded_at_utc": "2026-09-19T22:53:59.070382+00:00",
+  "scope": "Cloud performance optimization and necessary compatibility repair; synthetic fixtures only",
+  "changes": [
+    "Post-upload readback stages verified bytes for the coordinator; managed files are not downloaded again. Final stable listing and durable Verified transition remain required.",
+    "HTTP downloads overlap in groups of at most four files and 32 MiB advertised raw size; larger files run alone. CM plans stay serialized and every reader is owned by the operation future.",
+    "Normal preflight activates ownership early and captures after reading remote state. Pending recovery retains the early capture; disabled/offline launches retain their capture.",
+    "Identical SHA-256/size archive entries are checked once per manifest validation. Remote cache candidates with wrong size or duplicate content identity are skipped. No integrity result is cached across transitions.",
+    "Known obsolete pending statuses in schema 1 and 2 journals are migrated while preserving operation IDs, manifests and may_have_committed. Invalid status/unknown fields leave journals unchanged."
+  ],
+  "validation": {
+    "full_suite": {
+      "command": "./scripts/test.sh",
+      "exit_code": 0,
+      "log": "build/cloud-performance-suite.log",
+      "main_rust_passed": 384,
+      "native_passed": 4,
+      "swift_executed": 220,
+      "swift_skipped": 9,
+      "failures": 0,
+      "bundled_runtime_isolation_passed": 1,
+      "strict_clippy": true,
+      "formatting": true,
+      "signature": true
+    },
+    "final_workspace": {
+      "commands": [
+        "cargo clippy --locked --workspace --all-targets --all-features -- -D warnings",
+        "cargo test --locked --workspace"
+      ],
+      "exit_code": 0,
+      "rust_passed": 385,
+      "log": "build/cloud-performance-rust-final.log",
+      "note": "Final run includes the last size-prefilter change and one added archive-corruption regression; full macOS build/tests completed afterward."
+    },
+    "checks": [
+      "single readback confirms Vault through a real temporary upload journal",
+      "corrupt readback, callback storage failure and listing change never produce Verified",
+      "11 files use four concurrent readers and are each delivered once",
+      "large files run alone; cancellation drops every active reader",
+      "revocation prevents later requests and corrupted bytes are not delivered",
+      "schema 1 and 2 pending journals with all five obsolete statuses preserve recovery state",
+      "activation before network leaves saves intact; capture after restart reads current bytes",
+      "duplicate content checks still reject wrong sizes and corruption on later transitions"
+    ]
+  },
+  "not_performed": [
+    "authenticated Steam request",
+    "real game launch",
+    "real save edit",
+    "wall-clock benchmark on Steam/Silksong",
+    "commit or push"
+  ],
+  "unchanged_decisions": [
+    "authentication error classification",
+    "legacy migrations other than restoring obsolete pending-status compatibility",
+    "authorization checks",
+    "Tokio Runtime ownership",
+    "Swift lifecycle ownership"
+  ],
+  "snapshot_pointer": "build/cloud-performance-before.txt",
+  "scoped_diff": "build/cloud-performance.diff",
+  "source_sha256": {
+    "crates/steam-cloud/src/vault.rs": "55c048bae95fca2a2cf34e3108df1494ceba2505e74cc00716d3ff6805e50e8a",
+    "crates/steam-cloud/src/vault/migration.rs": "b14952489214720532bf5a7c969360163d3acac40e4600f768d84cb0bb0e5f0d",
+    "crates/steam-runtime/src/cloud/session.rs": "70ca4881e5dd6c2b502bd6a4def14298f0f0065ee7425037a8f01844d9e9b5dd",
+    "crates/steam-runtime/src/cloud/session/remote.rs": "bd070aedcde549781158e5ed67edecb80585dcfcbbd26f56ed14abfaa73f3936",
+    "crates/storefronts/steam-kit/src/cloud.rs": "281a8608bf3f4ae308d238971458c6d4afd563687a875e558dc9dd55f410609f",
+    "crates/storefronts/steam-kit/src/cloud/downloads.rs": "1f125782687824d49befb4bd90b4b025531bbe29fad8e13fce7e48d3f6843b9d",
+    "crates/storefronts/steam-kit/src/cloud/downloads/tests.rs": "323d6f97a595140437a63e64f36e018db95259efdd5c4b6fa4f3a1afa8013c1b",
+    "crates/storefronts/steam-kit/src/cloud/upload.rs": "2f9e4c558ecaa4a40581d388da1b084c17458f96fa266b0cfd72cb4f2413652b",
+    "crates/storefronts/steam-kit/src/cloud/upload/tests.rs": "e3f6b489429101cab5a0eb225cd9051fcee64e72d5bb37637a7f7313dc685333",
+    "crates/storefronts/steam-kit/src/cm/cloud.rs": "1a8eb0c80970763ebbfe90ee55fda882551a81d3b16f55d5ee31702dde199981"
+  }
+}

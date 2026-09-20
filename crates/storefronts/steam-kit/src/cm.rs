@@ -10,6 +10,7 @@ use std::time::Duration;
 use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
 use prost::Message;
+use rsa::rand_core::{OsRng, RngCore};
 use serde::Deserialize;
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
@@ -17,6 +18,9 @@ use tokio::time::{Instant, timeout, timeout_at};
 use tokio_tungstenite::tungstenite::{Message as WsMessage, protocol::WebSocketConfig};
 
 use crate::{friends, kv, proto};
+mod cloud;
+#[cfg(test)]
+mod login_tests;
 
 const PROTOCOL: u32 = 65_581;
 const PROTO_MASK: u32 = 0x8000_0000;
@@ -65,6 +69,14 @@ pub enum CmError {
     Directory(#[from] reqwest::Error),
 }
 
+impl CmError {
+    /// A rejection whose EResult means the session itself is no longer valid,
+    /// as opposed to a transient service or transport failure.
+    pub fn authentication_required(&self) -> bool {
+        matches!(self, Self::Rejected { result, .. } if friends::authentication_required(*result))
+    }
+}
+
 impl From<prost::DecodeError> for CmError {
     fn from(_: prost::DecodeError) -> Self {
         Self::Protocol("backend.steam.cm.unreadableProtobuf".into())
@@ -95,6 +107,8 @@ pub struct AppInfo {
     pub free_to_download: bool,
     pub depots: Vec<DepotInfo>,
     pub launch_configs: Vec<LaunchConfig>,
+    /// Complete Steam UFS configuration, including unknown future fields.
+    pub cloud: Option<crate::cloud::CloudMetadata>,
 }
 
 #[derive(Clone, Debug)]
@@ -364,6 +378,14 @@ impl SteamConnection {
         if self.logged_on || account_name.is_empty() || steam_id == 0 || refresh_token.is_empty() {
             return Err(CmError::Protocol("backend.steam.cm.invalidSession".into()));
         }
+        // Steam replaces a same-account login from the same public IP when its
+        // login ID is reused. UI, supervisor and maintenance connections must
+        // coexist, including across processes. This value is not a credential.
+        let mut random = [0; 4];
+        OsRng
+            .try_fill_bytes(&mut random)
+            .map_err(|_| CmError::Protocol("backend.steam.cm.invalidSession".into()))?;
+        let login_id = u32::from_le_bytes(random).max(1);
         self.steam_id = steam_id;
         self.outgoing
             .send(Command::Account(steam_id))
@@ -373,6 +395,8 @@ impl SteamConnection {
             LOGON,
             &proto::Logon {
                 protocol_version: PROTOCOL,
+                deprecated_obfuscated_private_ip: login_id,
+                obfuscated_private_ip: Some(proto::LoginAddress { v4: login_id }),
                 package_version: 1771,
                 language: "english".into(),
                 os_type: (-102_i32) as u32, // EOSType::MacOSUnknown, encoded as uint32.
@@ -1252,6 +1276,7 @@ fn parse_app(app_id: u32, bytes: &[u8]) -> Result<AppInfo, CmError> {
         ),
         depots,
         launch_configs,
+        cloud: root.get("ufs").map(crate::cloud::CloudMetadata::from),
     })
 }
 
@@ -1259,6 +1284,57 @@ fn parse_app(app_id: u32, bytes: &[u8]) -> Result<AppInfo, CmError> {
 mod tests {
     use super::*;
     use std::io::Write;
+
+    #[test]
+    fn app_info_retains_generic_cloud_rules_and_unknown_fields() {
+        let app = parse_app(42, br#""appinfo" {
+            "appid" "42" "ufs" {
+                "quota" "100000" "maxnumfiles" "32"
+                "savefiles" { "0" { "root" "MacDocuments" "path" "Game/{64BitSteamID}" "pattern" "*.sav" } }
+                "rootoverrides" { "0" { "root" "WinMyDocuments" "useinstead" "MacDocuments" } }
+                "future-field" { "nested" "retained" }
+                "duplicate" "a" "duplicate" "b"
+            }
+        }"#).unwrap();
+        let cloud = app.cloud.unwrap();
+        assert_eq!(cloud.field("quota").and_then(|v| v.text()), Some("100000"));
+        assert_eq!(
+            cloud
+                .field("savefiles")
+                .unwrap()
+                .field("0")
+                .unwrap()
+                .field("path")
+                .unwrap()
+                .text(),
+            Some("Game/{64BitSteamID}")
+        );
+        assert!(cloud.field("rootoverrides").is_some());
+        assert_eq!(
+            cloud
+                .field("future-field")
+                .unwrap()
+                .field("nested")
+                .unwrap()
+                .text(),
+            Some("retained")
+        );
+        assert!(cloud.field("duplicate").is_none());
+        assert_eq!(
+            cloud
+                .entries()
+                .unwrap()
+                .iter()
+                .filter(|(key, _)| key == "duplicate")
+                .count(),
+            2
+        );
+        let absent = parse_app(42, br#""appinfo" { "appid" "42" }"#).unwrap();
+        assert!(absent.cloud.is_none());
+        let malformed =
+            parse_app(42, br#""appinfo" { "appid" "42" "ufs" "invalid shape" }"#).unwrap();
+        assert!(malformed.cloud.unwrap().entries().is_none());
+    }
 
     const TEST_STEAM_ID: u64 = 76561198000000000;
 

@@ -573,7 +573,10 @@ final class SteamPresentationTests: XCTestCase {
 
     @MainActor
     func testUninstallRemovesCapturedSteamGameAndPersistsReceiptsWhenSelectionChanges() async throws {
-        let fixture = try await launchFixture()
+        // This path now crosses the real Cloud archive bridge, which requires
+        // a structurally valid individual SteamID even without saved versions.
+        let accountID: UInt64 = 0x0110_0001_0000_002a
+        let fixture = try await launchFixture(accountID: accountID)
         defer { fixture.cleanUp() }
         let receipt = try XCTUnwrap(fixture.model.selectedInstallation)
         XCTAssertTrue(fixture.model.canUninstallSelectedGame)
@@ -588,7 +591,7 @@ final class SteamPresentationTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: receipt.directory))
         XCTAssertTrue(fixture.model.installations.isEmpty)
         XCTAssertEqual(fixture.model.selectedGame?.appId, fixtureGames[1].appId)
-        let stored = try JSONDecoder().decode([SteamInstallReceipt].self, from: Data(contentsOf: fixture.root.appending(path: "steam-installations-42.json")))
+        let stored = try JSONDecoder().decode([SteamInstallReceipt].self, from: Data(contentsOf: fixture.root.appending(path: "steam-installations-\(accountID).json")))
         XCTAssertTrue(stored.isEmpty)
         fixture.model.open(fixtureGames[0])
         try await eventually { fixture.model.details != nil }
@@ -635,10 +638,11 @@ final class SteamPresentationTests: XCTestCase {
 
     @MainActor
     func testUninstallReconcilesSteamActionIfReceiptPersistenceFailsAfterRemoval() async throws {
-        let fixture = try await launchFixture()
+        let accountID: UInt64 = 0x0110_0001_0000_002a
+        let fixture = try await launchFixture(accountID: accountID)
         defer { fixture.cleanUp() }
         let receipt = try XCTUnwrap(fixture.model.selectedInstallation)
-        let receiptFile = fixture.root.appending(path: "steam-installations-42.json")
+        let receiptFile = fixture.root.appending(path: "steam-installations-\(accountID).json")
         try FileManager.default.removeItem(at: receiptFile)
         try FileManager.default.createDirectory(at: receiptFile, withIntermediateDirectories: true)
         fixture.model.uninstall(receipt)
@@ -663,6 +667,98 @@ final class SteamPresentationTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: receipt.directory))
         let stored = try JSONDecoder().decode([SteamInstallReceipt].self, from: Data(contentsOf: fixture.root.appending(path: "steam-installations-42.json")))
         XCTAssertEqual(stored, [receipt])
+    }
+
+    @MainActor
+    func testCloudProgressUsesLaunchActionAndOnlyConflictPresentsSheet() async throws {
+        let game = RecoveredGameFixture(appID: 620, phase: .preparing, cloudPhase: .checking, decisionID: 17)
+        let fixture = try await launchFixture(verify: false, game: game)
+        defer { fixture.cleanUp() }
+        let model = fixture.model
+        model.primaryAction()
+        try await eventually { model.cloud.canCancelSynchronization(for: 620) }
+
+        XCTAssertTrue(model.isSynchronizingSaves)
+        XCTAssertEqual(model.primaryActionTitle, L10n.string("ui.steam.cloud.sync_short"))
+        XCTAssertFalse(model.primaryActionAvailable)
+        XCTAssertFalse(model.cloud.promptPresented)
+        XCTAssertFalse(model.cloud.failurePresented)
+        XCTAssertFalse(model.cloud.isSynchronizing(for: 570))
+
+        if let destination = ProcessInfo.processInfo.environment["FORGE_RENDER_PREVIEWS"], !destination.isEmpty {
+            let output = URL(fileURLWithPath: destination, isDirectory: true)
+            try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+            try await render(model, to: output.appending(path: "steam-cloud-sync-button.png"))
+        }
+
+        await game.update(cloudPhase: .failed, cloudError: "backend.steam.cloud.network",
+                          allowedChoices: [.retry, .cancel, .launchAnyway])
+        try await eventually { model.cloud.failurePresented }
+        XCTAssertFalse(model.cloud.promptPresented)
+        XCTAssertFalse(model.isSynchronizingSaves)
+        XCTAssertTrue(model.cloud.canLaunchAnyway)
+        // Error text never grants permission; only the supervisor's choices do.
+        await game.update(cloudPhase: .failed, cloudError: "backend.steam.cloud.network",
+                          allowedChoices: [.retry, .cancel])
+        try await eventually { !model.cloud.canLaunchAnyway }
+        await game.update(cloudPhase: .failed, cloudError: "a.future.error.key",
+                          allowedChoices: [.retry, .cancel, .launchAnyway])
+        try await eventually { model.cloud.canLaunchAnyway }
+        model.cloud.respond(.retry)
+        try await eventually { await game.cloudChoices.last?.choice == .retry }
+
+        await game.update(cloudPhase: .conflict, cloudError: "backend.steam.cloud.conflict")
+        try await eventually { model.cloud.promptPresented }
+        XCTAssertFalse(model.cloud.failurePresented)
+        XCTAssertFalse(model.cloud.canLaunchAnyway)
+        model.cloud.respond(.cloud)
+        try await eventually { await game.cloudChoices.last?.choice == .cloud }
+        await game.update(cloudPhase: .checking)
+        try await eventually { model.isSynchronizingSaves && !model.cloud.promptPresented }
+
+        await game.update(phase: .running, cloudPhase: .ready)
+        try await eventually { model.gameSessions.active?.running == true }
+        XCTAssertFalse(model.isSynchronizingSaves)
+        XCTAssertEqual(model.primaryActionTitle, L10n.string("model.steam.running"))
+        await game.update(phase: .finalizing, cloudPhase: .syncing)
+        try await eventually { model.isSynchronizingSaves }
+        XCTAssertEqual(model.primaryActionTitle, L10n.string("ui.steam.cloud.sync_short"))
+        XCTAssertFalse(model.cloud.promptPresented)
+        XCTAssertFalse(model.cloud.canCancelSynchronization(for: 620))
+        await game.update(cloudPhase: .synced)
+        await game.finish()
+        try await eventually { !model.gameSessions.isBusy }
+        XCTAssertFalse(model.isSynchronizingSaves)
+        XCTAssertEqual(model.primaryActionTitle, L10n.string("model.steam.launch"))
+        XCTAssertTrue(model.primaryActionAvailable)
+    }
+
+    @MainActor
+    func testPostGameConflictPresentsImmediatelyWithoutInlineMessageOrNetworkReplay() async throws {
+        let game = RecoveredGameFixture(appID: 620)
+        let fixture = try await launchFixture(verify: false, game: game)
+        defer { fixture.cleanUp() }
+        let model = fixture.model
+        model.primaryAction()
+        try await eventually { model.gameSessions.active?.running == true }
+        await game.update(phase: .finalizing, cloudPhase: .conflict,
+                          cloudError: "backend.steam.cloud.conflict", decisionToken: "captured-conflict")
+        try await eventually { model.gameSessions.active?.cloud.phase == .conflict }
+
+        XCTAssertTrue(model.cloud.promptPresented, "Detection must present the sheet before maintenance reconnects")
+        XCTAssertFalse(model.cloud.failurePresented)
+        XCTAssertNil(model.cloud.message(for: 620), "The conflict belongs only in its sheet")
+
+        await game.finish()
+        try await eventually { !model.gameSessions.isBusy }
+        XCTAssertTrue(model.cloud.promptPresented)
+        XCTAssertFalse(model.cloud.promptWorking, "The captured decision needs no preliminary network replay")
+        XCTAssertEqual(model.cloud.deferredPrompt?.decisionToken, "captured-conflict")
+        XCTAssertNil(model.errorMessage)
+        model.cloud.respond(.cancel)
+        XCTAssertFalse(model.cloud.promptPresented)
+        model.cloud.resume()
+        XCTAssertFalse(model.cloud.promptPresented, "A dismissed terminal snapshot must not reopen the sheet")
     }
 
     @MainActor
@@ -912,13 +1008,13 @@ final class SteamPresentationTests: XCTestCase {
     }
 
     @MainActor
-    private func launchFixture(verify: Bool? = nil, needsVerification: Bool? = nil, failVerification: Bool = false, game: RecoveredGameFixture? = nil, failLaunch: Bool = false, sessions: SteamGameSessions? = nil) async throws -> LaunchFixture {
+    private func launchFixture(verify: Bool? = nil, needsVerification: Bool? = nil, failVerification: Bool = false, game: RecoveredGameFixture? = nil, failLaunch: Bool = false, sessions: SteamGameSessions? = nil, accountID: UInt64 = 42) async throws -> LaunchFixture {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let parent = root.appending(path: "Installed games")
         let installedDirectory = parent.appending(path: "steam-620-macos")
         try FileManager.default.createDirectory(at: installedDirectory, withIntermediateDirectories: true)
         let receipt = SteamInstallReceipt(appId: 620, name: "Portal 2", directory: installedDirectory.path, platform: "macos", language: "french", totalBytes: 100, needsVerification: needsVerification)
-        try JSONEncoder().encode([receipt]).write(to: root.appending(path: "steam-installations-42.json"))
+        try JSONEncoder().encode([receipt]).write(to: root.appending(path: "steam-installations-\(accountID).json"))
         let suite = "ForgeLaunchFixture.\(UUID().uuidString)"
         let preferences = try XCTUnwrap(UserDefaults(suiteName: suite))
         if let verify { preferences.set(verify, forKey: SteamModel.verifyBeforeLaunchPreferenceKey) }
@@ -933,11 +1029,11 @@ final class SteamPresentationTests: XCTestCase {
             return try await downloads.request(request)
         }, launchPlan: { appId, platform, directory in
             await events.append("plan:\(appId)")
-            return SteamLaunchPlan(appId: appId, platform: platform, target: LaunchTarget(executable: directory + "/Game.app", arguments: [], workingDirectory: directory, isApplicationBundle: true))
+            return SteamLaunchPlan(appId: appId, platform: platform, installDirectory: directory, target: LaunchTarget(executable: directory + "/Game.app", arguments: [], workingDirectory: directory, isApplicationBundle: true))
         })
-        let credentialStore = FixtureCredentialStore()
+        let credentialStore = FixtureCredentialStore(value: SteamCredentials(accountName: "Test account", steamId: accountID, refreshToken: "fixture-only-never-sent"))
         let gameSessions = sessions ?? SteamGameSessions(startSession: { plan, credentials in
-            XCTAssertEqual(credentials.steamId, 42)
+            XCTAssertEqual(credentials.steamId, accountID)
             XCTAssertEqual(credentials.accountName, "Test account")
             XCTAssertEqual(credentials.refreshToken, "fixture-only-never-sent")
             let loads = await credentialStore.loadCount

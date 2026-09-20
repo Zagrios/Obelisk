@@ -1,0 +1,103 @@
+{
+  "date": "2026-09-19",
+  "app_id": 1030300,
+  "native_host": {
+    "authenticated": true,
+    "sdk_initialized": true,
+    "account_verified": true,
+    "license_verified": true
+  },
+  "detached": {
+    "observed_at": "2026-09-19T13:59:42.582521+00:00",
+    "phase": "Running",
+    "cloud": {
+      "phase": "Ready",
+      "id": 2,
+      "error": null
+    },
+    "supervisor_alive": true,
+    "game_alive": true,
+    "forge_running": false
+  },
+  "finalized": {
+    "observed_at": "2026-09-19T14:02:07.541227+00:00",
+    "phase": "Finished",
+    "host": "stopped",
+    "cloud": {
+      "phase": "Synced",
+      "id": 4,
+      "error": null
+    },
+    "exit_code": 0,
+    "error": null,
+    "supervisor_alive": false,
+    "game_alive": false,
+    "forge_running": false,
+    "state_keys": [
+      "schema",
+      "scope",
+      "baseline",
+      "intent",
+      "history",
+      "pending",
+      "applying",
+      "game"
+    ],
+    "needs_work": false,
+    "desired_files": null,
+    "history_count": 1,
+    "baseline_revision": "54",
+    "pending": null,
+    "game_guard": null
+  },
+  "ui": {
+    "history_visible_while_running": true,
+    "restore_disabled_while_running": true,
+    "uninstall_disabled_while_running": true,
+    "launch_available_after_reopen": true
+  },
+  "saves": {
+    "files_checked": 18,
+    "bytes": 3806866,
+    "changed_files": 0,
+    "remote_revision_before": "54",
+    "remote_revision_after": "54",
+    "history_versions_before": 1,
+    "history_versions_after": 1
+  },
+  "scope": "Real unchanged-save AutoCloud launch/exit cycle with Forge closed. It proves lifecycle and verified equality, not a new upload. Separate authenticated CM marker upload/delete validation is documented in steam-cloud-authenticated-upload.md.",
+  "sandbox_regression": {
+    "test": "files::atomic_tests::sandbox_allows_runtime_path_resolution_but_denies_save_contents",
+    "before": "canonicalize(current_exe) denied",
+    "after": "exact ancestor metadata allowed; save bytes and official Steam content remain denied"
+  },
+  "automated_verification": {
+    "command": "./scripts/test.sh",
+    "exit_code": 0,
+    "rust_passed": 354,
+    "rust_main_workspace_passed": 349,
+    "rust_native_workspace_passed": 4,
+    "bundled_runtime_isolation_passed": 1,
+    "swift_total": 219,
+    "swift_skipped": 9,
+    "failures": 0,
+    "localization_keys": 547,
+    "formatting": "passed",
+    "clippy": "passed -D warnings",
+    "signature": "passed"
+  },
+  "source_sha256": {
+    "crates/steam-runtime/src/cloud.rs": "810e41c1d9e8394bb489fe9e6faa8ae6ea2132f88c38f4e874c008cb82d87bd3",
+    "crates/steam-runtime/src/cloud/session.rs": "fc7ed60ad4134a4c2e2a6ad896d407209b46caae877a214b7e4bdc6365219b93",
+    "crates/steam-runtime/src/cloud/store.rs": "b3806155be615c41439016ef0f099d0b316ceedcd6f3bd6eac36b7ca2702eaf8",
+    "crates/steam-runtime/src/files.rs": "d53c5b68411bbba6848cc15d175c19b88d5b13fcba3fb966f76c47e5d50dd4c5",
+    "crates/steam-runtime/src/supervisor/server.rs": "0cc81bd8149cfd7bd252290ab2278c8e399d007e5f0a67371981107e80311149",
+    "crates/steam-runtime/src/supervisor/client.rs": "360ff985695ea7cb2e524224b612e4f5bb614ce100ffc3b69d5fcf3a171166ca",
+    "crates/forge-bridge/src/steam_native.rs": "ad7dd178c9a3f2f6b173b527a3f654d695c9291d74c380247adced5aee48b312",
+    "apps/macos/Forge/Models/SteamCloudModel.swift": "26c2cec0be9e8e41569f8c8a4e178a65fa9e66252c9262b29be77d849c15bfc3",
+    "apps/macos/Forge/Models/SteamModel.swift": "90e82f14edc197ee216dc7fc808014e27a4c42b175f2652be08f6ada3d1cf204",
+    "apps/macos/Forge/Models/SteamGameSessions.swift": "3e541328c60a5247ba7d1d30a79ba4026f90350c08759e5abab8beff9ca0b8e0",
+    "apps/macos/Forge/Features/Steam/SteamView.swift": "14c1ecbf7bbd25e6a4e5c3a3117ff82e9cd3b115359444def2ea106b34a5abf3",
+    "apps/macos/Forge/Views/SteamCloudSheets.swift": "e542d2a76231e7d224d211bf8b65cdcb239411d9f7d15f4a3bccabb58ba8f3f5"
+  }
+}

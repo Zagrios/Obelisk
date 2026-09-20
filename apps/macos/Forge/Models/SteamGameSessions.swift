@@ -16,21 +16,72 @@ final class SteamGameSessions {
         let credentials: SteamCredentials
     }
 
-    struct Session {
+    struct Session: Identifiable {
         let id: UUID
         let appId: UInt32
+        var accountId: UInt64 = 0
         var phase = SteamGamePhase.preparing
         var connection = SteamSupervisorConnection.connected
         var host = SteamHostState.online
+        var cloud = CloudStatus()
         var running: Bool { phase == .running }
     }
 
+    /// The supervisor's published Cloud decision state, as one value.
+    struct CloudStatus: Equatable {
+        var phase = SteamCloudPhase.idle
+        var decisionId: UInt64 = 0
+        var error: String?
+        var decisionToken: String?
+        var allowedChoices: [SteamCloudChoice] = []
+
+        init() {}
+
+        init(_ snapshot: SteamGameSnapshot) {
+            phase = snapshot.cloudPhase
+            decisionId = snapshot.cloudDecisionId
+            error = snapshot.cloudError
+            decisionToken = snapshot.cloudDecisionToken
+            allowedChoices = snapshot.cloudAllowedChoices
+        }
+    }
+
+    /// The last Cloud status any supervisor published, retained after its
+    /// session ends so a terminal indicator can be shown for that account.
+    struct LastCloud: Equatable {
+        let appId: UInt32
+        let accountId: UInt64
+        let status: CloudStatus
+    }
+
     private(set) var active: Session?
+    private(set) var lastCloud: LastCloud?
     private(set) var isRecovering = false
     private(set) var recoveryError: String?
-    var isBusy: Bool { isRecovering || active != nil }
+    var isBusy: Bool { isRecovering || active != nil || cloudProbeReserved }
+    private var cloudProbeReserved = false
+    private var revokedAccounts: Set<UInt64> = []
+
+    var cloudPrompt: Session? {
+        guard let active, active.phase == .preparing,
+              !revokedAccounts.contains(active.accountId),
+              [.checking, .failed, .conflict].contains(active.cloud.phase) else { return nil }
+        return active
+    }
+
+    #if DEBUG
+    func reserveCloudProbe() -> Bool {
+        guard !isBusy, recoveryError == nil else { return false }
+        cloudProbeReserved = true
+        return true
+    }
+
+    func finishCloudProbe() { cloudProbeReserved = false }
+    #endif
 
     @ObservationIgnored private var operation: Task<Void, Never>?
+    @ObservationIgnored private var activeClient: (any SteamGameSessionProtocol)?
+    @ObservationIgnored private var appliedRevocations: Set<UInt64> = []
     @ObservationIgnored private let startSession: @MainActor (SteamLaunchPlan, SteamCredentials) async throws -> any SteamGameSessionProtocol
     @ObservationIgnored private let recoverSession: @MainActor () async throws -> (any SteamGameSessionProtocol)?
 
@@ -68,6 +119,10 @@ final class SteamGameSessions {
         onCompletion: @escaping @MainActor (Error?) -> Void = { _ in }
     ) -> Task<Void, Never>? {
         guard !isBusy else { return nil }
+        // A newly admitted launch belongs to the currently authenticated request.
+        // Revocations from a finished session must not disable a later sign-in.
+        revokedAccounts.removeAll()
+        appliedRevocations.removeAll()
         active = Session(id: UUID(), appId: appId)
         recoveryError = nil
         let task = Task {
@@ -88,12 +143,59 @@ final class SteamGameSessions {
     }
 
     func protects(_ appId: UInt32?) -> Bool {
-        if isRecovering { return true }
+        if isRecovering || cloudProbeReserved { return true }
         guard let appId else { return false }
         return active?.appId == appId
     }
 
+    func chooseCloud(_ choice: SteamCloudChoice, accountId: UInt64) async throws {
+        guard let active, let client = activeClient, accountId != 0,
+              active.accountId == accountId, !revokedAccounts.contains(accountId),
+              active.phase == .preparing else {
+            throw SteamError.Failure(reason: "backend.steam.runtime.invalidSession")
+        }
+        if choice == .cancel && active.cloud.phase == .checking {
+            client.cancelPreparation()
+            return
+        }
+        guard [.failed, .conflict].contains(active.cloud.phase) else {
+            throw SteamError.Failure(reason: "backend.steam.runtime.invalidSession")
+        }
+        try await client.chooseCloud(accountId: accountId, decisionId: active.cloud.decisionId, choice: choice)
+    }
+
+    func revokeCloud(accountId: UInt64) async throws {
+        guard accountId != 0 else {
+            throw SteamError.Failure(reason: "backend.steam.runtime.invalidSession")
+        }
+        // Record this before awaiting a client or reply. A private handoff may
+        // still be in flight, or startup recovery may not know its account yet.
+        revokedAccounts.insert(accountId)
+        guard active?.accountId == accountId, let client = activeClient else { return }
+        try await applyRevocation(accountId: accountId, client: client)
+    }
+
+    private func applyRevocation(accountId: UInt64, client: any SteamGameSessionProtocol) async throws {
+        guard revokedAccounts.contains(accountId), !appliedRevocations.contains(accountId) else { return }
+        // Sign-out cancels the launch observer, but must still reach its detached
+        // supervisor. Successful revocation remains tied to this exact client.
+        try await Task.detached { try await client.revokeCloud(accountId: accountId) }.value
+        if activeClient === client { appliedRevocations.insert(accountId) }
+    }
+
+    /// A recovered snapshot may not carry its account yet; the reservation does.
+    private func accountId(of snapshot: SteamGameSnapshot) -> UInt64 {
+        snapshot.accountId == 0 ? active?.accountId ?? 0 : snapshot.accountId
+    }
+
+    private func rememberCloud(_ snapshot: SteamGameSnapshot) {
+        let last = LastCloud(appId: snapshot.appId, accountId: accountId(of: snapshot),
+                             status: CloudStatus(snapshot))
+        if lastCloud != last { lastCloud = last }
+    }
+
     private func run(_ request: Launch, onRunning: @escaping @MainActor () -> Void) async throws {
+        active?.accountId = request.credentials.steamId
         let client: any SteamGameSessionProtocol
         do {
             client = try await startSession(request.plan, request.credentials)
@@ -123,7 +225,10 @@ final class SteamGameSessions {
                 }
                 client = recovered
                 snapshot = try await Task.detached { try await client.snapshot(after: nil) }.value
-                if snapshot.finished { continue }
+                if snapshot.finished {
+                    rememberCloud(snapshot)
+                    continue
+                }
                 guard UUID(uuidString: snapshot.id) != nil else {
                     throw SteamError.Failure(reason: "backend.steam.runtime.invalidSession")
                 }
@@ -142,6 +247,8 @@ final class SteamGameSessions {
         initial: SteamGameSnapshot? = nil,
         onRunning: @escaping @MainActor () -> Void
     ) async throws {
+        activeClient = client
+        appliedRevocations.removeAll()
         try await withTaskCancellationHandler {
             var pending = initial
             var revision: UInt64?
@@ -149,6 +256,10 @@ final class SteamGameSessions {
             while true {
                 let snapshot: SteamGameSnapshot
                 do {
+                    if let accountId = active?.accountId {
+                        do { try await applyRevocation(accountId: accountId, client: client) }
+                        catch { active?.connection = .reconnecting }
+                    }
                     if let first = pending { snapshot = first; pending = nil }
                     else {
                         let after = revision
@@ -158,7 +269,12 @@ final class SteamGameSessions {
                         throw SteamError.Failure(reason: "backend.steam.runtime.invalidSession")
                     }
                     if active?.id != id {
-                        active = Session(id: id, appId: snapshot.appId)
+                        active = Session(id: id, appId: snapshot.appId, accountId: accountId(of: snapshot))
+                    } else if snapshot.accountId != 0 && active?.accountId != snapshot.accountId {
+                        active?.accountId = snapshot.accountId
+                    }
+                    if !snapshot.finished, let accountId = active?.accountId {
+                        try await applyRevocation(accountId: accountId, client: client)
                     }
                 } catch {
                     // Control loss is uncertainty, not evidence of game exit.
@@ -171,6 +287,9 @@ final class SteamGameSessions {
                 if active?.phase != snapshot.phase { active?.phase = snapshot.phase }
                 if active?.connection != snapshot.connection { active?.connection = snapshot.connection }
                 if active?.host != snapshot.host { active?.host = snapshot.host }
+                let cloud = CloudStatus(snapshot)
+                if active?.cloud != cloud { active?.cloud = cloud }
+                rememberCloud(snapshot)
                 if isRecovering { isRecovering = false }
                 if recoveryError != nil { recoveryError = nil }
                 if snapshot.finished {
@@ -190,6 +309,8 @@ final class SteamGameSessions {
 
     private func finish() {
         active = nil
+        activeClient = nil
+        appliedRevocations.removeAll()
         isRecovering = false
         operation = nil
     }
