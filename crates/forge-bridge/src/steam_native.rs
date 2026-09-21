@@ -81,26 +81,6 @@ impl SteamNativeLaunch {
     }
 }
 
-// Exclude both the diagnostic method and its generated UniFFI wrappers in Release.
-#[cfg(debug_assertions)]
-#[uniffi::export(async_runtime = "tokio")]
-impl SteamNativeLaunch {
-    pub async fn probe_storage(
-        &self,
-        configuration: SteamNativeConfiguration,
-        transfers: bool,
-    ) -> Result<String, SteamError> {
-        let launch = self.launch.clone();
-        tokio::task::spawn_blocking(move || {
-            launch
-                .probe_storage(configuration.into(), transfers)
-                .map_err(Into::into)
-        })
-        .await
-        .map_err(|_| steam_runtime::Error::StartFailed)?
-    }
-}
-
 #[derive(Clone, Copy, Debug, uniffi::Enum)]
 pub enum SteamHostState {
     Online,

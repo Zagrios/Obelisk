@@ -2005,8 +2005,6 @@ public protocol SteamNativeLaunchProtocol: AnyObject, Sendable {
     
     func cancel() 
     
-    func probeStorage(configuration: SteamNativeConfiguration, transfers: Bool) async throws  -> String
-    
     func startGame(configuration: SteamNativeConfiguration, target: SteamSupervisedTarget, sessionDirectory: String) async throws  -> SteamGameSession
     
 }
@@ -2078,22 +2076,6 @@ open func cancel()  {try! rustCall() {
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 }
-}
-    
-open func probeStorage(configuration: SteamNativeConfiguration, transfers: Bool)async throws  -> String  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_forge_bridge_fn_method_steamnativelaunch_probe_storage(
-                        self.uniffiCloneHandle(),FfiConverterTypeSteamNativeConfiguration_lower(configuration),FfiConverterBool.lower(transfers)
-                )
-            },
-            pollFunc: ffi_forge_bridge_rust_future_poll_rust_buffer,
-            completeFunc: ffi_forge_bridge_rust_future_complete_rust_buffer,
-            freeFunc: ffi_forge_bridge_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterString.lift,
-            errorHandler: FfiConverterTypeSteamError_lift
-        )
 }
     
 open func startGame(configuration: SteamNativeConfiguration, target: SteamSupervisedTarget, sessionDirectory: String)async throws  -> SteamGameSession  {
@@ -7150,9 +7132,6 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_forge_bridge_checksum_method_steamnativelaunch_cancel() != 28509) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_forge_bridge_checksum_method_steamnativelaunch_probe_storage() != 49438) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_forge_bridge_checksum_method_steamnativelaunch_start_game() != 29228) {

@@ -23,22 +23,6 @@ pub struct Session {
     shown: Option<(RemoteView, Manifest)>,
 }
 impl Session {
-    #[cfg(debug_assertions)]
-    pub(crate) fn probe_prepare(&mut self) -> Result<(), crate::Error> {
-        self.recover_dead_owner()?;
-        let runtime = self.runtime.clone();
-        let control = self.control.clone();
-        runtime.block_on(control.guarded(Duration::from_secs(60), self.preflight(None)))?;
-        Ok(())
-    }
-    #[cfg(debug_assertions)]
-    pub(crate) fn probe_finish(&mut self) -> Result<(), crate::Error> {
-        self.finished();
-        if self.control.state.lock().unwrap().status.phase != Phase::Synced {
-            return Err(Failure::Storage.into());
-        }
-        Ok(())
-    }
     pub fn native_storage(&self) -> Result<Option<crate::NativeStorage>, crate::Error> {
         self.context
             .as_ref()

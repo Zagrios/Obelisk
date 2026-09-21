@@ -17,12 +17,11 @@ use std::{
 const MANIFEST: &str = include_str!("../runtime-manifest.json");
 pub(crate) const HOST: &str = "forge-steam-host";
 pub(crate) const ADAPTER: &str = "libforge_steam_discovery_adapter.dylib";
-pub(crate) const SDK_ARM64: &str = "forge-steam-sdk-arm64";
 pub(crate) const SDK_INTEL: &str = "forge-steam-sdk-x86_64";
-pub(crate) const HELPERS: [&str; 4] = [HOST, ADAPTER, SDK_ARM64, SDK_INTEL];
+pub(crate) const HELPERS: [&str; 3] = [HOST, ADAPTER, SDK_INTEL];
 
 fn executable_helper(name: &str) -> bool {
-    matches!(name, HOST | SDK_ARM64 | SDK_INTEL)
+    matches!(name, HOST | SDK_INTEL)
 }
 
 #[derive(Deserialize)]

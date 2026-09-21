@@ -6,17 +6,61 @@ by `SteamModel` through a one-time private stdin pipe. No extra login or Keychai
 
 The app bundles a minimal, hash-pinned Valve runtime archive. The host loads its
 original libraries from a verified private cache prepared from that archive. It
-requires authentication for the expected account and a nonempty ownership ticket
-for the selected game. A separate consumer then checks the game's unmodified
-Steamworks library, account, App ID and subscription before Forge starts the game.
-A read-only player-count request is recorded when available; it is not required
-for launching. The native engine provides the actual Steamworks results.
+requires authentication for the expected account, subscription to the selected
+game and a nonempty ownership ticket. Forge then launches the game, which
+initializes its own unmodified Steamworks library and requests its own interface
+versions from Valve. Normal launch does not load the game's SDK in a preflight
+consumer or require `SteamAPI_InitFlat`, a particular `SteamUser` version, or an
+SDK library fingerprint.
+
+The Intel `forge-steam-sdk-x86_64` helper only implements `exec-game`, which
+selects the game's Intel slice without initializing Steamworks. The SDK
+diagnostics, their Debug entry points and the ARM64 SDK helper were removed.
+Normal launch reports host account/license
+verification and `sdk_checked: false`; it makes no claim that game-side SDK
+initialization, a player-count request, or native cache consumption succeeded.
 
 The Mach discovery adapter redirects only `com.valvesoftware.steam.ipctool` to a
-unique Forge-owned service. Host, SDK checker and game share the same private IPC
-endpoints. The first integrated test authenticated successfully but failed SDK
-initialization because the checker did not inherit these endpoints. Sharing them
-fixed the failure. A regression test covers all three consumers' environment.
+unique Forge-owned service. Host and game share the same private IPC endpoints.
+The game's discovery environment is covered by the runtime tests.
+
+## Validation of game-owned SDK initialization, September 21
+
+Four new runtime regressions exercise the production readiness path with
+disposable hosts. A fixture whose SDK library has unknown exports is admitted
+and reported as unchecked. Other cases cover prepared storage surviving host
+shutdown, invalid/missing/wrong-scope/unindexed/symlinked cache rejection, and
+authentication or ownership failure. The unknown-SDK regression failed on the
+former mandatory preflight and passed after its removal. Admission no longer
+selects a helper for SDK verification.
+
+`./scripts/test.sh` passed: 426 main-workspace Rust tests with six opt-in tests
+ignored, 15 native-workspace tests, and XCTest reported 260 tests with ten skipped
+and no failures. Formatting, strict Clippy, localization, the macOS build,
+Apple signatures, helper architecture checks and the separately enabled isolated
+bundled-runtime load passed. The local log is `build/native-launch-validation.log`.
+These checks used disposable fixtures, not authenticated games or real saves.
+The user subsequently confirmed that Thronefall launched successfully. Game-side
+SDK storage consumption remains a separate live check.
+
+### SDK diagnostic removal
+
+The SDK verifier, authenticated storage probes, Swift/UniFFI entry points and
+offline `sdk-pair` experiment were removed. No maintained source calls the game's
+`SteamAPI_*` exports. The Intel helper retains its exec handshake; the obsolete
+ARM64 SDK helper is removed from incremental builds and rejected by bundle checks.
+AutoCloud reconciliation and native RemoteStorage cache preparation retain their
+existing production paths.
+
+`./scripts/test.sh` passed after this removal: 426 main-workspace Rust tests,
+seven native-workspace tests, 260 XCTest tests with ten skipped, and the separately
+enabled isolated runtime-loading test. Formatting, strict Clippy, localization,
+the macOS build, regenerated Swift bindings and signature/architecture checks
+passed. An initial run hit `Busy` in the partial-uninstall Cloud test; that test
+then passed alone and in the complete rerun without changes to its locking code.
+Logs: `build/sdk-diagnostic-removal-tests.log` and
+`build/sdk-diagnostic-removal-validation.log`. No real game or authenticated Cloud
+experiment was run for this removal.
 
 ## Ownership and lifetime
 
@@ -36,9 +80,9 @@ fixed the failure. A regression test covers all three consumers' environment.
   The shared, observable `SteamGameSessions` owns admission, snapshot observation,
   recovery and release. Its reservation spans preparation through teardown and
   account sign-out, and it restores an existing session when Forge starts.
-  Authentication failure, cancellation before spawning or failed SDK validation
+  Authentication failure, cancellation before spawning or invalid storage preparation
   cleans up the host and scratch home.
-- `scripts/build-steam-native.sh` builds and signs the ARM host, both SDK consumers,
+- `scripts/build-steam-native.sh` builds and signs the ARM host, Intel exec helper,
   the universal adapter and the Intel Rosetta application in Forge's bundle.
   Only the Steam helpers have the entitlements needed to load Valve libraries and use
   DYLD discovery. Forge's Keychain identity remains unchanged.
@@ -346,11 +390,10 @@ them in Forge. No installed Steam client is read, including on first launch.
 Updating the pinned engine still requires ABI and compatibility validation; a
 mismatched version fails before private ABI calls.
 
-The SDK check supports the modern flat Steamworks interfaces and one recognized
-legacy SDK profile. The Intel consumer and Rosetta flow are implemented; their
-real Dead Cells path remains unverified. Other SDK versions, games without
-`libsteam_api.dylib`, and hardened games that reject the adapter need compatibility
-work. Concurrent Steam game sessions
+Architecture selection, Rosetta readiness and the Intel exec handoff
+remain required. Games without `libsteam_api.dylib` and hardened games that
+reject the adapter still need compatibility work. Host readiness is not proof
+of successful SDK initialization inside a game. Concurrent Steam game sessions
 are blocked until their compatibility is validated.
 Private endpoints use ephemeral loopback ports; the host binds after allocation,
 so another process taking the port can cause a failed launch. Valve libraries are

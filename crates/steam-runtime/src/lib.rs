@@ -7,8 +7,6 @@ pub mod package;
 pub mod packaging;
 mod process;
 pub mod protocol;
-#[cfg(debug_assertions)]
-mod storage_probe;
 pub mod supervisor;
 use protocol::{Credentials, Event};
 use std::{
@@ -25,14 +23,18 @@ pub fn client_sha256() -> &'static str {
     &package::entry("steamclient.dylib").sha256
 }
 pub fn native_cache_checkpoint(directory: PathBuf, app_id: u32) -> bool {
-    steam_kit::cloud::SdkCloudPaths::new(directory, app_id)
-        .and_then(|paths| paths.local_files(&[]))
-        .is_ok()
+    native_cache_files(directory, app_id).is_ok()
 }
+/// A published projection always carries its index, so a missing `remotecache.vdf`
+/// is an incomplete projection rather than an empty one. `SdkCloudPaths::records`
+/// cannot tell the two apart, so the distinction is enforced here for every caller.
 pub fn native_cache_files(
     directory: PathBuf,
     app_id: u32,
 ) -> Result<Vec<steam_kit::cloud::LocalCloudFile>, Error> {
+    if !directory.join("remotecache.vdf").is_file() {
+        return Err(Error::Storage);
+    }
     steam_kit::cloud::SdkCloudPaths::new(directory, app_id)
         .and_then(|paths| paths.local_files(&[]))
         .map_err(|_| Error::Storage)
@@ -65,8 +67,6 @@ pub enum Error {
     Authentication,
     #[error("backend.steam.runtime.ownershipFailed")]
     Ownership,
-    #[error("backend.steam.runtime.sdkFailed")]
-    Sdk,
     #[error("backend.steam.runtime.timeout")]
     Timeout,
     #[error("backend.steam.runtime.storageFailed")]
@@ -106,6 +106,18 @@ pub struct NativeStorage {
     pub home: PathBuf,
     pub account_id: u64,
     pub app_id: u32,
+}
+impl NativeStorage {
+    pub fn steam_directory(&self) -> PathBuf {
+        self.home.join("Library/Application Support/Steam")
+    }
+    /// The account- and app-specific SDK cloud cache the coordinator projects into.
+    pub fn cache_directory(&self) -> PathBuf {
+        self.steam_directory().join(format!(
+            "userdata/{}/{}",
+            self.account_id as u32, self.app_id
+        ))
+    }
 }
 impl Launch {
     pub fn new(credentials: Credentials) -> Self {
@@ -153,15 +165,18 @@ impl Launch {
         if !credentials.valid() || config.app_id == 0 {
             return Err(Error::InvalidSession);
         }
+        let prepared = files::prepare(config, &self.cancelled)?;
+        self.prepare_runtime(config, events, credentials, prepared, process::Child::host)
+    }
+    fn prepare_runtime(
+        &self,
+        config: &Config,
+        events: &mut Vec<Event>,
+        credentials: Credentials,
+        mut prepared: files::Prepared,
+        start_host: impl FnOnce(&files::Prepared, &Config, &str) -> Result<process::Child, Error>,
+    ) -> Result<Runtime, Error> {
         let id = credentials.steam_id;
-        let mut prepared = files::prepare(config, &self.cancelled)?;
-        if let Some(architecture) = *self
-            .architecture
-            .lock()
-            .map_err(|_| Error::InvalidSession)?
-        {
-            prepared.architecture = architecture;
-        }
         if let Some(storage) = self
             .storage
             .lock()
@@ -178,58 +193,27 @@ impl Launch {
             "com.zagrios.forge.discovery.{}",
             uuid::Uuid::new_v4().simple()
         );
-        let mut host = process::Child::host(&prepared, config, &service)?;
+        let mut host = start_host(&prepared, config, &service)?;
         credentials
             .write(host.input.as_mut().ok_or(Error::StartFailed)?)
             .map_err(|_| Error::StartFailed)?;
         drop(credentials);
         let ticket_bytes = self.wait_for_host(&mut host, config.app_id, events)?;
         self.check_cancelled()?;
-        let mut checker = process::Child::checker(&prepared, config, &service)?;
-        use std::io::Write;
-        checker
-            .input
-            .take()
-            .ok_or(Error::StartFailed)?
-            .write_all(&id.to_le_bytes())
-            .map_err(|_| Error::StartFailed)?;
-        let checked_at = Instant::now();
-        let asynchronous_request = loop {
-            self.check_cancelled()?;
-            if checked_at.elapsed() > Duration::from_secs(20) {
-                return Err(Error::Timeout);
-            }
-            if !host.alive()? {
-                return Err(Error::StartFailed);
-            }
-            let event = checker.next(Duration::from_millis(50))?;
-            if let Some(event) = &event {
-                events.push(event.clone());
-            }
-            match event {
-                Some(Event::SdkVerified {
-                    app_id,
-                    asynchronous_request,
-                }) if app_id == config.app_id => break asynchronous_request,
-                Some(Event::SdkStage { .. }) => {}
-                Some(_) => return Err(Error::Sdk),
-                None => {}
-            }
-        };
-        checker.finish(Duration::from_secs(2))?;
-        self.check_cancelled()?;
         if !host.alive()? {
             return Err(Error::StartFailed);
         }
+        // The pinned host has verified its account, subscription and ticket.
+        // Let the game attach using its own SDK and interface versions. The
+        // host does not initialize the game's SDK.
         let proof = Proof {
             app_id: config.app_id,
             host_pid: host.id(),
             authenticated: true,
             ticket_bytes,
-            sdk_initialized: true,
-            account_verified: true,
-            license_verified: true,
-            asynchronous_request,
+            host_account_verified: true,
+            host_license_verified: true,
+            sdk_checked: false,
             game_pid: None,
             game_exit: None,
             discovery_paths: 0,
@@ -296,7 +280,6 @@ fn failure(reason: protocol::Failure) -> Error {
     match reason {
         protocol::Failure::Authentication => Error::Authentication,
         protocol::Failure::Ownership => Error::Ownership,
-        protocol::Failure::Sdk => Error::Sdk,
         protocol::Failure::Cancelled => Error::Cancelled,
         _ => Error::StartFailed,
     }
@@ -308,10 +291,9 @@ pub struct Proof {
     pub host_pid: u32,
     pub authenticated: bool,
     pub ticket_bytes: u32,
-    pub sdk_initialized: bool,
-    pub account_verified: bool,
-    pub license_verified: bool,
-    pub asynchronous_request: bool,
+    pub host_account_verified: bool,
+    pub host_license_verified: bool,
+    pub sdk_checked: bool,
     pub game_pid: Option<u32>,
     pub game_exit: Option<i32>,
     pub discovery_paths: u32,
@@ -450,6 +432,9 @@ impl Drop for Runtime {
 }
 
 #[cfg(test)]
+mod launch_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     fn launch() -> Launch {
@@ -459,10 +444,23 @@ mod tests {
             refresh_token: "fixture-token".into(),
         })
     }
-    fn child(script: &str) -> process::Child {
+    pub(crate) fn child(script: &str) -> process::Child {
         let mut command = std::process::Command::new("/bin/sh");
         command.arg("-c").arg(script);
         process::Child::spawn(command).unwrap()
+    }
+    pub(crate) fn prepared(root: &std::path::Path) -> files::Prepared {
+        files::Prepared {
+            storage: None,
+            directory: root.into(),
+            run_directory: root.join("scratch"),
+            profile: root.join("profile"),
+            report: root.join("report.json"),
+            endpoints: [
+                ("Steam3Master".into(), "127.0.0.1:1".into()),
+                ("SteamClientService".into(), "127.0.0.1:2".into()),
+            ],
+        }
     }
     pub(crate) fn runtime(script: &str, root: &std::path::Path) -> Runtime {
         let host = child(script);
@@ -474,10 +472,9 @@ mod tests {
                     host_pid: host.id(),
                     authenticated: true,
                     ticket_bytes: 178,
-                    sdk_initialized: true,
-                    account_verified: true,
-                    license_verified: true,
-                    asynchronous_request: true,
+                    host_account_verified: true,
+                    host_license_verified: true,
+                    sdk_checked: false,
                     game_pid: None,
                     game_exit: None,
                     discovery_paths: 0,
@@ -491,18 +488,7 @@ mod tests {
             adapter: root.join("adapter"),
             service: "fixture".into(),
             report: root.join("report.json"),
-            _prepared: files::Prepared {
-                architecture: crate::architecture::Architecture::Arm64,
-                storage: None,
-                directory: root.into(),
-                run_directory: root.join("scratch"),
-                profile: root.join("profile"),
-                report: root.join("report.json"),
-                endpoints: [
-                    ("Steam3Master".into(), "127.0.0.1:1".into()),
-                    ("SteamClientService".into(), "127.0.0.1:2".into()),
-                ],
-            },
+            _prepared: prepared(root),
         }
     }
     fn signal(runtime: &Runtime) {

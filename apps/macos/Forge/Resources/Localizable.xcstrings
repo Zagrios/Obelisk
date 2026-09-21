@@ -120,23 +120,6 @@
         }
       }
     },
-    "backend.steam.runtime.sdkFailed": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The game’s Steamworks connection could not be verified. The game was not started."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "La connexion Steamworks du jeu n’a pas pu être vérifiée. Le jeu n’a pas été lancé."
-          }
-        }
-      }
-    },
     "backend.steam.runtime.timeout": {
       "extractionState": "manual",
       "localizations": {

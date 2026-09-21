@@ -16,93 +16,12 @@ import struct
 import subprocess
 import tempfile
 import time
-import uuid
 import zipfile
-import queue
-import threading
-
-
-def sdk_pair(executable, runtime, profile, environment, result):
-    """Keep the offline host alive while a separate, genuine SDK consumes it."""
-    command = ["/usr/bin/sandbox-exec", "-f", str(profile), str(executable)]
-    host_environment = {key: value for key, value in environment.items()
-                        if key not in ("SteamAppId", "SteamGameId")}
-    host = subprocess.Popen(command + ["sdk-host", str(runtime / "steamclient.dylib")],
-                            cwd=runtime, env=host_environment, stdin=subprocess.PIPE,
-                            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
-    messages = queue.Queue()
-
-    def read_events():
-        for line in host.stdout:
-            try:
-                messages.put(json.loads(line))
-            except json.JSONDecodeError:
-                messages.put({"event": "invalid_host_output"})
-        messages.put(None)
-
-    reader = threading.Thread(target=read_events, daemon=True)
-    reader.start()
-    try:
-        deadline = time.monotonic() + 10
-        ready = False
-        while time.monotonic() < deadline:
-            try:
-                event = messages.get(timeout=max(0.001, deadline - time.monotonic()))
-            except queue.Empty:
-                break
-            if event is None:
-                break
-            result["events"].append({**event, "phase": "sdk-host"})
-            if event.get("event") == "sdk_host_ready":
-                ready = True
-                break
-        if not ready:
-            result["exit_code"] = 1
-            result["events"].append({"event": "sdk_host_not_ready", "phase": "sdk-host"})
-            return
-        # sandbox-exec is protected by SIP and strips incoming DYLD variables.
-        # env sets this one variable after sandbox entry and execs the signed
-        # fixture. Both processes remain inside the same restrictive profile.
-        consumer = command[:3] + ["/usr/bin/env",
-                    f"DYLD_INSERT_LIBRARIES={runtime / 'libforge_steam_discovery_adapter.dylib'}",
-                    str(executable), "sdk-consumer", str(runtime / "steamclient.dylib")]
-        run = subprocess.run(consumer, cwd=runtime, env=environment,
-                             capture_output=True, timeout=20, text=True)
-        result["events"].extend({**json.loads(line), "phase": "sdk-consumer"}
-                                for line in run.stdout.splitlines())
-        result["phases"].append({"phase": "sdk-consumer", "exit_code": run.returncode})
-        result["exit_code"] = run.returncode
-        result["stderr_present"] |= bool(run.stderr)
-    except subprocess.TimeoutExpired as error:
-        result["timeout"] = True
-        result["exit_code"] = None
-        for line in (error.stdout or b"").splitlines():
-            try:
-                result["events"].append({**json.loads(line), "phase": "sdk-consumer"})
-            except json.JSONDecodeError:
-                pass
-    finally:
-        host.stdin.close()
-        try:
-            status = host.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            host.kill()
-            status = host.wait(timeout=5)
-            result["timeout"] = True
-        reader.join(timeout=1)
-        while not messages.empty():
-            event = messages.get_nowait()
-            if event is not None:
-                result["events"].append({**event, "phase": "sdk-host"})
-        result["phases"].append({"phase": "sdk-host", "exit_code": status})
-        if status != 0:
-            result["exit_code"] = status
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=["inventory", "storage-inventory", "local-storage", "local-projection", "local-cache-refresh", "local-live-mutation", "sync-controls", "sdk-pair"], default="inventory")
-    parser.add_argument("--steam-api", type=Path, help="Game SDK library copied into the offline scratch runtime")
+    parser.add_argument("--mode", choices=["inventory", "storage-inventory", "local-storage", "local-projection", "local-cache-refresh", "local-live-mutation", "sync-controls"], default="inventory")
     parser.add_argument("--keep-scratch", action="store_true", help="Keep the disposable runtime for inspection")
     parser.add_argument("--fixture-appinfo", action="store_true", help="Seed synthetic offline app quota metadata")
     parser.add_argument("--fixture-identity", action="store_true", help="Request a test-only identity with all external networking denied")
@@ -112,12 +31,8 @@ def main():
         parser.error("--fixture-cache requires a projection mode")
     if args.mode == "local-cache-refresh" and not all([args.fixture_appinfo, args.fixture_identity, args.fixture_cache]):
         parser.error("local-cache-refresh requires all three --fixture-* flags")
-    if args.mode in ["local-live-mutation", "sync-controls", "sdk-pair"] and not (args.fixture_appinfo and args.fixture_identity):
+    if args.mode in ["local-live-mutation", "sync-controls"] and not (args.fixture_appinfo and args.fixture_identity):
         parser.error(f"{args.mode} requires --fixture-appinfo and --fixture-identity")
-    if (args.mode == "sdk-pair") != (args.steam_api is not None):
-        parser.error("--steam-api is required only for sdk-pair")
-    if args.steam_api is not None and not args.steam_api.is_file():
-        parser.error("--steam-api must identify an existing game SDK library")
     project = Path(__file__).resolve().parent.parent
     subprocess.run([
         "cargo", "build", "--locked", "--offline", "--manifest-path",
@@ -160,8 +75,7 @@ def main():
             target = runtime / entry["path"]
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(payload)
-    # SDK discovery replaces the discovered host filename with steamclient.dylib.
-    executable = runtime / "cloud_storage_probe" if args.mode == "sdk-pair" else scratch / "cloud_storage_probe"
+    executable = scratch / "cloud_storage_probe"
     shutil.copy2(binary, executable)
     subprocess.run([
         "/usr/bin/codesign", "--force", "--sign", identity.group(1), "--options", "runtime",
@@ -169,23 +83,6 @@ def main():
         str(project / "packaging/steam-host.entitlements"), str(executable),
     ], check=True, capture_output=True)
     subprocess.run(["/usr/bin/codesign", "--verify", "--strict", str(executable)], check=True)
-    sdk_fingerprints = None
-    if args.mode == "sdk-pair":
-        adapter = project / "build/xcode/Build/Products/Debug/Forge.app/Contents/Helpers/SteamNative/libforge_steam_discovery_adapter.dylib"
-        sdk_fingerprints = {}
-        for source, name in [(args.steam_api, "libsteam_api.dylib"), (adapter, adapter.name)]:
-            target = runtime / name
-            shutil.copy2(source, target)
-            source_hash = hashlib.sha256(target.read_bytes()).hexdigest()
-            if name == "libsteam_api.dylib":
-                # The game's signature may bind its original enclosing plist.
-                # Sign only this disposable copy; preserve the source fingerprint.
-                subprocess.run(["/usr/bin/codesign", "--force", "--sign", identity.group(1),
-                                "--identifier", "com.zagrios.forge.cloud-probe.sdk", str(target)],
-                               check=True, capture_output=True)
-            subprocess.run(["/usr/bin/codesign", "--verify", "--strict", str(target)], check=True)
-            sdk_fingerprints[name] = {"source": source_hash,
-                                      "scratch": hashlib.sha256(target.read_bytes()).hexdigest()}
     # These variables belong only to the disposable child, not the shell/session.
     environment = {"PATH": "/usr/bin:/bin", "HOME": str(scratch / "home"),
                    "CFFIXED_USER_HOME": str(scratch / "home"), "TMPDIR": str(scratch / "tmp"),
@@ -194,9 +91,6 @@ def main():
         environment["FORGE_CLOUD_PROBE_IDENTITY"] = "fixture"
     if args.fixture_cache:
         environment["FORGE_CLOUD_PROBE_CACHE"] = "fixture"
-    if args.mode == "sdk-pair":
-        environment["FORGE_CLOUD_PROBE_SDK"] = str(runtime / "libsteam_api.dylib")
-        environment["FORGE_PRIVATE_STEAM_DISCOVERY"] = f"com.zagrios.forge.discovery.{uuid.uuid4()}"
     # Reserve distinct private endpoints while preparing the sandbox. No default
     # Steam endpoint or local discovery is used. Release just before exec.
     reservations = []
@@ -219,7 +113,6 @@ def main():
         f"(deny file-read* (subpath {json.dumps(str(Path.home()))}))",
         "(deny mach-lookup (global-name-regex \".*[Ss]team.*\") (global-name \"com.apple.coreservices.launchservicesd\") (global-name \"com.apple.lsd.mapdb\"))",
         "(deny process-exec)", f"(allow process-exec (literal {json.dumps(str(executable))}))",
-        *(['(allow process-exec (literal "/usr/bin/env"))'] if args.mode == "sdk-pair" else []),
     ])
     profile_path = scratch / "probe.sb"
     profile_path.write_text(profile)
@@ -232,10 +125,6 @@ def main():
               "sync-controls": ["sync-download", "sync-upload", "sync-cancel"],
               "local-cache-refresh": ["project-write", "project-rename", "project-read-renamed"]}.get(args.mode, [args.mode])
     result = {"mode": args.mode, "exit_code": 0, "events": [], "phases": [], "stderr_present": False, "timeout": False}
-    if args.mode == "sdk-pair":
-        sdk_pair(executable, runtime, profile_path, environment, result)
-        result["sdk_fingerprints"] = sdk_fingerprints
-        phases = []
     for phase in phases:
         try:
             run = subprocess.run([
@@ -273,9 +162,6 @@ def main():
                      "crates/steam-native/examples/cloud_storage_probe/sync_controls.rs",
                      "scripts/probe-steam-cloud.py", "crates/steam-runtime/runtime-manifest.json"]
     }
-    if args.mode == "sdk-pair":
-        source = "crates/steam-native/examples/cloud_storage_probe/sdk_pair.rs"
-        result["source_sha256"][source] = hashlib.sha256((project / source).read_bytes()).hexdigest()
     cloud_log = scratch / "home/Library/Application Support/Steam/logs/cloud_log.txt"
     if cloud_log.is_file():
         result["native_cache_observations"] = [

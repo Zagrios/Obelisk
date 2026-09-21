@@ -28,7 +28,10 @@ require_architectures() {
 
 STEAM_HELPERS="$1/Contents/Helpers/SteamNative"
 require_architectures "$STEAM_HELPERS/forge-steam-host" "arm64"
-require_architectures "$STEAM_HELPERS/forge-steam-sdk-arm64" "arm64"
+if [[ -e "$STEAM_HELPERS/forge-steam-sdk-arm64" ]]; then
+    echo "Forge contains the removed ARM64 SDK diagnostic helper." >&2
+    exit 1
+fi
 require_architectures "$STEAM_HELPERS/forge-steam-sdk-x86_64" "x86_64"
 require_architectures "$STEAM_HELPERS/libforge_steam_discovery_adapter.dylib" "arm64 x86_64"
 require_architectures "$1/Contents/Helpers/Forge Rosetta.app/Contents/MacOS/ForgeRosetta" "x86_64"

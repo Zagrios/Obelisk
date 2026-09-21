@@ -74,21 +74,6 @@ pub enum Event {
     Discovery {
         paths: u32,
     },
-    SdkVerified {
-        app_id: u32,
-        asynchronous_request: bool,
-    },
-    StorageVerified {
-        total: u64,
-        available: u64,
-        readback: bool,
-    },
-    StorageFailure {
-        reason: String,
-    },
-    SdkStage {
-        stage: SdkStage,
-    },
     Disconnected {},
     Reconnected {},
     Failed {
@@ -98,23 +83,11 @@ pub enum Event {
 
 #[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum SdkStage {
-    Library,
-    Initialize,
-    Engine,
-    Interfaces,
-    Account,
-    AsynchronousRequest,
-}
-
-#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
 pub enum Failure {
     Engine,
     Authentication,
     Ownership,
     Discovery,
-    Sdk,
     Cancelled,
 }
 

@@ -27,7 +27,7 @@ if ! cmp -s "$RUNTIME_PACKAGE" "$RUNTIME_DESTINATION/runtime.zip"; then
 fi
 export CARGO_TARGET_DIR="$PROJECT_ROOT/build/steam-native-target"
 cargo build --locked --manifest-path "$PROJECT_ROOT/crates/steam-native/Cargo.toml" \
-    --workspace --bins --lib --profile "$PROFILE_NAME" --target aarch64-apple-darwin
+    --workspace --bin forge-steam-host --lib --profile "$PROFILE_NAME" --target aarch64-apple-darwin
 cargo build --locked --manifest-path "$PROJECT_ROOT/crates/steam-native/Cargo.toml" \
     -p forge-steam-native --bin forge-steam-sdk --profile "$PROFILE_NAME" --target x86_64-apple-darwin
 cargo build --locked --manifest-path "$PROJECT_ROOT/crates/steam-native/Cargo.toml" \
@@ -37,7 +37,8 @@ INTEL_BUILD="$CARGO_TARGET_DIR/x86_64-apple-darwin/$PROFILE_DIRECTORY"
 DESTINATION="$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/Helpers/SteamNative"
 mkdir -p "$DESTINATION"
 cp "$ARM_BUILD/forge-steam-host" "$DESTINATION/forge-steam-host"
-cp "$ARM_BUILD/forge-steam-sdk" "$DESTINATION/forge-steam-sdk-arm64"
+# Remove the former diagnostic helper from incremental app builds.
+rm -f "$DESTINATION/forge-steam-sdk-arm64"
 cp "$INTEL_BUILD/forge-steam-sdk" "$DESTINATION/forge-steam-sdk-x86_64"
 ADAPTER="$DESTINATION/libforge_steam_discovery_adapter.dylib"
 /usr/bin/lipo -create "$ARM_BUILD/libforge_steam_discovery_adapter.dylib" \
@@ -48,12 +49,10 @@ IDENTITY="${EXPANDED_CODE_SIGN_IDENTITY:?A stable Apple signing identity is requ
     --entitlements "$PROJECT_ROOT/packaging/steam-host.entitlements" "$DESTINATION/forge-steam-host"
 /usr/bin/codesign --force --sign "$IDENTITY" \
     --identifier com.zagrios.forge.steam-discovery "$ADAPTER"
-for ARCHITECTURE in arm64 x86_64; do
-    /usr/bin/codesign --force --sign "$IDENTITY" --options runtime \
-        --identifier "com.zagrios.forge.steam-sdk-$ARCHITECTURE" \
-        --entitlements "$PROJECT_ROOT/packaging/steam-host.entitlements" \
-        "$DESTINATION/forge-steam-sdk-$ARCHITECTURE"
-done
+/usr/bin/codesign --force --sign "$IDENTITY" --options runtime \
+    --identifier com.zagrios.forge.steam-sdk-x86_64 \
+    --entitlements "$PROJECT_ROOT/packaging/steam-host.entitlements" \
+    "$DESTINATION/forge-steam-sdk-x86_64"
 
 # Opening this Intel-only app through LaunchServices lets macOS present its
 # Rosetta installer. A direct --probe invocation never starts the app run loop.

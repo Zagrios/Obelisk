@@ -5,7 +5,6 @@ use std::{
 };
 
 pub(crate) struct Prepared {
-    pub architecture: crate::architecture::Architecture,
     pub directory: PathBuf,
     pub run_directory: PathBuf,
     pub profile: PathBuf,
@@ -26,15 +25,16 @@ impl Prepared {
     }
     pub fn enable_storage(&mut self, storage: &crate::NativeStorage) -> Result<(), Error> {
         crate::cloud::safe_storage_path(&storage.home)?;
-        let steam = storage.home.join("Library/Application Support/Steam");
-        let app = steam.join(format!(
-            "userdata/{}/{}",
-            storage.account_id as u32, storage.app_id
-        ));
+        let steam = storage.steam_directory();
+        let app = storage.cache_directory();
         for path in [app.join("remote"), steam.join("appcache")] {
             crate::cloud::safe_storage_path(&path)?;
             private_directory(&path)?;
         }
+        // The coordinator must publish a complete local projection before a
+        // native host starts. Validate it without loading the game's SDK. SDK
+        // quota/readback readiness now belongs to the game's own attachment.
+        crate::native_cache_files(app.clone(), storage.app_id)?;
         use std::io::Write;
         let extra = format!(
             "\n(allow file-read* (subpath {}))\n(allow file-write* (subpath {}) (subpath {}))\n",
@@ -89,8 +89,10 @@ pub(crate) fn prepare(
         std::net::TcpListener::bind("127.0.0.1:0")?,
         std::net::TcpListener::bind("127.0.0.1:0")?,
     ];
+    // Refuse an unsupported or malformed SDK library before anything is written.
+    // The selected slice itself is owned by Launch, which the supervisor reads.
+    crate::architecture::Architecture::for_library(&config.steam_api)?;
     let prepared = Prepared {
-        architecture: crate::architecture::Architecture::for_library(&config.steam_api)?,
         storage: None,
         directory,
         profile: run_directory.join("host.sb"),
@@ -275,10 +277,13 @@ mod atomic_tests {
         for path in ["userdata/42/43", "userdata/43/42", "config"] {
             fs::create_dir_all(steam.join(path)).unwrap();
         }
+        steam_kit::cloud::SdkCloudPaths::new(steam.join("userdata/42/42"), 42)
+            .unwrap()
+            .prepare_index(&[])
+            .unwrap();
         let run = root.join("run");
         fs::create_dir_all(&run).unwrap();
         let mut prepared = Prepared {
-            architecture: crate::architecture::Architecture::Arm64,
             directory: runtime,
             run_directory: run.clone(),
             profile: run.join("profile"),

@@ -5,8 +5,6 @@ use std::{ffi::c_void, io::Write, path::Path};
 
 #[path = "cloud_storage_probe/live_storage.rs"]
 mod live_storage;
-#[path = "cloud_storage_probe/sdk_pair.rs"]
-mod sdk_pair;
 #[path = "cloud_storage_probe/sync_controls.rs"]
 mod sync_controls;
 
@@ -47,8 +45,6 @@ fn probe(output: &mut std::fs::File) -> Result<()> {
             "sync-download",
             "sync-upload",
             "sync-cancel",
-            "sdk-host",
-            "sdk-consumer",
         ]
         .contains(&args[1].as_str())
     {
@@ -66,11 +62,6 @@ fn probe(output: &mut std::fs::File) -> Result<()> {
         return Err("Use the disposable-data runner".into());
     }
     pinned_client(path)?;
-    // The SDK consumer must discover and connect to the separate fixture host.
-    // Loading an Engine here would silently replace that proof with a local one.
-    if args[1] == "sdk-consumer" {
-        return sdk_pair::consume(output, path, &scratch);
-    }
     let library = native::Library::open(path)?;
     let factory = symbol!(
         library,
@@ -148,11 +139,6 @@ fn probe(output: &mut std::fs::File) -> Result<()> {
         };
         if storage.is_null() {
             return Err("Private RemoteStorage unavailable".into());
-        }
-        if args[1] == "sdk-host" {
-            let result = sdk_pair::serve(output, storage, base, &scratch, &engine, user, pipe);
-            engine.release(user, pipe);
-            return result;
         }
         if args[1].starts_with("live-") {
             let address = method(engine_object, base, 14, 0xa04d74)?;

@@ -1,9 +1,6 @@
 //! Narrow macOS bootstrap/Mach transport, independent of Steam authentication.
 use crate::Result;
-use std::{
-    ffi::{CStr, CString, c_char, c_void},
-    path::{Path, PathBuf},
-};
+use std::ffi::{CStr, CString, c_char};
 pub type Port = u32;
 pub const SEND: u32 = 1;
 pub const RECEIVE: u32 = 2;
@@ -69,7 +66,6 @@ unsafe extern "C" {
     fn mach_msg_destroy(message: *mut Header);
     fn bootstrap_register(bootstrap: Port, name: *const c_char, port: Port) -> i32;
     fn bootstrap_look_up(bootstrap: Port, name: *const c_char, port: *mut Port) -> i32;
-    fn proc_pidpath(pid: i32, buffer: *mut c_void, size: u32) -> i32;
 }
 
 pub struct ReceivePort(pub Port);
@@ -185,20 +181,6 @@ pub fn valid_request(message: &Message) -> bool {
         && message.header.remote != u32::MAX
         && [17, 18].contains(&(message.header.bits & 0xff))
         && [100001, 14].contains(&message.opcode)
-}
-pub fn host_path(pid: i32) -> Result<PathBuf> {
-    let mut bytes = [0_u8; 4096];
-    // SAFETY: sufficiently sized writable buffer; positive PID supplied by caller.
-    let size = unsafe { proc_pidpath(pid, bytes.as_mut_ptr().cast(), bytes.len() as u32) };
-    if size <= 0 {
-        return Err("Host PID is not available".into());
-    }
-    let text = CStr::from_bytes_until_nul(&bytes)?;
-    use std::os::unix::ffi::OsStrExt;
-    Ok(Path::new(std::ffi::OsStr::from_bytes(text.to_bytes())).canonicalize()?)
-}
-pub fn verify_host(pid: i32, path: &Path) -> bool {
-    pid > 0 && host_path(pid).is_ok_and(|actual| actual == path)
 }
 
 #[cfg(test)]

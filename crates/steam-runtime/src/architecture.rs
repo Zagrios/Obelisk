@@ -1,5 +1,5 @@
 //! Select matching Mach-O slices before any Steam SDK code is loaded.
-use crate::{Error, package};
+use crate::Error;
 use std::{
     fs::File,
     io::{Read, Seek, SeekFrom},
@@ -14,12 +14,6 @@ pub(crate) enum Architecture {
     Intel,
 }
 impl Architecture {
-    pub fn helper(self) -> &'static str {
-        match self {
-            Self::Arm64 => package::SDK_ARM64,
-            Self::Intel => package::SDK_INTEL,
-        }
-    }
     pub fn select(executable: &Path, library: &Path) -> Result<Self, Error> {
         let game = slices(executable)?;
         let sdk = slices(library)?;

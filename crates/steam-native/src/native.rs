@@ -124,11 +124,6 @@ fn exec_game_inner(arguments: &[std::ffi::OsString]) -> std::io::Result<()> {
     result
 }
 
-unsafe extern "C" {
-    fn _dyld_image_count() -> u32;
-    fn _dyld_get_image_name(index: u32) -> *const c_char;
-}
-
 pub struct Library(*mut c_void);
 impl Library {
     pub fn open(path: &Path) -> Result<Self> {
@@ -147,7 +142,7 @@ impl Library {
             .ok_or_else(|| format!("missing export: {}", name.to_string_lossy()).into())
     }
 
-    pub fn optional_symbol(&self, name: &CStr) -> Option<*mut c_void> {
+    fn optional_symbol(&self, name: &CStr) -> Option<*mut c_void> {
         // SAFETY: valid open handle and NUL-terminated symbol name.
         let pointer = unsafe { libc::dlsym(self.0, name.as_ptr()) };
         (!pointer.is_null()).then_some(pointer)
@@ -191,18 +186,6 @@ pub fn translated() -> bool {
         );
     }
     value != 0
-}
-
-pub fn loaded_images() -> Vec<String> {
-    // SAFETY: dyld owns the NUL-terminated image names for loaded process images.
-    unsafe {
-        (0.._dyld_image_count())
-            .filter_map(|i| {
-                let name = _dyld_get_image_name(i);
-                (!name.is_null()).then(|| CStr::from_ptr(name).to_string_lossy().into_owned())
-            })
-            .collect()
-    }
 }
 
 pub fn parent_pid() -> i32 {

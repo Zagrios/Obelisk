@@ -60,40 +60,10 @@ impl Child {
             .env("PATH", "/usr/bin:/bin")
             .env("HOME", prepared.home())
             .env("TMPDIR", prepared.run_directory.join("tmp"));
-        // Host, preflight consumer and game must connect to the same private IPC.
+        // Host and game must connect to the same private IPC.
         command.envs(prepared.endpoints.iter().map(|(key, value)| (key, value)));
         if prepared.storage.is_some() {
             command.env("FORGE_STORAGE_METADATA", "1");
-        }
-        command
-    }
-    pub fn checker(prepared: &Prepared, config: &Config, service: &str) -> Result<Self, Error> {
-        Self::spawn(Self::checker_command(prepared, config, service))
-    }
-    fn checker_command(prepared: &Prepared, config: &Config, service: &str) -> Command {
-        let mut command = Command::new(prepared.directory.join(prepared.architecture.helper()));
-        command
-            .arg("check")
-            .arg(&config.steam_api)
-            .arg(prepared.directory.join("steamclient.dylib"))
-            .arg(config.app_id.to_string())
-            .env_clear()
-            .env("PATH", "/usr/bin:/bin")
-            .env("HOME", prepared.home())
-            .env("TMPDIR", prepared.run_directory.join("tmp"))
-            .env("SteamAppId", config.app_id.to_string())
-            .env("SteamGameId", config.app_id.to_string())
-            .envs(prepared.consumer_environment(service))
-            .current_dir(&prepared.directory);
-        if let Some(storage) = &prepared.storage {
-            command.env("FORGE_STORAGE_METADATA", "1");
-            command.env(
-                "FORGE_STORAGE_DIRECTORY",
-                storage.home.join(format!(
-                    "Library/Application Support/Steam/userdata/{}/{}",
-                    storage.account_id as u32, storage.app_id
-                )),
-            );
         }
         command
     }
@@ -168,21 +138,6 @@ impl Child {
     pub fn try_event(&self) -> Option<Event> {
         self.events.try_recv().ok()
     }
-    pub fn finish(&mut self, timeout: Duration) -> Result<(), Error> {
-        let start = Instant::now();
-        while start.elapsed() < timeout {
-            if let Some(status) = self.child.try_wait().map_err(|_| Error::StartFailed)? {
-                self.reaped = true;
-                return if status.success() {
-                    Ok(())
-                } else {
-                    Err(Error::Sdk)
-                };
-            }
-            std::thread::sleep(Duration::from_millis(20));
-        }
-        Err(Error::Timeout)
-    }
     pub fn stop(&mut self) {
         self.input.take();
         let start = Instant::now();
@@ -212,10 +167,9 @@ impl Drop for Child {
 mod tests {
     use super::*;
     #[test]
-    fn host_sdk_and_game_share_the_private_ipc_endpoints() {
+    fn host_and_game_share_the_private_ipc_endpoints_and_discovery() {
         let temporary = tempfile::tempdir().unwrap();
         let prepared = Prepared {
-            architecture: crate::architecture::Architecture::Arm64,
             storage: None,
             directory: temporary.path().join("engine"),
             run_directory: temporary.path().join("run"),
@@ -238,31 +192,23 @@ mod tests {
         };
         let service = "com.zagrios.forge.discovery.fixture";
         let host = Child::host_command(&prepared, &config, service);
-        let sdk = Child::checker_command(&prepared, &config, service);
-        assert_eq!(
-            sdk.get_program(),
-            prepared.directory.join("forge-steam-sdk-arm64").as_os_str()
-        );
         let game = prepared.consumer_environment(service);
         for key in ["Steam3Master", "SteamClientService"] {
             let expected = std::ffi::OsStr::new(&game[key]);
-            for command in [&host, &sdk] {
-                assert_eq!(
-                    command
-                        .get_envs()
-                        .find(|(name, _)| *name == key)
-                        .and_then(|(_, value)| value),
-                    Some(expected)
-                );
-            }
-        }
-        for key in ["DYLD_INSERT_LIBRARIES", "FORGE_PRIVATE_STEAM_DISCOVERY"] {
             assert_eq!(
-                sdk.get_envs()
+                host.get_envs()
                     .find(|(name, _)| *name == key)
                     .and_then(|(_, value)| value),
-                Some(std::ffi::OsStr::new(&game[key]))
+                Some(expected)
             );
         }
+        assert_eq!(game["FORGE_PRIVATE_STEAM_DISCOVERY"], service);
+        assert_eq!(
+            game["DYLD_INSERT_LIBRARIES"],
+            prepared
+                .directory
+                .join(crate::package::ADAPTER)
+                .to_string_lossy()
+        );
     }
 }

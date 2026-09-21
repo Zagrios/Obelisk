@@ -1,5 +1,21 @@
 # Steam Cloud compatibility, September 20, 2026
 
+## Launch change, September 21
+
+Normal launch now leaves Steamworks initialization to the game. Rust still
+reconciles Cloud, prepares the account/app-specific native index and validates
+its local records and file paths before starting the host. The native host still
+checks account identity, subscription and an ownership ticket, requests app
+metadata, and retains its existing filesystem restrictions. The supervisor still
+waits for native shutdown before post-game capture and transfer.
+
+The former SDK quota and byte-readback diagnostics have been removed, including
+their authenticated Debug commands and the offline `sdk-pair` experiment. A
+prepared local cache does not prove that the game's SDK has consumed it; that
+step occurs when the game attaches. The historical authenticated evidence below
+includes a separate SDK consumer and must not be presented as a live validation
+of the new launch path. No Cloud transfer ownership has moved to Valve.
+
 ## Scope
 
 This work follows the September 20 handoff: broaden AutoCloud interpretation, then add ordinary SDK RemoteStorage persistence and synchronization before launch and after native shutdown. FileShare and Dynamic Cloud are outside this scope. Save history and internal-format migrations remain removed.
@@ -20,7 +36,7 @@ Vampire Survivors, Frostpunk 2 and Unturned have plain SDK filenames alongside A
 
 The native HOME is outside the archive directory, at a sibling `<cloud-root>-sdk/<steam-id>/<app-id>`. The vault deliberately rejects save bindings inside its own archive. Its existing account ownership, conflict, capture, upload and recovery paths also manage SDK bindings.
 
-A host may write only its app's userdata cache and appinfo cache in that HOME. Login configuration, other accounts/apps and real save roots remain denied. Native app metadata is requested using the pinned, verified Apps interface; a genuine SDK consumer checks identity, subscription, nonzero native quota and projected bytes before the game is admitted. No synthetic production identity or quota is supplied.
+A host may write only its app's userdata cache and appinfo cache in that HOME. Login configuration, other accounts/apps and real save roots remain denied. Native app metadata is requested using the pinned, verified Apps interface. The host checks identity, subscription and an ownership ticket, and Rust validates the local projection and its index, before the game is admitted; the game's own SDK then consumes that projection. No synthetic production identity or quota is supplied.
 
 Rust finishes prelaunch reconciliation before native startup. The supervisor waits for game exit and native termination before capturing and transferring SDK files. Native sync, conflict and suspend/resume controls are not called. This contract covers ordinary file read/write/enumeration/deletion; it does not claim semantics for out-of-scope SDK features.
 
@@ -28,13 +44,13 @@ Rust finishes prelaunch reconciliation before native startup. The supervisor wai
 
 The authenticated diagnostic uses an owned SDK-only app whose Cloud namespace is checked empty immediately before each run. Project Zomboid, AppID 108600, was used with an original Valve SDK library from a Forge-installed game. No game executable was launched.
 
-The first probe passed native write/read, complete process restart, separate SDK readback, enumeration and deletion. Both native generations authenticated; native quota was 1,000,000 bytes. The app's remote manifest was unchanged. Rust index projection was then introduced between generations. One early run failed in the second consumer; a later run passed. Readiness now requires bounded SDK byte/name checks rather than assuming quota readiness implies cache readiness.
+The first probe passed native write/read, complete process restart, separate SDK readback, enumeration and deletion. Both native generations authenticated; native quota was 1,000,000 bytes. The app's remote manifest was unchanged. Rust index projection was then introduced between generations. One early run failed in the second consumer; a later run passed. Readiness then required bounded SDK byte/name checks rather than assuming quota readiness implies cache readiness. Those checks were removed with the SDK diagnostic; Rust now validates the projection and its index before the host starts.
 
-`--steam-cloud-storage-probe APP_ID DIRECTORY SDK_LIBRARY` exercises this local persistence/index handoff. `--steam-cloud-storage-transfer-probe` additionally uses two separate coordinator stores: sender SDK write and Rust upload, receiver Rust download and SDK read/delete, then Rust deletion. Transfer evidence must be recorded separately from local persistence. Failed transfer attempts retain their private store directory for recovery.
+At the time of this validation, `--steam-cloud-storage-probe APP_ID DIRECTORY SDK_LIBRARY` exercised the local persistence/index handoff. `--steam-cloud-storage-transfer-probe` additionally used two separate coordinator stores: sender SDK write and Rust upload, receiver Rust download and SDK read/delete, then Rust deletion. Both commands have since been removed. The evidence remains historical; failed transfer attempts retained their private store directory for recovery.
 
 The authenticated transfer probe passed with two independent coordinator stores. The first SDK consumer wrote 44 bytes, Rust uploaded them, a fresh receiver downloaded them, and the second SDK consumer enumerated/read the exact bytes and deleted the file. Rust then completed remote deletion. Both comparisons made after native shutdown and before Rust finalization found the remote manifest unchanged. Two Rust synchronization cycles completed; no active remote fixture remained. These observations cover ordinary write/delete at the measured boundaries, not every native API. See [redacted roundtrip evidence](evidence/steam-cloud-runtime-2026-09-20/sdk-cloud-roundtrip.json).
 
-The complete `./scripts/test.sh` passed: 400 Rust tests across its runs (six ignored), 225 Swift tests executed (nine skipped, zero failures), bundled-runtime isolation, formatting, localization and signature checks. Subsequent account-scope and conflict assertions passed in the main workspace: 397 tests, six ignored. Strict workspace Clippy passed. SDK cache byte verification is bounded to ten seconds and 100 MiB per file; unsupported larger files fail admission instead of starting with unverified cache contents.
+The complete `./scripts/test.sh` passed: 400 Rust tests across its runs (six ignored), 225 Swift tests executed (nine skipped, zero failures), bundled-runtime isolation, formatting, localization and signature checks. Subsequent account-scope and conflict assertions passed in the main workspace: 397 tests, six ignored. Strict workspace Clippy passed. SDK cache byte verification was bounded to ten seconds and 100 MiB per file, with larger files failing admission instead of starting with unverified cache contents; that verification no longer runs on the launch path.
 
 The normal launch path is not proven by an isolated SDK test alone. A real game cycle and a Mac/Steam Deck confirmation remain separate checks. The previous Silksong device cycle remains valid for the earlier AutoCloud implementation; it does not establish this new SDK behavior.
 

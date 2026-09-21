@@ -16,15 +16,11 @@ Apple documents [`openApplication(at:configuration:completionHandler:)`](https:/
 
 The runtime reads bounded Mach-O headers from the game and its original Steam API library. It selects a shared ARM64 slice when available, otherwise a shared x86_64 slice. Unsupported, malformed or incompatible binaries fail before SDK preparation. The Valve package already includes both architectures and is unchanged.
 
-The private Steam engine and supervisor remain ARM64. `forge-steam-sdk-arm64` and `forge-steam-sdk-x86_64` perform the public SDK checks. The discovery adapter is universal. Each consumer uses the same private endpoints and verified runtime generation as the game. Build and signature checks verify each helper's exact architecture set.
-
-Modern SDK initialization and interface access remain supported. The additional legacy profile recognizes the original 609,216-byte Steam API library with SHA-256 `41dc3afbe16368e0e54624d561ed45ab85186e7e8641176d81dfdf4b414068f9`, observed in the Forge-installed Dead Cells. Recognition is by SDK bytes, with no AppID exception. Unknown legacy SDKs are refused before initialization.
-
-That profile uses `SteamAPI_Init`, `SteamClient`, the existing user/pipe handles, and the matching User019, Apps008, Utils009, Stats011 and Storage014 interfaces. It does not apply newer interface layouts to old wrappers. Account identity, AppID, ownership and projected storage bytes remain real SDK checks. Player-count callbacks remain optional, as before. This profile does not claim compatibility with every historical Steamworks release.
+The private Steam engine and supervisor remain ARM64. `forge-steam-sdk-x86_64` only performs the Intel exec handoff described below. The public SDK diagnostics, their legacy profile and the ARM64 SDK helper were removed. The discovery adapter is universal. Host and game use the same private endpoints and verified runtime generation. Build and signature checks verify each helper's exact architecture set and reject the obsolete ARM64 SDK helper.
 
 ## Intel process handoff
 
-The signed Intel SDK helper replaces itself with the game using `POSIX_SPAWN_SETEXEC` and an explicit binary preference. This retains the process identity, working directory, literal arguments and game environment, including the discovery adapter. It avoids passing that environment through a protected system launcher that could strip DYLD variables.
+The signed Intel exec helper replaces itself with the game using `POSIX_SPAWN_SETEXEC` and an explicit binary preference. This retains the process identity, working directory, literal arguments and game environment, including the discovery adapter. It avoids passing that environment through a protected system launcher that could strip DYLD variables.
 
 The helper initially waits for an admission byte on stdin. The supervisor records its identity and expected game executable before sending that byte. Losing the supervisor before admission closes the pipe and prevents execution. After admission, recovery recognizes either the same helper or its replacement game using UID, PID, kernel birth timestamp and the expected executable. Unknown identity retains the reservation.
 
@@ -32,7 +28,7 @@ A separate close-on-exec control pipe reports an explicit `exec-failed` marker i
 
 ## Validation scope
 
-Automated tests use temporary Mach-O fixtures, native SDK fixture libraries, disposable processes and injected installation results. They cover architecture selection, legacy refusal and access, process admission and replacement, Rosetta absence/presence, cancellation, retry, stale callbacks, account changes, recovery and Cloud ordering. Separate rendered fixtures check the French prompt and retry state.
+Automated tests use temporary Mach-O fixtures, disposable processes and injected installation results. They cover architecture selection, process admission and replacement, Rosetta absence/presence, cancellation, retry, stale callbacks, account changes, recovery and Cloud ordering. Separate rendered fixtures check the French prompt and retry state.
 
 The implementation baseline on September 20, 2026, before the installation-completion fix above, passed `./scripts/test.sh` on macOS 27.0 ARM64. The workspace passed 420 Rust tests, the native SDK workspace passed 15, and the separately enabled isolated runtime-loading test passed. Five opt-in Steam tests requiring network access, reference fixtures or installed files remained ignored. XCTest reported 241 tests with 10 skipped and no failures. Formatting, strict Clippy, all 546 English/French localization keys, the app build, Apple certificate signatures and exact helper architecture checks passed. The baseline log is `build/rosetta-tests.log`; rendered prompt and retry fixtures are in `build/rosetta-previews/`. These results do not validate the later fixes, whose validation is recorded separately.
 
