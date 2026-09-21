@@ -61,8 +61,7 @@ final class EpicIntegrationTests: XCTestCase {
         return try XCTUnwrap(context.makeImage())
     }
 
-    func testEpicPlaytimeFormattingDistinguishesUnavailableZeroAndPositiveDurations() {
-        XCTAssertEqual(EpicFormatting.playtime(nil), "—")
+    func testEpicPlaytimeFormattingDistinguishesZeroAndPositiveDurations() {
         XCTAssertEqual(EpicFormatting.playtime(0), L10n.string("ui.game.never_played"))
         XCTAssertEqual(EpicFormatting.playtime(59), "0 min")
         XCTAssertEqual(EpicFormatting.playtime(125), "2 min")

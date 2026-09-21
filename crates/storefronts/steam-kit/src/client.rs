@@ -18,7 +18,10 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex as AsyncMutex;
 
 use crate::{
-    cm::{AppInfo, ContentLicenses, ContentServer, DepotInfo, SteamConnection, supports_platform},
+    cm::{
+        AppInfo, ContentLicenses, ContentServer, DepotInfo, PICS_BATCH, SteamConnection,
+        supports_platform,
+    },
     content::{CancelToken, ContentClient, ContentError, DepotDownload},
 };
 mod cloud;
@@ -276,7 +279,33 @@ impl Client {
     }
 
     pub async fn next_friends(&self, after_revision: u64) -> crate::friends::FriendsSnapshot {
-        self.friends.next(after_revision).await
+        // Publish presence immediately. Optional title lookup must never hold up
+        // a new status, game exit or disconnect, even while content owns CM.
+        tokio::select! {
+            biased;
+            snapshot = self.friends.next(after_revision) => snapshot,
+            () = self.resolve_friend_game_names() => self.friends.next(after_revision).await,
+        }
+    }
+
+    /// One pass over the currently unknown titles: apps that appear while the
+    /// lookup is in flight are picked up by the next call. An unresolved app
+    /// caches as `None`, so a failed lookup is retried only on a later event.
+    async fn resolve_friend_game_names(&self) {
+        let ids = self.friends.missing_game_names();
+        if ids.is_empty() {
+            return;
+        }
+        let account_id = self.friends.account_id();
+        // Keep presence usable; a lookup failure must not stall the snapshot.
+        let Ok(apps) = self.cached_app_infos(&ids).await else {
+            return;
+        };
+        let names: Vec<_> = ids
+            .iter()
+            .map(|id| (*id, apps.get(id).map(|app| app.name.clone())))
+            .collect();
+        self.friends.resolve_game_names(account_id, &names);
     }
 
     /// Works even while a download owns the CM query mutex. Observers wake
@@ -338,6 +367,50 @@ impl Client {
         Ok(app)
     }
 
+    /// PICS metadata for many apps, served from the short-lived cache and
+    /// fetched in bounded batches. The CM lock is released between batches so
+    /// foreground content can proceed. Apps PICS does not return are absent.
+    async fn cached_app_infos(
+        &self,
+        app_ids: &[u32],
+    ) -> Result<HashMap<u32, Arc<AppInfo>>, ClientError> {
+        let mut apps = HashMap::with_capacity(app_ids.len());
+        for batch in app_ids.chunks(PICS_BATCH) {
+            let mut missing = Vec::new();
+            for id in batch {
+                if let Some(app) = self.cached_app(*id) {
+                    apps.insert(*id, app);
+                } else {
+                    missing.push(*id);
+                }
+            }
+            if missing.is_empty() {
+                continue;
+            }
+            let mut cm = self.cm.lock().await;
+            // Another content query may have populated the cache while we waited.
+            missing.retain(|id| {
+                if let Some(app) = self.cached_app(*id) {
+                    apps.insert(*id, app);
+                    false
+                } else {
+                    true
+                }
+            });
+            if missing.is_empty() {
+                continue;
+            }
+            for app in cm.app_infos(&missing).await.map_err(client_error)? {
+                if missing.contains(&app.app_id) {
+                    let app = Arc::new(app);
+                    self.remember_app(&app);
+                    apps.insert(app.app_id, app);
+                }
+            }
+        }
+        Ok(apps)
+    }
+
     fn cached_app(&self, app_id: u32) -> Option<Arc<AppInfo>> {
         self.app_infos
             .lock()
@@ -383,49 +456,16 @@ impl Client {
             .copied()
             .filter(|id| *id != 0 && seen.insert(*id))
             .collect();
-        let mut result = Vec::with_capacity(app_ids.len());
-        for batch in app_ids.chunks(50) {
-            let mut apps: HashMap<_, _> = batch
-                .iter()
-                .filter_map(|id| self.cached_app(*id).map(|app| (*id, app)))
-                .collect();
-            let mut missing: Vec<_> = batch
-                .iter()
-                .copied()
-                .filter(|id| !apps.contains_key(id))
-                .collect();
-            if !missing.is_empty() {
-                let mut cm = self.cm.lock().await;
-                // Another content query may have populated the cache while we waited.
-                missing.retain(|id| {
-                    if let Some(app) = self.cached_app(*id) {
-                        apps.insert(*id, app);
-                        false
-                    } else {
-                        true
-                    }
-                });
-                if !missing.is_empty() {
-                    for app in cm.app_infos(&missing).await.map_err(client_error)? {
-                        if missing.contains(&app.app_id) {
-                            let app = Arc::new(app);
-                            self.remember_app(&app);
-                            apps.insert(app.app_id, app);
-                        }
-                    }
-                }
-            }
-            // Release the CM lock between batches so foreground content can proceed.
-            result.extend(batch.iter().map(|id| {
-                GamePlatforms {
-                    app_id: *id,
-                    platforms: apps
-                        .get(id)
-                        .map_or_else(Vec::new, |app| app.os_list.clone()),
-                }
-            }));
-        }
-        Ok(result)
+        let apps = self.cached_app_infos(&app_ids).await?;
+        Ok(app_ids
+            .into_iter()
+            .map(|app_id| GamePlatforms {
+                app_id,
+                platforms: apps
+                    .get(&app_id)
+                    .map_or_else(Vec::new, |app| app.os_list.clone()),
+            })
+            .collect())
     }
 
     pub async fn details(&self, app_id: u32, language: &str) -> Result<GameDetails, ClientError> {

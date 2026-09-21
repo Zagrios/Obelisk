@@ -32,6 +32,9 @@ final class GameAchievementsModel {
         guard let items else { return "—" }
         return "\(unlocked)/\(items.count)"
     }
+    /// A game with no achievements has nothing to show, and neither has one whose
+    /// list has not been requested; a load in flight or a failure both do.
+    var hasContent: Bool { isLoading || error != nil || items?.isEmpty == false }
 
     func reset() {
         generation += 1

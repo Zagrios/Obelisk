@@ -31,6 +31,8 @@ const MAX_PACKET: usize = 32 * 1024 * 1024;
 const QUERY_TIMEOUT: Duration = Duration::from_secs(45);
 const IO_TIMEOUT: Duration = Duration::from_secs(15);
 pub(crate) const PROFILE_TIMEOUT: Duration = Duration::from_secs(5);
+/// Apps and packages PICS accepts in one access-token and product request.
+pub(crate) const PICS_BATCH: usize = 50;
 const MULTI: u32 = 1;
 const SERVICE_RESPONSE: u32 = 147;
 const SERVICE_REQUEST: u32 = 151;
@@ -560,7 +562,7 @@ impl SteamConnection {
             })
             .collect();
         let mut rights = ContentLicenses::default();
-        for batch in packages.chunks(50) {
+        for batch in packages.chunks(PICS_BATCH) {
             let response = self.products(&[], batch).await?;
             if !response.unknown_packages.is_empty() {
                 return Err(CmError::Protocol(
@@ -594,7 +596,7 @@ impl SteamConnection {
     pub async fn app_infos(&mut self, app_ids: &[u32]) -> Result<Vec<AppInfo>, CmError> {
         self.ensure_logged_on()?;
         let mut apps = Vec::new();
-        for batch in app_ids.chunks(50) {
+        for batch in app_ids.chunks(PICS_BATCH) {
             let token_job = self
                 .send(
                     TOKEN_REQUEST,

@@ -1,13 +1,20 @@
+import AppKit
 import SwiftUI
 
 struct GameManagementButton: View {
     let gameName: String
     let isAvailable: Bool
     let uninstall: () -> Void
+    /// The installed game's directory, revealed in Finder from the menu.
+    let directory: String
     @State private var confirmsUninstall = false
 
     var body: some View {
         Menu {
+            Button(L10n.string("ui.game.show_files"), systemImage: "folder") {
+                NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: directory)
+            }
+            Divider()
             Button(L10n.string("ui.game.uninstall"), systemImage: "trash", role: .destructive) {
                 confirmsUninstall = true
             }
@@ -41,9 +48,9 @@ struct GameManagementButton: View {
 struct GameDetailHeader<Artwork: View, Action: View, Metrics: View>: View {
     let title: String
     let libraryTitle: String
-    let playtime: String
-    let lastPlayed: String
-    let size: String
+    let playtime: String?
+    let lastPlayed: String?
+    let size: String?
     let back: () -> Void
     private let artwork: Artwork
     private let action: Action
@@ -52,9 +59,9 @@ struct GameDetailHeader<Artwork: View, Action: View, Metrics: View>: View {
     init(
         title: String,
         libraryTitle: String,
-        playtime: String,
-        lastPlayed: String,
-        size: String,
+        playtime: String? = nil,
+        lastPlayed: String? = nil,
+        size: String? = nil,
         back: @escaping () -> Void,
         @ViewBuilder additionalMetrics: () -> Metrics = { EmptyView() },
         @ViewBuilder artwork: () -> Artwork,
@@ -110,9 +117,15 @@ struct GameDetailHeader<Artwork: View, Action: View, Metrics: View>: View {
 
     private var metrics: some View {
         HStack(spacing: 24) {
-            metric(L10n.string("ui.game.metric.last_played"), value: lastPlayed, symbol: "calendar")
-            metric(L10n.string("ui.game.metric.size"), value: size, symbol: "internaldrive")
-            metric(L10n.string("ui.game.metric.playtime"), value: playtime, symbol: "clock")
+            if let lastPlayed {
+                metric(L10n.string("ui.game.metric.last_played"), value: lastPlayed, symbol: "calendar")
+            }
+            if let size {
+                metric(L10n.string("ui.game.metric.size"), value: size, symbol: "internaldrive")
+            }
+            if let playtime {
+                metric(L10n.string("ui.game.metric.playtime"), value: playtime, symbol: "clock")
+            }
             additionalMetrics
         }
     }

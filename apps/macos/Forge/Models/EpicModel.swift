@@ -726,7 +726,4 @@ final class EpicModel {
 extension EpicGame {
     var preferredPlatform: String { macos ? "Mac" : "Windows" }
     var libraryID: String { epicLibraryID(namespace: namespace, appName: appName) }
-    var platforms: String {
-        [macos ? L10n.string("model.platform.macos") : nil, windows ? L10n.string("model.platform.windows") : nil].compactMap { $0 }.joined(separator: " · ")
-    }
 }

@@ -3,7 +3,12 @@ use crate::client::Client;
 
 type Responses = mpsc::Sender<Result<Packet, CmError>>;
 
-fn fixture() -> (Client, mpsc::Receiver<Command>, Responses) {
+fn fixture() -> (
+    Client,
+    mpsc::Receiver<Command>,
+    Responses,
+    friends::FriendsEventSource,
+) {
     let (outgoing, commands) = mpsc::channel(8);
     let (responses, incoming) = mpsc::channel(8);
     let (_, profile) = watch::channel(ProfileState::default());
@@ -20,11 +25,113 @@ fn fixture() -> (Client, mpsc::Receiver<Command>, Responses) {
         logged_on: true,
         licenses: None,
     };
+    let friends = connection.friends_source();
     (
         Client::with_test_connection(connection),
         commands,
         responses,
+        friends,
     )
+}
+
+fn befriend(source: &friends::FriendsEventSource) {
+    source.apply_packet(
+        friends::FRIENDS_LIST,
+        &proto::FriendsList {
+            incremental: false,
+            friends: vec![proto::FriendRelationship {
+                steam_id: source.account_id() + 1,
+                relationship: 3,
+            }],
+        }
+        .encode_to_vec(),
+    );
+}
+
+/// App 0 means the friend left the game.
+fn playing(source: &friends::FriendsEventSource, app_id: u32) {
+    source.apply_packet(
+        friends::PERSONA_STATE,
+        &proto::PersonaState {
+            status_flags: friends::REQUESTED | friends::STATUS,
+            friends: vec![proto::Persona {
+                friend_id: source.account_id() + 1,
+                player_name: Some("Friend".into()),
+                persona_state: Some(1),
+                game_played_app_id: Some(app_id),
+                ..Default::default()
+            }],
+        }
+        .encode_to_vec(),
+    );
+}
+
+fn title(snapshot: &friends::FriendsSnapshot) -> Option<&str> {
+    snapshot.friends[0]
+        .game
+        .as_ref()
+        .expect("friend in a game")
+        .name
+        .as_deref()
+}
+
+#[tokio::test]
+async fn friend_title_resolves_from_pics_and_reuses_name_after_game_restart() {
+    let (client, mut commands, responses, source) = fixture();
+    befriend(&source);
+    playing(&source, 620);
+    let initial = client.next_friends(0).await;
+    assert_eq!(title(&initial), None);
+    assert!(
+        commands.try_recv().is_err(),
+        "Initial presence must not wait for metadata"
+    );
+    let result = proto::ProductResponse {
+        apps: vec![proto::ProductInfo {
+            id: 620,
+            buffer: Bytes::from_static(br#""appinfo" { "common" { "name" "Portal 2" } }"#),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let (resolved, ()) = tokio::join!(
+        client.next_friends(initial.revision),
+        respond_batch(&mut commands, &responses, &[620], result)
+    );
+    assert_eq!(title(&resolved), Some("Portal 2"));
+    playing(&source, 0);
+    let closed = client.next_friends(resolved.revision).await;
+    assert!(closed.friends[0].game.is_none());
+    playing(&source, 620);
+    let restarted = client.next_friends(closed.revision).await;
+    assert_eq!(title(&restarted), Some("Portal 2"));
+    assert!(
+        commands.try_recv().is_err(),
+        "A restarted game must reuse the cached title"
+    );
+}
+
+#[tokio::test]
+async fn friend_game_exit_and_disconnect_interrupt_pending_title_lookup() {
+    let (client, mut commands, _responses, source) = fixture();
+    befriend(&source);
+    playing(&source, 620);
+    let revision = source.snapshot().revision;
+    let stop_game = async {
+        request(&mut commands, TOKEN_REQUEST).await;
+        playing(&source, 0);
+    };
+    let (closed, ()) = tokio::join!(client.next_friends(revision), stop_game);
+    assert!(closed.friends[0].game.is_none());
+
+    playing(&source, 570);
+    let revision = source.snapshot().revision;
+    let disconnect = async {
+        request(&mut commands, TOKEN_REQUEST).await;
+        client.shutdown();
+    };
+    let (stopped, ()) = tokio::join!(client.next_friends(revision), disconnect);
+    assert_eq!(stopped.connection, friends::FriendsConnection::Disconnected);
 }
 
 async fn request(commands: &mut mpsc::Receiver<Command>, kind: u32) -> Packet {
@@ -112,7 +219,7 @@ fn metadata(ids: &[u32]) -> proto::ProductResponse {
 
 #[tokio::test]
 async fn library_platforms_batches_51_ids_preserves_unknown_and_reuses_metadata() {
-    let (client, mut commands, responses) = fixture();
+    let (client, mut commands, responses, _) = fixture();
     let mut requested = vec![0, 1];
     requested.extend(1..=51);
     requested.extend([51, 0]);
@@ -144,7 +251,7 @@ async fn library_platforms_batches_51_ids_preserves_unknown_and_reuses_metadata(
 
 #[tokio::test]
 async fn library_platforms_failure_is_not_cached_as_unknown() {
-    let (client, mut commands, responses) = fixture();
+    let (client, mut commands, responses, _) = fixture();
     let malformed = proto::ProductResponse {
         apps: vec![proto::ProductInfo {
             id: 42,

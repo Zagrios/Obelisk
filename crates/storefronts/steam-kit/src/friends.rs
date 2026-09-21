@@ -79,6 +79,13 @@ pub enum FriendsConnection {
     Error,
 }
 
+impl FriendsConnection {
+    /// Terminal states: the reducer is done accepting packets and metadata.
+    pub(crate) fn ended(self) -> bool {
+        matches!(self, Self::Disconnected | Self::AuthenticationRequired)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FriendsSnapshot {
     pub revision: u64,
@@ -254,6 +261,8 @@ struct Reducer {
     // Only before the first full list: afterwards unknown persona events are
     // ignored, so late updates cannot recreate a removed relationship.
     early: BTreeMap<u64, CachedFriend>,
+    // Session-local PICS names, including unknown apps to avoid repeated queries.
+    game_names: BTreeMap<u32, Option<String>>,
     dirty: bool,
 }
 
@@ -266,6 +275,7 @@ impl Reducer {
             connection: FriendsConnection::Loading,
             friends: BTreeMap::new(),
             early: BTreeMap::new(),
+            game_names: BTreeMap::new(),
             dirty: false,
         }
     }
@@ -381,8 +391,8 @@ impl Reducer {
     }
 }
 
-/// The single CM reader is the writer; public mutation methods also let debug
-/// fixtures exercise the exact same protobuf reducer and observation path.
+/// The single CM reader reduces packets; optional PICS metadata fills game titles.
+/// Public mutation methods let debug fixtures exercise the same observation path.
 /// Read/await methods touch only a watch receiver, never the reducer mutex.
 #[derive(Clone)]
 pub struct FriendsEventSource {
@@ -422,15 +432,16 @@ impl FriendsEventSource {
         (*snapshot).clone()
     }
 
+    /// The account alone, without cloning the friend list `snapshot` copies.
+    pub(crate) fn account_id(&self) -> u64 {
+        self.updates.borrow().account_id
+    }
+
     /// Atomic revision check + subscription. Dropping the future cancels the
     /// wait; disconnect wakes existing waits even when no persona changed.
     pub async fn next(&self, after_revision: u64) -> FriendsSnapshot {
         let ready = forge_core::watch::next_matching(self.updates.subscribe(), |snapshot| {
-            snapshot.revision != after_revision
-                || matches!(
-                    snapshot.connection,
-                    FriendsConnection::Disconnected | FriendsConnection::AuthenticationRequired
-                )
+            snapshot.revision != after_revision || snapshot.connection.ended()
         })
         .await;
         match ready {
@@ -456,10 +467,7 @@ impl FriendsEventSource {
             return vec![];
         }
         let mut reducer = self.reducer.lock().unwrap_or_else(PoisonError::into_inner);
-        if matches!(
-            reducer.connection,
-            FriendsConnection::Disconnected | FriendsConnection::AuthenticationRequired
-        ) {
+        if reducer.connection.ended() {
             return vec![];
         }
         if body.len() > MAX_SOCIAL_PACKET || !within_entry_limit(body) {
@@ -489,7 +497,16 @@ impl FriendsEventSource {
         let friends: Vec<_> = reducer
             .friends
             .values()
-            .map(|cached| cached.friend.clone())
+            .map(|cached| {
+                let mut friend = cached.friend.clone();
+                if let Some(game) = &mut friend.game
+                    && game.name.is_none()
+                    && let Some(app_id) = game.app_id
+                {
+                    game.name = reducer.game_names.get(&app_id).cloned().flatten();
+                }
+                friend
+            })
             .collect();
         self.updates.send_if_modified(|snapshot| {
             if snapshot.account_id == reducer.account_id
@@ -538,6 +555,42 @@ impl FriendsEventSource {
             .unwrap_or_else(PoisonError::into_inner)
             .friends
             .contains_key(&id)
+    }
+
+    /// Distinct apps whose title is still unknown. Bounded by the friend cap;
+    /// the caller batches, since PICS request size is a transport concern.
+    pub(crate) fn missing_game_names(&self) -> Vec<u32> {
+        let reducer = self.reducer.lock().unwrap_or_else(PoisonError::into_inner);
+        if reducer.connection.ended() {
+            return vec![];
+        }
+        reducer
+            .friends
+            .values()
+            .filter_map(|cached| cached.friend.game.as_ref())
+            .filter(|game| game.name.is_none())
+            .filter_map(|game| game.app_id)
+            .filter(|id| !reducer.game_names.contains_key(id))
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+
+    pub(crate) fn resolve_game_names(&self, account_id: u64, names: &[(u32, Option<String>)]) {
+        let mut reducer = self.reducer.lock().unwrap_or_else(PoisonError::into_inner);
+        if reducer.account_id != account_id || reducer.connection.ended() {
+            return;
+        }
+        for (id, name) in names {
+            // An unresolved app caches as None so it is never queried twice; that
+            // publishes nothing, so only a changed title needs a snapshot rebuild.
+            let resolved = name.as_deref().and_then(label);
+            reducer.dirty |=
+                reducer.game_names.get(id).and_then(Option::as_deref) != resolved.as_deref();
+            reducer.game_names.insert(*id, resolved);
+        }
+        drop(reducer);
+        self.publish();
     }
 
     pub(crate) fn has_full_list(&self) -> bool {
@@ -614,6 +667,131 @@ mod tests {
             friend_id: FRIEND,
             ..Default::default()
         }
+    }
+
+    /// Published title of every friend, which each must be in a game to have.
+    fn titles(source: &FriendsEventSource) -> Vec<Option<String>> {
+        source
+            .snapshot()
+            .friends
+            .iter()
+            .map(|friend| friend.game.as_ref().expect("friend in a game").name.clone())
+            .collect()
+    }
+
+    fn title(source: &FriendsEventSource) -> Option<String> {
+        titles(source).remove(0)
+    }
+
+    #[test]
+    fn resolved_titles_follow_current_activity_and_preserve_persona_names() {
+        let source = FriendsEventSource::new(ACCOUNT);
+        list(&source, false, &[(FRIEND, 3), (FRIEND + 2, 3)]);
+        let playing = proto::Persona {
+            persona_state: Some(1),
+            game_played_app_id: Some(620),
+            ..update()
+        };
+        persona(&source, STATUS, playing.clone());
+        persona(
+            &source,
+            STATUS,
+            proto::Persona {
+                friend_id: FRIEND + 2,
+                ..playing.clone()
+            },
+        );
+        assert_eq!(source.missing_game_names(), [620]);
+        source.resolve_game_names(ACCOUNT, &[(620, Some(" Portal 2 ".into()))]);
+        let portal = || Some("Portal 2".to_owned());
+        assert_eq!(titles(&source), [portal(), portal()]);
+        assert!(source.missing_game_names().is_empty());
+
+        // A repeated persona frame keeps the resolved title.
+        persona(&source, STATUS, playing.clone());
+        assert_eq!(title(&source).as_deref(), Some("Portal 2"));
+
+        persona(
+            &source,
+            STATUS,
+            proto::Persona {
+                game_played_app_id: Some(570),
+                ..playing
+            },
+        );
+        assert_eq!(title(&source), None);
+        assert_eq!(source.missing_game_names(), [570]);
+        persona(&source, STATUS, update());
+        source.resolve_game_names(ACCOUNT, &[(570, Some("Dota 2".into()))]);
+        assert!(
+            source.snapshot().friends[0].game.is_none(),
+            "Late metadata cannot restore a closed game"
+        );
+    }
+
+    #[test]
+    fn a_persona_supplied_title_wins_over_resolved_metadata() {
+        let source = FriendsEventSource::new(ACCOUNT);
+        list(&source, false, &[(FRIEND, 3)]);
+        let playing = proto::Persona {
+            persona_state: Some(1),
+            game_played_app_id: Some(620),
+            ..update()
+        };
+        persona(&source, STATUS, playing.clone());
+        source.resolve_game_names(ACCOUNT, &[(620, Some("Portal 2".into()))]);
+        assert_eq!(title(&source).as_deref(), Some("Portal 2"));
+        persona(
+            &source,
+            STATUS,
+            proto::Persona {
+                game_name: Some("Custom title".into()),
+                ..playing
+            },
+        );
+        assert_eq!(title(&source).as_deref(), Some("Custom title"));
+    }
+
+    #[test]
+    fn switching_account_drops_resolved_titles_and_rejects_the_old_accounts_answers() {
+        let source = FriendsEventSource::new(ACCOUNT);
+        list(&source, false, &[(FRIEND, 3)]);
+        persona(
+            &source,
+            STATUS,
+            proto::Persona {
+                persona_state: Some(1),
+                game_played_app_id: Some(620),
+                ..update()
+            },
+        );
+        source.resolve_game_names(ACCOUNT, &[(620, Some("Portal 2".into()))]);
+
+        source.set_account(ACCOUNT + 1);
+        source.resolve_game_names(ACCOUNT, &[(620, Some("Old account result".into()))]);
+        assert!(source.reducer.lock().unwrap().game_names.is_empty());
+    }
+
+    #[test]
+    fn unknown_titles_are_cached_without_publishing_false_activity() {
+        let source = FriendsEventSource::new(ACCOUNT);
+        list(&source, false, &[(FRIEND, 3)]);
+        persona(
+            &source,
+            STATUS,
+            proto::Persona {
+                persona_state: Some(1),
+                game_played_app_id: Some(620),
+                ..update()
+            },
+        );
+        let before = source.snapshot();
+        source.resolve_game_names(ACCOUNT, &[(620, Some("   ".into()))]);
+        assert_eq!(source.snapshot(), before);
+        assert!(source.missing_game_names().is_empty());
+        source.disconnect(false);
+        source.resolve_game_names(ACCOUNT, &[(620, Some("Late title".into()))]);
+        assert_eq!(title(&source), None);
     }
 
     #[test]

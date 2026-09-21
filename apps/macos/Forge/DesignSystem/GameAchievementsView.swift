@@ -7,44 +7,46 @@ struct GameAchievementsButton: View {
     @State private var isHovered = false
 
     var body: some View {
-        Button { model.isPresented = true } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "trophy")
-                    .font(.system(size: 23, weight: .regular))
-                    .foregroundStyle(.secondary)
-                VStack(alignment: .leading, spacing: 7) {
-                    Text(L10n.string("ui.game.achievements.title"))
-                        .font(.system(size: 10, weight: .semibold))
+        if model.hasContent {
+            Button { model.isPresented = true } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "trophy")
+                        .font(.system(size: 23, weight: .regular))
                         .foregroundStyle(.secondary)
-                    HStack(spacing: 8) {
-                        if model.isLoading {
-                            ProgressView().controlSize(.mini)
-                        } else {
-                            Text(model.countText)
-                                .font(.system(size: 12, weight: .medium)).monospacedDigit()
-                        }
-                        ZStack(alignment: .leading) {
-                            Capsule().fill(.primary.opacity(0.12))
-                            if let fraction = model.fraction {
-                                Capsule().fill(.tint).frame(width: Self.barWidth * fraction)
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text(L10n.string("ui.game.achievements.title"))
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                        HStack(spacing: 8) {
+                            if model.isLoading {
+                                ProgressView().controlSize(.mini)
+                            } else {
+                                Text(model.countText)
+                                    .font(.system(size: 12, weight: .medium)).monospacedDigit()
                             }
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(.primary.opacity(0.12))
+                                if let fraction = model.fraction {
+                                    Capsule().fill(.tint).frame(width: Self.barWidth * fraction)
+                                }
+                            }
+                            .frame(width: Self.barWidth, height: 4)
+                            .accessibilityHidden(true)
                         }
-                        .frame(width: Self.barWidth, height: 4)
-                        .accessibilityHidden(true)
                     }
                 }
+                .padding(.horizontal, 10).padding(.vertical, 8)
+                .background(.primary.opacity(isHovered ? 0.15 : 0.1), in: RoundedRectangle(cornerRadius: 8))
+                .contentShape(RoundedRectangle(cornerRadius: 8))
             }
-            .padding(.horizontal, 10).padding(.vertical, 8)
-            .background(.primary.opacity(isHovered ? 0.09 : 0.04), in: RoundedRectangle(cornerRadius: 8))
-            .contentShape(RoundedRectangle(cornerRadius: 8))
+            .forgeButtonStyle(.plain)
+            .onHover { isHovered = $0 }
+            .fixedSize()
+            .accessibilityLabel(L10n.string("ui.game.achievements.title"))
+            .accessibilityValue(model.isLoading ? L10n.string("ui.game.achievements.loading") : model.error ?? model.countText)
+            .accessibilityIdentifier("\(model.storeID)-achievements-button")
+            .help(L10n.string("ui.game.achievements.show"))
         }
-        .forgeButtonStyle(.plain)
-        .onHover { isHovered = $0 }
-        .fixedSize()
-        .accessibilityLabel(L10n.string("ui.game.achievements.title"))
-        .accessibilityValue(model.isLoading ? L10n.string("ui.game.achievements.loading") : model.error ?? model.countText)
-        .accessibilityIdentifier("\(model.storeID)-achievements-button")
-        .help(L10n.string("ui.game.achievements.show"))
     }
 }
 

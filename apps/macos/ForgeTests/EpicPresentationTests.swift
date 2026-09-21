@@ -123,9 +123,10 @@ final class EpicPresentationTests: XCTestCase {
         // SwiftUI text can be absent from an offscreen host's accessibility tree.
         // The rendered bitmap above still checks that the mounted view updates.
         if accessibilityElement(in: fixture.host, label: L10n.string("ui.game.metric.playtime")) != nil {
-            XCTAssertNotNil(accessibilityElement(in: fixture.host, label: EpicFormatting.playtime(details.playtimeSeconds)))
+            XCTAssertNotNil(accessibilityElement(in: fixture.host, label: EpicFormatting.playtime(try XCTUnwrap(details.playtimeSeconds))))
             XCTAssertNotNil(accessibilityElement(in: fixture.host, label: SteamFormatting.bytes(2_000_000_000)))
-            XCTAssertNotNil(accessibilityElement(in: fixture.host, label: "—"))
+            XCTAssertNil(accessibilityElement(in: fixture.host, label: L10n.string("ui.game.metric.last_played")))
+            XCTAssertNil(accessibilityElement(in: fixture.host, label: L10n.string("ui.game.news")))
         }
     }
 
@@ -419,16 +420,39 @@ final class EpicPresentationTests: XCTestCase {
         try await render(model, to: output.appending(path: "epic-library-scrolled-fixture.png"), scrollOffset: 180)
         try await render(model, to: output.appending(path: "epic-library-light-scrolled-fixture.png"), colorScheme: .light, scrollOffset: 180)
         model.open(epicPresentationLibrary[0])
+        try await eventually { !model.isLoadingGameDetails && !model.achievements.isLoading }
         try await render(model, to: output.appending(path: "epic-detail-fixture.png"))
+
+        let game = EpicGame(
+            appName: "detail-preview", namespace: "presentation", catalogItemId: "detail-preview",
+            title: "Forgotten light", description: "",
+            imageUrl: nil, headerImageUrl: nil, developer: "Fixture studio", windows: true, macos: true
+        )
+        let detailsSession = EpicPresentationSession(
+            games: [game], details: EpicGameDetails(playtimeSeconds: 5400, installationBytes: 2_000_000_000),
+            achievements: [
+                EpicAchievement(id: "first", name: "First steps", description: "", iconUrl: "",
+                                hidden: false, unlocked: true, unlockDate: nil),
+                EpicAchievement(id: "second", name: "Explorer", description: "", iconUrl: "",
+                                hidden: false, unlocked: false, unlockDate: nil)
+            ]
+        )
+        let detailsModel = EpicModel(keychain: EpicPresentationCredentials(), restore: { _ in detailsSession })
+        await detailsModel.start()
+        detailsModel.open(game)
+        try await eventually { !detailsModel.isLoadingGameDetails && !detailsModel.achievements.isLoading }
+        try await render(detailsModel, to: output.appending(path: "epic-detail-metrics-fixture.png"))
+        try await render(detailsModel, to: output.appending(path: "epic-detail-metrics-light-fixture.png"), colorScheme: .light)
+        try await render(detailsModel, to: output.appending(path: "epic-detail-narrow-fixture.png"), width: 580)
     }
 
     @MainActor
-    private func render(_ model: EpicModel, to file: URL, colorScheme: ColorScheme = .dark, scrollOffset: CGFloat = 0) async throws {
+    private func render(_ model: EpicModel, to file: URL, colorScheme: ColorScheme = .dark, scrollOffset: CGFloat = 0, width: CGFloat = 900) async throws {
         let view = EpicView(model: model)
             .environment(\.colorScheme, colorScheme)
             .tint(ForgeStyle.accent)
             .background(ForgePalette(colorScheme: colorScheme).background)
-        let fixture = EpicPresentationWindow(view, size: NSSize(width: 900, height: 1000))
+        let fixture = EpicPresentationWindow(view, size: NSSize(width: width, height: 1000))
         defer { fixture.close() }
         fixture.layout()
         try await Task.sleep(for: .milliseconds(200))
@@ -583,6 +607,7 @@ private actor EpicPresentationSession: EpicSessionProtocol {
     }
     private let library: [EpicGame]
     private let details: EpicGameDetails
+    private let achievementItems: [EpicAchievement]
     private var shouldHoldDetails: Bool
     private var detailsContinuation: CheckedContinuation<EpicGameDetails, Never>?
     private(set) var waitingForDetails = false
@@ -596,13 +621,16 @@ private actor EpicPresentationSession: EpicSessionProtocol {
         games: [EpicGame],
         holdGames: Bool = false,
         details: EpicGameDetails = EpicGameDetails(playtimeSeconds: nil, installationBytes: nil),
-        holdDetails: Bool = false
+        holdDetails: Bool = false,
+        achievements: [EpicAchievement] = []
     ) {
         library = games
         shouldHoldGames = holdGames
         self.details = details
         shouldHoldDetails = holdDetails
+        achievementItems = achievements
     }
+    func achievements(namespace: String, locale: String) async throws -> [EpicAchievement] { achievementItems }
     func credentials() -> EpicCredentials { epicPresentationCredentials }
     func prepare() -> EpicCredentials { epicPresentationCredentials }
     func gameDetails(namespace: String, catalogItemId: String, appName: String, platform: String) async -> EpicGameDetails {

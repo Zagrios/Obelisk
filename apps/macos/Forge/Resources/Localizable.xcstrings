@@ -5747,23 +5747,6 @@
         }
       }
     },
-    "ui.epic.installed": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Installed"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Installé"
-          }
-        }
-      }
-    },
     "ui.epic.library": {
       "extractionState": "manual",
       "localizations": {
@@ -5794,23 +5777,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Un autre jeu Epic est en cours de téléchargement ou de vérification."
-          }
-        }
-      }
-    },
-    "ui.epic.show_files": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Show game files"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Afficher les fichiers du jeu"
           }
         }
       }
@@ -6679,23 +6645,6 @@
         }
       }
     },
-    "ui.game.about": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "About"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "À propos"
-          }
-        }
-      }
-    },
     "ui.game.configure_windows_engine": {
       "extractionState": "manual",
       "localizations": {
@@ -6985,23 +6934,6 @@
         }
       }
     },
-    "ui.game.no_news_available": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No news available."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Aucune actualité disponible."
-          }
-        }
-      }
-    },
     "ui.game.no_recent_news": {
       "extractionState": "manual",
       "localizations": {
@@ -7117,6 +7049,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Retirer de la bibliothèque"
+          }
+        }
+      }
+    },
+    "ui.game.show_files": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show game files"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Afficher les fichiers du jeu"
           }
         }
       }
