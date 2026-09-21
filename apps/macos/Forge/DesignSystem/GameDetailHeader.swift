@@ -38,7 +38,7 @@ struct GameManagementButton: View {
     }
 }
 
-struct GameDetailHeader<Artwork: View, Action: View>: View {
+struct GameDetailHeader<Artwork: View, Action: View, Metrics: View>: View {
     let title: String
     let libraryTitle: String
     let playtime: String
@@ -47,6 +47,7 @@ struct GameDetailHeader<Artwork: View, Action: View>: View {
     let back: () -> Void
     private let artwork: Artwork
     private let action: Action
+    private let additionalMetrics: Metrics
 
     init(
         title: String,
@@ -55,6 +56,7 @@ struct GameDetailHeader<Artwork: View, Action: View>: View {
         lastPlayed: String,
         size: String,
         back: @escaping () -> Void,
+        @ViewBuilder additionalMetrics: () -> Metrics = { EmptyView() },
         @ViewBuilder artwork: () -> Artwork,
         @ViewBuilder action: () -> Action
     ) {
@@ -66,6 +68,7 @@ struct GameDetailHeader<Artwork: View, Action: View>: View {
         self.back = back
         self.artwork = artwork()
         self.action = action()
+        self.additionalMetrics = additionalMetrics()
     }
 
     var body: some View {
@@ -91,13 +94,26 @@ struct GameDetailHeader<Artwork: View, Action: View>: View {
                 // The scaled artwork can extend past its visual clip and cover nearby controls.
                 .allowsHitTesting(false)
 
-            HStack(spacing: 24) {
-                metric(L10n.string("ui.game.metric.playtime"), value: playtime, symbol: "clock")
-                metric(L10n.string("ui.game.metric.last_played"), value: lastPlayed, symbol: "calendar")
-                metric(L10n.string("ui.game.metric.size"), value: size, symbol: "internaldrive")
-                Spacer(minLength: 8)
-                action
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 24) {
+                    metrics.fixedSize(horizontal: true, vertical: false)
+                    Spacer(minLength: 8)
+                    action
+                }
+                VStack(alignment: .leading, spacing: 16) {
+                    metrics
+                    HStack { Spacer(); action }
+                }
             }
+        }
+    }
+
+    private var metrics: some View {
+        HStack(spacing: 24) {
+            metric(L10n.string("ui.game.metric.last_played"), value: lastPlayed, symbol: "calendar")
+            metric(L10n.string("ui.game.metric.size"), value: size, symbol: "internaldrive")
+            metric(L10n.string("ui.game.metric.playtime"), value: playtime, symbol: "clock")
+            additionalMetrics
         }
     }
 

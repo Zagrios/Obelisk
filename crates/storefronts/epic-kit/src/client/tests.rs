@@ -128,6 +128,7 @@ impl Mock {
         });
         let mut api = Api::new().unwrap();
         api.account = base.clone();
+        api.store = base.clone();
         api.library = base.clone();
         api.launcher = base.clone();
         api.catalog = base.clone();
@@ -1473,4 +1474,139 @@ async fn launch_cannot_read_installation_while_download_holds_its_lock() {
         .await;
     assert!(matches!(result, Err(EpicError::AlreadyDownloading)));
     assert!(mock.requests().is_empty());
+}
+
+fn achievement_definitions() -> Value {
+    let definitions: Vec<_> = [("earned", false), ("locked", false), ("secret", true)]
+        .into_iter().map(|(name, hidden)| json!({"achievement": {
+            "name":name,"hidden":hidden,"unlockedDisplayName":"Earned title",
+            "lockedDisplayName":"Locked title","unlockedDescription":"Earned description",
+            "lockedDescription":"Locked description","unlockedIconLink":"https://example.com/earned.png",
+            "lockedIconLink":"https://example.com/locked.png"
+        }})).collect();
+    json!({"data":{"Achievement":{"productAchievementsRecordBySandbox":{
+        "sandboxId":"space","totalAchievements":3,"achievements":definitions
+    }}}})
+}
+
+fn achievement_player(account: &str) -> Value {
+    json!({"data":{"PlayerAchievement":{"playerAchievementGameRecordsBySandbox":{"records":[{
+        "playerAchievements":[{"playerAchievement":{
+            "sandboxId":"space","epicAccountId":account,"achievementName":"earned",
+            "unlocked":true,"unlockDate":"2026-09-21T12:00:00.000Z"
+        }}]
+    }]}}}})
+}
+
+#[tokio::test]
+async fn achievements_merge_player_state_and_keep_hidden_locked_details_private() {
+    let mock = Mock::new(vec![
+        reply("/graphql", 200, achievement_definitions()),
+        reply("/graphql", 200, achievement_player("account-a")),
+    ]);
+    let items = mock
+        .client(false)
+        .achievements("space", "fr")
+        .await
+        .unwrap();
+    assert_eq!(items.len(), 3);
+    assert_eq!(items[0].id, "earned");
+    assert!(items[0].unlocked);
+    assert_eq!(items[0].name, "Earned title");
+    assert_eq!(
+        items[0].unlock_date.as_deref(),
+        Some("2026-09-21T12:00:00.000Z")
+    );
+    assert_eq!(items[1].name, "Locked title");
+    assert!(!items[1].unlocked);
+    assert!(items[2].hidden);
+    assert!(
+        items[2].name.is_empty() && items[2].description.is_empty() && items[2].icon_url.is_empty()
+    );
+    let requests = mock.requests();
+    let bodies: Vec<Value> = requests
+        .iter()
+        .map(|r| serde_json::from_str(r.split_once("\r\n\r\n").unwrap().1).unwrap())
+        .collect();
+    assert_eq!(
+        bodies[0]["variables"],
+        json!({"sandboxId":"space","locale":"fr"})
+    );
+    assert_eq!(
+        bodies[1]["variables"],
+        json!({"sandboxId":"space","epicAccountId":"account-a"})
+    );
+    assert!(
+        bodies
+            .iter()
+            .all(|body| body["query"].as_str().unwrap().starts_with("query "))
+    );
+}
+
+#[tokio::test]
+async fn achievements_distinguish_no_support_from_graphql_and_incomplete_responses() {
+    let mock = Mock::new(vec![reply(
+        "/graphql",
+        200,
+        json!({"data":{"Achievement":{"productAchievementsRecordBySandbox":null}}}),
+    )]);
+    assert!(
+        mock.client(false)
+            .achievements("space", "fr")
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(mock.requests().len(), 1);
+    for response in [
+        json!({"errors":[{"message":"denied"}],"data":null}),
+        json!({"data":{}}),
+    ] {
+        let mock = Mock::new(vec![reply("/graphql", 200, response)]);
+        assert!(
+            mock.client(false)
+                .achievements("space", "fr")
+                .await
+                .is_err()
+        );
+    }
+    let mut incomplete = achievement_definitions();
+    incomplete["data"]["Achievement"]["productAchievementsRecordBySandbox"]["totalAchievements"] =
+        json!(4);
+    let mock = Mock::new(vec![reply("/graphql", 200, incomplete)]);
+    assert!(matches!(
+        mock.client(false).achievements("space", "fr").await,
+        Err(EpicError::Protocol)
+    ));
+}
+
+#[tokio::test]
+async fn achievements_reject_player_state_from_another_account() {
+    let mock = Mock::new(vec![
+        reply("/graphql", 200, achievement_definitions()),
+        reply("/graphql", 200, achievement_player("account-b")),
+    ]);
+    assert!(matches!(
+        mock.client(false).achievements("space", "fr").await,
+        Err(EpicError::Protocol)
+    ));
+}
+
+#[tokio::test]
+async fn achievements_retry_unauthorized_with_refreshed_credentials() {
+    let mock = Mock::new(vec![
+        reply("/graphql", 401, json!({})),
+        reply("/account/api/oauth/token", 200, token("account-a")),
+        reply("/graphql", 200, achievement_definitions()),
+        reply("/graphql", 200, achievement_player("account-a")),
+    ]);
+    let client = mock.client(false);
+    assert_eq!(client.achievements("space", "fr").await.unwrap().len(), 3);
+    assert_eq!(
+        client.credentials().await.unwrap().refresh_token,
+        "refresh-new"
+    );
+    let requests = mock.requests();
+    assert!(requests[2].contains("Bearer access-new"));
+    assert!(requests[3].contains("Bearer access-new"));
 }

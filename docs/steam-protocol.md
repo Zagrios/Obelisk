@@ -119,3 +119,44 @@ Add `--release` before the `--` separator to measure the distributed build profi
 These measurements use recently read files and exclude Steam requests. They do not measure the complete Launch action or disk performance when data is absent from the system cache.
 
 Credentials sign-in and Steam Guard variants are covered by protocol tests, but not all have been tried with a real account. The completed validations do not prove support for every account or depot.
+
+## Achievement display, September 21, 2026
+
+The Steam game header places playtime after size, followed by a trophy button
+with the unlocked count and a progress bar. Clicking it opens a native Forge
+sheet containing the game's achievements. The existing owned-library response
+supplies playtime; this display does not submit playtime or unlock achievements.
+
+The account-scoped Rust client reads `Player.GetGameAchievements#1` with the UI
+language and `Player.GetUserAchievements#1` with the connected account's SteamID.
+It takes the CM lock once per read rather than across both, so a library or
+details request is not queued behind the pair. Definitions and user records
+join by `internal_key`; mismatched schema versions
+or hashes, duplicate identities and unknown user keys fail instead of publishing
+an incorrect count. Archived definitions are omitted. Locked hidden achievements
+keep their identity but expose no title, description or icon. Service failures
+remain unavailable, distinct from a successful empty list. Retry reloads only
+achievements, and leaving the game or changing accounts invalidates late results.
+The panel reports the failure through `SteamModel.message`, the same mapping the
+details and news sections use, so a rejected read keeps its own wording.
+
+Wire reference: [Player service schema](https://github.com/SteamDatabase/Protobufs/blob/master/steam/steammessages_player.steamclient.proto).
+This is a read-only feature using the existing CM connection. It does not start
+a game SDK or change Cloud, game lifecycle, unlocks or Steam playtime accounting.
+
+The live Silksong page displayed 27.2 hours and 13/52 achievements using the
+remembered Steam session. Opening the sheet showed localized names, descriptions
+and unlock dates. This verifies reading existing Steam data, not earning a new
+achievement or recording a new gameplay session. No game was launched for this
+check. Light/dark header fixtures at 620 and 860 points and the sheet were
+rendered through an AppKit host and inspected.
+
+Final `./scripts/test.sh` passed: 430 main-workspace Rust tests, seven native
+workspace tests, 263 XCTest tests with 11 skipped and no failures, plus the
+separate bundled-runtime isolation test, formatting, strict Clippy, localization,
+app signatures and architecture checks. The opt-in achievement rendering test
+also passed separately. An earlier workspace run hit `SessionBusy` in an unchanged
+supervisor fixture; it passed alone and in the complete final run. Logs are in
+`build/achievements-validation.log` and `build/achievements-render.log`.
+Steam achievement filenames now resolve to the per-app Steam CDN directory;
+the final rebuilt app displayed the actual Silksong achievement icons.

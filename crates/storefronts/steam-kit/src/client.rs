@@ -33,6 +33,7 @@ const MAX_RECEIPT_BYTES: usize = 1024 * 1024;
 const APP_INFO_TTL: Duration = Duration::from_secs(60);
 
 pub use crate::cm::OwnedGameInfo as OwnedGame;
+pub use crate::cm::achievements::Achievement;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GamePlatforms {
@@ -212,6 +213,30 @@ pub struct Client {
 }
 
 impl Client {
+    /// Reads the connected account's achievements without initializing a game SDK.
+    /// Releases the CM lock between the two reads so foreground content can
+    /// proceed; a schema change in that window is already rejected by the join.
+    pub async fn achievements(
+        &self,
+        app_id: u32,
+        language: &str,
+    ) -> Result<Vec<Achievement>, ClientError> {
+        let schema = self
+            .cm
+            .lock()
+            .await
+            .game_achievements(app_id, language)
+            .await
+            .map_err(client_error)?;
+        let user = self
+            .cm
+            .lock()
+            .await
+            .user_achievements(app_id)
+            .await
+            .map_err(client_error)?;
+        crate::cm::achievements::combine(app_id, schema, user).map_err(client_error)
+    }
     #[cfg(test)]
     pub(crate) fn with_test_connection(cm: SteamConnection) -> Self {
         Self {

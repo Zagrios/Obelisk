@@ -8,8 +8,8 @@ final class EpicIntegrationTests: XCTestCase {
     func testArtworkSharesPendingDownloadAndKeepsItAfterOneConsumerCancels() async throws {
         let bitmap = try artworkBitmap()
         let gate = EpicArtworkTestLoader(results: [bitmap], holdFirst: true)
-        let cache = EpicArtworkCache { _ in await gate.load() }
-        let request = EpicArtworkCache.Request(url: URL(string: "https://artwork.invalid/cover.png")!, maxPixelSize: 768)
+        let cache = ArtworkCache { _ in await gate.load() }
+        let request = ArtworkCache.Request(url: URL(string: "https://artwork.invalid/cover.png")!, maxPixelSize: 768)
         let first = Task { await cache.image(for: request) }
         let second = Task { await cache.image(for: request) }
         for _ in 0..<100 {
@@ -36,17 +36,17 @@ final class EpicIntegrationTests: XCTestCase {
     func testArtworkFailureCanRetryAndDifferentURLOrResolutionLoadsItsOwnImage() async throws {
         let bitmap = try artworkBitmap()
         let loader = EpicArtworkTestLoader(results: [nil, bitmap, bitmap, bitmap])
-        let cache = EpicArtworkCache { _ in await loader.load() }
+        let cache = ArtworkCache { _ in await loader.load() }
         let url = URL(string: "https://artwork.invalid/cover.png")!
-        let request = EpicArtworkCache.Request(url: url, maxPixelSize: 768)
+        let request = ArtworkCache.Request(url: url, maxPixelSize: 768)
         let failed = await cache.image(for: request)
         XCTAssertNil(failed)
         XCTAssertNil(cache.cachedImage(for: request))
         let retried = await cache.image(for: request)
         XCTAssertNotNil(retried)
-        let banner = await cache.image(for: EpicArtworkCache.Request(url: url, maxPixelSize: 2048))
+        let banner = await cache.image(for: ArtworkCache.Request(url: url, maxPixelSize: 2048))
         XCTAssertNotNil(banner)
-        let changed = await cache.image(for: EpicArtworkCache.Request(url: url.appendingPathComponent("updated"), maxPixelSize: 768))
+        let changed = await cache.image(for: ArtworkCache.Request(url: url.appendingPathComponent("updated"), maxPixelSize: 768))
         XCTAssertNotNil(changed)
         let calls = await loader.calls
         XCTAssertEqual(calls, 4)

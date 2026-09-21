@@ -17,6 +17,8 @@ use crate::{
     auth::{self, Api, Credentials, Session},
 };
 
+mod achievements;
+pub use achievements::Achievement;
 mod download;
 mod launch;
 pub use download::{Installation, TransferProgress, TransferState, installation_directory_name};

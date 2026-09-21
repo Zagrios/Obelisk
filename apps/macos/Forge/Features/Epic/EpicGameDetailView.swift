@@ -10,6 +10,7 @@ struct EpicGameDetailView: View {
     }
 
     var body: some View {
+        @Bindable var achievements = model.achievements
         VStack(alignment: .leading, spacing: 23) {
             GameDetailHeader(
                 title: game.title,
@@ -17,7 +18,8 @@ struct EpicGameDetailView: View {
                 playtime: EpicFormatting.playtime(model.selectedGameDetails?.playtimeSeconds),
                 lastPlayed: "—",
                 size: (model.selectedInstallation?.totalBytes ?? model.selectedGameDetails?.installationBytes).map(SteamFormatting.bytes) ?? "—",
-                back: model.closeGame
+                back: model.closeGame,
+                additionalMetrics: { GameAchievementsButton(model: model.achievements) }
             ) {
                 EpicArtwork(imageURL: game.headerImageUrl ?? game.imageUrl, maxPixelSize: 2048)
             } action: {
@@ -78,6 +80,9 @@ struct EpicGameDetailView: View {
                     }
                 }
             }
+        }
+        .sheet(isPresented: $achievements.isPresented) {
+            GameAchievementsView(model: model.achievements, gameName: game.title, retry: model.reloadAchievements)
         }
     }
 }

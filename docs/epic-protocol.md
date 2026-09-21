@@ -38,6 +38,20 @@ Protocol sources checked on September 16, 2026:
 
 Unavailable history or an unavailable manifest does not hide the other metric. Authentication rejection is retried once after refreshing the session. Account and selection checks prevent late responses from updating a different game or a signed-out view. Refreshed credentials are saved even if the user closes the details page during the request.
 
+## Achievements
+
+Game details show playtime after installation size and a trophy button with the unlocked/total count. Steam and Epic share the achievement panel, including its scroll area at the right edge, circular close button, and dismissal when clicking the parent window outside the sheet.
+
+`epic-kit::Client::achievements` reads definitions and the current account's unlocks through `https://launcher.store.epicgames.com/graphql`, using the launcher's store User-Agent. The read-only queries follow Legendary's [achievement query definitions](https://github.com/legendary-gl/legendary/blob/master/legendary/models/gql.py) and [API requests](https://github.com/legendary-gl/legendary/blob/master/legendary/api/egs.py), checked September 21, 2026. Definition requests use the game's namespace and the language code; unlock requests use the same namespace and the active Epic account ID.
+
+Responses are bounded and checked for GraphQL errors, namespace/account mismatches, duplicate identifiers, and incomplete definitions. Unsupported games have an empty list; failed requests remain unavailable and can be retried. Locked hidden achievements do not expose their names, descriptions, or icons. Only HTTPS icons without embedded credentials are accepted. Unlock dates are parsed separately from display text.
+
+Requests reuse the launcher `Api` helper, so bounds, status mapping and redirect policy stay in one place.
+
+The UI request goes through `EpicRememberedSession`, preserving credential rotation and account checks. Failures are reported through `EpicModel.message`, as elsewhere in the store. Closing the game or replacing the selection invalidates pending achievement responses. This feature performs no achievement mutations or game launches.
+
+Live verification on September 21, 2026: Cyberpunk 2077 displayed 2.5 hours and 2/57 achievements from the signed-in account, including icons and unlock dates. The native panel's scrollbar and outside-click dismissal were checked visually. Fixture tests cover merging unlocks, hidden achievements, unsupported games versus failed responses, account mismatch, and authentication refresh.
+
 ## Sessions and errors
 
 With the remember option enabled, `EpicKeychain` saves only the account identity and refresh token. The `epic-session` item uses the `com.zagrios.forge.epic` Keychain service. Steam keeps its own item and service. No token is written to the catalog, preferences, or logs.

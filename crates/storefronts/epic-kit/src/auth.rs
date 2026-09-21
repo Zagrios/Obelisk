@@ -93,6 +93,7 @@ struct TokenResponse {
 pub(crate) struct Api {
     pub http: reqwest::Client,
     pub account: String,
+    pub store: String,
     pub library: String,
     pub launcher: String,
     pub catalog: String,
@@ -114,6 +115,7 @@ impl Api {
                 .timeout(Duration::from_secs(45))
                 .build()
                 .map_err(|_| EpicError::Network)?,
+            store: "https://launcher.store.epicgames.com".into(),
             friends: "https://friends-public-service-prod.ol.epicgames.com".into(),
             presence: "https://api.epicgames.dev".into(),
             connect: "wss://connect.ol.epicgames.com/".into(),
@@ -261,6 +263,42 @@ impl Api {
         check_status(response.status())?;
         bounded_json(response, 8 * 1024 * 1024).await
     }
+
+    /// Same bounds and status mapping as `get`, for endpoints that take a JSON
+    /// body and identify the launcher component making the request.
+    pub async fn post_json<T: serde::de::DeserializeOwned>(
+        &self,
+        url: String,
+        access_token: &str,
+        agent: &str,
+        body: &impl serde::Serialize,
+    ) -> Result<T, EpicError> {
+        let response = self
+            .http
+            .post(url)
+            .header(reqwest::header::USER_AGENT, agent)
+            .bearer_auth(access_token)
+            .json(body)
+            .send()
+            .await
+            .map_err(|_| EpicError::Network)?;
+        check_status(response.status())?;
+        bounded_json(response, 8 * 1024 * 1024).await
+    }
+}
+
+/// Only HTTPS locations without embedded credentials are handed to the host,
+/// for avatars, catalog artwork and achievement icons alike.
+pub(crate) fn safe_https_url(value: String) -> Option<String> {
+    Url::parse(&value)
+        .ok()
+        .filter(|url| {
+            url.scheme() == "https"
+                && url.host_str().is_some()
+                && url.username().is_empty()
+                && url.password().is_none()
+        })
+        .map(|_| value)
 }
 
 pub(crate) async fn bounded_json<T: serde::de::DeserializeOwned>(

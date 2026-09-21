@@ -4,6 +4,9 @@ import Foundation
 // Older library/download fixtures have no social events. Suspend until the
 // model cancels instead of making a network request or polling a fake cache.
 extension SteamSessionProtocol {
+    func achievements(appId: UInt32, language: String) async throws -> [SteamAchievement] {
+        throw CocoaError(.featureUnsupported)
+    }
     func archiveCloud(config: SteamCloudConfiguration) async throws {}
     func platforms(appIds: [UInt32]) async throws -> [SteamGamePlatforms] { [] }
     #if DEBUG
@@ -36,4 +39,10 @@ extension SteamSessionProtocol {
         return SteamFriendsSnapshot(revision: afterRevision + 1, accountId: 0, connection: .disconnected, friends: [])
     }
     func shutdown() {}
+}
+
+extension EpicSessionProtocol {
+    func achievements(namespace: String, locale: String) async throws -> [EpicAchievement] {
+        throw CocoaError(.featureUnsupported)
+    }
 }

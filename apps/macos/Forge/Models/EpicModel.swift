@@ -29,6 +29,7 @@ final class EpicModel {
         }
     }
 
+    let achievements = GameAchievementsModel(storeID: "epic", describe: EpicModel.message)
     private(set) var selectedGame: EpicGame?
     private(set) var selectedGameDetails: EpicGameDetails?
     private(set) var isLoadingGameDetails = false
@@ -442,6 +443,7 @@ final class EpicModel {
     func open(_ game: EpicGame) {
         closeGame()
         selectedGame = game
+        reloadAchievements()
         guard let session else { return }
         isLoadingGameDetails = true
         let current = generation
@@ -449,7 +451,19 @@ final class EpicModel {
         detailsTask = Task { await loadDetails(game, session: session, generation: current, selection: selection) }
     }
 
+    func reloadAchievements() {
+        guard let game = selectedGame, let session else { return }
+        let locale = Locale(identifier: launchLanguage).language.languageCode?.identifier ?? "en"
+        let remembered = rememberedSession
+        achievements.load {
+            try await remembered.perform(on: session) {
+                try await session.achievements(namespace: game.namespace, locale: locale).map(GameAchievement.init)
+            }
+        }
+    }
+
     func closeGame() {
+        achievements.reset()
         detailsGeneration += 1
         detailsTask?.cancel()
         detailsTask = nil

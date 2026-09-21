@@ -116,6 +116,30 @@ impl From<client::Game> for EpicGame {
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
+pub struct EpicAchievement {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub icon_url: String,
+    pub hidden: bool,
+    pub unlocked: bool,
+    pub unlock_date: Option<String>,
+}
+impl From<client::Achievement> for EpicAchievement {
+    fn from(value: client::Achievement) -> Self {
+        Self {
+            id: value.id,
+            name: value.name,
+            description: value.description,
+            icon_url: value.icon_url,
+            hidden: value.hidden,
+            unlocked: value.unlocked,
+            unlock_date: value.unlock_date,
+        }
+    }
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
 pub struct EpicGameDetails {
     pub playtime_seconds: Option<u64>,
     pub installation_bytes: Option<u64>,
@@ -181,6 +205,20 @@ pub struct EpicSession {
 
 #[uniffi::export(async_runtime = "tokio")]
 impl EpicSession {
+    pub async fn achievements(
+        &self,
+        namespace: String,
+        locale: String,
+    ) -> Result<Vec<EpicAchievement>, EpicError> {
+        Ok(self
+            .client
+            .achievements(&namespace, &locale)
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
     #[uniffi::constructor]
     pub async fn sign_in(authorization_code: String) -> Result<Arc<Self>, EpicError> {
         Ok(Arc::new(Self {

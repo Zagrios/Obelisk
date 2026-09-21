@@ -18,6 +18,7 @@ use tokio::time::{Instant, timeout, timeout_at};
 use tokio_tungstenite::tungstenite::{Message as WsMessage, protocol::WebSocketConfig};
 
 use crate::{friends, kv, proto};
+pub mod achievements;
 mod cloud;
 #[cfg(test)]
 mod login_tests;

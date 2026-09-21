@@ -177,6 +177,30 @@ impl SteamLogin {
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
+pub struct SteamAchievement {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub icon_url: String,
+    pub hidden: bool,
+    pub unlocked: bool,
+    pub unlock_time: u32,
+}
+impl From<client::Achievement> for SteamAchievement {
+    fn from(value: client::Achievement) -> Self {
+        Self {
+            id: value.id,
+            name: value.name,
+            description: value.description,
+            icon_url: value.icon_url,
+            hidden: value.hidden,
+            unlocked: value.unlocked,
+            unlock_time: value.unlock_time,
+        }
+    }
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
 pub struct SteamGame {
     pub app_id: u32,
     pub name: String,
@@ -294,6 +318,19 @@ impl SteamSession {
         Ok(self
             .client
             .games()
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+    pub async fn achievements(
+        &self,
+        app_id: u32,
+        language: String,
+    ) -> Result<Vec<SteamAchievement>, SteamError> {
+        Ok(self
+            .client
+            .achievements(app_id, &language)
             .await?
             .into_iter()
             .map(Into::into)

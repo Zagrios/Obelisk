@@ -17,6 +17,7 @@ struct SteamGameDetailView: View {
     }
 
     var body: some View {
+        @Bindable var achievements = model.achievements
         VStack(alignment: .leading, spacing: 23) {
             GameDetailHeader(
                 title: game.name,
@@ -24,7 +25,8 @@ struct SteamGameDetailView: View {
                 playtime: SteamFormatting.playtime(game.playtimeMinutes),
                 lastPlayed: SteamFormatting.lastPlayed(game.lastPlayed),
                 size: sizeText,
-                back: model.backToLibrary
+                back: model.backToLibrary,
+                additionalMetrics: { GameAchievementsButton(model: model.achievements) }
             ) {
                 SteamArtwork(appId: game.appId, portrait: false, iconHash: game.iconHash)
             } action: {
@@ -95,6 +97,9 @@ struct SteamGameDetailView: View {
             }
 
             newsSection
+        }
+        .sheet(isPresented: $achievements.isPresented) {
+            GameAchievementsView(model: model.achievements, gameName: game.name, retry: model.reloadAchievements)
         }
     }
 

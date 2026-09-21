@@ -75,8 +75,13 @@ final class SteamModel {
     var availableFilters: [StorefrontLibraryFilter] { StorefrontLibraryFilter.allCases }
     var guardKind: SteamGuardKind = .deviceConfirmation
 
-    private(set) var selectedGame: SteamGame?
+    private(set) var selectedGame: SteamGame? {
+        // Every path that opens, closes or replaces the selection invalidates
+        // the panel here, so no caller has to remember to.
+        didSet { if selectedGame?.appId != oldValue?.appId { achievements.reset() } }
+    }
     private(set) var details: SteamGameDetails?
+    let achievements = GameAchievementsModel(storeID: "steam", describe: SteamModel.message)
     private(set) var news: [SteamNews] = []
     private(set) var isLoadingDetails = false
     private(set) var isLoadingNews = false
@@ -576,6 +581,9 @@ final class SteamModel {
             let loaded = try await session.games()
             guard current == generation && self.session === session else { return }
             games = loaded
+            if let selected = selectedGame, let updated = loaded.first(where: { $0.appId == selected.appId }) {
+                selectedGame = updated
+            }
             isLoadingGames = false
             libraryPlatforms.load(appIds: loaded.map(\.appId), session: session)
         } catch {
@@ -817,6 +825,7 @@ final class SteamModel {
         let request = detailGeneration
         let current = generation
         reloadDetails()
+        reloadAchievements()
         Task {
             do {
                 let loaded = try await loadNews(game.appId)
@@ -829,6 +838,12 @@ final class SteamModel {
                 isLoadingNews = false
             }
         }
+    }
+
+    func reloadAchievements() {
+        guard let game = selectedGame, let session else { return }
+        let language = language
+        achievements.load { try await session.achievements(appId: game.appId, language: language).map(GameAchievement.init) }
     }
 
     func reloadDetails() {

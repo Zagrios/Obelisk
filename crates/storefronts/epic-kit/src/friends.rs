@@ -117,17 +117,6 @@ fn text(value: &Value) -> Option<String> {
 fn valid_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= 512 && !id.chars().any(char::is_control)
 }
-fn safe_avatar(value: String) -> Option<String> {
-    reqwest::Url::parse(&value)
-        .ok()
-        .filter(|url| {
-            url.scheme() == "https"
-                && url.host_str().is_some()
-                && url.username().is_empty()
-                && url.password().is_none()
-        })
-        .map(|_| value)
-}
 impl Roster {
     pub(crate) fn new(account_id: String) -> Self {
         Self {
@@ -196,7 +185,7 @@ impl Roster {
             let avatar = relation
                 .connections
                 .into_values()
-                .filter_map(|v| v.avatar.and_then(safe_avatar))
+                .filter_map(|v| v.avatar.and_then(crate::auth::safe_https_url))
                 .next();
             if let Some(existing) = entries.get_mut(&relation.account_id) {
                 if existing.display_name.is_none() {
