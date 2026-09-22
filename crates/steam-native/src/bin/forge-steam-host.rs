@@ -15,6 +15,10 @@ fn run() -> i32 {
     match args.get(1).map(String::as_str) {
         Some("process-identity") => return process_identity(args.get(2)),
         Some("supervise") => return supervise(),
+        Some("epic-supervise") => return epic_supervise(),
+        Some("epic-exec") => {
+            return i32::from(steam_runtime::epic::exec_game(std::io::stdin().lock()).is_err());
+        }
         _ => {}
     }
     let Ok(mut output) = host::event_pipe() else {
@@ -70,5 +74,21 @@ fn supervise() -> i32 {
             native::process_identity,
         )
         .is_ok();
+    i32::from(!served)
+}
+
+fn epic_supervise() -> i32 {
+    fn inspect(
+        pid: u32,
+    ) -> steam_runtime::epic::Result<Option<steam_runtime::supervisor::Identity>> {
+        let value = native::process_identity(pid);
+        if value.is_none() && !native::process_is_absent(pid) {
+            return Err(steam_runtime::epic::Error::Session);
+        }
+        Ok(value)
+    }
+    let served = native::detach_supervisor().is_ok()
+        && steam_runtime::epic::serve(std::io::stdin().lock(), std::io::stderr().lock(), inspect)
+            .is_ok();
     i32::from(!served)
 }

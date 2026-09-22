@@ -41,8 +41,14 @@ enum SteamGameLauncher {
         AppIdentity.libraryDirectory.appending(path: "SteamSessions").path
     }
 
+    /// Steam and Epic must resolve the same vault root: owners.json arbitrates
+    /// physical save ownership across both stores from a single directory.
+    static func cloudDirectory(in directory: URL) -> String {
+        directory.appending(path: "SteamCloud").path
+    }
+
     static var cloudDirectory: String {
-        AppIdentity.libraryDirectory.appending(path: "SteamCloud").path
+        cloudDirectory(in: AppIdentity.libraryDirectory)
     }
 
     static var helpersDirectory: URL {
@@ -97,6 +103,9 @@ enum SteamGameLauncher {
     }
 }
 
+// Disposable launch fixtures keep exercising bundle arguments and ownership
+// tokens. Production Epic launches belong to the Rust supervisor.
+#if DEBUG
 @MainActor
 enum EpicGameLauncher {
     static func launch(_ plan: EpicLaunchPlan) async throws {
@@ -105,6 +114,7 @@ enum EpicGameLauncher {
         )
     }
 }
+#endif
 
 /// Storefront arguments remain literal process arguments. No shell interprets them.
 @MainActor

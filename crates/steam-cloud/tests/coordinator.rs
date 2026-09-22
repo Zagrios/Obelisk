@@ -495,11 +495,13 @@ fn failed_journal_write_requires_reopening_before_more_decisions() {
         .join(scope(1, 10, 42).steam_id.to_string())
         .join("42/state.json");
     let original = fs::read(&state_path).unwrap();
+    let original_permissions = fs::metadata(&state_path).unwrap().permissions();
     fs::remove_file(&state_path).unwrap();
     std::os::unix::fs::symlink("missing", &state_path).unwrap();
     assert!(vault.record_local(&files).is_err());
     fs::remove_file(&state_path).unwrap();
     fs::write(&state_path, original).unwrap();
+    fs::set_permissions(&state_path, original_permissions).unwrap();
     assert!(matches!(vault.record_local(&files), Err(Error::Recovery)));
     drop(vault);
     let mut vault = open(root.path(), scope(1, 10, 42));

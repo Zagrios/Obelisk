@@ -11,7 +11,7 @@ pub use projection::{Bindings, SelectedFile};
 #[serde(deny_unknown_fields)]
 pub struct PendingUpload {
     pub id: String,
-    pub scope: Scope,
+    pub scope: StoreScope,
     pub adapter: String,
     pub desired: Manifest,
     pub against: RemoteView,
@@ -22,17 +22,17 @@ pub struct PendingUpload {
 
 /// Contains account identity and an authorization generation, never a token.
 /// The authenticated adapter remains responsible for binding its actual session
-/// to steam_id. UI detachment must not call revoke().
+/// to its account identity. UI detachment must not call revoke().
 #[derive(Clone, Copy, Debug)]
 pub struct Authorization {
-    steam_id: u64,
+    account_key: [u8; 32],
     generation: u64,
 }
 
 #[derive(Clone, Debug)]
 pub struct UploadPermit {
     pub operation_id: String,
-    pub scope: Scope,
+    pub scope: StoreScope,
     pub adapter: String,
     pub desired: Manifest,
     authorization: Authorization,
@@ -42,7 +42,7 @@ pub struct UploadPermit {
 #[serde(deny_unknown_fields)]
 struct State {
     schema: u32,
-    scope: Scope,
+    scope: StoreScope,
     baseline: Option<RemoteView>,
     intent: Option<LocalIntent>,
     /// Latest local set for this account, including when another account owns
@@ -54,8 +54,8 @@ struct State {
 }
 
 impl State {
-    fn validate(&self, scope: Scope) -> Result<()> {
-        if self.schema != 2 || !same_store(self.scope, scope) {
+    fn validate(&self, scope: &StoreScope) -> Result<()> {
+        if self.schema != 2 || !same_store(&self.scope, scope) {
             return Err(Error::Invalid);
         }
         self.scope.validate()?;
@@ -69,7 +69,7 @@ impl State {
             intent.against.validate()?;
         }
         if let Some(pending) = &self.pending {
-            if !same_store(pending.scope, scope) || uuid::Uuid::parse_str(&pending.id).is_err() {
+            if !same_store(&pending.scope, scope) || uuid::Uuid::parse_str(&pending.id).is_err() {
                 return Err(Error::Invalid);
             }
             pending.scope.validate()?;
@@ -92,7 +92,7 @@ impl State {
 pub struct Vault {
     root: PathBuf,
     directory: PathBuf,
-    scope: Scope,
+    scope: StoreScope,
     state: State,
     preferences: Preferences,
     poisoned: bool,
@@ -100,24 +100,26 @@ pub struct Vault {
 }
 
 impl Vault {
-    pub fn open(root: &std::path::Path, scope: Scope) -> Result<Self> {
+    pub fn open(root: &std::path::Path, scope: impl Into<StoreScope>) -> Result<Self> {
         let root = disk::root(root)?;
         let lock = disk::lock(&root)?;
-        Self::open_locked(root, scope, lock)
+        Self::open_locked(root, scope.into(), lock)
     }
 
     // The caller already holds this exact root's lock. File::try_clone retains
     // the same lock ownership while another account's complete set is archived.
-    fn open_locked(root: PathBuf, scope: Scope, lock: File) -> Result<Self> {
+    fn open_locked(root: PathBuf, scope: StoreScope, lock: File) -> Result<Self> {
         scope.validate()?;
-        let account = disk::directory(&root.join(scope.steam_id.to_string()))?;
-        let directory = disk::directory(&account.join(scope.cloud_app_id.to_string()))?;
+        for account in scope.account_directories(&root) {
+            disk::directory(&account)?;
+        }
+        let directory = disk::directory(&scope.directory(&root)?)?;
         disk::directory(&directory.join("blobs"))?;
         let state = match disk::read::<State>(&directory.join("state.json"))? {
             Some(state) => state,
             None => State {
                 schema: 2,
-                scope,
+                scope: scope.clone(),
                 baseline: None,
                 intent: None,
                 local: None,
@@ -126,7 +128,7 @@ impl Vault {
                 game: None,
             },
         };
-        state.validate(scope)?;
+        state.validate(&scope)?;
         Ok(Self {
             root,
             directory,
@@ -264,20 +266,21 @@ impl Vault {
         self.save(next)
     }
 
-    pub fn authorize(&self, steam_id: u64) -> Result<Authorization> {
+    pub fn authorize(&self, account: impl Into<AccountIdentity>) -> Result<Authorization> {
         self.healthy()?;
-        if steam_id != self.scope.steam_id {
+        let account = account.into();
+        if account != self.scope.account() {
             return Err(Error::Authentication);
         }
         Ok(Authorization {
-            steam_id,
+            account_key: account.permit_key(),
             generation: self.generation()?,
         })
     }
 
     fn check_authorization(&self, authorization: Authorization) -> Result<()> {
         self.healthy()?;
-        if authorization.steam_id != self.scope.steam_id
+        if authorization.account_key != self.scope.account().permit_key()
             || authorization.generation != self.generation()?
         {
             return Err(Error::Authentication);
@@ -327,7 +330,7 @@ impl Vault {
         let mut next = self.state.clone();
         next.pending = Some(PendingUpload {
             id: id.clone(),
-            scope: self.scope,
+            scope: self.scope.clone(),
             adapter: adapter.into(),
             desired: desired.clone(),
             against: remote.clone(),
@@ -357,7 +360,7 @@ impl Vault {
         self.verify(&pending.desired)?;
         let permit = UploadPermit {
             operation_id: pending.id.clone(),
-            scope: pending.scope,
+            scope: pending.scope.clone(),
             adapter: pending.adapter.clone(),
             desired: pending.desired.clone(),
             authorization,
@@ -381,7 +384,7 @@ impl Vault {
         readback.validate()?;
         let pending = self.state.pending.as_ref().ok_or(Error::Stale)?;
         if pending.id != permit.operation_id
-            || !same_store(permit.scope, self.scope)
+            || !same_store(&permit.scope, &self.scope)
             || pending.adapter != permit.adapter
             || pending.desired != permit.desired
             || !pending.may_have_committed
@@ -570,8 +573,14 @@ impl Vault {
     }
 }
 
-fn same_store(a: Scope, b: Scope) -> bool {
-    a.steam_id == b.steam_id && a.cloud_app_id == b.cloud_app_id
+fn same_store(a: &StoreScope, b: &StoreScope) -> bool {
+    match (a, b) {
+        (StoreScope::Steam(a), StoreScope::Steam(b)) => {
+            a.steam_id == b.steam_id && a.cloud_app_id == b.cloud_app_id
+        }
+        (StoreScope::Epic(a), StoreScope::Epic(b)) => a == b,
+        _ => false,
+    }
 }
 
 #[cfg(test)]

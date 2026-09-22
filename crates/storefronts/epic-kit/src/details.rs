@@ -6,7 +6,7 @@ use std::{path::Path, time::Duration};
 
 use crate::{
     EpicError,
-    auth::{self, Api},
+    auth::{self, Api, credential_free},
     client::validate_identity,
     content_manifest::Manifest,
     manifest,
@@ -247,12 +247,7 @@ fn manifest_request(api: &Api, location: &ManifestLocation) -> Result<reqwest::R
     }
     let permitted_scheme = url.scheme() == "https"
         || cfg!(test) && url.scheme() == "http" && url.host_str() == Some("127.0.0.1");
-    if !permitted_scheme
-        || url.host_str().is_none()
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.fragment().is_some()
-    {
+    if !permitted_scheme || !credential_free(&url) {
         return Err(EpicError::Protocol);
     }
     if !location.query_params.is_empty() {

@@ -2,6 +2,7 @@
 
 pub mod auth;
 pub mod client;
+pub mod cloud;
 mod content;
 mod content_manifest;
 mod details;
@@ -30,6 +31,8 @@ pub enum EpicError {
     UnsafePath(String),
     #[error("backend.epic.integrity")]
     Integrity,
+    #[error("backend.epic.cloud_conflict")]
+    CloudConflict,
     #[error("backend.epic.content_http")]
     Http(u16),
     #[error("backend.epic.unsupported_content")]

@@ -18,6 +18,7 @@ use crate::{
 };
 
 mod achievements;
+mod cloud_api;
 pub use achievements::Achievement;
 mod download;
 mod launch;
@@ -68,6 +69,36 @@ impl Client {
         let api = Api::new()?;
         let session = api.refresh(&credentials).await?;
         Ok(Self::from_session(api, session))
+    }
+
+    /// Creates an independent in-memory session for a detached supervisor.
+    /// The exchange code is single-use and must never be persisted or logged.
+    pub async fn from_exchange_code(code: &str, expected_account: &str) -> Result<Self, EpicError> {
+        let api = Api::new()?;
+        let session = api.exchange(code, expected_account).await?;
+        Ok(Self::from_session(api, session))
+    }
+
+    pub async fn exchange_code(&self) -> Result<String, EpicError> {
+        #[derive(Deserialize)]
+        struct Exchange {
+            code: String,
+        }
+        self.with_access_token(|token| async move {
+            let url = endpoint(&self.api.account, &["account", "api", "oauth", "exchange"])?;
+            let exchange: Exchange = self.api.get(url, &token).await?;
+            if exchange.code.is_empty()
+                || exchange.code.len() > 2048
+                || !exchange
+                    .code
+                    .bytes()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_'))
+            {
+                return Err(EpicError::Protocol);
+            }
+            Ok(exchange.code)
+        })
+        .await
     }
 
     pub async fn credentials(&self) -> Result<Credentials, EpicError> {

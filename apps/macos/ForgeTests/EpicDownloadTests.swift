@@ -411,49 +411,59 @@ final class EpicDownloadTests: XCTestCase {
         defer { fixture.cleanUp() }
         fixture.model.primaryAction()
         try await eventually { !fixture.model.isDownloading }
-        XCTAssertTrue(fixture.launcher.plans.isEmpty, "Installing a game must not launch it")
+        let installedLaunches = await fixture.session.launchRequests
+        XCTAssertTrue(installedLaunches.isEmpty, "Installing a game must not launch it")
         XCTAssertEqual(fixture.model.primaryActionTitle, L10n.string("model.steam.launch"))
 
         await fixture.session.holdNextDownload()
-        await fixture.session.holdNextLaunchPlan()
-        fixture.launcher.shouldHold = true
+        await fixture.session.holdNextLaunch()
+        await fixture.session.holdNextRunningGame()
         fixture.model.primaryAction()
         fixture.model.primaryAction()
         XCTAssertTrue(fixture.model.isLaunching)
         XCTAssertTrue(fixture.model.isVerifyingBeforeLaunch)
+        XCTAssertTrue(fixture.model.gameSessions.isBusy)
         try await eventually { await fixture.session.waitingForDownload }
-        XCTAssertTrue(fixture.launcher.plans.isEmpty)
+        let verifyingLaunches = await fixture.session.launchRequests
+        XCTAssertTrue(verifyingLaunches.isEmpty)
         await fixture.session.completeDownload()
-        try await eventually { await fixture.session.waitingForLaunchPlan }
+        try await eventually { await fixture.session.waitingForLaunch }
         XCTAssertFalse(fixture.model.isDownloading)
         XCTAssertTrue(fixture.model.isLaunching)
         XCTAssertFalse(fixture.model.isVerifyingBeforeLaunch)
         XCTAssertEqual(fixture.model.primaryActionTitle, L10n.string("model.steam.launching"))
         fixture.model.primaryAction()
-        await fixture.session.completeLaunchPlan(rotated: credentials("launch-rotation"))
-        try await eventually { fixture.launcher.isWaiting }
-        let stored = await fixture.store.value
-        XCTAssertEqual(stored?.refreshToken, "launch-rotation")
+        await fixture.session.completeLaunch(rotated: credentials("launch-rotation"))
+        try await eventually { fixture.model.gameSessions.active?.phase == .running }
+        let game = try await launchedGame(fixture)
+        let storedAtBegin = await game.credentialsAtBegin
+        XCTAssertEqual(storedAtBegin?.refreshToken, "launch-rotation")
+        XCTAssertFalse(fixture.model.isLaunching)
+        XCTAssertTrue(fixture.model.gameSessions.isBusy)
+        XCTAssertFalse(fixture.model.primaryActionAvailable)
         fixture.model.primaryAction()
         let requests = await fixture.session.downloads
+        let launches = await fixture.session.launchRequests
         XCTAssertEqual(requests.count, 2)
-        XCTAssertEqual(fixture.launcher.plans.count, 1)
-        fixture.launcher.complete()
-        try await eventually { !fixture.model.isLaunching }
+        XCTAssertEqual(launches.count, 1)
+        XCTAssertEqual(launches.first?.language, "fr-FR")
+        XCTAssertEqual(launches.first?.install, fixture.model.selectedInstallation?.directory)
+        XCTAssertEqual(launches.first?.namespace, fixture.game.namespace)
+        XCTAssertEqual(launches.first?.appName, fixture.game.appName)
+        await game.finish()
+        try await eventually { !fixture.model.gameSessions.isBusy }
         let events = await fixture.session.events
-        XCTAssertEqual(events, ["download", "download", "launchPlan", "execute"])
-        let planRequest = await fixture.session.launchRequests.first
-        XCTAssertEqual(planRequest?.language, "fr-FR")
-        XCTAssertEqual(planRequest?.directory, fixture.model.selectedInstallation?.directory)
+        XCTAssertEqual(events, ["download", "download", "launchGame", "begin"])
 
         fixture.model.primaryAction()
-        try await eventually { !fixture.model.isLaunching }
+        try await eventually { !fixture.model.gameSessions.isBusy }
         let repeated = await fixture.session.events
-        XCTAssertEqual(Array(repeated.suffix(3)), ["download", "launchPlan", "execute"])
-        XCTAssertEqual(fixture.launcher.plans.count, 2)
+        let repeatedLaunches = await fixture.session.launchRequests
+        XCTAssertEqual(Array(repeated.suffix(3)), ["download", "launchGame", "begin"])
+        XCTAssertEqual(repeatedLaunches.count, 2)
     }
 
-    func testCancelledLaunchVerificationNeverAuthorizesOrExecutesAndKeepsLaunchAction() async throws {
+    func testCancelledLaunchVerificationNeverHandsOffOrBeginsAndKeepsLaunchAction() async throws {
         let fixture = try await fixture()
         defer { fixture.cleanUp() }
         fixture.model.downloadSelected()
@@ -463,50 +473,85 @@ final class EpicDownloadTests: XCTestCase {
         try await eventually { await fixture.session.waitingForDownload }
         fixture.model.cancelDownload()
         await fixture.session.completeDownload()
-        try await eventually { !fixture.model.isLaunching }
-        let plans = await fixture.session.launchRequests
-        XCTAssertTrue(plans.isEmpty)
-        XCTAssertTrue(fixture.launcher.plans.isEmpty)
+        try await eventually { !fixture.model.gameSessions.isBusy }
+        let launches = await fixture.session.launchRequests
+        let games = await fixture.session.launchedGames
+        XCTAssertTrue(launches.isEmpty)
+        XCTAssertTrue(games.isEmpty)
         XCTAssertEqual(fixture.model.selectedInstallation?.needsVerification, true)
         XCTAssertEqual(fixture.model.primaryActionTitle, L10n.string("model.steam.launch"))
         XCTAssertNil(fixture.model.errorMessage)
     }
 
-    func testCancelledLaunchAuthorizationPersistsRotationWithoutExecuting() async throws {
+    func testCancelledLaunchHandoffPersistsRotationAndCancelsLateClientWithoutBeginning() async throws {
         let fixture = try await fixture()
         defer { fixture.cleanUp() }
         fixture.model.downloadSelected()
         try await eventually { !fixture.model.isDownloading }
-        await fixture.session.holdNextLaunchPlan()
+        await fixture.session.holdNextLaunch()
         fixture.model.primaryAction()
-        try await eventually { await fixture.session.waitingForLaunchPlan }
+        try await eventually { await fixture.session.waitingForLaunch }
         fixture.model.cancelDownload()
-        await fixture.session.completeLaunchPlan(rotated: credentials("cancelled-launch-rotation"))
-        try await eventually { !fixture.model.isLaunching }
+        await fixture.session.completeLaunch(rotated: credentials("cancelled-launch-rotation"))
+        try await eventually { !fixture.model.gameSessions.isBusy }
+        let game = try await launchedGame(fixture)
+        try await eventually { await game.cancellations > 0 }
         let saved = await fixture.store.value
+        let beginnings = await game.beginnings
         XCTAssertEqual(saved?.refreshToken, "cancelled-launch-rotation")
-        XCTAssertTrue(fixture.launcher.plans.isEmpty)
+        XCTAssertEqual(beginnings, 0)
         XCTAssertNil(fixture.model.errorMessage)
         XCTAssertEqual(fixture.model.primaryActionTitle, L10n.string("model.steam.launch"))
     }
 
-    func testSignOutDiscardsLateLaunchPlanAndDoesNotExecute() async throws {
+    func testCancelledLaunchDuringFinalCredentialSaveCancelsClientBeforeSaveCompletes() async throws {
         let fixture = try await fixture()
         defer { fixture.cleanUp() }
         fixture.model.downloadSelected()
         try await eventually { !fixture.model.isDownloading }
-        await fixture.session.holdNextLaunchPlan()
+        await fixture.session.holdNextLaunch()
         fixture.model.primaryAction()
-        try await eventually { await fixture.session.waitingForLaunchPlan }
-        fixture.model.signOut()
-        await fixture.session.completeLaunchPlan(rotated: credentials("abandoned-launch"))
-        try await eventually {
-            let returned = await fixture.session.returnedLaunchPlans
-            return !fixture.model.isSigningOut && returned == 1
-        }
+        try await eventually { await fixture.session.waitingForLaunch }
+        await fixture.store.holdNextSave()
+        await fixture.session.completeLaunch(rotated: credentials("final-launch-rotation"))
+        try await eventually { await fixture.store.waitingForSave }
+        try await eventually { !(await fixture.session.launchedGames.isEmpty) }
+        let game = try await launchedGame(fixture)
+        let beginningsBeforeCancel = await game.beginnings
+        XCTAssertEqual(beginningsBeforeCancel, 0)
+        fixture.model.cancelDownload()
+        try await eventually { await game.cancellations > 0 }
+        let stillSaving = await fixture.store.waitingForSave
+        XCTAssertTrue(stillSaving, "Cancellation must reach the returned client while credential storage is blocked")
+        await fixture.store.completeSave()
+        try await eventually { !fixture.model.gameSessions.isBusy }
         let saved = await fixture.store.value
+        let beginnings = await game.beginnings
+        XCTAssertEqual(saved?.refreshToken, "final-launch-rotation")
+        XCTAssertEqual(beginnings, 0)
+        XCTAssertNotNil(fixture.model.selectedInstallation)
+        XCTAssertNil(fixture.model.errorMessage)
+    }
+
+    func testSignOutRevokesLateLaunchClientWithoutBeginning() async throws {
+        let fixture = try await fixture()
+        defer { fixture.cleanUp() }
+        fixture.model.downloadSelected()
+        try await eventually { !fixture.model.isDownloading }
+        await fixture.session.holdNextLaunch()
+        fixture.model.primaryAction()
+        try await eventually { await fixture.session.waitingForLaunch }
+        fixture.model.signOut()
+        await fixture.session.completeLaunch(rotated: credentials("abandoned-launch"))
+        try await eventually { !fixture.model.isSigningOut && !fixture.model.gameSessions.isBusy }
+        let game = try await launchedGame(fixture)
+        try await eventually { await game.cancellations > 0 }
+        let saved = await fixture.store.value
+        let beginnings = await game.beginnings
+        let revocations = await game.revocations
         XCTAssertNil(saved)
-        XCTAssertTrue(fixture.launcher.plans.isEmpty)
+        XCTAssertEqual(beginnings, 0)
+        XCTAssertEqual(revocations, ["download-account"])
         XCTAssertFalse(fixture.model.isLaunching)
         XCTAssertFalse(fixture.model.isDownloading)
         XCTAssertTrue(fixture.model.installations.isEmpty)
@@ -517,39 +562,46 @@ final class EpicDownloadTests: XCTestCase {
         defer { fixture.cleanUp() }
         fixture.model.downloadSelected()
         try await eventually { !fixture.model.isDownloading }
-        await fixture.session.holdNextLaunchPlan()
+        await fixture.session.holdNextLaunch()
         fixture.model.primaryAction()
-        try await eventually { await fixture.session.waitingForLaunchPlan }
+        try await eventually { await fixture.session.waitingForLaunch }
         fixture.model.open(game("other"))
         XCTAssertFalse(fixture.model.primaryActionAvailable)
-        await fixture.session.completeLaunchPlan()
-        try await eventually { !fixture.model.isLaunching }
-        XCTAssertEqual(fixture.launcher.plans.first?.appName, fixture.game.appName)
+        await fixture.session.completeLaunch()
+        try await eventually { !fixture.model.gameSessions.isBusy }
+        let launched = try await launchedGame(fixture)
+        let beginnings = await launched.beginnings
+        let launch = await fixture.session.launchRequests.first
+        XCTAssertEqual(beginnings, 1)
+        XCTAssertEqual(launch?.appName, fixture.game.appName)
+        XCTAssertEqual(launch?.namespace, fixture.game.namespace)
         XCTAssertEqual(fixture.model.selectedGame?.appName, "other")
         XCTAssertNil(fixture.model.selectedInstallation)
         XCTAssertTrue(fixture.model.primaryActionAvailable)
     }
 
-    func testVerificationAndLaunchAuthorizationFailuresNeverExecute() async throws {
+    func testVerificationAndLaunchHandoffFailuresNeverBegin() async throws {
         let fixture = try await fixture()
         defer { fixture.cleanUp() }
         fixture.model.downloadSelected()
         try await eventually { !fixture.model.isDownloading }
         await fixture.session.failNextDownload(rotated: credentials("verify-failure"))
         fixture.model.primaryAction()
-        try await eventually { !fixture.model.isLaunching }
-        let firstPlans = await fixture.session.launchRequests
-        XCTAssertTrue(firstPlans.isEmpty)
-        XCTAssertTrue(fixture.launcher.plans.isEmpty)
+        try await eventually { !fixture.model.gameSessions.isBusy }
+        let firstLaunches = await fixture.session.launchRequests
+        XCTAssertTrue(firstLaunches.isEmpty)
         XCTAssertNotNil(fixture.model.errorMessage)
         XCTAssertEqual(fixture.model.primaryActionTitle, L10n.string("model.steam.launch"))
 
-        await fixture.session.failNextLaunchPlan(rotated: credentials("plan-failure"))
+        await fixture.session.failNextLaunch(rotated: credentials("handoff-failure"))
         fixture.model.primaryAction()
-        try await eventually { !fixture.model.isLaunching }
+        try await eventually { !fixture.model.gameSessions.isBusy }
         let saved = await fixture.store.value
-        XCTAssertEqual(saved?.refreshToken, "plan-failure")
-        XCTAssertTrue(fixture.launcher.plans.isEmpty)
+        let games = await fixture.session.launchedGames
+        let events = await fixture.session.events
+        XCTAssertEqual(saved?.refreshToken, "handoff-failure")
+        XCTAssertTrue(games.isEmpty)
+        XCTAssertFalse(events.contains("begin"))
         XCTAssertEqual(fixture.model.errorMessage, L10n.string("model.epic.network"))
     }
 
@@ -597,6 +649,28 @@ final class EpicDownloadTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: receipt.directory))
     }
 
+    func testUninstallArchivesSavesBeforeRemovingFilesAndStopsOnArchiveFailure() async throws {
+        let fixture = try await fixture(game: game("native", macos: true))
+        defer { fixture.cleanUp() }
+        fixture.model.downloadSelected()
+        try await eventually { !fixture.model.isDownloading }
+        let receipt = try XCTUnwrap(fixture.model.selectedInstallation)
+        await fixture.session.failNextArchive()
+        fixture.model.uninstall(receipt)
+        try await eventually { !fixture.model.isUninstalling }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: receipt.directory))
+        XCTAssertEqual(fixture.model.selectedInstallation, receipt)
+        XCTAssertNotNil(fixture.model.errorMessage)
+        let requests = await fixture.session.archives
+        XCTAssertEqual(requests.count, 1)
+        XCTAssertEqual(requests.first?.install, receipt.directory)
+        XCTAssertEqual(requests.first?.namespace, fixture.game.namespace)
+        XCTAssertEqual(requests.first?.appName, fixture.game.appName)
+        XCTAssertEqual(requests.first?.root, fixture.directory.appending(path: "SteamCloud").path)
+        let observedExisting = await fixture.session.archivedExistingInstallation
+        XCTAssertTrue(observedExisting)
+    }
+
     func testUninstallRejectsEpicStaleReceiptAndActiveDownload() async throws {
         let fixture = try await fixture()
         defer { fixture.cleanUp() }
@@ -641,16 +715,18 @@ final class EpicDownloadTests: XCTestCase {
         let directory = temporaryDirectory()
         let credential = credentials("current")
         let store = EpicMemoryStore(credential)
-        let session = EpicDownloadSession(credentials: credential, game: owned)
-        let launcher = EpicLaunchRecorder()
-        let model = EpicModel(directory: directory, keychain: store, restore: { _ in session }, language: "fr-FR", launch: { plan in
-            await session.recordExecution()
-            await launcher.execute(plan)
-        })
+        let session = EpicDownloadSession(credentials: credential, game: owned, store: store)
+        let model = EpicModel(directory: directory, keychain: store, restore: { _ in session }, language: "fr-FR",
+                              gameSessions: EpicGameSessions(recoverSession: { nil }))
         await model.start()
         model.open(owned)
         try await eventually { !model.isLoadingGameDetails }
-        return EpicDownloadFixture(directory: directory, model: model, session: session, store: store, game: owned, launcher: launcher)
+        return EpicDownloadFixture(directory: directory, model: model, session: session, store: store, game: owned)
+    }
+
+    private func launchedGame(_ fixture: EpicDownloadFixture) async throws -> EpicDownloadGameState {
+        let game = await fixture.session.launchedGames.last
+        return try XCTUnwrap(game)
     }
 
     private func temporaryDirectory() -> URL {
@@ -688,7 +764,6 @@ private struct EpicDownloadFixture {
     let session: EpicDownloadSession
     let store: EpicMemoryStore
     let game: EpicGame
-    let launcher: EpicLaunchRecorder
 
     func cleanUp() { try? FileManager.default.removeItem(at: directory) }
 }
@@ -702,6 +777,16 @@ private struct EpicDownloadRequest: Equatable, Sendable {
 }
 
 private actor EpicDownloadSession: EpicSessionProtocol {
+    private(set) var archives: [EpicCloudConfiguration] = []
+    private(set) var archivedExistingInstallation = false
+    private var archiveFailure = false
+    func failNextArchive() { archiveFailure = true }
+    func archiveCloud(configuration: EpicCloudConfiguration) async throws {
+        archives.append(configuration)
+        archivedExistingInstallation = FileManager.default.fileExists(atPath: configuration.install)
+        if archiveFailure { archiveFailure = false; throw EpicError.Network }
+    }
+
     func startFriends() async {}
     func reconnectFriends() async {}
     nonisolated func stopFriends() {}
@@ -726,12 +811,14 @@ private actor EpicDownloadSession: EpicSessionProtocol {
     private var shouldHoldPrepare = false
     private var shouldFailPrepare = false
     private var shouldCancelDownload = false
-    private var shouldHoldLaunchPlan = false
+    private var shouldHoldLaunch = false
+    private var shouldHoldRunningGame = false
     private var launchFailure: EpicCredentials?
     private var launchContinuation: CheckedContinuation<Void, Never>?
-    private(set) var waitingForLaunchPlan = false
-    private(set) var returnedLaunchPlans = 0
-    private(set) var launchRequests: [EpicLaunchRequest] = []
+    private(set) var waitingForLaunch = false
+    private(set) var launchRequests: [EpicCloudConfiguration] = []
+    private(set) var launchedGames: [EpicDownloadGameState] = []
+    private let store: EpicMemoryStore
     private(set) var events: [String] = []
     private var prepareContinuation: CheckedContinuation<Void, Never>?
     private(set) var waitingForDownload = false
@@ -741,7 +828,11 @@ private actor EpicDownloadSession: EpicSessionProtocol {
     nonisolated private let progress = EpicDownloadProgress()
     nonisolated var cancellations: Int { progress.cancelCount }
 
-    init(credentials: EpicCredentials, game: EpicGame) { credential = credentials; owned = game }
+    init(credentials: EpicCredentials, game: EpicGame, store: EpicMemoryStore? = nil) {
+        credential = credentials
+        owned = game
+        self.store = store ?? EpicMemoryStore(credentials)
+    }
     func credentials() -> EpicCredentials { credential }
     func prepare() async throws -> EpicCredentials {
         if shouldHoldPrepare {
@@ -789,31 +880,39 @@ private actor EpicDownloadSession: EpicSessionProtocol {
         return EpicInstallation(appName: appName, directory: destination.path, platform: platform, totalBytes: 100)
     }
     func launchPlan(namespace: String, catalogItemId: String, appName: String, platform: String, directory: String, language: String) async throws -> EpicLaunchPlan {
-        events.append("launchPlan")
-        launchRequests.append(EpicLaunchRequest(appName: appName, directory: directory, language: language))
-        defer { returnedLaunchPlans += 1 }
-        if shouldHoldLaunchPlan {
-            shouldHoldLaunchPlan = false
-            waitingForLaunchPlan = true
+        throw CocoaError(.featureUnsupported)
+    }
+    func launchGame(configuration: EpicCloudConfiguration) async throws -> EpicGameSession {
+        events.append("launchGame")
+        launchRequests.append(configuration)
+        if shouldHoldLaunch {
+            shouldHoldLaunch = false
+            waitingForLaunch = true
             await withCheckedContinuation { launchContinuation = $0 }
-            waitingForLaunchPlan = false
+            waitingForLaunch = false
         }
         if let failure = launchFailure {
             launchFailure = nil
             credential = failure
             throw EpicError.Network
         }
-        return EpicLaunchPlan(appName: appName, platform: platform, target: LaunchTarget(executable: directory + "/fixture",
-                              arguments: [], workingDirectory: directory, isApplicationBundle: false), ownershipToken: nil)
+        let game = EpicDownloadGameState(configuration: configuration, accountId: credential.accountId,
+                                         store: store, holdRunning: shouldHoldRunningGame) { [weak self] in
+            await self?.recordBegin()
+        }
+        shouldHoldRunningGame = false
+        launchedGames.append(game)
+        return EpicDownloadGameSession(state: game)
     }
-    func holdNextLaunchPlan() { shouldHoldLaunchPlan = true }
-    func failNextLaunchPlan(rotated: EpicCredentials) { launchFailure = rotated }
-    func completeLaunchPlan(rotated: EpicCredentials? = nil) {
+    func holdNextLaunch() { shouldHoldLaunch = true }
+    func holdNextRunningGame() { shouldHoldRunningGame = true }
+    func failNextLaunch(rotated: EpicCredentials) { launchFailure = rotated }
+    func completeLaunch(rotated: EpicCredentials? = nil) {
         if let rotated { credential = rotated }
         launchContinuation?.resume()
         launchContinuation = nil
     }
-    func recordExecution() { events.append("execute") }
+    private func recordBegin() { events.append("begin") }
     nonisolated func downloadProgress() -> EpicTransfer? { progress.snapshot }
     nonisolated func cancelDownload() { progress.cancel() }
     func disconnect() {}
@@ -848,27 +947,80 @@ private final class EpicDownloadProgress: @unchecked Sendable {
 
 private enum EpicDownloadTestFailure: Error { case timeout }
 
-private struct EpicLaunchRequest: Sendable {
-    let appName: String
-    let directory: String
-    let language: String
+/// The handle-free subclass stays entirely in Swift. Every game-session operation
+/// is overridden so the production handoff and observer can use it safely.
+private final class EpicDownloadGameSession: EpicGameSession, @unchecked Sendable {
+    private let state: EpicDownloadGameState
+
+    init(state: EpicDownloadGameState) {
+        self.state = state
+        super.init(noHandle: NoHandle())
+    }
+    required init(unsafeFromHandle handle: UInt64) {
+        fatalError("Test game sessions must never cross the Rust FFI boundary")
+    }
+    override func begin() async throws { await state.begin() }
+    override func cancelPreparation() { Task { await state.cancelPreparation() } }
+    override func choose(accountId: String, decisionId: UInt64, choice: EpicCloudChoice) async throws {
+        await state.choose(choice)
+    }
+    override func revokeCloud(accountId: String) async throws { await state.revokeCloud(accountId: accountId) }
+    override func snapshot(afterRevision: UInt64?) async throws -> EpicGameSnapshot {
+        await state.snapshot(afterRevision: afterRevision)
+    }
 }
 
-@MainActor
-private final class EpicLaunchRecorder {
-    private(set) var plans: [EpicLaunchPlan] = []
-    var shouldHold = false
-    private(set) var isWaiting = false
-    private var continuation: CheckedContinuation<Void, Never>?
+private actor EpicDownloadGameState {
+    private let store: EpicMemoryStore
+    private let holdRunning: Bool
+    private let onBegin: @Sendable () async -> Void
+    private var current: EpicGameSnapshot
+    private var waiting: CheckedContinuation<EpicGameSnapshot, Never>?
+    private(set) var beginnings = 0
+    private(set) var cancellations = 0
+    private(set) var revocations: [String] = []
+    private(set) var credentialsAtBegin: EpicCredentials?
 
-    func execute(_ plan: EpicLaunchPlan) async {
-        plans.append(plan)
-        if shouldHold {
-            shouldHold = false
-            isWaiting = true
-            await withCheckedContinuation { continuation = $0 }
-            isWaiting = false
-        }
+    init(configuration: EpicCloudConfiguration, accountId: String, store: EpicMemoryStore,
+         holdRunning: Bool, onBegin: @escaping @Sendable () async -> Void) {
+        self.store = store
+        self.holdRunning = holdRunning
+        self.onBegin = onBegin
+        current = EpicGameSnapshot(id: UUID().uuidString, accountId: accountId,
+            namespace: configuration.namespace, appName: configuration.appName, phase: .preparing,
+            cloudPhase: .checking, decisionId: 0, allowedChoices: [], error: nil, failureReason: nil, exitCode: nil,
+            revision: 1, reconnecting: false)
     }
-    func complete() { continuation?.resume(); continuation = nil }
+    func begin() async {
+        beginnings += 1
+        credentialsAtBegin = await store.value
+        await onBegin()
+        guard cancellations == 0 else { return }
+        current.phase = holdRunning ? .running : .finished
+        current.cloudPhase = .ready
+        publish()
+    }
+    func cancelPreparation() {
+        cancellations += 1
+        current.phase = .failed
+        current.error = "backend.epic.cloud.cancelled"
+        publish()
+    }
+    func revokeCloud(accountId: String) { revocations.append(accountId) }
+    func choose(_ choice: EpicCloudChoice) {
+        if choice == .cancel { cancelPreparation() }
+    }
+    func snapshot(afterRevision: UInt64?) async -> EpicGameSnapshot {
+        if afterRevision != current.revision { return current }
+        return await withCheckedContinuation { waiting = $0 }
+    }
+    func finish() {
+        current.phase = .finished
+        publish()
+    }
+    private func publish() {
+        current.revision += 1
+        waiting?.resume(returning: current)
+        waiting = nil
+    }
 }

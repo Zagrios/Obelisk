@@ -32,6 +32,7 @@ pub(crate) struct Manifest {
     pub files: Vec<ManifestFile>,
     pub chunks: BTreeMap<ChunkGuid, Chunk>,
     pub feature_level: u32,
+    pub custom_fields: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Debug)]
@@ -280,7 +281,7 @@ fn binary_manifest(data: &[u8]) -> Result<Manifest, EpicError> {
     let mut manifest = metadata(body.section(5)?)?;
     manifest.chunks = chunks(body.section(9)?)?;
     manifest.files = files(body.section(9)?)?;
-    custom_fields(body.section(9)?)?;
+    manifest.custom_fields = custom_fields(body.section(9)?)?;
     if version >= 24 && !body.0.is_empty() {
         // FEncryptedData serializes a versioned byte array. A plain manifest
         // may retain an empty array; nonempty encrypted metadata needs secrets.
@@ -338,6 +339,7 @@ fn metadata(mut reader: Reader<'_>) -> Result<Manifest, EpicError> {
         files: Vec::new(),
         chunks: BTreeMap::new(),
         feature_level,
+        custom_fields: BTreeMap::new(),
     })
 }
 
@@ -477,21 +479,22 @@ fn files(mut reader: Reader<'_>) -> Result<Vec<ManifestFile>, EpicError> {
     Ok(files)
 }
 
-fn custom_fields(mut reader: Reader<'_>) -> Result<(), EpicError> {
+fn custom_fields(mut reader: Reader<'_>) -> Result<BTreeMap<String, String>, EpicError> {
     if reader.byte()? != 0 {
         return Err(EpicError::UnsupportedContent);
     }
     let count = reader.count(8)?;
-    let mut keys = BTreeSet::new();
-    for _ in 0..count {
-        if !keys.insert(reader.string()?) {
+    let keys = (0..count)
+        .map(|_| reader.string())
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut result = BTreeMap::new();
+    for key in keys {
+        if result.insert(key, reader.string()?).is_some() {
             return Err(EpicError::Protocol);
         }
     }
-    for _ in 0..count {
-        reader.string()?;
-    }
-    reader.finish()
+    reader.finish()?;
+    Ok(result)
 }
 
 pub(crate) struct Reader<'a>(pub(crate) &'a [u8]);
@@ -572,6 +575,8 @@ impl<'a> Reader<'a> {
 
 #[derive(Deserialize)]
 struct JsonManifest {
+    #[serde(rename = "CustomFields", default, deserialize_with = "unique_map")]
+    custom_fields: BTreeMap<String, String>,
     #[serde(rename = "ManifestFileVersion", default = "json_version")]
     version: String,
     #[serde(rename = "bIsFileData", default)]
@@ -697,6 +702,7 @@ fn json_manifest(data: &[u8]) -> Result<Manifest, EpicError> {
         files,
         chunks,
         feature_level,
+        custom_fields: json.custom_fields,
     })
 }
 

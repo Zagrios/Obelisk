@@ -180,6 +180,104 @@ fn token(account: &str) -> Value {
     json!({"access_token":"access-new", "refresh_token":"refresh-new", "account_id":account, "displayName":"Player", "expires_in":3600})
 }
 
+#[tokio::test]
+async fn supervisor_exchange_creates_a_distinct_session_without_rotating_parent_credentials() {
+    let mock = Mock::new(vec![
+        reply(
+            "/account/api/oauth/exchange",
+            200,
+            json!({"code":"single-use-code"}),
+        ),
+        reply("/account/api/oauth/token", 200, token("account-a")),
+    ]);
+    let parent = mock.client(false);
+    let code = parent.exchange_code().await.unwrap();
+    let session = mock.api.exchange(&code, "account-a").await.unwrap();
+    let supervisor = Client::from_session(mock.api.clone(), session);
+    assert_eq!(
+        parent.credentials().await.unwrap().refresh_token,
+        "refresh-old"
+    );
+    assert_eq!(
+        supervisor.credentials().await.unwrap().refresh_token,
+        "refresh-new"
+    );
+    let requests = mock.requests();
+    assert!(requests[0].contains("Bearer access-old"));
+    assert!(requests[1].contains("grant_type=exchange_code"));
+    assert!(requests[1].contains("exchange_code=single-use-code"));
+    assert!(requests[1].contains("token_type=eg1"));
+    assert!(!requests[1].contains("refresh-old"));
+    assert!(!requests[1].contains("Bearer access-old"));
+}
+
+#[tokio::test]
+async fn supervisor_exchange_rejects_and_revokes_an_unexpected_account() {
+    let mock = Mock::new(vec![
+        reply("/account/api/oauth/token", 200, token("account-b")),
+        reply(
+            "/account/api/oauth/sessions/kill/access-new",
+            204,
+            json!(null),
+        ),
+    ]);
+    assert!(matches!(
+        mock.api.exchange("single-use-code", "account-a").await,
+        Err(EpicError::Unauthorized)
+    ));
+    let requests = mock.requests();
+    assert_eq!(requests.len(), 2);
+    assert!(requests[1].starts_with("DELETE "));
+    assert!(requests[1].contains("Bearer access-new"));
+}
+
+#[tokio::test]
+async fn cloud_configuration_requires_ownership_and_distinguishes_missing_from_malformed_mac_rules()
+{
+    for (attributes, expected) in [
+        (json!({}), "none"),
+        (
+            json!({"CloudSaveFolder_MAC":{"value":"{Home}/Game"},"CloudExcludeList":{"value":"*.log"}}),
+            "some",
+        ),
+        (json!({"CloudSaveFolder_MAC":{"value":false}}), "error"),
+    ] {
+        let mock = Mock::new(vec![
+            reply(
+                "/library/api/public/items",
+                200,
+                json!({"records":[item("app", "item")], "responseMetadata":{"nextCursor":null}}),
+            ),
+            reply(
+                "/catalog/api/shared/namespace/space/bulk/items",
+                200,
+                json!({"item":{"customAttributes":attributes}}),
+            ),
+        ]);
+        let result = mock
+            .client(false)
+            .cloud_configuration("space", "item", "app", "Mac")
+            .await;
+        match expected {
+            "none" => assert!(result.unwrap().is_none()),
+            "some" => assert!(result.unwrap().is_some()),
+            _ => assert!(result.is_err()),
+        }
+    }
+    let mock = Mock::new(vec![reply(
+        "/library/api/public/items",
+        200,
+        json!({"records":[],"responseMetadata":{"nextCursor":null}}),
+    )]);
+    assert!(
+        mock.client(false)
+            .cloud_configuration("space", "item", "app", "Mac")
+            .await
+            .is_err()
+    );
+    assert_eq!(mock.requests().len(), 1);
+}
+
 fn item(app: &str, catalog: &str) -> Value {
     json!({"appName":app,"namespace":"space","catalogItemId":catalog,"sandboxType":"PUBLIC"})
 }

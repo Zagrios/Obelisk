@@ -6,7 +6,7 @@
 mod verification;
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     fs::{self, File, OpenOptions},
     io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
@@ -27,11 +27,13 @@ use tokio::sync::mpsc;
 
 use crate::{
     EpicError,
+    auth::credential_free,
     content_manifest::{Chunk, ChunkGuid, Manifest, ManifestFile},
 };
 
 const MAX_CHUNK_BYTES: usize = 64 * 1024 * 1024;
-const CHUNK_CONCURRENCY: usize = 6;
+const CHUNK_CONCURRENCY: usize = 16;
+const FILE_PREFETCH: usize = 8;
 
 #[derive(Clone)]
 pub struct ContentClient {
@@ -77,11 +79,7 @@ impl ContentClient {
                     && base_url
                         .host_str()
                         .is_some_and(|host| matches!(host, "127.0.0.1" | "localhost" | "[::1]"));
-            if !secure
-                || !base_url.username().is_empty()
-                || base_url.password().is_some()
-                || base_url.fragment().is_some()
-            {
+            if !secure || !credential_free(base_url) {
                 return Err(EpicError::Protocol);
             }
         }
@@ -105,6 +103,7 @@ impl ContentClient {
             reporter: Arc::clone(&reporter),
             requests,
             results,
+            prefetch: FilePrefetch::default(),
         };
         let mut cancellation_guard = CancellationGuard(Some(cancel.clone()));
         let (reused_bytes, ()) = tokio::join!(
@@ -214,6 +213,31 @@ struct DiskInstall {
     reporter: Arc<Reporter>,
     requests: mpsc::UnboundedSender<Chunk>,
     results: mpsc::Receiver<ChunkResult>,
+    prefetch: FilePrefetch,
+}
+
+#[derive(Clone, Copy)]
+enum ChunkState {
+    Cached,
+    Pending,
+    Stored,
+}
+
+struct PlannedFile {
+    index: usize,
+    reused: HashSet<ChunkGuid>,
+    // A previous file owns these queued chunks. Check their persisted bytes
+    // when this file is reached, after the owner has consumed its responses.
+    verify_after_delivery: HashSet<ChunkGuid>,
+}
+
+#[derive(Default)]
+struct FilePrefetch {
+    next_file: usize,
+    requests_closed: bool,
+    files: VecDeque<PlannedFile>,
+    chunks: HashMap<ChunkGuid, ChunkState>,
+    pending: VecDeque<ChunkGuid>,
 }
 
 impl DiskInstall {
@@ -240,10 +264,11 @@ impl DiskInstall {
                 }
             }
         }
+        self.prefetch_files(&verified.valid, &chunk_root)?;
         // Parents are created and checked once per distinct directory; every
         // file's full path is still confined right before it is written.
         let mut ensured_parents: HashSet<PathBuf> = HashSet::new();
-        for (file, valid) in manifest.files.iter().zip(verified.valid) {
+        for (index, (file, valid)) in manifest.files.iter().zip(&verified.valid).enumerate() {
             self.cancel.check()?;
             let relative = safe_relative_path(&file.filename)?;
             let parent = relative.parent().unwrap_or(Path::new(""));
@@ -252,7 +277,7 @@ impl DiskInstall {
                 ensured_parents.insert(parent.to_path_buf());
             }
             let target = checked_file_path(&root, &relative)?;
-            if valid {
+            if *valid {
                 apply_permissions(&target, is_executable(file))?;
                 continue;
             }
@@ -260,7 +285,12 @@ impl DiskInstall {
                 status.phase = DownloadPhase::Verifying;
                 status.current_file.clone_from(&file.filename);
             });
-            reused_bytes += self.assemble(file, &partial_root, &chunk_root, &root, &relative)?;
+            let plan = self.prefetch.files.pop_front().ok_or(EpicError::Protocol)?;
+            if plan.index != index {
+                return Err(EpicError::Protocol);
+            }
+            reused_bytes +=
+                self.assemble(file, &plan, &partial_root, &chunk_root, &root, &relative)?;
             // A published file can be verified directly next time. Keep only
             // chunks that are still required by unfinished files.
             for part in &file.parts {
@@ -272,14 +302,89 @@ impl DiskInstall {
                     let chunk = manifest.chunks.get(&part.guid).ok_or(EpicError::Protocol)?;
                     let path = checked_file_path(&chunk_root, Path::new(&chunk_key(chunk)))?;
                     fs::remove_file(path)?;
+                    self.prefetch.chunks.remove(&part.guid);
                 }
             }
             self.reporter.update(|status| status.completed_files += 1);
+            self.prefetch_files(&verified.valid, &chunk_root)?;
         }
         self.cancel.check()?;
         // Keep caches on failure/cancellation only, avoiding a second permanent copy of the game.
         fs::remove_dir_all(partial_root)?;
         Ok(reused_bytes)
+    }
+
+    /// Keep the next few repair files queued while the current file is written
+    /// and published. Requests remain in first-consumer order, including chunks
+    /// shared across files, so the unchanged ordered pump needs no reordering.
+    fn prefetch_files(&mut self, valid: &[bool], chunk_root: &Path) -> Result<(), EpicError> {
+        while self.prefetch.files.len() < FILE_PREFETCH
+            && self.prefetch.next_file < self.manifest.files.len()
+            && !self.prefetch.requests_closed
+        {
+            self.cancel.check()?;
+            let index = self.prefetch.next_file;
+            self.prefetch.next_file += 1;
+            if valid[index] {
+                continue;
+            }
+            let mut plan = PlannedFile {
+                index,
+                reused: HashSet::new(),
+                verify_after_delivery: HashSet::new(),
+            };
+            let mut seen = HashSet::new();
+            for part in &self.manifest.files[index].parts {
+                self.cancel.check()?;
+                if !seen.insert(part.guid) {
+                    continue;
+                }
+                match self.prefetch.chunks.get(&part.guid) {
+                    Some(ChunkState::Pending) => {
+                        plan.reused.insert(part.guid);
+                        plan.verify_after_delivery.insert(part.guid);
+                        continue;
+                    }
+                    // Verified on disk earlier in this run and not yet evicted;
+                    // the entry is dropped with the file at every removal site.
+                    Some(ChunkState::Cached) => {
+                        plan.reused.insert(part.guid);
+                        continue;
+                    }
+                    Some(ChunkState::Stored) | None => (),
+                }
+                let chunk = self
+                    .manifest
+                    .chunks
+                    .get(&part.guid)
+                    .ok_or(EpicError::Protocol)?;
+                let path = checked_file_path(chunk_root, Path::new(&chunk_key(chunk)))?;
+                if verify_file(
+                    &path,
+                    u64::from(chunk.window_size),
+                    &chunk.sha1,
+                    &self.cancel,
+                )? {
+                    self.prefetch
+                        .chunks
+                        .entry(part.guid)
+                        .or_insert(ChunkState::Cached);
+                    plan.reused.insert(part.guid);
+                } else {
+                    if self.requests.send(chunk.clone()).is_err() {
+                        // The pump already queued an error for an earlier
+                        // request. Keep this partial plan so assembly reaches
+                        // that ordered error before any unsent chunk.
+                        self.prefetch.requests_closed = true;
+                        break;
+                    }
+                    self.prefetch.pending.push_back(part.guid);
+                    self.prefetch.chunks.insert(part.guid, ChunkState::Pending);
+                }
+            }
+            self.prefetch.files.push_back(plan);
+        }
+        Ok(())
     }
 
     /// Reuses verified cached chunks, writes each fresh chunk to the cache and
@@ -289,37 +394,28 @@ impl DiskInstall {
     fn assemble(
         &mut self,
         file: &ManifestFile,
+        plan: &PlannedFile,
         partial_root: &Path,
         chunk_root: &Path,
         root: &Path,
         relative: &Path,
     ) -> Result<u64, EpicError> {
         let manifest = Arc::clone(&self.manifest);
-        let mut needed = Vec::new();
-        let mut seen = HashSet::new();
-        let mut reused = HashSet::new();
-        for part in &file.parts {
+        for guid in &plan.verify_after_delivery {
             self.cancel.check()?;
-            if !seen.insert(part.guid) {
-                continue;
+            if !matches!(self.prefetch.chunks.get(guid), Some(ChunkState::Stored)) {
+                return Err(EpicError::Protocol);
             }
-            let chunk = manifest.chunks.get(&part.guid).ok_or(EpicError::Protocol)?;
+            let chunk = manifest.chunks.get(guid).ok_or(EpicError::Protocol)?;
             let path = checked_file_path(chunk_root, Path::new(&chunk_key(chunk)))?;
-            if verify_file(
+            if !verify_file(
                 &path,
                 u64::from(chunk.window_size),
                 &chunk.sha1,
                 &self.cancel,
             )? {
-                reused.insert(part.guid);
-            } else {
-                needed.push(chunk);
+                return Err(EpicError::Integrity);
             }
-        }
-        for chunk in &needed {
-            self.requests
-                .send((*chunk).clone())
-                .map_err(|_| EpicError::Protocol)?;
         }
         let mut delivered = HashSet::new();
         let partial_name = format!("{}.part", hex(&Sha1::digest(file.filename.as_bytes())));
@@ -338,13 +434,18 @@ impl DiskInstall {
         for part in &file.parts {
             self.cancel.check()?;
             let chunk = manifest.chunks.get(&part.guid).ok_or(EpicError::Protocol)?;
-            if !reused.contains(&part.guid) && delivered.insert(part.guid) {
+            if !plan.reused.contains(&part.guid) && delivered.insert(part.guid) {
+                if self.prefetch.pending.front() != Some(&part.guid) {
+                    return Err(EpicError::Protocol);
+                }
                 let bytes = self.results.blocking_recv().ok_or(EpicError::Protocol)??;
                 self.cancel.check()?;
                 // A cached chunk is checked by size and SHA-1 before reuse, so a
                 // torn write after a crash only costs one more download.
                 let path = checked_file_path(chunk_root, Path::new(&chunk_key(chunk)))?;
                 fs::write(path, &bytes)?;
+                self.prefetch.pending.pop_front();
+                self.prefetch.chunks.insert(part.guid, ChunkState::Stored);
                 current = Some((part.guid, bytes));
             }
             let start = part.offset as usize;
@@ -370,7 +471,7 @@ impl DiskInstall {
                     }
                 }
             }
-            if reused.contains(&part.guid) {
+            if plan.reused.contains(&part.guid) {
                 reused_bytes += u64::from(part.size);
             }
             self.reporter
@@ -464,7 +565,7 @@ pub(crate) fn validate_manifest(manifest: &Manifest) -> Result<(), EpicError> {
     Ok(())
 }
 
-fn decode_chunk(bytes: &[u8], chunk: &Chunk) -> ChunkResult {
+pub(crate) fn decode_chunk(bytes: &[u8], chunk: &Chunk) -> ChunkResult {
     let u32_at = |offset: usize| -> Result<u32, EpicError> {
         bytes
             .get(offset..offset + 4)
@@ -545,7 +646,7 @@ fn decode_chunk(bytes: &[u8], chunk: &Chunk) -> ChunkResult {
 }
 
 /// BuildPatch's byte-table rolling hash, using the reflected CRC64 polynomial.
-fn rolling_hash(bytes: &[u8]) -> u64 {
+pub(crate) fn rolling_hash(bytes: &[u8]) -> u64 {
     const TABLE: [u64; 256] = {
         let mut table = [0; 256];
         let mut index = 0;

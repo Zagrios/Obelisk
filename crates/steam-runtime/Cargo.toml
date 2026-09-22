@@ -21,6 +21,8 @@ reqwest.workspace = true
 tokio.workspace = true
 steam-kit.workspace = true
 steam-cloud.workspace = true
+epic-kit.workspace = true
+forge-core.workspace = true
 
 [features]
 packaging = []

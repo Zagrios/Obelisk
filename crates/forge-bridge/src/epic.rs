@@ -200,7 +200,7 @@ impl From<client::GameDetails> for EpicGameDetails {
 
 #[derive(uniffi::Object)]
 pub struct EpicSession {
-    client: client::Client,
+    pub(crate) client: client::Client,
 }
 
 #[uniffi::export(async_runtime = "tokio")]

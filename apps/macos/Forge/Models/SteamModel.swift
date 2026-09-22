@@ -179,7 +179,7 @@ final class SteamModel {
         self.verifyBeforeLaunch = preferences.object(forKey: Self.verifyBeforeLaunchPreferenceKey) == nil
             ? true : preferences.bool(forKey: Self.verifyBeforeLaunchPreferenceKey)
         self.gameSessions = gameSessions
-        self.cloud = SteamCloudModel(root: directory.appending(path: "SteamCloud").path, sessions: gameSessions)
+        self.cloud = SteamCloudModel(root: SteamGameLauncher.cloudDirectory(in: directory), sessions: gameSessions)
         self.rosetta = SteamRosettaModel(sessions: gameSessions)
         wakeObserver = SystemWakeObservation { [weak self] in
             Task { @MainActor [weak self] in self?.retryFriends() }
@@ -245,7 +245,7 @@ final class SteamModel {
     }
 
     var primaryActionTitle: String {
-        if isSynchronizingSaves { return L10n.string("ui.steam.cloud.sync_short") }
+        if isSynchronizingSaves { return L10n.string("ui.cloud.sync_short") }
         if gameSessions.isRecovering { return L10n.string("model.steam.recoveringSession") }
         if selectedGameSession?.running == true { return L10n.string("model.steam.running") }
         if isUninstalling && uninstallAppId == selectedGame?.appId { return L10n.string("model.game.uninstalling") }

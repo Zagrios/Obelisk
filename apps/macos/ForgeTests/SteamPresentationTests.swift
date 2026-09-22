@@ -716,7 +716,7 @@ final class SteamPresentationTests: XCTestCase {
         try await eventually { model.cloud.canCancelSynchronization(for: 620) }
 
         XCTAssertTrue(model.isSynchronizingSaves)
-        XCTAssertEqual(model.primaryActionTitle, L10n.string("ui.steam.cloud.sync_short"))
+        XCTAssertEqual(model.primaryActionTitle, L10n.string("ui.cloud.sync_short"))
         XCTAssertFalse(model.primaryActionAvailable)
         XCTAssertFalse(model.cloud.promptPresented)
         XCTAssertFalse(model.cloud.failurePresented)
@@ -759,7 +759,7 @@ final class SteamPresentationTests: XCTestCase {
         XCTAssertEqual(model.primaryActionTitle, L10n.string("model.steam.running"))
         await game.update(phase: .finalizing, cloudPhase: .syncing)
         try await eventually { model.isSynchronizingSaves }
-        XCTAssertEqual(model.primaryActionTitle, L10n.string("ui.steam.cloud.sync_short"))
+        XCTAssertEqual(model.primaryActionTitle, L10n.string("ui.cloud.sync_short"))
         XCTAssertFalse(model.cloud.promptPresented)
         XCTAssertFalse(model.cloud.canCancelSynchronization(for: 620))
         await game.update(cloudPhase: .synced)

@@ -551,7 +551,7 @@ final class EpicPresentationTests: XCTestCase {
 }
 
 @MainActor
-private struct EpicPresentationWindow {
+struct EpicPresentationWindow {
     let host: NSView
     private let window: NSWindow
 
@@ -572,6 +572,8 @@ private struct EpicPresentationWindow {
     }
 
     func close() { window.close() }
+
+    var sheetContent: NSView? { window.sheets.first?.contentView }
 }
 
 private actor EpicPresentationCredentials: EpicCredentialStore {

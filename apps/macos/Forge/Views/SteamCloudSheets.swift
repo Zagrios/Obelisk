@@ -7,6 +7,7 @@ struct SteamCloudPromptView: View {
     let onCancel: () -> Void
     let onChooseLocal: () -> Void
     let onChooseCloud: () -> Void
+    var storefront = "steam"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -20,14 +21,14 @@ struct SteamCloudPromptView: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             if busy {
-                ProgressView(L10n.string("ui.steam.cloud.working"))
+                ProgressView(L10n.string("ui.cloud.working"))
                     .controlSize(.small)
                     .font(.system(size: 12))
             }
 
             VStack(spacing: 10) {
-                choice("ui.steam.cloud.choose_local", symbol: "internaldrive", action: onChooseLocal)
-                choice("ui.steam.cloud.choose_cloud", symbol: "icloud", action: onChooseCloud)
+                choice("ui.cloud.choose_local", symbol: "internaldrive", action: onChooseLocal)
+                choice("ui.cloud.choose_cloud", symbol: "icloud", action: onChooseCloud)
             }
             .disabled(busy)
 
@@ -42,7 +43,7 @@ struct SteamCloudPromptView: View {
         .frame(width: 490)
         .tint(ForgeStyle.accent)
         .interactiveDismissDisabled()
-        .accessibilityIdentifier("steam-cloud-prompt")
+        .accessibilityIdentifier("\(storefront)-cloud-prompt")
     }
 
     private func choice(_ key: String, symbol: String, action: @escaping () -> Void) -> some View {
@@ -63,6 +64,7 @@ struct SteamCloudFailureView: View {
     let onRetry: () -> Void
     let onCancel: () -> Void
     let onLaunchAnyway: () -> Void
+    var storefront = "steam"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -74,7 +76,7 @@ struct SteamCloudFailureView: View {
             HStack(spacing: 12) {
                 Button(L10n.string("ui.common.retry"), action: onRetry)
                 if canLaunchAnyway {
-                    Button(L10n.string("ui.steam.cloud.launch_anyway"), action: onLaunchAnyway)
+                    Button(L10n.string("ui.cloud.launch_anyway"), action: onLaunchAnyway)
                 }
                 Button(L10n.string("ui.common.cancel"), action: onCancel)
             }
@@ -82,6 +84,6 @@ struct SteamCloudFailureView: View {
             .controlSize(.small)
             .disabled(busy)
         }
-        .accessibilityIdentifier("steam-cloud-failure")
+        .accessibilityIdentifier("\(storefront)-cloud-failure")
     }
 }

@@ -407,7 +407,7 @@ fn exchange(saved: &Snapshot, command: &Command) -> Result<Snapshot, Error> {
     Ok(response)
 }
 
-fn inspect(helper: &Path, pid: u32) -> Result<Option<Identity>, Error> {
+pub(crate) fn inspect(helper: &Path, pid: u32) -> Result<Option<Identity>, Error> {
     let output = Process::new(helper)
         .arg("process-identity")
         .arg(pid.to_string())

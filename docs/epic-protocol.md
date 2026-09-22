@@ -4,7 +4,7 @@
 
 Forge displays the Epic Games website in an embedded sign-in window, captures the authorization code automatically, and loads the account's library. Password and two-factor authentication are handled on the Epic website. Forge downloads and verifies Epic games using BuildPatch manifests, and launches native Mac games after checking for updates.
 
-The Rust implementation lives in `epic-kit`. Forge neither runs Legendary or the Epic launcher nor requires them to be installed.
+The protocol implementation lives in `epic-kit`; native process ownership and EGS Cloud coordination live in `steam-runtime::epic`. Forge neither runs Legendary or the Epic launcher nor requires them to be installed. See [Epic Cloud Saves](epic-cloud.md) for the current synchronization lifecycle and its validation limits.
 
 ## Protocol
 
@@ -124,7 +124,7 @@ The Rust launch plan validates the completed receipt's namespace, catalog item, 
 
 When the catalog sets `OwnershipToken` to true, Forge posts `nsCatalogItemId={namespace}:{catalogItemId}` to `/ecommerceintegration/api/public/platforms/EPIC/identities/{accountId}/ownershipToken`. The native launcher writes the returned bytes to a private temporary file, passes its path through `-epicovt`, and deletes the directory after process termination or launch failure. Exchange codes and ownership tokens are never stored in installation receipts or logged. Rejected authentication is refreshed once, and the active account is checked again before returning the plan.
 
-Steam and Epic share executable validation and the macOS process executor. Arguments are passed directly without a shell. Native Mac builds can run; Windows builds report the same missing-Wine limitation as Steam.
+Epic launch now goes through the detached native helper, which owns Cloud preparation, the child process and post-exit synchronization. Swift admits the handoff explicitly after checking cancellation and the active account. The helper obtains fresh launch arguments after Cloud preparation and retains the ownership file until actual exit. Arguments are passed directly without a shell. Native Mac builds can run; Windows builds report the same missing-Wine limitation as Steam. The earlier launch-plan validation below predates this supervision path; its real-service evidence does not establish the new Cloud lifecycle.
 
 Launch protocol references checked on September 16, 2026: Legendary's [launch arguments and working directory](https://github.com/derrod/legendary/blob/master/legendary/core.py#L747-L841), [exchange and ownership token endpoints](https://github.com/derrod/legendary/blob/master/legendary/api/egs.py#L135-L147), and [additional catalog arguments](https://github.com/derrod/legendary/blob/master/legendary/models/game.py#L143-L147).
 

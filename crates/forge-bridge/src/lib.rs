@@ -11,6 +11,8 @@ mod steam_native;
 pub use steam_native::*;
 mod epic;
 pub use epic::*;
+mod epic_cloud;
+pub use epic_cloud::*;
 mod epic_friends;
 pub use epic_friends::*;
 

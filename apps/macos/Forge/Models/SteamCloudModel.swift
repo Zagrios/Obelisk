@@ -107,7 +107,7 @@ final class SteamCloudModel {
         prompt?.cloud.phase == .failed || (deferredPrompt != nil && !promptPresented)
     }
     var promptMessage: String {
-        promptError ?? prompt?.cloud.error ?? deferredPrompt?.error ?? detectedConflict?.error ?? "ui.steam.cloud.working"
+        promptError ?? prompt?.cloud.error ?? deferredPrompt?.error ?? detectedConflict?.error ?? "ui.cloud.working"
     }
     var promptWorking: Bool {
         promptBusy || prompt?.cloud.phase == .checking || isBusy
@@ -242,11 +242,11 @@ final class SteamCloudModel {
             ?? pending.first { $0.appId == appId }?.phase
             ?? lastStatus(for: appId)?.phase
         switch phase {
-        case .checking, .syncing: return L10n.string("ui.steam.cloud.working")
-        case .pending, .failed: return L10n.string("ui.steam.cloud.pending")
+        case .checking, .syncing: return L10n.string("ui.cloud.working")
+        case .pending, .failed: return L10n.string("ui.cloud.pending")
         case .conflict: return nil
-        case .synced: return L10n.string("ui.steam.cloud.synced")
-        case .disabled: return L10n.string("ui.steam.cloud.disabled")
+        case .synced: return L10n.string("ui.cloud.synced")
+        case .disabled: return L10n.string("ui.cloud.disabled")
         default: return nil
         }
     }

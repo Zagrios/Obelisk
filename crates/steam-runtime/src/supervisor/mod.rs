@@ -1,8 +1,8 @@
 //! A per-game supervisor owns the host and game, independently of the UI.
 //! Credentials cross only the initial stdin pipe. Control uses session/account IDs.
-mod client;
+pub(crate) mod client;
 mod server;
-mod storage;
+pub(crate) mod storage;
 #[cfg(test)]
 mod tests;
 

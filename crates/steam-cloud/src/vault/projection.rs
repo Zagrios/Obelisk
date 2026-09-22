@@ -21,7 +21,7 @@ pub type Bindings = BTreeMap<String, SelectedFile>;
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Apply {
-    scope: Scope,
+    scope: StoreScope,
     bindings: Bindings,
     before: Manifest,
     after: Manifest,
@@ -32,12 +32,13 @@ pub(super) struct Apply {
 #[serde(deny_unknown_fields)]
 enum Effect {
     Download { remote: RemoteView },
+    Local,
 }
 
 impl Apply {
-    pub(super) fn validate(&self, scope: Scope) -> Result<()> {
+    pub(super) fn validate(&self, scope: &StoreScope) -> Result<()> {
         self.scope.validate()?;
-        if !same_store(self.scope, scope)
+        if !same_store(&self.scope, scope)
             || self.bindings.values().any(|file| {
                 !file.path.is_absolute()
                     || file
@@ -56,15 +57,17 @@ impl Apply {
         }
         self.before.validate()?;
         self.after.validate()?;
-        let Effect::Download { remote } = &self.effect;
-        remote.validate()
+        match &self.effect {
+            Effect::Download { remote } => remote.validate(),
+            Effect::Local => Ok(()),
+        }
     }
 }
 
 #[derive(Clone, Serialize, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 struct Owners {
-    files: BTreeMap<PathBuf, Scope>,
+    files: BTreeMap<PathBuf, StoreScope>,
     metadata: BTreeMap<PathBuf, OwnerMetadata>,
     switching: Option<Switch>,
 }
@@ -79,7 +82,7 @@ struct OwnerMetadata {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Switch {
-    scope: Scope,
+    scope: StoreScope,
     bindings: Bindings,
     before: BTreeMap<String, SwitchBefore>,
     after: Manifest,
@@ -88,7 +91,7 @@ struct Switch {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SwitchBefore {
-    owner: Option<Scope>,
+    owner: Option<StoreScope>,
     file: Option<FileVersion>,
 }
 
@@ -176,7 +179,7 @@ impl Vault {
         }
         for (name, file) in &normalized {
             for (claimed, owner) in &owners.files {
-                if !same_store(*owner, self.scope)
+                if !same_store(owner, &self.scope)
                     && (claimed == &file.path
                         || same_existing_file(claimed, &file.path)
                         || names_alias(claimed, &file.path)?)
@@ -191,7 +194,7 @@ impl Vault {
             {
                 return Err(Error::Invalid);
             }
-            owners.files.insert(file.path.clone(), self.scope);
+            owners.files.insert(file.path.clone(), self.scope.clone());
             owners.metadata.insert(
                 file.path.clone(),
                 OwnerMetadata {
@@ -236,9 +239,9 @@ impl Vault {
                 }
             }
             if let Some(owner) = owners.files.get(&file.path)
-                && !same_store(*owner, self.scope)
+                && !same_store(owner, &self.scope)
             {
-                displaced.insert((owner.steam_id, owner.cloud_app_id), *owner);
+                displaced.insert(owner.store_key(), owner.clone());
             }
         }
         if displaced.is_empty() {
@@ -258,7 +261,7 @@ impl Vault {
         for (key, scope) in &displaced {
             let mut files = Bindings::new();
             for (path, owner) in &owners.files {
-                if !same_store(*owner, *scope) {
+                if !same_store(owner, scope) {
                     continue;
                 }
                 let metadata = owners.metadata.get(path).ok_or(Error::Authentication)?;
@@ -275,11 +278,12 @@ impl Vault {
                     return Err(Error::Invalid);
                 }
             }
-            old_bindings.insert(*key, files);
+            old_bindings.insert(key.clone(), files);
         }
         let mut archived = BTreeMap::new();
         for (key, scope) in &displaced {
-            let mut old = Vault::open_locked(self.root.clone(), *scope, self._lock.try_clone()?)?;
+            let mut old =
+                Vault::open_locked(self.root.clone(), scope.clone(), self._lock.try_clone()?)?;
             old.idle()?;
             let bindings = old.claim(&old_bindings[key])?;
             // Earlier partial switches may have unprojected other old saves.
@@ -294,13 +298,15 @@ impl Vault {
                 }
             }
             old.record_local(&files)?;
-            archived.insert(*key, files);
+            archived.insert(key.clone(), files);
         }
         let mut changes = Bindings::new();
         let mut before = BTreeMap::new();
         for (name, file) in &normalized {
-            let owner = owners.files.get(&file.path).copied();
-            let foreign = owner.filter(|owner| !same_store(*owner, self.scope));
+            let owner = owners.files.get(&file.path).cloned();
+            let foreign = owner
+                .as_ref()
+                .filter(|owner| !same_store(owner, &self.scope));
             if foreign.is_none() && desired.is_none() {
                 continue; // No account snapshot: leave own/unowned physical files alone.
             }
@@ -309,10 +315,7 @@ impl Vault {
                     .metadata
                     .get(&file.path)
                     .ok_or(Error::Authentication)?;
-                archived[&(owner.steam_id, owner.cloud_app_id)]
-                    .0
-                    .get(&metadata.name)
-                    .cloned()
+                archived[&owner.store_key()].0.get(&metadata.name).cloned()
             } else {
                 let next = desired.as_ref().and_then(|files| files.0.get(name));
                 if let Some(bytes) = read_selected(&file.path)? {
@@ -342,7 +345,7 @@ impl Vault {
         let mut owners: Owners =
             disk::read(&self.root.join("owners.json"))?.ok_or(Error::Invalid)?;
         owners.switching = Some(Switch {
-            scope: self.scope,
+            scope: self.scope.clone(),
             bindings: changes,
             before,
             after: desired.unwrap_or_default(),
@@ -364,7 +367,7 @@ impl Vault {
         let Some(plan) = owners.switching.clone() else {
             return Ok(false);
         };
-        if !same_store(plan.scope, self.scope) || self.state.applying.is_some() {
+        if !same_store(&plan.scope, &self.scope) || self.state.applying.is_some() {
             return Err(Error::Recovery);
         }
         plan.scope.validate()?;
@@ -384,8 +387,8 @@ impl Vault {
         // file is staged. These checks read only; they change nothing.
         for (name, selected) in &bindings {
             let before = plan.before.get(name).ok_or(Error::Invalid)?;
-            let owner_matches = match (owners.files.get(&selected.path), before.owner) {
-                (Some(current), Some(previous)) => same_store(*current, previous),
+            let owner_matches = match (owners.files.get(&selected.path), before.owner.as_ref()) {
+                (Some(current), Some(previous)) => same_store(current, previous),
                 (None, None) => true,
                 _ => false,
             };
@@ -393,7 +396,7 @@ impl Vault {
                 return Err(Error::Stale);
             }
             if let Some(file) = &before.file {
-                let owner = before.owner.unwrap_or(self.scope);
+                let owner = before.owner.clone().unwrap_or_else(|| self.scope.clone());
                 let old = Vault::open_locked(self.root.clone(), owner, self._lock.try_clone()?)?;
                 old.read_content(file)?;
             }
@@ -409,7 +412,7 @@ impl Vault {
             stop_after,
         )?;
         for (name, file) in bindings {
-            owners.files.insert(file.path.clone(), self.scope);
+            owners.files.insert(file.path.clone(), self.scope.clone());
             owners.metadata.insert(
                 file.path,
                 OwnerMetadata {
@@ -493,6 +496,47 @@ impl Vault {
     /// This does not create upload intent or project files back into the game.
     pub fn capture_preserving_missing(&mut self, bindings: &Bindings) -> Result<Manifest> {
         self.capture_with_missing(bindings, true)
+    }
+
+    /// Reproject this account's current snapshot after installation removal.
+    /// This restores local ownership, not a Cloud download: the confirmed remote
+    /// baseline and any explicit local choice remain unchanged.
+    pub fn restore_local(&mut self, bindings: &Bindings) -> Result<()> {
+        self.prepare_local_restore(bindings)?;
+        self.recover_local()
+    }
+
+    fn prepare_local_restore(&mut self, bindings: &Bindings) -> Result<()> {
+        self.idle()?;
+        if self.state.pending.is_some() {
+            return Err(Error::Busy);
+        }
+        let after = self.state.local.clone().ok_or(Error::Recovery)?;
+        self.verify(&after)?;
+        let bindings = self.claim(bindings)?;
+        if after.0.keys().any(|name| !bindings.contains_key(name)) {
+            return Err(Error::Invalid);
+        }
+        // Preserve the intended snapshot while archiving the current preimage.
+        // Ordinary capture would publish that preimage as the account snapshot
+        // before the durable restoration plan existed.
+        let mut before = Manifest::default();
+        for (name, file) in &bindings {
+            if let Some(bytes) = read_selected(&file.path)? {
+                before
+                    .0
+                    .insert(name.clone(), self.stage(&bytes, file.platforms)?);
+            }
+        }
+        let mut next = self.state.clone();
+        next.applying = Some(Apply {
+            scope: self.scope.clone(),
+            bindings,
+            before,
+            after,
+            effect: Effect::Local,
+        });
+        self.save(next)
     }
 
     fn capture_with_missing(
@@ -579,7 +623,7 @@ impl Vault {
         let mut next = self.state.clone();
         // Both preimage and intent are durable before the first replacement.
         next.applying = Some(Apply {
-            scope: self.scope,
+            scope: self.scope.clone(),
             bindings,
             before,
             after,
@@ -604,7 +648,7 @@ impl Vault {
         let Some(plan) = self.state.applying.clone() else {
             return Ok(());
         };
-        if !same_store(plan.scope, self.scope) {
+        if !same_store(&plan.scope, &self.scope) {
             return Err(Error::Invalid);
         }
         plan.before.validate()?;
@@ -627,9 +671,10 @@ impl Vault {
             stop_after,
         )?;
         let mut next = self.state.clone();
-        let Effect::Download { remote } = plan.effect;
-        next.baseline = Some(remote);
-        next.intent = None;
+        if let Effect::Download { remote } = plan.effect {
+            next.baseline = Some(remote);
+            next.intent = None;
+        }
         next.local = Some(plan.after);
         next.applying = None;
         self.save(next)

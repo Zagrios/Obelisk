@@ -820,6 +820,7 @@ mod idle_admission {
                 Client::idle_guard_with(&sessions, &helper, inspect_table),
                 Err(Error::SessionBusy)
             ));
+            assert_locks_released(&sessions);
             let client = Client::recover_with(&sessions, &helper, inspect_table)
                 .unwrap()
                 .expect("an accepted child remains recoverable without its supervisor");

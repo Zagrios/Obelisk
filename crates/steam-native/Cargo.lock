@@ -359,6 +359,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "252afb9ae5eaa683babdc6a068b3f5726eb19e05070c731f9b2a23a7c3e8ed34"
 
 [[package]]
+name = "epic-kit"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "crc32fast",
+ "flate2",
+ "forge-core",
+ "futures-util",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha1 0.11.0",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-tungstenite",
+ "unicode-normalization",
+ "uuid",
+]
+
+[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1727,7 +1748,9 @@ dependencies = [
 name = "steam-runtime"
 version = "0.1.0"
 dependencies = [
+ "epic-kit",
  "flate2",
+ "forge-core",
  "reqwest",
  "serde",
  "serde_json",
@@ -2016,6 +2039,15 @@ name = "unicode-ident"
 version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
+
+[[package]]
+name = "unicode-normalization"
+version = "0.1.25"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5fd4f6878c9cb28d874b009da9e8d183b5abc80117c40bbd187a1fde336be6e8"
+dependencies = [
+ "tinyvec",
+]
 
 [[package]]
 name = "untrusted"

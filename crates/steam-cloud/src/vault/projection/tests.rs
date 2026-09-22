@@ -231,3 +231,47 @@ fn local_edit_after_download_decision_requires_another_comparison() {
     );
     assert!(!vault.needs_recovery());
 }
+
+#[test]
+fn interrupted_current_snapshot_restoration_retains_the_baseline_and_rejects_external_edits() {
+    for interrupted_after in 0..=3 {
+        let root = tempfile::tempdir().unwrap();
+        let saves = tempfile::tempdir().unwrap();
+        let mut vault = Vault::open(root.path(), scope(1)).unwrap();
+        let bindings = bindings(saves.path());
+        let desired = fixture(&vault);
+        vault.record_local(&desired).unwrap();
+        let remote = RemoteView {
+            revision: "last-confirmed".into(),
+            files: Manifest::default(),
+        };
+        vault.confirm_equal(&Manifest::default(), &remote).unwrap();
+        for file in bindings.values() {
+            fs::write(&file.path, b"reinstalled preimage").unwrap();
+        }
+        vault.prepare_local_restore(&bindings).unwrap();
+        assert_eq!(vault.local(), Some(&desired));
+        assert!(matches!(
+            vault.recover_after(Some(interrupted_after)),
+            Err(Error::Recovery)
+        ));
+        drop(vault);
+        let mut vault = Vault::open(root.path(), scope(1)).unwrap();
+        if interrupted_after == 0 {
+            fs::write(saves.path().join("one"), b"unrelated edit").unwrap();
+            assert!(vault.recover_local().is_err());
+            assert_eq!(
+                fs::read(saves.path().join("one")).unwrap(),
+                b"unrelated edit"
+            );
+            assert_eq!(vault.baseline(), Some(&remote));
+            continue;
+        }
+        vault.recover_local().unwrap();
+        assert_eq!(vault.local(), Some(&desired));
+        assert_eq!(vault.baseline(), Some(&remote));
+        assert_eq!(fs::read(saves.path().join("one")).unwrap(), b"new one");
+        assert_eq!(fs::read(saves.path().join("two")).unwrap(), b"new two");
+        assert!(!saves.path().join("deleted").exists());
+    }
+}

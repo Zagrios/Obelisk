@@ -22,6 +22,7 @@ struct EpicGameDetailView: View {
                 EpicArtwork(imageURL: game.headerImageUrl ?? game.imageUrl, maxPixelSize: 2048)
             } action: {
                 HStack(spacing: 10) {
+                    let cancelsSynchronization = model.cloud.canCancelSynchronization(for: game.libraryID)
                     GameActionButton(
                         title: model.primaryActionTitle,
                         symbol: model.primaryActionSymbol,
@@ -29,8 +30,12 @@ struct EpicGameDetailView: View {
                         isTransferring: model.activeTransferLibraryID == game.libraryID,
                         isAvailable: model.primaryActionAvailable,
                         action: model.primaryAction,
-                        cancel: model.cancelDownload,
-                        isCancellable: model.isLaunching && model.launchLibraryID == game.libraryID
+                        cancel: {
+                            if cancelsSynchronization { model.cloud.respond(.cancel) }
+                            else { model.cancelDownload() }
+                        },
+                        isCancellable: cancelsSynchronization || (model.isLaunching && model.launchLibraryID == game.libraryID),
+                        isIndeterminate: model.isSynchronizingSaves
                     )
                     if let receipt = model.selectedInstallation {
                         GameManagementButton(
@@ -40,6 +45,28 @@ struct EpicGameDetailView: View {
                             directory: receipt.directory
                         )
                         .id(receipt.id + receipt.directory)
+                    }
+                }
+            }
+
+            if let message = model.gameSessionMessage {
+                Text(message).font(.system(size: 12)).foregroundStyle(.secondary)
+            }
+
+            let cloudMessage = model.cloud.message(for: game.libraryID)
+            let pending = model.cloud.hasPending(for: game.libraryID)
+            if !model.isSynchronizingSaves && (cloudMessage != nil || pending) {
+                HStack(spacing: 8) {
+                    if let cloudMessage {
+                        Text(cloudMessage).font(.system(size: 12)).foregroundStyle(.secondary)
+                    }
+                    if pending && !model.cloud.promptPresented && !model.cloud.failurePresented {
+                        Button(L10n.string("ui.common.retry")) {
+                            model.cloud.retryPending(libraryID: game.libraryID)
+                        }
+                        .forgeButtonStyle(.borderless)
+                        .controlSize(.small)
+                        .disabled(model.gameSessions.isBusy)
                     }
                 }
             }

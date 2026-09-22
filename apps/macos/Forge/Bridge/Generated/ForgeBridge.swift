@@ -601,6 +601,194 @@ fileprivate struct FfiConverterData: FfiConverterRustBuffer {
 
 
 
+public protocol EpicGameSessionProtocol: AnyObject, Sendable {
+    
+    func begin() async throws 
+    
+    func cancelPreparation() 
+    
+    func choose(accountId: String, decisionId: UInt64, choice: EpicCloudChoice) async throws 
+    
+    func revokeCloud(accountId: String) async throws 
+    
+    func snapshot(afterRevision: UInt64?) async throws  -> EpicGameSnapshot
+    
+}
+open class EpicGameSession: EpicGameSessionProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_forge_bridge_fn_clone_epicgamesession(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_forge_bridge_fn_free_epicgamesession(handle, $0) }
+    }
+
+    
+
+    
+open func begin()async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_forge_bridge_fn_method_epicgamesession_begin(
+                        self.uniffiCloneHandle()
+                )
+            },
+            pollFunc: ffi_forge_bridge_rust_future_poll_void,
+            completeFunc: ffi_forge_bridge_rust_future_complete_void,
+            freeFunc: ffi_forge_bridge_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeEpicError_lift
+        )
+}
+    
+open func cancelPreparation()  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_forge_bridge_fn_method_epicgamesession_cancel_preparation(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+}
+}
+    
+open func choose(accountId: String, decisionId: UInt64, choice: EpicCloudChoice)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_forge_bridge_fn_method_epicgamesession_choose(
+                        self.uniffiCloneHandle(),FfiConverterString.lower(accountId),FfiConverterUInt64.lower(decisionId),FfiConverterTypeEpicCloudChoice_lower(choice)
+                )
+            },
+            pollFunc: ffi_forge_bridge_rust_future_poll_void,
+            completeFunc: ffi_forge_bridge_rust_future_complete_void,
+            freeFunc: ffi_forge_bridge_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeEpicError_lift
+        )
+}
+    
+open func revokeCloud(accountId: String)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_forge_bridge_fn_method_epicgamesession_revoke_cloud(
+                        self.uniffiCloneHandle(),FfiConverterString.lower(accountId)
+                )
+            },
+            pollFunc: ffi_forge_bridge_rust_future_poll_void,
+            completeFunc: ffi_forge_bridge_rust_future_complete_void,
+            freeFunc: ffi_forge_bridge_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeEpicError_lift
+        )
+}
+    
+open func snapshot(afterRevision: UInt64?)async throws  -> EpicGameSnapshot  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_forge_bridge_fn_method_epicgamesession_snapshot(
+                        self.uniffiCloneHandle(),FfiConverterOptionUInt64.lower(afterRevision)
+                )
+            },
+            pollFunc: ffi_forge_bridge_rust_future_poll_rust_buffer,
+            completeFunc: ffi_forge_bridge_rust_future_complete_rust_buffer,
+            freeFunc: ffi_forge_bridge_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeEpicGameSnapshot_lift,
+            errorHandler: FfiConverterTypeEpicError_lift
+        )
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeEpicGameSession: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = EpicGameSession
+
+    public static func lift(_ handle: UInt64) throws -> EpicGameSession {
+        return EpicGameSession(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: EpicGameSession) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EpicGameSession {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: EpicGameSession, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeEpicGameSession_lift(_ handle: UInt64) throws -> EpicGameSession {
+    return try FfiConverterTypeEpicGameSession.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeEpicGameSession_lower(_ value: EpicGameSession) -> UInt64 {
+    return FfiConverterTypeEpicGameSession.lower(value)
+}
+
+
+
+
+
+
 public protocol EpicSessionProtocol: AnyObject, Sendable {
     
     func achievements(namespace: String, locale: String) async throws  -> [EpicAchievement]
@@ -634,6 +822,12 @@ public protocol EpicSessionProtocol: AnyObject, Sendable {
     func startFriends() async 
     
     func stopFriends() 
+    
+    func archiveCloud(configuration: EpicCloudConfiguration) async throws 
+    
+    func launchGame(configuration: EpicCloudConfiguration) async throws  -> EpicGameSession
+    
+    func resumeCloud(configuration: EpicCloudConfiguration) async throws  -> EpicGameSession
     
 }
 open class EpicSession: EpicSessionProtocol, @unchecked Sendable {
@@ -946,6 +1140,54 @@ open func stopFriends()  {try! rustCall() {
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 }
+}
+    
+open func archiveCloud(configuration: EpicCloudConfiguration)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_forge_bridge_fn_method_epicsession_archive_cloud(
+                        self.uniffiCloneHandle(),FfiConverterTypeEpicCloudConfiguration_lower(configuration)
+                )
+            },
+            pollFunc: ffi_forge_bridge_rust_future_poll_void,
+            completeFunc: ffi_forge_bridge_rust_future_complete_void,
+            freeFunc: ffi_forge_bridge_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeEpicError_lift
+        )
+}
+    
+open func launchGame(configuration: EpicCloudConfiguration)async throws  -> EpicGameSession  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_forge_bridge_fn_method_epicsession_launch_game(
+                        self.uniffiCloneHandle(),FfiConverterTypeEpicCloudConfiguration_lower(configuration)
+                )
+            },
+            pollFunc: ffi_forge_bridge_rust_future_poll_u64,
+            completeFunc: ffi_forge_bridge_rust_future_complete_u64,
+            freeFunc: ffi_forge_bridge_rust_future_free_u64,
+            liftFunc: FfiConverterTypeEpicGameSession_lift,
+            errorHandler: FfiConverterTypeEpicError_lift
+        )
+}
+    
+open func resumeCloud(configuration: EpicCloudConfiguration)async throws  -> EpicGameSession  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_forge_bridge_fn_method_epicsession_resume_cloud(
+                        self.uniffiCloneHandle(),FfiConverterTypeEpicCloudConfiguration_lower(configuration)
+                )
+            },
+            pollFunc: ffi_forge_bridge_rust_future_poll_u64,
+            completeFunc: ffi_forge_bridge_rust_future_complete_u64,
+            freeFunc: ffi_forge_bridge_rust_future_free_u64,
+            liftFunc: FfiConverterTypeEpicGameSession_lift,
+            errorHandler: FfiConverterTypeEpicError_lift
+        )
 }
     
 
@@ -2689,6 +2931,92 @@ public func FfiConverterTypeEpicAchievement_lower(_ value: EpicAchievement) -> R
 }
 
 
+public struct EpicCloudConfiguration: Equatable, Hashable {
+    public var root: String
+    public var home: String
+    public var install: String
+    public var sessionDirectory: String
+    public var helper: String
+    public var namespace: String
+    public var catalogItemId: String
+    public var appName: String
+    public var platform: String
+    public var language: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(root: String, home: String, install: String, sessionDirectory: String, helper: String, namespace: String, catalogItemId: String, appName: String, platform: String, language: String) {
+        self.root = root
+        self.home = home
+        self.install = install
+        self.sessionDirectory = sessionDirectory
+        self.helper = helper
+        self.namespace = namespace
+        self.catalogItemId = catalogItemId
+        self.appName = appName
+        self.platform = platform
+        self.language = language
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension EpicCloudConfiguration: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeEpicCloudConfiguration: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EpicCloudConfiguration {
+        return
+            try EpicCloudConfiguration(
+                root: FfiConverterString.read(from: &buf), 
+                home: FfiConverterString.read(from: &buf), 
+                install: FfiConverterString.read(from: &buf), 
+                sessionDirectory: FfiConverterString.read(from: &buf), 
+                helper: FfiConverterString.read(from: &buf), 
+                namespace: FfiConverterString.read(from: &buf), 
+                catalogItemId: FfiConverterString.read(from: &buf), 
+                appName: FfiConverterString.read(from: &buf), 
+                platform: FfiConverterString.read(from: &buf), 
+                language: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: EpicCloudConfiguration, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.root, into: &buf)
+        FfiConverterString.write(value.home, into: &buf)
+        FfiConverterString.write(value.install, into: &buf)
+        FfiConverterString.write(value.sessionDirectory, into: &buf)
+        FfiConverterString.write(value.helper, into: &buf)
+        FfiConverterString.write(value.namespace, into: &buf)
+        FfiConverterString.write(value.catalogItemId, into: &buf)
+        FfiConverterString.write(value.appName, into: &buf)
+        FfiConverterString.write(value.platform, into: &buf)
+        FfiConverterString.write(value.language, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeEpicCloudConfiguration_lift(_ buf: RustBuffer) throws -> EpicCloudConfiguration {
+    return try FfiConverterTypeEpicCloudConfiguration.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeEpicCloudConfiguration_lower(_ value: EpicCloudConfiguration) -> RustBuffer {
+    return FfiConverterTypeEpicCloudConfiguration.lower(value)
+}
+
+
 public struct EpicCredentials: Equatable, Hashable {
     public var accountId: String
     public var displayName: String
@@ -3070,6 +3398,104 @@ public func FfiConverterTypeEpicGameDetails_lift(_ buf: RustBuffer) throws -> Ep
 #endif
 public func FfiConverterTypeEpicGameDetails_lower(_ value: EpicGameDetails) -> RustBuffer {
     return FfiConverterTypeEpicGameDetails.lower(value)
+}
+
+
+public struct EpicGameSnapshot: Equatable, Hashable {
+    public var id: String
+    public var accountId: String
+    public var namespace: String
+    public var appName: String
+    public var phase: EpicGamePhase
+    public var cloudPhase: EpicCloudPhase
+    public var decisionId: UInt64
+    public var allowedChoices: [EpicCloudChoice]
+    public var error: String?
+    public var failureReason: EpicGameFailureReason?
+    public var exitCode: Int32?
+    public var revision: UInt64
+    public var reconnecting: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, accountId: String, namespace: String, appName: String, phase: EpicGamePhase, cloudPhase: EpicCloudPhase, decisionId: UInt64, allowedChoices: [EpicCloudChoice], error: String?, failureReason: EpicGameFailureReason?, exitCode: Int32?, revision: UInt64, reconnecting: Bool) {
+        self.id = id
+        self.accountId = accountId
+        self.namespace = namespace
+        self.appName = appName
+        self.phase = phase
+        self.cloudPhase = cloudPhase
+        self.decisionId = decisionId
+        self.allowedChoices = allowedChoices
+        self.error = error
+        self.failureReason = failureReason
+        self.exitCode = exitCode
+        self.revision = revision
+        self.reconnecting = reconnecting
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension EpicGameSnapshot: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeEpicGameSnapshot: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EpicGameSnapshot {
+        return
+            try EpicGameSnapshot(
+                id: FfiConverterString.read(from: &buf), 
+                accountId: FfiConverterString.read(from: &buf), 
+                namespace: FfiConverterString.read(from: &buf), 
+                appName: FfiConverterString.read(from: &buf), 
+                phase: FfiConverterTypeEpicGamePhase.read(from: &buf), 
+                cloudPhase: FfiConverterTypeEpicCloudPhase.read(from: &buf), 
+                decisionId: FfiConverterUInt64.read(from: &buf), 
+                allowedChoices: FfiConverterSequenceTypeEpicCloudChoice.read(from: &buf), 
+                error: FfiConverterOptionString.read(from: &buf), 
+                failureReason: FfiConverterOptionTypeEpicGameFailureReason.read(from: &buf), 
+                exitCode: FfiConverterOptionInt32.read(from: &buf), 
+                revision: FfiConverterUInt64.read(from: &buf), 
+                reconnecting: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: EpicGameSnapshot, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.accountId, into: &buf)
+        FfiConverterString.write(value.namespace, into: &buf)
+        FfiConverterString.write(value.appName, into: &buf)
+        FfiConverterTypeEpicGamePhase.write(value.phase, into: &buf)
+        FfiConverterTypeEpicCloudPhase.write(value.cloudPhase, into: &buf)
+        FfiConverterUInt64.write(value.decisionId, into: &buf)
+        FfiConverterSequenceTypeEpicCloudChoice.write(value.allowedChoices, into: &buf)
+        FfiConverterOptionString.write(value.error, into: &buf)
+        FfiConverterOptionTypeEpicGameFailureReason.write(value.failureReason, into: &buf)
+        FfiConverterOptionInt32.write(value.exitCode, into: &buf)
+        FfiConverterUInt64.write(value.revision, into: &buf)
+        FfiConverterBool.write(value.reconnecting, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeEpicGameSnapshot_lift(_ buf: RustBuffer) throws -> EpicGameSnapshot {
+    return try FfiConverterTypeEpicGameSnapshot.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeEpicGameSnapshot_lower(_ value: EpicGameSnapshot) -> RustBuffer {
+    return FfiConverterTypeEpicGameSnapshot.lower(value)
 }
 
 
@@ -4951,6 +5377,208 @@ public func FfiConverterTypeCoreError_lower(_ value: CoreError) -> RustBuffer {
 }
 
 
+
+public enum EpicCloudChoice: Equatable, Hashable {
+    
+    case local
+    case cloud
+    case retry
+    case cancel
+    case launchAnyway
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension EpicCloudChoice: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeEpicCloudChoice: FfiConverterRustBuffer {
+    typealias SwiftType = EpicCloudChoice
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EpicCloudChoice {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .local
+        
+        case 2: return .cloud
+        
+        case 3: return .retry
+        
+        case 4: return .cancel
+        
+        case 5: return .launchAnyway
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: EpicCloudChoice, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .local:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .cloud:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .retry:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .cancel:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .launchAnyway:
+            writeInt(&buf, Int32(5))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeEpicCloudChoice_lift(_ buf: RustBuffer) throws -> EpicCloudChoice {
+    return try FfiConverterTypeEpicCloudChoice.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeEpicCloudChoice_lower(_ value: EpicCloudChoice) -> RustBuffer {
+    return FfiConverterTypeEpicCloudChoice.lower(value)
+}
+
+
+
+
+public enum EpicCloudPhase: Equatable, Hashable {
+    
+    case checking
+    case ready
+    case syncing
+    case synced
+    case conflict
+    case pending
+    case disabled
+    case unsupported
+    case failed
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension EpicCloudPhase: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeEpicCloudPhase: FfiConverterRustBuffer {
+    typealias SwiftType = EpicCloudPhase
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EpicCloudPhase {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .checking
+        
+        case 2: return .ready
+        
+        case 3: return .syncing
+        
+        case 4: return .synced
+        
+        case 5: return .conflict
+        
+        case 6: return .pending
+        
+        case 7: return .disabled
+        
+        case 8: return .unsupported
+        
+        case 9: return .failed
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: EpicCloudPhase, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .checking:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .ready:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .syncing:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .synced:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .conflict:
+            writeInt(&buf, Int32(5))
+        
+        
+        case .pending:
+            writeInt(&buf, Int32(6))
+        
+        
+        case .disabled:
+            writeInt(&buf, Int32(7))
+        
+        
+        case .unsupported:
+            writeInt(&buf, Int32(8))
+        
+        
+        case .failed:
+            writeInt(&buf, Int32(9))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeEpicCloudPhase_lift(_ buf: RustBuffer) throws -> EpicCloudPhase {
+    return try FfiConverterTypeEpicCloudPhase.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeEpicCloudPhase_lower(_ value: EpicCloudPhase) -> RustBuffer {
+    return FfiConverterTypeEpicCloudPhase.lower(value)
+}
+
+
+
 public 
 enum EpicError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
@@ -5248,6 +5876,159 @@ public func FfiConverterTypeEpicFriendsConnection_lift(_ buf: RustBuffer) throws
 #endif
 public func FfiConverterTypeEpicFriendsConnection_lower(_ value: EpicFriendsConnection) -> RustBuffer {
     return FfiConverterTypeEpicFriendsConnection.lower(value)
+}
+
+
+
+
+public enum EpicGameFailureReason: Equatable, Hashable {
+    
+    case cancelled
+    case failed
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension EpicGameFailureReason: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeEpicGameFailureReason: FfiConverterRustBuffer {
+    typealias SwiftType = EpicGameFailureReason
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EpicGameFailureReason {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .cancelled
+        
+        case 2: return .failed
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: EpicGameFailureReason, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .cancelled:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .failed:
+            writeInt(&buf, Int32(2))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeEpicGameFailureReason_lift(_ buf: RustBuffer) throws -> EpicGameFailureReason {
+    return try FfiConverterTypeEpicGameFailureReason.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeEpicGameFailureReason_lower(_ value: EpicGameFailureReason) -> RustBuffer {
+    return FfiConverterTypeEpicGameFailureReason.lower(value)
+}
+
+
+
+
+public enum EpicGamePhase: Equatable, Hashable {
+    
+    case preparing
+    case running
+    case finalizing
+    case finished
+    case failed
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension EpicGamePhase: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeEpicGamePhase: FfiConverterRustBuffer {
+    typealias SwiftType = EpicGamePhase
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EpicGamePhase {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .preparing
+        
+        case 2: return .running
+        
+        case 3: return .finalizing
+        
+        case 4: return .finished
+        
+        case 5: return .failed
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: EpicGamePhase, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .preparing:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .running:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .finalizing:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .finished:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .failed:
+            writeInt(&buf, Int32(5))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeEpicGamePhase_lift(_ buf: RustBuffer) throws -> EpicGamePhase {
+    return try FfiConverterTypeEpicGamePhase.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeEpicGamePhase_lower(_ value: EpicGamePhase) -> RustBuffer {
+    return FfiConverterTypeEpicGamePhase.lower(value)
 }
 
 
@@ -6442,6 +7223,30 @@ fileprivate struct FfiConverterOptionData: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeEpicGameSession: FfiConverterRustBuffer {
+    typealias SwiftType = EpicGameSession?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeEpicGameSession.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeEpicGameSession.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeSteamGameSession: FfiConverterRustBuffer {
     typealias SwiftType = SteamGameSession?
 
@@ -6610,6 +7415,30 @@ fileprivate struct FfiConverterOptionTypeSteamTransfer: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeEpicGameFailureReason: FfiConverterRustBuffer {
+    typealias SwiftType = EpicGameFailureReason?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeEpicGameFailureReason.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeEpicGameFailureReason.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceUInt32: FfiConverterRustBuffer {
     typealias SwiftType = [UInt32]
 
@@ -6677,6 +7506,31 @@ fileprivate struct FfiConverterSequenceTypeEpicAchievement: FfiConverterRustBuff
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeEpicAchievement.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeEpicCloudConfiguration: FfiConverterRustBuffer {
+    typealias SwiftType = [EpicCloudConfiguration]
+
+    public static func write(_ value: [EpicCloudConfiguration], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeEpicCloudConfiguration.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [EpicCloudConfiguration] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [EpicCloudConfiguration]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeEpicCloudConfiguration.read(from: &buf))
         }
         return seq
     }
@@ -6960,6 +7814,31 @@ fileprivate struct FfiConverterSequenceTypeStorefrontInfo: FfiConverterRustBuffe
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeEpicCloudChoice: FfiConverterRustBuffer {
+    typealias SwiftType = [EpicCloudChoice]
+
+    public static func write(_ value: [EpicCloudChoice], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeEpicCloudChoice.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [EpicCloudChoice] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [EpicCloudChoice]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeEpicCloudChoice.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeSteamCloudChoice: FfiConverterRustBuffer {
     typealias SwiftType = [SteamCloudChoice]
 
@@ -7099,6 +7978,43 @@ public func epicLoginUrl() -> String  {
     )
 })
 }
+public func epicCloudPending(root: String, accountId: String)throws  -> [EpicCloudConfiguration]  {
+    return try  FfiConverterSequenceTypeEpicCloudConfiguration.lift(try rustCallWithError(FfiConverterTypeEpicError_lift) {
+        uniffiCallStatus in
+    uniffi_forge_bridge_fn_func_epic_cloud_pending(
+        FfiConverterString.lower(root),
+        FfiConverterString.lower(accountId),uniffiCallStatus
+    )
+})
+}
+public func epicCloudRemoved(configuration: EpicCloudConfiguration, accountId: String)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_forge_bridge_fn_func_epic_cloud_removed(FfiConverterTypeEpicCloudConfiguration_lower(configuration),FfiConverterString.lower(accountId)
+                )
+            },
+            pollFunc: ffi_forge_bridge_rust_future_poll_void,
+            completeFunc: ffi_forge_bridge_rust_future_complete_void,
+            freeFunc: ffi_forge_bridge_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeEpicError_lift
+        )
+}
+public func recoverEpicGameSession(sessionDirectory: String, helper: String)async throws  -> EpicGameSession?  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_forge_bridge_fn_func_recover_epic_game_session(FfiConverterString.lower(sessionDirectory),FfiConverterString.lower(helper)
+                )
+            },
+            pollFunc: ffi_forge_bridge_rust_future_poll_rust_buffer,
+            completeFunc: ffi_forge_bridge_rust_future_complete_rust_buffer,
+            freeFunc: ffi_forge_bridge_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterOptionTypeEpicGameSession.lift,
+            errorHandler: FfiConverterTypeEpicError_lift
+        )
+}
 public func steamLanguage(locale: String) -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
         uniffiCallStatus in
@@ -7194,6 +8110,15 @@ private let initializationResult: InitializationResult = {
     if (uniffi_forge_bridge_checksum_func_epic_login_url() != 29048) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_forge_bridge_checksum_func_epic_cloud_pending() != 47290) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_forge_bridge_checksum_func_epic_cloud_removed() != 61810) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_forge_bridge_checksum_func_recover_epic_game_session() != 24462) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_forge_bridge_checksum_func_steam_language() != 4891) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -7267,6 +8192,30 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_forge_bridge_checksum_method_epicsession_stop_friends() != 33421) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_forge_bridge_checksum_method_epicsession_archive_cloud() != 55694) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_forge_bridge_checksum_method_epicsession_launch_game() != 30557) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_forge_bridge_checksum_method_epicsession_resume_cloud() != 57849) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_forge_bridge_checksum_method_epicgamesession_begin() != 49131) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_forge_bridge_checksum_method_epicgamesession_cancel_preparation() != 29322) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_forge_bridge_checksum_method_epicgamesession_choose() != 29977) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_forge_bridge_checksum_method_epicgamesession_revoke_cloud() != 45100) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_forge_bridge_checksum_method_epicgamesession_snapshot() != 27502) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_forge_bridge_checksum_method_steamlogin_challenge() != 28968) {

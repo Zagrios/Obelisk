@@ -11,7 +11,7 @@ mod verification;
 pub use manifest_cache::CachedManifest;
 
 use std::{
-    collections::HashSet,
+    collections::{HashSet, VecDeque},
     fs::{self, File, OpenOptions},
     io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
@@ -43,7 +43,10 @@ const MAX_MANIFEST_BYTES: usize = 128 * 1024 * 1024;
 const MAX_CHUNK_BYTES: usize = 64 * 1024 * 1024;
 /// CDN requests in flight per depot. Chunks are typically 1 MiB, so this also
 /// bounds the memory held by decoded chunks waiting to be written.
-const CHUNK_CONCURRENCY: usize = 6;
+const CHUNK_CONCURRENCY: usize = 16;
+/// Keep upcoming files ready without opening partial files for the whole depot.
+/// Chunk payloads remain bounded by the existing network pump and delivery queue.
+const FILE_PREFETCH_WINDOW: usize = 8;
 
 /// No Debug implementation: depot keys and CDN tokens are credentials.
 pub struct DepotDownload {
@@ -411,6 +414,15 @@ struct DiskInstall {
     results: mpsc::Receiver<ChunkResult>,
 }
 
+struct PreparedFile<'a> {
+    file: &'a ManifestFile,
+    relative: PathBuf,
+    target: PathBuf,
+    partial_path: PathBuf,
+    partial: File,
+    reusable: Vec<bool>,
+}
+
 impl DiskInstall {
     /// Returns the number of verified bytes reused from disk.
     fn run(mut self) -> Result<u64, ContentError> {
@@ -442,32 +454,47 @@ impl DiskInstall {
         // Parents are created and checked once per distinct directory; every
         // file's full path is still confined right before it is written.
         let mut ensured_parents: HashSet<PathBuf> = HashSet::new();
-        for (index, file) in manifest.files.iter().enumerate() {
+        let mut remaining = manifest.files.iter().enumerate();
+        let mut prepared = VecDeque::new();
+        loop {
+            // Requests retain manifest order across files, so the existing
+            // ordered pump can feed the writer without changing chunk identity.
+            // Valid files and directories do not occupy the preparation window.
+            while prepared.len() < FILE_PREFETCH_WINDOW {
+                let Some((index, file)) = remaining.next() else {
+                    break;
+                };
+                self.cancel.check()?;
+                let relative = safe_relative_path(&file.name)?;
+                if file.is_directory() {
+                    ensure_directory(&root, &relative)?;
+                    ensured_parents.insert(relative);
+                    continue;
+                }
+                let parent = relative.parent().unwrap_or(Path::new(""));
+                if !ensured_parents.contains(parent) {
+                    ensure_directory(&root, parent)?;
+                    ensured_parents.insert(parent.to_path_buf());
+                }
+                let target = checked_file_path(&root, &relative)?;
+                if verified.valid[index] {
+                    apply_permissions(&target, is_executable(file))?;
+                    continue;
+                }
+                prepared.push_back(self.prepare(&partial_root, file, relative, target)?);
+            }
+            let Some(next) = prepared.pop_front() else {
+                break;
+            };
             self.cancel.check()?;
-            let relative = safe_relative_path(&file.name)?;
-            if file.is_directory() {
-                ensure_directory(&root, &relative)?;
-                ensured_parents.insert(relative);
-                continue;
-            }
-            let parent = relative.parent().unwrap_or(Path::new(""));
-            if !ensured_parents.contains(parent) {
-                ensure_directory(&root, parent)?;
-                ensured_parents.insert(parent.to_path_buf());
-            }
-            let target = checked_file_path(&root, &relative)?;
-            if verified.valid[index] {
-                apply_permissions(&target, is_executable(file))?;
-                continue;
-            }
             // Only a file this pass actually repairs is reported: verification
             // finished above, and traversing a valid file is one chmod.
             self.reporter.update(|status| {
                 status.phase = DownloadPhase::Verifying;
-                status.current_file.clone_from(&file.name);
+                status.current_file.clone_from(&next.file.name);
             });
-            reused_bytes += self.assemble(&partial_root, file, &root, &relative, &target)?;
-            let directory = target.parent().unwrap_or(&root).to_path_buf();
+            let directory = next.target.parent().unwrap_or(&root).to_path_buf();
+            reused_bytes += self.assemble(next, &root)?;
             if pending_directory.as_ref() != Some(&directory)
                 && let Some(previous) = pending_directory.replace(directory)
             {
@@ -481,18 +508,15 @@ impl DiskInstall {
         Ok(reused_bytes)
     }
 
-    /// Reuses verified chunks already in the partial file, writes fetched chunks
-    /// in manifest order and publishes the file atomically. A file assembled only
-    /// from fresh chunks is hashed as it is written; one that reused on-disk
-    /// chunks is read back so the check covers what actually landed on disk.
-    fn assemble(
-        &mut self,
+    /// Inspect the partial file once and enqueue only its missing chunks. Keep
+    /// its open handle and reuse bitmap until the ordered writer reaches it.
+    fn prepare<'a>(
+        &self,
         partial_root: &Path,
-        file: &ManifestFile,
-        root: &Path,
-        relative: &Path,
-        target: &Path,
-    ) -> Result<u64, ContentError> {
+        file: &'a ManifestFile,
+        relative: PathBuf,
+        target: PathBuf,
+    ) -> Result<PreparedFile<'a>, ContentError> {
         let partial_name = format!("{}.part", hex(&Sha1::digest(file.name.as_bytes())));
         let partial_path = partial_root.join(partial_name);
         reject_link_or_special_file(&partial_path)?;
@@ -517,17 +541,43 @@ impl DiskInstall {
             partial.read_exact(&mut buffer)?;
             reusable[index] = format::verify_chunk(&buffer, chunk).is_ok();
         }
-        // Queue every missing chunk up front so the network side runs ahead of the writes.
         for (chunk, _) in file
             .chunks
             .iter()
             .zip(&reusable)
             .filter(|(_, reused)| !**reused)
         {
-            self.requests
-                .send(chunk.clone())
-                .map_err(|_| invalid("backend.steam.content.chunkDownloadInterrupted"))?;
+            self.cancel.check()?;
+            if self.requests.send(chunk.clone()).is_err() {
+                // The pump may already have queued a terminal CDN error for an
+                // earlier file. Let assembly consume that ordered result instead
+                // of hiding it behind an interrupted-prefetch error.
+                break;
+            }
         }
+        Ok(PreparedFile {
+            file,
+            relative,
+            target,
+            partial_path,
+            partial,
+            reusable,
+        })
+    }
+
+    /// Reuses verified chunks already in the partial file, writes fetched chunks
+    /// in manifest order and publishes the file atomically. A file assembled only
+    /// from fresh chunks is hashed as it is written; one that reused on-disk
+    /// chunks is read back so the check covers what actually landed on disk.
+    fn assemble(&mut self, prepared: PreparedFile<'_>, root: &Path) -> Result<u64, ContentError> {
+        let PreparedFile {
+            file,
+            relative,
+            target,
+            partial_path,
+            mut partial,
+            reusable,
+        } = prepared;
         let hash_while_writing = !reusable.contains(&true);
         let mut hasher = Sha1::new();
         let mut reused_bytes = 0;
@@ -565,7 +615,7 @@ impl DiskInstall {
         }
         apply_permissions(&partial_path, is_executable(file))?;
         // Re-check parents before publishing; never follow existing symlinks under root.
-        checked_file_path(root, relative)?;
+        checked_file_path(root, &relative)?;
         fs::rename(&partial_path, target)?;
         Ok(reused_bytes)
     }

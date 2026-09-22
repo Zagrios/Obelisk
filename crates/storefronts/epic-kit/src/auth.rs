@@ -101,6 +101,7 @@ pub(crate) struct Api {
     pub friends: String,
     pub presence: String,
     pub connect: String,
+    pub cloud: String,
 }
 
 impl Api {
@@ -119,6 +120,7 @@ impl Api {
             friends: "https://friends-public-service-prod.ol.epicgames.com".into(),
             presence: "https://api.epicgames.dev".into(),
             connect: "wss://connect.ol.epicgames.com/".into(),
+            cloud: "https://datastorage-public-service-liveegs.live.use1a.on.epicgames.com".into(),
             account: "https://account-public-service-prod03.ol.epicgames.com".into(),
             library: "https://library-service.live.use1a.on.epicgames.com".into(),
             launcher: "https://launcher-public-service-prod06.ol.epicgames.com".into(),
@@ -130,6 +132,18 @@ impl Api {
 
     pub async fn authorize(&self, code: &str) -> Result<Session, EpicError> {
         self.token("authorization_code", "code", code).await
+    }
+
+    pub async fn exchange(&self, code: &str, account: &str) -> Result<Session, EpicError> {
+        if !valid_secret(code) || account.is_empty() {
+            return Err(EpicError::InvalidCode);
+        }
+        let session = self.token("exchange_code", "exchange_code", code).await?;
+        if session.credentials.account_id != account {
+            let _ = self.revoke(&session.access_token).await;
+            return Err(EpicError::Unauthorized);
+        }
+        Ok(session)
     }
 
     pub async fn refresh(&self, credentials: &Credentials) -> Result<Session, EpicError> {
@@ -301,6 +315,15 @@ pub(crate) fn safe_https_url(value: String) -> Option<String> {
         .map(|_| value)
 }
 
+/// Embedded credentials and fragments never belong on a URL this crate fetches.
+/// Callers layer their own scheme, host and port rules on top of this.
+pub(crate) fn credential_free(url: &Url) -> bool {
+    url.host_str().is_some()
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.fragment().is_none()
+}
+
 pub(crate) async fn bounded_json<T: serde::de::DeserializeOwned>(
     response: reqwest::Response,
     limit: usize,
@@ -332,7 +355,7 @@ fn valid_secret(value: &str) -> bool {
     !value.is_empty() && value.len() <= 16_384 && !value.chars().any(char::is_whitespace)
 }
 
-fn check_status(status: StatusCode) -> Result<(), EpicError> {
+pub(crate) fn check_status(status: StatusCode) -> Result<(), EpicError> {
     if status.is_success() {
         Ok(())
     } else if status == StatusCode::UNAUTHORIZED {

@@ -60,15 +60,21 @@ pub(super) fn lock(root: &Path) -> Result<File> {
     Ok(file)
 }
 
-/// Bounded JSON journal read. Missing files are `None`; symlinks are refused.
+/// Bounded private JSON journal read. Missing files are `None`; symlinks and
+/// files with any group or other permission are refused.
 pub fn read<T: DeserializeOwned>(path: &Path) -> Result<Option<T>> {
     if !regular(path)? {
         return Ok(None);
     }
+    let file = File::open(path)?;
+    // Check the opened file, not a second lookup of a path that an atomic
+    // journal writer may have replaced in the meantime.
+    let metadata = file.metadata()?;
+    if !metadata.is_file() || metadata.permissions().mode() & 0o077 != 0 {
+        return Err(Error::Invalid);
+    }
     let mut bytes = Vec::new();
-    File::open(path)?
-        .take(MAX_JOURNAL + 1)
-        .read_to_end(&mut bytes)?;
+    file.take(MAX_JOURNAL + 1).read_to_end(&mut bytes)?;
     if bytes.len() as u64 > MAX_JOURNAL {
         return Err(Error::Invalid);
     }

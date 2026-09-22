@@ -8,6 +8,18 @@ struct EpicView: View {
             VStack(alignment: .leading, spacing: 25) {
                 StorefrontWarningBanner(message: $model.storageWarning)
                 if model.isConnected {
+                    if model.cloud.failurePresented {
+                        SteamCloudFailureView(
+                            title: cloudPromptTitle,
+                            message: model.cloud.promptMessage,
+                            busy: model.cloud.promptWorking,
+                            canLaunchAnyway: model.cloud.canLaunchAnyway,
+                            onRetry: { model.cloud.respond(.retry) },
+                            onCancel: { model.cloud.respond(.cancel) },
+                            onLaunchAnyway: { model.cloud.respond(.launchAnyway) },
+                            storefront: "epic"
+                        )
+                    }
                     if let game = model.selectedGame {
                         EpicGameDetailView(model: model, game: game)
                     } else { library }
@@ -18,7 +30,27 @@ struct EpicView: View {
             .frame(maxWidth: 1400, alignment: .leading)
         }
         .task { await model.start() }
+        .sheet(isPresented: Binding(get: { model.cloud.promptPresented }, set: { _ in })) {
+            SteamCloudPromptView(
+                title: cloudPromptTitle,
+                message: model.cloud.promptMessage,
+                busy: model.cloud.promptWorking,
+                onCancel: { model.cloud.respond(.cancel) },
+                onChooseLocal: { model.cloud.respond(.local) },
+                onChooseCloud: { model.cloud.respond(.cloud) },
+                storefront: "epic"
+            )
+        }
         .errorAlert(L10n.string("ui.store.epic"), message: $model.errorMessage)
+    }
+
+    private var cloudPromptTitle: String {
+        let title = L10n.string("ui.epic.cloud.title")
+        guard let id = model.cloud.promptLibraryID else { return title }
+        let name = model.games.first { $0.libraryID == id }?.title
+            ?? model.installations.first { $0.libraryID == id }?.name
+            ?? id
+        return "\(title) · \(name)"
     }
 
     private var titleBar: some View {

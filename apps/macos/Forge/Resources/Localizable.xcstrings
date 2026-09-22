@@ -9023,7 +9023,7 @@
         }
       }
     },
-    "ui.steam.cloud.working": {
+    "ui.cloud.working": {
       "extractionState": "manual",
       "localizations": {
         "en": {
@@ -9040,7 +9040,7 @@
         }
       }
     },
-    "ui.steam.cloud.choose_local": {
+    "ui.cloud.choose_local": {
       "extractionState": "manual",
       "localizations": {
         "en": {
@@ -9057,7 +9057,7 @@
         }
       }
     },
-    "ui.steam.cloud.choose_cloud": {
+    "ui.cloud.choose_cloud": {
       "extractionState": "manual",
       "localizations": {
         "en": {
@@ -9074,7 +9074,7 @@
         }
       }
     },
-    "ui.steam.cloud.launch_anyway": {
+    "ui.cloud.launch_anyway": {
       "extractionState": "manual",
       "localizations": {
         "en": {
@@ -9107,7 +9107,7 @@
         }
       }
     },
-    "ui.steam.cloud.pending": {
+    "ui.cloud.pending": {
       "localizations": {
         "en": {
           "stringUnit": {
@@ -9123,7 +9123,7 @@
         }
       }
     },
-    "ui.steam.cloud.synced": {
+    "ui.cloud.synced": {
       "localizations": {
         "en": {
           "stringUnit": {
@@ -9139,7 +9139,7 @@
         }
       }
     },
-    "ui.steam.cloud.disabled": {
+    "ui.cloud.disabled": {
       "localizations": {
         "en": {
           "stringUnit": {
@@ -9331,7 +9331,7 @@
         }
       }
     },
-    "ui.steam.cloud.sync_short": {
+    "ui.cloud.sync_short": {
       "extractionState": "manual",
       "localizations": {
         "en": {
@@ -9633,6 +9633,260 @@
           "stringUnit": {
             "state": "translated",
             "value": "Les succès Epic sont indisponibles. Réessaie."
+          }
+        }
+      }
+    },
+    "ui.epic.cloud.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Epic Cloud"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Epic Cloud"
+          }
+        }
+      }
+    },
+    "ui.epic.cloud.unsupported": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Forge Cloud sync is unavailable for this game on macOS. Any in-game Cloud service is managed by the game."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La synchronisation Cloud de Forge est indisponible pour ce jeu sur macOS. Un éventuel service Cloud intégré reste géré par le jeu."
+          }
+        }
+      }
+    },
+    "model.epic.recoveringSession": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconnecting to the running Epic game…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconnexion au jeu Epic en cours…"
+          }
+        }
+      }
+    },
+    "model.epic.otherGameRunning": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "An Epic game session is still active. Wait for it to finish before changing installed files."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Une session de jeu Epic est encore active. Attendez sa fin avant de modifier les fichiers installés."
+          }
+        }
+      }
+    },
+    "model.epic.gameExited": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The Epic game exited unexpectedly."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le jeu Epic s’est arrêté de manière inattendue."
+          }
+        }
+      }
+    },
+    "backend.epic.cloud.invalidSession": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconnect your Epic account before continuing Cloud synchronization."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconnectez votre compte Epic avant de poursuivre la synchronisation Cloud."
+          }
+        }
+      }
+    },
+    "backend.epic.cloud.invalidDecision": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The saves have changed. Review the current Cloud conflict before choosing a copy."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les sauvegardes ont changé. Vérifiez le conflit Cloud actuel avant de choisir une copie."
+          }
+        }
+      }
+    },
+    "backend.epic.cloud.session": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The Epic game session could not be verified. Reconnect your Epic account and retry."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La session du jeu Epic n’a pas pu être vérifiée. Reconnectez votre compte Epic et réessayez."
+          }
+        }
+      }
+    },
+    "backend.epic.cloud.busy": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "An Epic game or Cloud synchronization is already active."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un jeu Epic ou une synchronisation Cloud est déjà en cours."
+          }
+        }
+      }
+    },
+    "backend.epic.cloud.cancelled": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Epic Cloud synchronization was cancelled."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La synchronisation Epic Cloud a été annulée."
+          }
+        }
+      }
+    },
+    "backend.epic.cloud.recovery": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Forge is checking whether the Epic game is still running. Keep its installed files unchanged."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Forge vérifie si le jeu Epic est encore en cours. Conservez ses fichiers installés en attendant."
+          }
+        }
+      }
+    },
+    "backend.epic.cloud.storage": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Forge could not safely read or archive this game’s saves. Check available disk space and folder access, then retry."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Forge n’a pas pu lire ou archiver les sauvegardes de ce jeu en toute sécurité. Vérifiez l’espace disque et l’accès aux dossiers, puis réessayez."
+          }
+        }
+      }
+    },
+    "backend.epic.cloud.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Epic Cloud synchronization failed. Your pending saves are kept for another attempt."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La synchronisation Epic Cloud a échoué. Vos sauvegardes en attente sont conservées pour une nouvelle tentative."
+          }
+        }
+      }
+    },
+    "backend.epic.cloud.unsupported": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This game does not provide usable Epic Cloud save settings for macOS."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce jeu ne fournit pas de paramètres de sauvegarde Epic Cloud utilisables sur macOS."
+          }
+        }
+      }
+    },
+    "backend.epic.cloud_conflict": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The saves on this Mac and in Epic Cloud have both changed. Choose which copy to keep."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les sauvegardes de ce Mac et d’Epic Cloud ont toutes deux changé. Choisissez la copie à conserver."
           }
         }
       }

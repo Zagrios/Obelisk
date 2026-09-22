@@ -11,6 +11,8 @@ use prost::Message;
 use super::format::{Chunk, steam_adler};
 use super::*;
 
+mod prefetch;
+
 const KEY: [u8; 32] = [0x42; 32];
 
 fn encrypt(bytes: &[u8]) -> Vec<u8> {
@@ -902,7 +904,7 @@ async fn abandoned_account_transfer_keeps_disk_admission_until_worker_exits() {
                             status.state = snapshot.phase.into();
                             status.completed_bytes = snapshot.completed_bytes;
                         });
-                        // This report comes from the disk worker before it asks for chunks.
+                        // This report comes from the disk worker before publication.
                         if snapshot.current_file == "game.exe"
                             && let Some((reached, blocked)) = gate.lock().unwrap().take()
                         {

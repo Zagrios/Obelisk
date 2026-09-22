@@ -11,6 +11,14 @@ use std::{
 use super::*;
 use crate::content_manifest::ChunkPart;
 
+mod prefetch;
+
+struct RequestGate {
+    path: String,
+    requests: usize,
+    opened: AtomicBool,
+}
+
 struct Server {
     base: Url,
     requests: Arc<Mutex<Vec<String>>>,
@@ -21,6 +29,14 @@ struct Server {
 
 impl Server {
     fn new(responses: HashMap<String, Vec<u8>>, stalled: bool) -> Self {
+        Self::with_gate(responses, stalled, None)
+    }
+
+    fn with_gate(
+        responses: HashMap<String, Vec<u8>>,
+        stalled: bool,
+        gate: Option<Arc<RequestGate>>,
+    ) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let base = Url::parse(&format!("http://{}/", listener.local_addr().unwrap())).unwrap();
         listener.set_nonblocking(true).unwrap();
@@ -40,8 +56,9 @@ impl Server {
                         let headers = Arc::clone(&thread_headers);
                         let stop = Arc::clone(&thread_stop);
                         let responses = Arc::clone(&responses);
+                        let gate = gate.clone();
                         workers.push(thread::spawn(move || {
-                            serve(socket, requests, headers, stop, responses, stalled)
+                            serve(socket, requests, headers, stop, responses, stalled, gate)
                         }));
                     }
                     Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
@@ -82,6 +99,7 @@ fn serve(
     stop: Arc<AtomicBool>,
     responses: Arc<HashMap<String, Vec<u8>>>,
     stalled: bool,
+    gate: Option<Arc<RequestGate>>,
 ) {
     // macOS accept inherits O_NONBLOCK. Wait for the HTTP request instead
     // of treating an early WouldBlock as a disconnected client.
@@ -110,6 +128,21 @@ fn serve(
     let path = request.split_whitespace().nth(1).unwrap().to_owned();
     requests.lock().unwrap().push(path.clone());
     headers.lock().unwrap().push(request.to_string());
+    if let Some(gate) = gate
+        && gate.path == path
+    {
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        while requests.lock().unwrap().len() < gate.requests
+            && !stop.load(Ordering::Acquire)
+            && std::time::Instant::now() < deadline
+        {
+            thread::sleep(Duration::from_millis(2));
+        }
+        gate.opened.store(
+            requests.lock().unwrap().len() >= gate.requests,
+            Ordering::Release,
+        );
+    }
     if stalled {
         while !stop.load(Ordering::Acquire) {
             thread::sleep(Duration::from_millis(5));
@@ -194,6 +227,7 @@ fn fixture() -> (Manifest, HashMap<String, Vec<u8>>, Vec<u8>) {
     ]
     .into();
     let manifest = Manifest {
+        custom_fields: Default::default(),
         app_name: "test-game".into(),
         build_version: "1.0".into(),
         launch_executable: files[0].filename.clone(),

@@ -23,7 +23,7 @@ fn lock_file(root: &Path, name: &str) -> Result<File, Error> {
     Ok(file)
 }
 
-pub(super) fn lock(root: &Path, name: &str) -> Result<File, Error> {
+pub(crate) fn lock(root: &Path, name: &str) -> Result<File, Error> {
     let file = lock_file(root, name)?;
     file.try_lock().map_err(|_| Error::SessionBusy)?;
     Ok(file)
@@ -32,7 +32,7 @@ pub(super) fn lock(root: &Path, name: &str) -> Result<File, Error> {
 /// Wait for terminal teardown without polling. If the deadline expires, the
 /// waiter retains start.lock until it finishes, preventing accumulated waiters
 /// or a second launch racing an owner whose first record is not visible yet.
-pub(super) fn owner_released(root: &Path, starting: File) -> Result<File, Error> {
+pub(crate) fn owner_released(root: &Path, starting: File) -> Result<File, Error> {
     let owner = lock_file(root, "owner.lock")?;
     let (send, receive) = std::sync::mpsc::sync_channel(1);
     std::thread::spawn(move || {
@@ -83,7 +83,7 @@ fn write_path(path: &Path, snapshot: &Snapshot) -> Result<(), Error> {
     })
 }
 
-pub(super) fn packet<T: serde::de::DeserializeOwned>(input: impl Read) -> Result<T, Error> {
+pub(crate) fn packet<T: serde::de::DeserializeOwned>(input: impl Read) -> Result<T, Error> {
     use std::io::BufRead;
     let mut bytes = Vec::new();
     std::io::BufReader::new(input.take(65537)).read_until(b'\n', &mut bytes)?;
@@ -93,7 +93,7 @@ pub(super) fn packet<T: serde::de::DeserializeOwned>(input: impl Read) -> Result
     serde_json::from_slice(&bytes).map_err(|_| Error::InvalidSession)
 }
 
-pub(super) fn send(output: &mut impl Write, value: &impl Serialize) -> Result<(), Error> {
+pub(crate) fn send(output: &mut impl Write, value: &impl Serialize) -> Result<(), Error> {
     let bytes = serde_json::to_vec(value).map_err(|_| Error::InvalidSession)?;
     if bytes.len() > 65535 {
         return Err(Error::InvalidSession);
