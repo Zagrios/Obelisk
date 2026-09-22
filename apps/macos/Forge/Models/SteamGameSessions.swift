@@ -24,7 +24,7 @@ final class SteamGameSessions {
         var connection = SteamSupervisorConnection.connected
         var host = SteamHostState.online
         var cloud = CloudStatus()
-        var rosetta: SteamRosettaRequest?
+        var rosetta: RosettaRequest?
         var running: Bool { phase == .running }
     }
 
@@ -166,11 +166,7 @@ final class SteamGameSessions {
         try await client.chooseCloud(accountId: accountId, decisionId: active.cloud.decisionId, choice: choice)
     }
 
-    struct RosettaPrompt: Equatable, Identifiable {
-        let id: UUID
-        let accountId: UInt64
-        let decisionId: UInt64
-    }
+    typealias RosettaPrompt = RosettaLaunchPrompt<UUID, UInt64>
 
     func rosettaPrompt(accountId: UInt64) -> RosettaPrompt? {
         guard let active, active.phase == .preparing, active.accountId == accountId,
@@ -346,5 +342,14 @@ final class SteamGameSessions {
         appliedRevocations.removeAll()
         isRecovering = false
         operation = nil
+    }
+}
+
+extension SteamGameSessions: RosettaSessions {
+    static func rosettaUnavailable(_ error: Error) -> Bool {
+        if case let SteamError.Failure(reason) = error {
+            return reason == rosettaUnavailableKey
+        }
+        return false
     }
 }

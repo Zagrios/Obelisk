@@ -11,7 +11,7 @@ struct SteamView: View {
             set: { _ in }
         )) {
             if model.rosetta.prompt != nil {
-                SteamRosettaPromptView(model: model.rosetta)
+                RosettaPromptView(model: model.rosetta)
             } else {
                 SteamCloudPromptView(
                     title: cloudPromptTitle,

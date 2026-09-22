@@ -423,7 +423,7 @@ actor RecoveredGameFixture: SteamGameSessionProtocol {
         if let rosettaError { throw SteamError.Failure(reason: rosettaError) }
         if rosettaResumeFailure || rosettaFailuresRemaining > 0 {
             rosettaFailuresRemaining = max(0, rosettaFailuresRemaining - 1)
-            throw SteamError.Failure(reason: "backend.steam.runtime.rosettaUnavailable")
+            throw SteamError.Failure(reason: SteamGameSessions.rosettaUnavailableKey)
         }
         rosettaResumes.append(.init(accountID: accountId, decisionID: decisionId))
     }
@@ -433,7 +433,7 @@ actor RecoveredGameFixture: SteamGameSessionProtocol {
     func failRosettaWith(_ error: String) { rosettaError = error }
 
     func requireRosetta(decisionId: UInt64?) {
-        current.rosetta = decisionId.map { SteamRosettaRequest(decisionId: $0) }
+        current.rosetta = decisionId.map { RosettaRequest(decisionId: $0) }
         current.revision += 1
         wake()
     }

@@ -45,6 +45,189 @@ const PLAYING: &str = r#"{"type":"presence.v1.UPDATE","payload":{"accountId":"al
 const REMOVED: &str =
     r#"{"type":"friends.v1.FRIEND_ENTRY_REMOVED","payload":{"from":"account-a","to":"alice"}}"#;
 
+#[tokio::test]
+async fn running_game_is_advertised_on_its_own_connection_and_reconnect() {
+    let mut fixture = Fixture::new().await;
+    let client = fixture.client();
+    client
+        .start_game_presence(crate::friends::Activity {
+            id: "kingdom-namespace".into(),
+            name: Some("Kingdom: New Lands".into()),
+        })
+        .unwrap();
+    let mut peer = fixture.peer().await;
+    for reconnect in [false, true] {
+        if reconnect {
+            peer.socket.close(None).await.unwrap();
+            peer = fixture.peer().await;
+        }
+        peer.subscribe().await;
+        let registration = fixture.registration().await;
+        let body: Value = serde_json::from_str(&registration.request.body).unwrap();
+        assert_eq!(
+            body,
+            json!({
+                "status": "online",
+                "conn": {"props": {}, "runningApp": {
+                    "id": "kingdom-namespace",
+                    "displayName": "Kingdom: New Lands"
+                }}
+            })
+        );
+        registration.respond(200, registration_response());
+        state(&client, |s| s.connection == Connection::Ready).await;
+        peer.event(REMOVED).await;
+        peer.barrier().await;
+        assert!(
+            fixture.http.try_recv().is_err(),
+            "game presence must not read friends"
+        );
+    }
+    client.stop_friends();
+    peer.closed().await;
+    assert_eq!(client.friends().connection, Connection::Stopped);
+    // A later social connection must not inherit the exited game's activity.
+    client.start_friends();
+    let mut peer = fixture.peer().await;
+    peer.subscribe().await;
+    let (summary_request, registration) = fixture.bootstrap().await;
+    assert_eq!(
+        serde_json::from_str::<Value>(&registration.request.body).unwrap(),
+        json!({"status":"online","conn":{"props":{}}})
+    );
+    summary_request.respond(200, summary());
+    registration.respond(200, registration_response());
+    state(&client, |s| s.connection == Connection::Ready).await;
+    client.stop_friends();
+    peer.closed().await;
+}
+
+#[tokio::test]
+async fn game_presence_recovers_after_repeated_network_failures_until_stopped() {
+    let mut fixture = Fixture::new().await;
+    let client = fixture.client();
+    client
+        .start_game_presence(crate::friends::Activity {
+            id: "game".into(),
+            name: Some("Fixture Game".into()),
+        })
+        .unwrap();
+    let mut peer = fixture.peer().await;
+    peer.subscribe().await;
+    fixture
+        .registration()
+        .await
+        .respond(200, registration_response());
+    state(&client, |s| s.connection == Connection::Ready).await;
+
+    for delay in [1, 2, 4, 8, 16, 30, 30] {
+        peer.socket.close(None).await.unwrap();
+        let interrupted = state(&client, |s| s.connection != Connection::Ready).await;
+        assert_eq!(interrupted.connection, Connection::Interrupted);
+        advance_time(Duration::from_secs(delay)).await;
+        peer = fixture.peer().await;
+        peer.subscribe().await;
+        let registration = fixture.registration().await;
+        let body: Value = serde_json::from_str(&registration.request.body).unwrap();
+        assert_eq!(
+            body["conn"]["runningApp"],
+            json!({"id":"game", "displayName":"Fixture Game"})
+        );
+        registration.respond(200, registration_response());
+        state(&client, |s| s.connection == Connection::Ready).await;
+    }
+
+    client.stop_friends();
+    peer.closed().await;
+    advance_time(Duration::from_secs(300)).await;
+    assert_eq!(client.friends().connection, Connection::Stopped);
+    assert!(fixture.peers.try_recv().is_err());
+    assert!(fixture.http.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn game_presence_recovers_from_a_transient_token_refresh_failure() {
+    let mut fixture = Fixture::new().await;
+    let client = fixture.client();
+    client
+        .start_game_presence(crate::friends::Activity {
+            id: "game".into(),
+            name: None,
+        })
+        .unwrap();
+    let mut peer = fixture.peer().await;
+    peer.subscribe().await;
+    fixture.registration().await.respond(401, json!({}));
+    peer.closed().await;
+    // Close the transport before the refresh receives a response.
+    drop(fixture.renewal().await);
+    let interrupted = state(&client, |s| {
+        s.message.as_deref() == Some("backend.epic.friends.network")
+    })
+    .await;
+    assert_eq!(interrupted.connection, Connection::Interrupted);
+    advance_time(Duration::from_secs(1)).await;
+    fixture.renewal().await.respond(200, renewed_token());
+
+    let mut peer = fixture.peer().await;
+    peer.subscribe_with_token("fixture-access-new").await;
+    let registration = fixture.registration().await;
+    assert_eq!(
+        registration.request.headers["authorization"],
+        "Bearer fixture-access-new"
+    );
+    let body: Value = serde_json::from_str(&registration.request.body).unwrap();
+    assert_eq!(body["conn"]["runningApp"], json!({"id":"game"}));
+    registration.respond(200, registration_response());
+    state(&client, |s| s.connection == Connection::Ready).await;
+    assert_eq!(
+        client.credentials().await.unwrap().refresh_token,
+        "fixture-refresh-new"
+    );
+    client.stop_friends();
+    peer.closed().await;
+}
+
+#[tokio::test]
+async fn game_presence_refusal_does_not_retry_or_replace_manual_status() {
+    let mut fixture = Fixture::new().await;
+    let client = fixture.client();
+    client
+        .start_game_presence(crate::friends::Activity {
+            id: "game".into(),
+            name: None,
+        })
+        .unwrap();
+    let mut peer = fixture.peer().await;
+    peer.subscribe().await;
+    let registration = fixture.registration().await;
+    let body: Value = serde_json::from_str(&registration.request.body).unwrap();
+    assert_eq!(body["status"], "online");
+    assert!(body.get("statusSettings").is_none());
+    registration.respond(403, json!({}));
+    state(&client, |s| s.connection == Connection::Forbidden).await;
+    peer.closed().await;
+    assert!(fixture.http.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn game_presence_can_stop_during_registration() {
+    let mut fixture = Fixture::new().await;
+    let client = fixture.client();
+    client
+        .start_game_presence(crate::friends::Activity {
+            id: "game".into(),
+            name: None,
+        })
+        .unwrap();
+    let mut peer = fixture.peer().await;
+    peer.subscribe().await;
+    let _pending = fixture.registration().await;
+    client.stop_friends();
+    peer.closed().await;
+    assert_eq!(client.friends().connection, Connection::Stopped);
+}
+
 async fn bounded<T>(future: impl Future<Output = T>) -> T {
     timeout(SAFETY_BOUND, future)
         .await
@@ -301,6 +484,14 @@ impl Fixture {
         let request = bounded(self.http.recv()).await.unwrap();
         assert_eq!(request.request.target, SUMMARY_PATH);
         assert_eq!(request.request.method, "GET");
+        request
+    }
+
+    async fn registration(&mut self) -> PendingHttp {
+        let request = bounded(self.http.recv()).await.unwrap();
+        assert_eq!(request.request.target, REGISTRATION_PATH);
+        assert_eq!(request.request.method, "POST");
+        assert_eq!(request.request.headers["x-http-method-override"], "PATCH");
         request
     }
 

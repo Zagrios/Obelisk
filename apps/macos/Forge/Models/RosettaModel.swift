@@ -2,16 +2,45 @@ import AppKit
 import Observation
 import OSLog
 
+/// The account and decision identities stay owned by each session observer.
+@MainActor
+protocol RosettaSessions: AnyObject {
+    associatedtype AccountID: Equatable
+    associatedtype RosettaPrompt: Equatable
+    func rosettaPrompt(accountId: AccountID) -> RosettaPrompt?
+    func resumeAfterRosetta(_ prompt: RosettaPrompt) async throws
+    func cancelRosetta(_ prompt: RosettaPrompt)
+    /// True only for the supervisor's "Rosetta still unavailable" reply, which
+    /// means installation needs more time rather than that the launch failed.
+    static func rosettaUnavailable(_ error: Error) -> Bool
+}
+
+extension RosettaSessions {
+    /// The Rust runtime reports this key for both storefronts.
+    nonisolated static var rosettaUnavailableKey: String { "backend.steam.runtime.rosettaUnavailable" }
+}
+
+/// One supervisor-owned Rosetta requirement, identified by its session,
+/// account and decision so a stale prompt can never resume a newer one.
+struct RosettaLaunchPrompt<SessionID: Hashable, AccountID: Equatable>: Equatable, Identifiable {
+    let id: SessionID
+    let accountId: AccountID
+    let decisionId: UInt64
+}
+
+typealias SteamRosettaModel = RosettaModel<SteamGameSessions>
+typealias EpicRosettaModel = RosettaModel<EpicGameSessions>
+
 /// Presents a supervisor-owned launch requirement. Only macOS installs Rosetta;
 /// only the supervisor decides whether the waiting game can proceed.
 @MainActor @Observable
-final class SteamRosettaModel {
-    private let sessions: SteamGameSessions
-    private var accountId: UInt64?
+final class RosettaModel<Sessions: RosettaSessions> {
+    private let sessions: Sessions
+    private var accountId: Sessions.AccountID?
     private var generation = 0
-    private var dismissed: SteamGameSessions.RosettaPrompt?
-    private var working: SteamGameSessions.RosettaPrompt?
-    private var failed: SteamGameSessions.RosettaPrompt?
+    private var dismissed: Sessions.RosettaPrompt?
+    private var working: Sessions.RosettaPrompt?
+    private var failed: Sessions.RosettaPrompt?
     @ObservationIgnored private var work: Task<Void, Never>?
     @ObservationIgnored private let installRosetta: @MainActor () async throws -> Void
     @ObservationIgnored private let readinessAttempts: Int
@@ -19,7 +48,7 @@ final class SteamRosettaModel {
     @ObservationIgnored private let readinessTimeout: Duration
     @ObservationIgnored private let now: @MainActor () -> ContinuousClock.Instant
 
-    init(sessions: SteamGameSessions,
+    init(sessions: Sessions,
          install: @escaping @MainActor () async throws -> Void = { try await RosettaInstaller.install() },
          readinessAttempts: Int = 600,
          readinessDelay: @escaping @MainActor () async throws -> Void = { try await Task.sleep(for: .seconds(1)) },
@@ -33,14 +62,14 @@ final class SteamRosettaModel {
         self.now = now
     }
 
-    var prompt: SteamGameSessions.RosettaPrompt? {
+    var prompt: Sessions.RosettaPrompt? {
         guard let accountId, let request = sessions.rosettaPrompt(accountId: accountId), request != dismissed else { return nil }
         return request
     }
     var isInstalling: Bool { prompt != nil && prompt == working }
     var installationFailed: Bool { prompt != nil && prompt == failed }
 
-    func connect(accountId: UInt64?) {
+    func connect(accountId: Sessions.AccountID?) {
         guard self.accountId != accountId else { return }
         cancel()
         self.accountId = accountId
@@ -48,10 +77,8 @@ final class SteamRosettaModel {
     }
 
     func cancel() {
-        if let prompt {
-            sessions.cancelRosetta(prompt)
-            dismissed = prompt
-        }
+        // The session hides its own cancelled prompt until that session ends.
+        if let prompt { sessions.cancelRosetta(prompt) }
         generation += 1
         work?.cancel()
         work = nil
@@ -103,7 +130,7 @@ final class SteamRosettaModel {
                         guard current == generation, prompt == request, !Task.isCancelled else { return }
                         // A lost session or another launch failure is not
                         // evidence that Rosetta merely needs more time.
-                        guard Self.rosettaUnavailable(error) else { throw error }
+                        guard Sessions.rosettaUnavailable(error) else { throw error }
                     }
                 }
                 failed = request
@@ -112,13 +139,6 @@ final class SteamRosettaModel {
                 failed = request
             }
         }
-    }
-
-    private static func rosettaUnavailable(_ error: Error) -> Bool {
-        if case let SteamError.Failure(reason) = error {
-            return reason == "backend.steam.runtime.rosettaUnavailable"
-        }
-        return false
     }
 }
 

@@ -1,5 +1,8 @@
 use super::*;
-use crate::{Error, Launch, Runtime, architecture::Architecture, protocol::Credentials};
+use crate::{
+    Error, Launch, Runtime, architecture::Architecture, presence::GamePresence,
+    protocol::Credentials,
+};
 use std::{
     io::{Read, Write},
     os::unix::fs::PermissionsExt,
@@ -14,10 +17,12 @@ use std::{
 
 // Keep lifecycle admission testable without giving a disposable fixture access
 // to account credentials, network transports or the production Cloud vault.
+pub(super) type Operation<'a, T> = std::pin::Pin<Box<dyn std::future::Future<Output = T> + 'a>>;
+
 pub(super) trait CloudLifecycle {
-    fn prepare(&mut self) -> Result<(), Error>;
+    fn prepare(&mut self) -> Operation<'_, Result<(), Error>>;
     fn started(&mut self) -> Result<(), Error>;
-    fn finished(&mut self);
+    fn finished(&mut self) -> Operation<'_, ()>;
     fn aborted(&mut self);
     fn native_storage(&self) -> Result<Option<crate::NativeStorage>, Error> {
         Ok(None)
@@ -28,14 +33,14 @@ impl CloudLifecycle for cloud::Session {
     fn native_storage(&self) -> Result<Option<crate::NativeStorage>, Error> {
         cloud::Session::native_storage(self)
     }
-    fn prepare(&mut self) -> Result<(), Error> {
-        cloud::Session::prepare(self)
+    fn prepare(&mut self) -> Operation<'_, Result<(), Error>> {
+        Box::pin(cloud::Session::prepare(self))
     }
     fn started(&mut self) -> Result<(), Error> {
         cloud::Session::started(self)
     }
-    fn finished(&mut self) {
-        cloud::Session::finished(self);
+    fn finished(&mut self) -> Operation<'_, ()> {
+        Box::pin(cloud::Session::finished(self))
     }
     fn aborted(&mut self) {
         cloud::Session::aborted(self);
@@ -55,10 +60,16 @@ struct Shared {
     root: PathBuf,
     launch: Arc<Launch>,
     cloud: Arc<cloud::Control>,
-    rosetta_helper: PathBuf,
-    probe_rosetta: fn(&std::path::Path) -> Result<bool, Error>,
+    presence: GamePresence,
+    rosetta: crate::rosetta::Gate,
 }
 impl Shared {
+    /// Wake both the blocking observers and the executor's Rosetta wait.
+    fn notify_changed(&self) {
+        self.changed.notify_all();
+        self.rosetta.wake();
+    }
+
     fn update(&self, change: impl FnOnce(&mut Snapshot)) {
         let mut state = self.state.lock().unwrap();
         change(&mut state.snapshot);
@@ -66,26 +77,24 @@ impl Shared {
         // Disk failure after spawn cannot abandon or terminate the game. Live
         // observers still receive the authoritative in-memory state.
         let _ = storage::write(&self.root, &state.snapshot);
-        self.changed.notify_all();
+        self.notify_changed();
     }
 
-    fn wait_for_rosetta(&self) -> Result<(), Error> {
-        self.launch.check_cancelled()?;
-        if (self.probe_rosetta)(&self.rosetta_helper)? {
-            return Ok(());
-        }
-        self.launch.check_cancelled()?;
-        self.update(|s| s.rosetta = Some(RosettaRequest { decision_id: 1 }));
-        let mut state = self.state.lock().unwrap();
-        while state.snapshot.rosetta.is_some() && !self.launch.cancelled.load(Ordering::Acquire) {
-            state = self.changed.wait(state).unwrap();
-        }
-        drop(state);
-        self.launch.check_cancelled()?;
-        if !(self.probe_rosetta)(&self.rosetta_helper)? {
-            return Err(Error::RosettaUnavailable);
-        }
-        Ok(())
+    async fn wait_for_rosetta(&self) -> Result<bool, Error> {
+        self.rosetta
+            .wait(
+                || {
+                    let _admission = self.admission.lock().unwrap();
+                    self.launch.check_cancelled()?;
+                    self.update(|s| s.rosetta = Some(RosettaRequest { decision_id: 1 }));
+                    Ok(())
+                },
+                || {
+                    self.launch.check_cancelled()?;
+                    Ok(self.state.lock().unwrap().snapshot.rosetta.is_some())
+                },
+            )
+            .await
     }
 
     fn record_starting(&self, starting: StartingGame) -> Result<(), Error> {
@@ -95,7 +104,7 @@ impl Shared {
         // Unlike diagnostics, this write must succeed before the Intel helper
         // receives permission to replace itself with the game.
         let result = storage::write(&self.root, &state.snapshot);
-        self.changed.notify_all();
+        self.notify_changed();
         result
     }
 }
@@ -127,6 +136,7 @@ pub fn serve(input: impl Read, output: impl Write, inspect: Inspect) -> Result<(
             },
             rosetta: crate::architecture::rosetta_available,
         },
+        GamePresence::default(),
     )
 }
 
@@ -135,17 +145,26 @@ pub(super) fn serve_with(
     input: impl Read,
     output: impl Write,
     inspect: Inspect,
-    prepare: impl FnOnce(&Launch, Config) -> Result<Runtime, Error>,
+    prepare: impl FnOnce(&Launch, Config) -> Result<Runtime, Error> + Send + 'static,
+    presence: GamePresence,
 ) -> Result<(), Error> {
-    serve_with_native(input, output, inspect, prepare, NativeChecks::fixture())
+    serve_with_native(
+        input,
+        output,
+        inspect,
+        prepare,
+        NativeChecks::fixture(),
+        presence,
+    )
 }
 
 fn serve_with_native(
     input: impl Read,
     output: impl Write,
     inspect: Inspect,
-    prepare: impl FnOnce(&Launch, Config) -> Result<Runtime, Error>,
+    prepare: impl FnOnce(&Launch, Config) -> Result<Runtime, Error> + Send + 'static,
     checks: NativeChecks,
+    presence: GamePresence,
 ) -> Result<(), Error> {
     serve_with_factory(
         input,
@@ -163,6 +182,7 @@ fn serve_with_native(
             _ => Err(Error::InvalidSession),
         },
         checks,
+        presence,
     )
 }
 
@@ -171,8 +191,9 @@ pub(super) fn serve_with_cloud(
     input: impl Read,
     output: impl Write,
     inspect: Inspect,
-    prepare: impl FnOnce(&Launch, Config) -> Result<Runtime, Error>,
+    prepare: impl FnOnce(&Launch, Config) -> Result<Runtime, Error> + Send + 'static,
     cloud: Box<dyn CloudLifecycle>,
+    presence: GamePresence,
 ) -> Result<(), Error> {
     serve_with_cloud_checks(
         input,
@@ -181,6 +202,7 @@ pub(super) fn serve_with_cloud(
         prepare,
         cloud,
         NativeChecks::fixture(),
+        presence,
     )
 }
 
@@ -189,9 +211,10 @@ pub(super) fn serve_with_cloud_checks(
     input: impl Read,
     output: impl Write,
     inspect: Inspect,
-    prepare: impl FnOnce(&Launch, Config) -> Result<Runtime, Error>,
+    prepare: impl FnOnce(&Launch, Config) -> Result<Runtime, Error> + Send + 'static,
     cloud: Box<dyn CloudLifecycle>,
     checks: NativeChecks,
+    presence: GamePresence,
 ) -> Result<(), Error> {
     serve_with_factory(
         input,
@@ -200,6 +223,7 @@ pub(super) fn serve_with_cloud_checks(
         prepare,
         |_, _, _, _| Ok(Some(cloud)),
         checks,
+        presence,
     )
 }
 
@@ -207,7 +231,7 @@ fn serve_with_factory(
     input: impl Read,
     mut output: impl Write,
     inspect: Inspect,
-    prepare: impl FnOnce(&Launch, Config) -> Result<Runtime, Error>,
+    prepare: impl FnOnce(&Launch, Config) -> Result<Runtime, Error> + Send + 'static,
     make_cloud: impl FnOnce(
         Option<cloud::Config>,
         Option<Credentials>,
@@ -215,8 +239,10 @@ fn serve_with_factory(
         Arc<cloud::Control>,
     ) -> Result<Option<Box<dyn CloudLifecycle>>, Error>,
     checks: NativeChecks,
+    presence: GamePresence,
 ) -> Result<(), Error> {
     let mut input = input;
+    let executor = crate::executor()?;
     let credentials = Credentials::read(&mut input)?;
     let request: Request = storage::packet(input)?;
     if uuid::Uuid::parse_str(&request.id).is_err()
@@ -247,7 +273,7 @@ fn serve_with_factory(
         .tempdir_in("/tmp")?;
     let socket = socket_dir.path().join("control");
     let listener = UnixListener::bind(&socket)?;
-    // Both owners retain secrets only in zeroizing Credentials values. Neither
+    // Owners retain secrets only in zeroizing Credentials values. Neither
     // the supervisor journal nor the serialized request contains credentials.
     let cloud_credentials = request.cloud.as_ref().map(|_| credentials.clone());
     let account_id = credentials.steam_id;
@@ -286,13 +312,17 @@ fn serve_with_factory(
                     shared.update(|snapshot| snapshot.cloud = status);
                 }
             })),
-            rosetta_helper: request
-                .config
-                .helpers
-                .parent()
-                .unwrap_or(&request.config.helpers)
-                .join("Forge Rosetta.app/Contents/MacOS/ForgeRosetta"),
-            probe_rosetta: checks.rosetta,
+            presence,
+            rosetta: crate::rosetta::Gate::new(
+                crate::rosetta::helper(
+                    request
+                        .config
+                        .helpers
+                        .parent()
+                        .unwrap_or(&request.config.helpers),
+                ),
+                checks.rosetta,
+            ),
         }
     });
     let finished = Arc::new(AtomicBool::new(false));
@@ -305,7 +335,7 @@ fn serve_with_factory(
     // revokes an accepted launch or ownership of its game.
     let _ = storage::send(&mut output, &shared.state.lock().unwrap().snapshot);
     drop(output);
-    let outcome = (|| {
+    let outcome = executor.block_on(async {
         let mut cloud = make_cloud(
             request.cloud,
             cloud_credentials,
@@ -315,24 +345,38 @@ fn serve_with_factory(
         let lifecycle = cloud
             .as_mut()
             .map(|cloud| cloud.as_mut() as &mut dyn CloudLifecycle);
-        let result = run_game(&request.target, &shared, inspect, lifecycle, || {
-            let architecture = (checks.select)(&request.target, &request.config)?;
-            if architecture == Some(Architecture::Intel) && cfg!(target_arch = "aarch64") {
-                shared.wait_for_rosetta()?;
-            }
-            *shared
-                .launch
-                .architecture
-                .lock()
-                .map_err(|_| Error::InvalidSession)? = architecture;
-            prepare(&shared.launch, request.config)
-        });
+        let preparing = shared.clone();
+        let native_target = request.target.clone();
+        let result = run_game(
+            &request.target,
+            &shared,
+            inspect,
+            lifecycle,
+            || async move {
+                let architecture = (checks.select)(&native_target, &request.config)?;
+                if architecture == Some(Architecture::Intel) && cfg!(target_arch = "aarch64") {
+                    preparing.wait_for_rosetta().await?;
+                }
+                tokio::task::spawn_blocking(move || {
+                    *preparing
+                        .launch
+                        .architecture
+                        .lock()
+                        .map_err(|_| Error::InvalidSession)? = architecture;
+                    prepare(&preparing.launch, request.config)
+                })
+                .await
+                .map_err(|_| Error::StartFailed)?
+            },
+        )
+        .await;
         let abort = result.is_err() && !shared.state.lock().unwrap().spawned;
         if abort && let Some(cloud) = cloud.as_mut() {
             cloud.aborted();
         }
         result
-    })();
+    });
+    shared.presence.stop();
     if let Err(error) = outcome {
         shared.update(|s| {
             s.phase = Phase::Failed;
@@ -349,48 +393,64 @@ fn serve_with_factory(
     }
     // If the socket was removed externally, do not wait forever on accept.
     // This dedicated supervisor process exits next and closes its listener.
-    // socket_dir and the owner lock are released only after game/host teardown.
+    // socket_dir and the owner lock are released only after game/host teardown,
+    // and after the executor's bounded shutdown.
+    drop(executor);
     Ok(())
 }
 
-fn run_game(
+async fn run_game<F>(
     target: &Target,
     shared: &Arc<Shared>,
     inspect: Inspect,
     mut cloud: Option<&mut dyn CloudLifecycle>,
-    prepare: impl FnOnce() -> Result<Runtime, Error>,
-) -> Result<(), Error> {
+    prepare: impl FnOnce() -> F,
+) -> Result<(), Error>
+where
+    F: std::future::Future<Output = Result<Runtime, Error>>,
+{
+    use crate::game_session::{Execution, confirm_execution, wait_for_exit, wait_identity};
+    use std::os::fd::OwnedFd;
+
     if let Some(cloud) = cloud.as_deref_mut() {
-        cloud.prepare()?;
+        cloud.prepare().await?;
         *shared
             .launch
             .storage
             .lock()
             .map_err(|_| Error::InvalidSession)? = cloud.native_storage()?;
     }
-    let runtime = Arc::new(prepare()?);
+    let runtime = Arc::new(prepare().await?);
     let app_id = shared.state.lock().unwrap().snapshot.app_id.to_string();
     let architecture = *shared
         .launch
         .architecture
         .lock()
         .map_err(|_| Error::InvalidSession)?;
-    let expected_executable = if architecture == Some(Architecture::Intel) {
-        Some(
-            target
-                .executable
-                .canonicalize()
-                .map_err(|_| Error::StartFailed)?,
-        )
-    } else {
-        None
-    };
-    let mut command = if let Some(Architecture::Intel) = architecture {
+    let intel = architecture == Some(Architecture::Intel);
+    let mut command = if intel {
         let mut command = Process::new(runtime._prepared.directory.join(crate::package::SDK_INTEL));
         command.arg("exec-game").arg(&target.executable);
         command
     } else {
         Process::new(&target.executable)
+    };
+    // A private synchronous gate can be granted under the admission mutex;
+    // the child's asynchronous output and wait never hold that mutex.
+    let mut admission = if intel {
+        let executable = target
+            .executable
+            .canonicalize()
+            .map_err(|_| Error::StartFailed)?;
+        let (parent, child) = UnixStream::pair()?;
+        parent.set_write_timeout(Some(Duration::from_secs(5)))?;
+        command
+            .stdin(Stdio::from(OwnedFd::from(child)))
+            .stdout(Stdio::piped());
+        Some((executable, parent))
+    } else {
+        command.stdin(Stdio::null()).stdout(Stdio::null());
+        None
     };
     command
         .args(&target.arguments)
@@ -400,18 +460,8 @@ fn run_game(
         .envs(runtime.environment())
         .env("SteamAppId", &app_id)
         .env("SteamGameId", &app_id)
-        .stdin(if architecture == Some(Architecture::Intel) {
-            Stdio::piped()
-        } else {
-            Stdio::null()
-        })
-        .stdout(if architecture == Some(Architecture::Intel) {
-            Stdio::piped()
-        } else {
-            Stdio::null()
-        })
         .stderr(Stdio::null());
-    let mut game = {
+    let (mut game, admitted) = {
         // Cancel and spawn have one linearization point. Cancellation after this
         // succeeds never kills a game, including sign-out and UI disconnection.
         let _admission = shared.admission.lock().unwrap();
@@ -421,73 +471,58 @@ fn run_game(
         if let Some(cloud) = cloud.as_deref_mut() {
             cloud.started()?;
         }
-        let mut game = command.spawn().map_err(|_| Error::StartFailed)?;
+        let game = tokio::process::Command::from(command)
+            .kill_on_drop(false)
+            .spawn()
+            .map_err(|_| Error::StartFailed)?;
         shared.state.lock().unwrap().spawned = true;
-        if let Some(executable) = &expected_executable {
-            let admitted = (|| {
-                let identity = inspect(game.id()).ok_or(Error::StartFailed)?;
+        let admitted = match &mut admission {
+            Some((executable, pipe)) => (|| {
+                let identity =
+                    inspect(game.id().ok_or(Error::StartFailed)?).ok_or(Error::StartFailed)?;
                 shared.record_starting(StartingGame::Process {
                     identity,
                     executable: executable.clone(),
                 })?;
-                game.stdin
-                    .take()
-                    .ok_or(Error::StartFailed)?
-                    .write_all(b"1")
-                    .map_err(|_| Error::StartFailed)
-            })();
-            if let Err(error) = admitted {
-                // With no admission byte, EOF instructs the helper to exit
-                // without executing the target. Keep ownership until reaped.
-                drop(game.stdin.take());
-                let exit = wait_for_exit(&mut game);
-                runtime.stopped(Some(exit));
-                shared.state.lock().unwrap().spawned = false;
-                shared.update(|s| s.starting = None);
-                return Err(error);
-            }
-        }
-        game
+                pipe.write_all(b"1").map_err(|_| Error::StartFailed)
+            })(),
+            None => Ok(()),
+        };
+        (game, admitted)
     };
-    let execution = if architecture == Some(Architecture::Intel) {
-        confirm_execution(&mut game, &target.executable, inspect)
+    drop(admission);
+    if let Err(error) = admitted {
+        // Without the admission byte, EOF makes the helper exit without exec.
+        // Retain ownership until it is reaped, outside the cancellation gate.
+        let exit = wait_for_exit(&mut game).await;
+        runtime.stopped(Some(exit));
+        shared.state.lock().unwrap().spawned = false;
+        shared.update(|s| s.starting = None);
+        return Err(error);
+    }
+    let game_pid = game.id().ok_or(Error::StartFailed)?;
+    let execution = if intel {
+        confirm_execution(&mut game, &target.executable, inspect).await
     } else {
         Execution::Started
     };
     if matches!(execution, Execution::Failed) {
-        // The helper reported exec failure. Reap it before releasing admission;
-        // no process ever received the game's executable image.
-        let exit = wait_for_exit(&mut game);
+        let exit = wait_for_exit(&mut game).await;
         runtime.stopped(Some(exit));
         shared.state.lock().unwrap().spawned = false;
         return Err(Error::StartFailed);
     }
-    // The signed SDK helper replaces itself with the selected game slice. Never persist its
-    // transient executable as the game's durable identity.
-    let identity = if architecture == Some(Architecture::Intel) {
-        let expected = expected_executable.as_deref();
-        let start = std::time::Instant::now();
-        loop {
-            let identity = inspect(game.id());
-            if identity
-                .as_ref()
-                .is_some_and(|i| Some(std::path::Path::new(&i.executable)) == expected)
-            {
-                break identity;
-            }
-            if game.try_wait().is_ok_and(|status| status.is_some())
-                || start.elapsed() > Duration::from_secs(1)
-            {
-                break None;
-            }
-            std::thread::sleep(Duration::from_millis(5));
-        }
+    let identity = if intel {
+        wait_identity(&mut game, &target.executable, inspect).await
     } else {
-        inspect(game.id())
+        inspect(game_pid)
     };
     let started = matches!(execution, Execution::Started);
     if started {
-        let _ = runtime.started(game.id());
+        // Revoke uses this same gate. Its permanent stop fences a delayed exec.
+        let _admission = shared.admission.lock().unwrap();
+        shared.presence.start(runtime.clone());
+        let _ = runtime.started(game_pid);
         shared.update(|s| {
             if identity.is_some() {
                 s.starting = None;
@@ -514,8 +549,9 @@ fn run_game(
             }
         })
     };
-    // Parentage supplies the actual exit status; no PID lookup decides lifetime.
-    let exit = wait_for_exit(&mut game);
+    // Both stores await the same parent-owned exit while network tasks progress.
+    let exit = wait_for_exit(&mut game).await;
+    shared.presence.stop();
     runtime.stopped(Some(exit));
     let _ = observation.join();
     if let Some(cloud) = cloud {
@@ -524,7 +560,7 @@ fn run_game(
             s.host = HostState::Stopped;
             s.exit_code = Some(exit);
         });
-        cloud.finished();
+        cloud.finished().await;
     }
     shared.update(|s| {
         s.phase = if started {
@@ -540,63 +576,6 @@ fn run_game(
         }
     });
     Ok(())
-}
-
-enum Execution {
-    Started,
-    Failed,
-    ExitedUnconfirmed,
-}
-
-fn wait_for_exit(child: &mut std::process::Child) -> i32 {
-    loop {
-        match child.wait() {
-            Ok(status) => return status.code().unwrap_or(-1),
-            Err(_) => std::thread::sleep(Duration::from_millis(100)),
-        }
-    }
-}
-
-fn confirm_execution(
-    child: &mut std::process::Child,
-    executable: &std::path::Path,
-    inspect: Inspect,
-) -> Execution {
-    let expected = executable.canonicalize().ok();
-    let observing = std::time::Instant::now();
-    let (send, receive) = std::sync::mpsc::sync_channel(1);
-    if let Some(output) = child.stdout.take() {
-        std::thread::spawn(move || {
-            let mut bytes = Vec::new();
-            let result = output.take(64).read_to_end(&mut bytes).map(|_| bytes);
-            let _ = send.send(result);
-        });
-    }
-    // The signed helper retains a CLOEXEC error pipe while replacing itself.
-    // An unknown reply or observation failure never abandons the live child.
-    loop {
-        match receive.recv_timeout(Duration::from_millis(20)) {
-            Ok(Ok(bytes)) if bytes.is_empty() => return Execution::Started,
-            Ok(Ok(bytes)) if bytes == b"exec-failed\n" => return Execution::Failed,
-            _ => {}
-        }
-        if observing.elapsed() >= Duration::from_secs(3)
-            && inspect(child.id())
-                .is_some_and(|i| Some(std::path::Path::new(&i.executable)) == expected.as_deref())
-        {
-            return Execution::Started;
-        }
-        if child.try_wait().is_ok_and(|status| status.is_some()) {
-            // Give the reader the final closed pipe without mistaking its
-            // scheduling delay for a failed very short game.
-            return match receive.recv_timeout(Duration::from_millis(100)) {
-                Ok(Ok(bytes)) if bytes.is_empty() => Execution::Started,
-                Ok(Ok(bytes)) if bytes == b"exec-failed\n" => Execution::Failed,
-                _ => Execution::ExitedUnconfirmed,
-            };
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
 }
 
 fn listen(listener: UnixListener, shared: Arc<Shared>, finished: Arc<AtomicBool>) {
@@ -656,7 +635,7 @@ fn respond(mut stream: UnixStream, shared: &Shared) -> Result<(), Error> {
             let preparing = !state.spawned;
             if preparing {
                 shared.launch.cancel();
-                shared.changed.notify_all();
+                shared.notify_changed();
             }
             drop(state);
             if preparing {
@@ -685,9 +664,10 @@ fn respond(mut stream: UnixStream, shared: &Shared) -> Result<(), Error> {
             let preparing = !state.spawned;
             if preparing {
                 shared.launch.cancel();
-                shared.changed.notify_all();
+                shared.notify_changed();
             }
             drop(state);
+            shared.presence.stop();
             shared.cloud.revoke(account_id)?;
         }
         Command::ResumeAfterRosetta {
@@ -699,18 +679,18 @@ fn respond(mut stream: UnixStream, shared: &Shared) -> Result<(), Error> {
                 let state = shared.state.lock().unwrap();
                 if state.snapshot.id != id
                     || state.snapshot.account_id != account_id
-                    || state.snapshot.rosetta.as_ref().map(|r| r.decision_id) != Some(decision_id)
+                    || state.snapshot.rosetta != Some(RosettaRequest { decision_id })
                     || state.spawned
                     || shared.launch.cancelled.load(Ordering::Acquire)
                 {
                     return Err(Error::InvalidSession);
                 }
             }
-            let available = (shared.probe_rosetta)(&shared.rosetta_helper)?;
+            let available = shared.rosetta.available()?;
             let _admission = shared.admission.lock().unwrap();
             let state = shared.state.lock().unwrap();
             if shared.launch.cancelled.load(Ordering::Acquire)
-                || state.snapshot.rosetta.as_ref().map(|r| r.decision_id) != Some(decision_id)
+                || state.snapshot.rosetta != Some(RosettaRequest { decision_id })
             {
                 return Err(Error::InvalidSession);
             }

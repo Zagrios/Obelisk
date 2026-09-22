@@ -9348,7 +9348,7 @@
         }
       }
     },
-    "ui.steam.rosetta.title": {
+    "ui.rosetta.title": {
       "extractionState": "manual",
       "localizations": {
         "en": {
@@ -9365,7 +9365,7 @@
         }
       }
     },
-    "ui.steam.rosetta.message": {
+    "ui.rosetta.message": {
       "extractionState": "manual",
       "localizations": {
         "en": {
@@ -9382,7 +9382,7 @@
         }
       }
     },
-    "ui.steam.rosetta.install": {
+    "ui.rosetta.install": {
       "extractionState": "manual",
       "localizations": {
         "en": {
@@ -9399,7 +9399,7 @@
         }
       }
     },
-    "ui.steam.rosetta.installing": {
+    "ui.rosetta.installing": {
       "extractionState": "manual",
       "localizations": {
         "en": {
@@ -9416,7 +9416,7 @@
         }
       }
     },
-    "ui.steam.rosetta.failed": {
+    "ui.rosetta.failed": {
       "extractionState": "manual",
       "localizations": {
         "en": {

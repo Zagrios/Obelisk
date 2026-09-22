@@ -30,7 +30,7 @@ fn run() -> i32 {
         Some("verify-runtime") if args.len() == 3 => {
             Some(forge_steam_native::abi::Engine::open(args[2].as_ref()).map(|_| ()))
         }
-        Some("engine") if args.len() == 5 => args[3]
+        Some("engine") if args.len() == 6 && args[5] == "-nofriendsui" => args[3]
             .parse::<u32>()
             .ok()
             .map(|app| host::serve(args[2].as_ref(), app, &args[4], &mut output)),

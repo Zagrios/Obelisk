@@ -6,7 +6,7 @@ mod session;
 #[cfg(test)]
 mod tests;
 
-use crate::supervisor::{Identity, StartingGame, Target};
+use crate::supervisor::{Identity, RosettaRequest, StartingGame, Target};
 pub use client::{Client, start};
 use forge_core::transfer::CancelToken;
 use serde::{Deserialize, Serialize};
@@ -34,6 +34,8 @@ pub enum Error {
     Failed,
     #[error("backend.epic.cloud.unsupported")]
     Unsupported,
+    #[error("backend.steam.runtime.rosettaUnavailable")]
+    RosettaUnavailable,
     #[error("{0}")]
     Epic(#[from] epic_kit::EpicError),
     #[error("backend.epic.cloud.storage")]
@@ -42,8 +44,12 @@ pub enum Error {
     Io(#[from] std::io::Error),
 }
 impl From<crate::Error> for Error {
-    fn from(_: crate::Error) -> Self {
-        Self::Session
+    fn from(error: crate::Error) -> Self {
+        match error {
+            crate::Error::RosettaUnavailable => Self::RosettaUnavailable,
+            crate::Error::IncompatibleArchitecture => Self::Unsupported,
+            _ => Self::Session,
+        }
     }
 }
 pub type Result<T> = std::result::Result<T, Error>;
@@ -151,6 +157,8 @@ pub struct Snapshot {
     pub supervisor: Identity,
     pub game: Option<Identity>,
     pub starting: Option<StartingGame>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rosetta: Option<RosettaRequest>,
     pub socket: PathBuf,
 }
 impl Snapshot {
@@ -211,6 +219,11 @@ enum Command {
         id: String,
         account: String,
     },
+    ResumeAfterRosetta {
+        id: String,
+        account: String,
+        decision_id: u64,
+    },
 }
 struct State {
     snapshot: Snapshot,
@@ -224,17 +237,23 @@ struct Control {
     admission: Mutex<bool>,
     cancel: CancelToken,
     root: PathBuf,
+    rosetta: crate::rosetta::Gate,
 }
 impl Control {
     fn snapshot(&self) -> Snapshot {
         self.state.lock().unwrap().snapshot.clone()
+    }
+    /// Wake both the blocking observers and the executor's Rosetta wait.
+    fn notify_changed(&self) {
+        self.changed.notify_all();
+        self.rosetta.wake();
     }
     fn update(&self, change: impl FnOnce(&mut Snapshot)) -> Result<()> {
         let mut state = self.state.lock().unwrap();
         change(&mut state.snapshot);
         state.snapshot.revision += 1;
         let result = write_snapshot(&self.root, &state.snapshot);
-        self.changed.notify_all();
+        self.notify_changed();
         result
     }
     fn fail(&self, error: &Error) -> Result<()> {
@@ -255,6 +274,7 @@ impl Control {
             }
             s.error = Some(error.to_string());
             s.allowed_choices.clear();
+            s.rosetta = None;
         })
     }
     fn phase(&self, phase: CloudPhase) -> Result<()> {

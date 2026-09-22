@@ -964,6 +964,9 @@ private final class EpicDownloadGameSession: EpicGameSession, @unchecked Sendabl
     override func choose(accountId: String, decisionId: UInt64, choice: EpicCloudChoice) async throws {
         await state.choose(choice)
     }
+    override func resumeAfterRosetta(accountId: String, decisionId: UInt64) async throws {
+        throw EpicError.Service(message: "backend.epic.cloud.invalidSession")
+    }
     override func revokeCloud(accountId: String) async throws { await state.revokeCloud(accountId: accountId) }
     override func snapshot(afterRevision: UInt64?) async throws -> EpicGameSnapshot {
         await state.snapshot(afterRevision: afterRevision)
@@ -989,7 +992,7 @@ private actor EpicDownloadGameState {
         current = EpicGameSnapshot(id: UUID().uuidString, accountId: accountId,
             namespace: configuration.namespace, appName: configuration.appName, phase: .preparing,
             cloudPhase: .checking, decisionId: 0, allowedChoices: [], error: nil, failureReason: nil, exitCode: nil,
-            revision: 1, reconnecting: false)
+            revision: 1, reconnecting: false, rosetta: nil)
     }
     func begin() async {
         beginnings += 1

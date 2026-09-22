@@ -9,7 +9,10 @@ use forge_core::{
 use serde::Deserialize;
 
 use super::{Client, Installation, download::lock_installation, endpoint, validate_identity};
-use crate::EpicError;
+use crate::{
+    EpicError,
+    friends::{Activity, publishable_text},
+};
 
 /// Receipts are small JSON documents; anything larger is not one of ours.
 const MAX_RECEIPT_BYTES: usize = 1024 * 1024;
@@ -18,6 +21,8 @@ const MAX_RECEIPT_BYTES: usize = 1024 * 1024;
 // optional ownership token must only be handed to the game being launched.
 pub struct LaunchPlan {
     pub app_name: String,
+    /// Absent when the catalog offers no publishable presence identity.
+    pub activity: Option<Activity>,
     pub platform: String,
     pub target: LaunchTarget,
     pub ownership_token: Option<Vec<u8>>,
@@ -32,7 +37,16 @@ struct ExchangeCode {
 #[serde(rename_all = "camelCase")]
 struct LaunchCatalogItem {
     #[serde(default)]
+    title: serde_json::Value,
+    #[serde(default)]
     custom_attributes: BTreeMap<String, serde_json::Value>,
+}
+
+struct LaunchCredentials {
+    exchange: String,
+    additional: String,
+    ownership_token: Option<Vec<u8>>,
+    activity: Option<Activity>,
 }
 
 impl LaunchCatalogItem {
@@ -99,7 +113,7 @@ impl Client {
         )
         .map_err(|error| launch_error(error.key_suffix()))?;
         let account_id = credentials.account_id.as_str();
-        let (exchange, additional, ownership_token) = self
+        let launch = self
             .with_access_token(|token| async move {
                 self.launch_credentials(&token, account_id, namespace, catalog_item_id, app_name)
                     .await
@@ -111,12 +125,12 @@ impl Client {
             return Err(EpicError::Unauthorized);
         }
         target.arguments.extend(
-            launch::parse_arguments(&additional, native_platform)
+            launch::parse_arguments(&launch.additional, native_platform)
                 .map_err(|error| launch_error(error.key_suffix()))?,
         );
         target.arguments.extend([
             "-AUTH_LOGIN=unused".into(),
-            format!("-AUTH_PASSWORD={exchange}"),
+            format!("-AUTH_PASSWORD={}", launch.exchange),
             "-AUTH_TYPE=exchangecode".into(),
             format!("-epicapp={app_name}"),
             "-epicenv=Prod".into(),
@@ -136,9 +150,10 @@ impl Client {
         }
         Ok(LaunchPlan {
             app_name: app_name.into(),
+            activity: launch.activity,
             platform: platform.into(),
             target,
-            ownership_token,
+            ownership_token: launch.ownership_token,
         })
     }
 
@@ -149,7 +164,7 @@ impl Client {
         namespace: &str,
         catalog_item_id: &str,
         app_name: &str,
-    ) -> Result<(String, String, Option<Vec<u8>>), EpicError> {
+    ) -> Result<LaunchCredentials, EpicError> {
         self.ensure_owned(access_token, namespace, catalog_item_id, app_name)
             .await?;
         let mut url = endpoint(
@@ -199,7 +214,26 @@ impl Client {
         {
             return Err(EpicError::Protocol);
         }
-        Ok((exchange.code, additional, ownership_token))
+        // Presence metadata is optional and must never prevent a valid launch.
+        // An unusable title still publishes the activity, without a name.
+        let name = item
+            .title
+            .as_str()
+            .filter(|title| publishable_text(title, Activity::NAME_MAX))
+            .map(str::to_owned);
+        let activity = item.attribute("PresenceId").ok().and_then(|value| {
+            let id = value.unwrap_or(namespace);
+            (publishable_text(id, Activity::ID_MAX) && !id.starts_with("p-")).then(|| Activity {
+                id: id.to_owned(),
+                name,
+            })
+        });
+        Ok(LaunchCredentials {
+            exchange: exchange.code,
+            additional,
+            ownership_token,
+            activity,
+        })
     }
 }
 

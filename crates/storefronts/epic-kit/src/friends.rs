@@ -41,6 +41,23 @@ pub struct Activity {
     pub id: String,
     pub name: Option<String>,
 }
+impl Activity {
+    /// Epic's payload bounds for an activity this account may publish.
+    pub(crate) const ID_MAX: usize = 1024;
+    pub(crate) const NAME_MAX: usize = 4096;
+    pub(crate) fn publishable(&self) -> bool {
+        publishable_text(&self.id, Self::ID_MAX)
+            && self
+                .name
+                .as_deref()
+                .is_none_or(|name| publishable_text(name, Self::NAME_MAX))
+    }
+}
+/// Shared by the launch catalog reader and the presence API guard, so a bound
+/// can never be tightened on one side only.
+pub(crate) fn publishable_text(value: &str, max: usize) -> bool {
+    !value.trim().is_empty() && value.len() <= max && !value.chars().any(char::is_control)
+}
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Friend {
     pub account_id: String,
@@ -108,7 +125,7 @@ struct Blocked {
     #[serde(rename = "accountId")]
     account_id: String,
 }
-fn text(value: &Value) -> Option<String> {
+pub(crate) fn text(value: &Value) -> Option<String> {
     value
         .as_str()
         .filter(|s| !s.trim().is_empty() && s.len() <= 4096)

@@ -11,9 +11,10 @@ use std::{
         },
     },
     path::Path,
-    process::{Child, Command as Process, Stdio},
+    process::{Command as Process, Stdio},
     sync::atomic::{AtomicBool, Ordering},
 };
+use tokio::process::Child;
 
 pub fn serve(input: impl Read, mut output: impl Write, inspect: Inspect) -> Result<()> {
     let request: Request = storage::packet(input)?;
@@ -54,6 +55,7 @@ pub fn serve(input: impl Read, mut output: impl Write, inspect: Inspect) -> Resu
                 supervisor,
                 game: None,
                 starting: None,
+                rosetta: None,
                 socket,
             },
             choice: None,
@@ -63,6 +65,10 @@ pub fn serve(input: impl Read, mut output: impl Write, inspect: Inspect) -> Resu
         changed: Condvar::new(),
         cancel: CancelToken::new(),
         root: request.config.session_directory.clone(),
+        rosetta: crate::rosetta::Gate::new(
+            crate::rosetta::helper(request.config.helper.parent().ok_or(Error::Session)?),
+            crate::architecture::rosetta_available,
+        ),
     });
     write_snapshot(&control.root, &control.snapshot())?;
     // Persisted ownership precedes acknowledgement. The request pipe can now go away.
@@ -88,10 +94,7 @@ pub fn serve(input: impl Read, mut output: impl Write, inspect: Inspect) -> Resu
             }
         }
     });
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()?;
-    let result = runtime.block_on(run(request, Arc::clone(&control), inspect));
+    let result = crate::executor()?.block_on(run(request, Arc::clone(&control), inspect));
     if let Err(error) = &result {
         let _ = control.fail(error);
     }
@@ -154,8 +157,12 @@ async fn run_authenticated(
     }
     control.check()?;
     let config = &request.config;
-    let plan = api
-        .launch_plan(
+    let PreparedGame {
+        target,
+        activity,
+        _ownership,
+    } = prepare_game(config, control, || async {
+        api.launch_plan(
             &config.namespace,
             &config.catalog_item_id,
             &config.app_name,
@@ -163,23 +170,30 @@ async fn run_authenticated(
             &config.install,
             &config.language,
         )
-        .await?;
+        .await
+        .map_err(Into::into)
+    })
+    .await?;
+    let executable = target.executable.clone();
     control.check()?;
-    let (target, _ownership) = native_target(&plan, config)?;
-    let launched = {
-        let mut admitted = control.admission.lock().unwrap();
-        control.check()?;
-        if let Some(cloud) = &mut cloud {
-            cloud.started(&request.id)?;
-        }
-        let result = spawn_game(&config.helper, target, control, inspect);
-        if result.is_ok() {
-            *admitted = true;
-        }
-        result
-    };
-    let mut game = match launched {
-        Ok(child) => child,
+    if let Some(cloud) = &mut cloud {
+        cloud.started(&request.id)?;
+    }
+    let exit = async {
+        let mut game = spawn_game(&config.helper, target, control, inspect).await?;
+        wait_for_game(&mut game, control, inspect, &executable, |active| {
+            if active && let Some(activity) = &activity {
+                // Social availability must not change the game's lifetime.
+                let _ = api.start_game_presence(activity.clone());
+            } else {
+                api.stop_friends();
+            }
+        })
+        .await
+    }
+    .await;
+    let exit = match exit {
+        Ok(exit) => exit,
         Err(error) => {
             if let Some(cloud) = &mut cloud {
                 cloud.aborted(&request.id)?;
@@ -187,23 +201,9 @@ async fn run_authenticated(
             return Err(error);
         }
     };
-    // Child::wait is the authoritative termination boundary, independently of UI.
-    // Keep polling only to permit the async runtime's I/O and account cancellation.
-    let exit = loop {
-        if let Some(status) = game.try_wait()? {
-            break status.code();
-        }
-        if let Ok(Some(identity)) = inspect(game.id()) {
-            let snapshot = control.snapshot();
-            if snapshot.game.as_ref() != Some(&identity) {
-                let _ = control.update(|s| s.game = Some(identity));
-            }
-        }
-        tokio::time::sleep(Duration::from_millis(250)).await;
-    };
     control.update(|s| {
         s.phase = Phase::Finalizing;
-        s.exit_code = exit;
+        s.exit_code = Some(exit);
         s.game = None;
         s.starting = None;
     })?;
@@ -215,6 +215,137 @@ async fn run_authenticated(
         s.allowed_choices.clear();
     })?;
     Ok(())
+}
+
+pub(super) struct PreparedGame {
+    pub(super) target: Target,
+    activity: Option<epic_kit::friends::Activity>,
+    _ownership: Option<tempfile::TempDir>,
+}
+
+pub(super) async fn prepare_game<F, Fut>(
+    config: &Configuration,
+    control: &Control,
+    mut prepare: F,
+) -> Result<PreparedGame>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<epic_kit::client::LaunchPlan>>,
+{
+    let mut refreshed = false;
+    loop {
+        control.check()?;
+        let plan = prepare().await?;
+        control.check()?;
+        let (target, architecture, ownership) = native_target(&plan, config)?;
+        if architecture == crate::architecture::Architecture::Intel {
+            if refreshed {
+                // A second installation interruption cannot loop over fresh
+                // exchange codes indefinitely. Fail if availability changed.
+                if !control.rosetta.probe().await? {
+                    return Err(Error::RosettaUnavailable);
+                }
+                control.check()?;
+            } else if wait_for_rosetta(control).await? {
+                // Rosetta installation can outlive the game's exchange code.
+                // Drop the old ownership token and obtain a fresh launch plan.
+                refreshed = true;
+                continue;
+            }
+        }
+        return Ok(PreparedGame {
+            target,
+            activity: plan.activity,
+            _ownership: ownership,
+        });
+    }
+}
+
+pub(super) async fn wait_for_rosetta(control: &Control) -> Result<bool> {
+    control
+        .rosetta
+        .wait(
+            || {
+                let _admitted = control.admission.lock().unwrap();
+                control.check()?;
+                control.update(|s| {
+                    s.decision_id += 1;
+                    s.rosetta = Some(RosettaRequest {
+                        decision_id: s.decision_id,
+                    });
+                })
+            },
+            || {
+                control.check()?;
+                Ok(control.snapshot().rosetta.is_some())
+            },
+        )
+        .await
+}
+
+pub(super) async fn wait_for_game(
+    game: &mut Child,
+    control: &Control,
+    inspect: Inspect,
+    executable: &Path,
+    publish: impl FnMut(bool),
+) -> Result<i32> {
+    let mut presence = Advertised {
+        publish,
+        active: false,
+    };
+    let inspect = |pid| inspect(pid).ok().flatten();
+    let execution = crate::game_session::confirm_execution(game, executable, inspect).await;
+    if execution == crate::game_session::Execution::Started {
+        if let Some(identity) = crate::game_session::wait_identity(game, executable, inspect).await
+        {
+            let _ = control.update(|s| {
+                s.game = Some(identity);
+                s.starting = None;
+            });
+        }
+        // Share Revoke's admission boundary: an acknowledged sign-out cannot
+        // be followed by a new presence connection.
+        let _admitted = control.admission.lock().unwrap();
+        presence.set(!control.cancel.is_cancelled());
+    }
+    let exit = tokio::select! {
+        biased;
+        _ = control.cancel.cancelled() => {
+            presence.set(false);
+            crate::game_session::wait_for_exit(game).await
+        }
+        exit = crate::game_session::wait_for_exit(game) => exit,
+    };
+    if execution != crate::game_session::Execution::Started {
+        control.update(|s| {
+            s.game = None;
+            s.starting = None;
+            s.exit_code = Some(exit);
+        })?;
+        return Err(Error::Failed);
+    }
+    Ok(exit)
+}
+
+/// The activity advertised for a running game. Dropping it withdraws the activity.
+struct Advertised<P: FnMut(bool)> {
+    publish: P,
+    active: bool,
+}
+impl<P: FnMut(bool)> Advertised<P> {
+    /// Publish only the edges, so the caller can drive this from a level signal.
+    fn set(&mut self, active: bool) {
+        if self.active != active {
+            self.active = active;
+            (self.publish)(active);
+        }
+    }
+}
+impl<P: FnMut(bool)> Drop for Advertised<P> {
+    fn drop(&mut self) {
+        self.set(false);
+    }
 }
 
 pub(super) fn handle(mut stream: UnixStream, control: &Control) -> Result<()> {
@@ -229,7 +360,7 @@ pub(super) fn handle(mut stream: UnixStream, control: &Control) -> Result<()> {
             }
             control.check()?;
             state.begun = true;
-            control.changed.notify_all();
+            control.notify_changed();
         }
         Command::Observe { id, after } => {
             let mut state = control.state.lock().unwrap();
@@ -254,7 +385,7 @@ pub(super) fn handle(mut stream: UnixStream, control: &Control) -> Result<()> {
             }
             if !*admitted {
                 control.cancel.cancel();
-                control.changed.notify_all();
+                control.notify_changed();
             }
         }
         Command::Revoke { id, account } => {
@@ -266,7 +397,7 @@ pub(super) fn handle(mut stream: UnixStream, control: &Control) -> Result<()> {
                 return Err(Error::Session);
             }
             control.cancel.cancel();
-            control.changed.notify_all();
+            control.notify_changed();
         }
         Command::Choose {
             id,
@@ -284,17 +415,51 @@ pub(super) fn handle(mut stream: UnixStream, control: &Control) -> Result<()> {
                 return Err(Error::Session);
             }
             state.choice = Some(choice);
-            control.changed.notify_all();
+            control.notify_changed();
+        }
+        Command::ResumeAfterRosetta {
+            id,
+            account,
+            decision_id,
+        } => {
+            {
+                let state = control.state.lock().unwrap();
+                if state.snapshot.id != id
+                    || state.snapshot.account_id != account
+                    || state.snapshot.rosetta != Some(RosettaRequest { decision_id })
+                    || state.snapshot.phase != Phase::Preparing
+                    || control.cancel.is_cancelled()
+                {
+                    return Err(Error::Session);
+                }
+            }
+            let available = control.rosetta.available()?;
+            let admitted = control.admission.lock().unwrap();
+            let state = control.state.lock().unwrap();
+            if *admitted
+                || control.cancel.is_cancelled()
+                || state.snapshot.rosetta != Some(RosettaRequest { decision_id })
+            {
+                return Err(Error::Session);
+            }
+            drop(state);
+            if available {
+                control.update(|s| s.rosetta = None)?;
+            }
         }
     }
     storage::send(&mut stream, &control.snapshot())?;
     Ok(())
 }
 
-fn native_target(
+pub(super) fn native_target(
     plan: &epic_kit::client::LaunchPlan,
     config: &Configuration,
-) -> Result<(Target, Option<tempfile::TempDir>)> {
+) -> Result<(
+    Target,
+    crate::architecture::Architecture,
+    Option<tempfile::TempDir>,
+)> {
     let root = config.install.canonicalize()?;
     let mut executable = Path::new(&plan.target.executable).canonicalize()?;
     if plan.target.is_application_bundle {
@@ -325,19 +490,7 @@ fn native_target(
     }
     // The installer may omit execute permission for a Mach-O. Match the shared
     // native launcher: repair only the selected executable after verification.
-    let mut header = [0u8; 4];
-    std::fs::File::open(&executable)?.read_exact(&mut header)?;
-    if !matches!(
-        header,
-        [0xcf, 0xfa, 0xed, 0xfe]
-            | [0xce, 0xfa, 0xed, 0xfe]
-            | [0xfe, 0xed, 0xfa, 0xcf]
-            | [0xfe, 0xed, 0xfa, 0xce]
-            | [0xca, 0xfe, 0xba, 0xbe]
-            | [0xca, 0xfe, 0xba, 0xbf]
-    ) {
-        return Err(Error::Unsupported);
-    }
+    let architecture = crate::architecture::Architecture::preferred(&executable)?;
     let metadata = std::fs::metadata(&executable)?;
     if metadata.permissions().mode() & 0o100 == 0 {
         std::fs::set_permissions(
@@ -379,44 +532,54 @@ fn native_target(
             working_directory: plan.target.working_directory.clone().into(),
             environment,
         },
+        architecture,
         ownership,
     ))
 }
 
-pub(super) fn spawn_game(
+pub(super) async fn spawn_game(
     helper: &Path,
     target: Target,
     control: &Control,
     inspect: Inspect,
 ) -> Result<Child> {
-    control.check()?;
-    let (mut pipe, child_pipe) = UnixStream::pair()?;
-    pipe.set_read_timeout(Some(Duration::from_secs(5)))?;
-    pipe.set_write_timeout(Some(Duration::from_secs(5)))?;
-    let mut child = Process::new(helper)
-        .arg("epic-exec")
-        .env_clear()
-        .stdin(Stdio::from(OwnedFd::from(child_pipe)))
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()?;
-    let admission = (|| {
-        let identity = inspect(child.id())?.ok_or(Error::Session)?;
-        let starting = StartingGame::Process {
-            identity,
-            executable: target.executable.clone(),
-        };
-        control.update(|s| {
-            s.starting = Some(starting);
-            s.phase = Phase::Running;
-        })?;
-        // The helper cannot exec until its kernel identity and destination are durable.
-        storage::send(&mut pipe, &target)?;
-        Ok(())
-    })();
+    let (mut child, admission) = {
+        let mut admitted = control.admission.lock().unwrap();
+        control.check()?;
+        let (mut pipe, child_pipe) = UnixStream::pair()?;
+        pipe.set_read_timeout(Some(Duration::from_secs(5)))?;
+        pipe.set_write_timeout(Some(Duration::from_secs(5)))?;
+        let mut command = Process::new(helper);
+        command
+            .arg("epic-exec")
+            .env_clear()
+            .stdin(Stdio::from(OwnedFd::from(child_pipe)))
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        let child = tokio::process::Command::from(command).spawn()?;
+        let admission = (|| {
+            let identity = inspect(child.id().ok_or(Error::Session)?)?.ok_or(Error::Session)?;
+            let starting = StartingGame::Process {
+                identity,
+                executable: target.executable.clone(),
+            };
+            control.update(|s| {
+                s.starting = Some(starting);
+                s.phase = Phase::Running;
+            })?;
+            // The helper cannot exec until its kernel identity and destination are durable.
+            storage::send(&mut pipe, &target)?;
+            Ok(())
+        })();
+        if admission.is_ok() {
+            *admitted = true;
+        }
+        // EOF closes the exec gate on failure before awaiting child termination.
+        (child, admission)
+    };
     if let Err(error) = admission {
-        drop(pipe);
-        let _ = child.wait();
+        crate::game_session::wait_for_exit(&mut child).await;
+        let _ = control.update(|s| s.starting = None);
         return Err(error);
     }
     Ok(child)
@@ -425,18 +588,20 @@ pub(super) fn spawn_game(
 /// Native helper entry point. The parent first persists this process's birth
 /// identity, then supplies the target through stdin. EOF before a target exits.
 pub fn exec_game(input: impl Read) -> Result<()> {
-    let target: Target = storage::packet(input)?;
-    if !target.executable.is_absolute() || !target.working_directory.is_absolute() {
-        return Err(Error::Session);
-    }
-    let error = Process::new(target.executable)
-        .args(target.arguments)
-        .current_dir(target.working_directory)
-        .env_clear()
-        .envs(target.environment)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .exec();
-    Err(Error::Io(error))
+    crate::protocol::exec_or_report(|| {
+        let target: Target = storage::packet(input)?;
+        if !target.executable.is_absolute() || !target.working_directory.is_absolute() {
+            return Err(Error::Session);
+        }
+        let error = Process::new(target.executable)
+            .args(target.arguments)
+            .current_dir(target.working_directory)
+            .env_clear()
+            .envs(target.environment)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .exec();
+        Err(Error::Io(error))
+    })
 }

@@ -400,6 +400,112 @@ final class EpicCloudTests: XCTestCase {
         XCTAssertNil(model.cloud.message(for: owned.libraryID))
     }
 
+    func testEpicRosettaUsesSharedInstallationAndWaitsForSupervisorReadiness() async throws {
+        let game = EpicCloudGameFixture(phase: .preparing, cloudPhase: .ready)
+        await game.requireRosetta(decisionId: 17)
+        await game.failNextRosettaResumes(2)
+        let sessions = EpicGameSessions(recoverSession: { nil })
+        var installations = 0
+        let model = EpicRosettaModel(sessions: sessions, install: { installations += 1 },
+            readinessAttempts: 4, readinessDelay: { try await Task.sleep(for: .milliseconds(5)) })
+        model.connect(accountId: "account")
+        let task = try XCTUnwrap(sessions.launch(libraryID: "sandbox:game", accountId: "account", prepare: { game }))
+        try await eventually { model.prompt != nil }
+        model.install()
+        try await eventually { model.prompt == nil }
+        let resumes = await game.rosettaResumes
+        let checks = await game.rosettaChecks
+        XCTAssertEqual(installations, 1)
+        XCTAssertEqual(checks, 3)
+        XCTAssertEqual(resumes, [17])
+        await game.update(phase: .finished)
+        await task.value
+    }
+
+    func testEpicRosettaRejectsStaleSessionAccountAndDecision() async throws {
+        let game = EpicCloudGameFixture(phase: .preparing, cloudPhase: .ready)
+        await game.requireRosetta(decisionId: 17)
+        let sessions = EpicGameSessions(recoverSession: { nil })
+        let task = try XCTUnwrap(sessions.launch(libraryID: "sandbox:game", accountId: "account", prepare: { game }))
+        try await eventually { sessions.rosettaPrompt(accountId: "account") != nil }
+        let request = try XCTUnwrap(sessions.rosettaPrompt(accountId: "account"))
+        for obsolete in [EpicGameSessions.RosettaPrompt(id: "old-session", accountId: "account", decisionId: 17),
+                         .init(id: request.id, accountId: "other-account", decisionId: 17),
+                         .init(id: request.id, accountId: "account", decisionId: 16)] {
+            do {
+                try await sessions.resumeAfterRosetta(obsolete)
+                XCTFail("An obsolete Rosetta decision must not reach the supervisor")
+            } catch { }
+            sessions.cancelRosetta(obsolete)
+        }
+        let checks = await game.rosettaChecks
+        XCTAssertEqual(checks, 0)
+        XCTAssertEqual(game.signals.cancellations, 0)
+        XCTAssertEqual(sessions.rosettaPrompt(accountId: "account"), request)
+        await game.update(phase: .finished)
+        await task.value
+    }
+
+    func testEpicRosettaCancellationHidesPromptUntilSupervisorReleasesSession() async throws {
+        let game = EpicCloudGameFixture(phase: .preparing, cloudPhase: .ready)
+        await game.requireRosetta(decisionId: 17)
+        let sessions = EpicGameSessions(recoverSession: { nil })
+        let model = EpicRosettaModel(sessions: sessions, install: { XCTFail("Cancellation must not install") })
+        model.connect(accountId: "account")
+        let task = try XCTUnwrap(sessions.launch(libraryID: "sandbox:game", accountId: "account", prepare: { game }))
+        try await eventually { model.prompt != nil }
+        model.cancel()
+        try await eventually { game.signals.cancellations == 1 }
+        XCTAssertNil(model.prompt)
+        XCTAssertTrue(sessions.isBusy)
+        await game.update(phase: .failed, error: "cancelled", failureReason: .cancelled)
+        await task.value
+        XCTAssertFalse(sessions.isBusy)
+        XCTAssertNil(sessions.recoveryError)
+    }
+
+    func testEpicRosettaAccountChangeCancelsInstallationAndPreventsResume() async throws {
+        let game = EpicCloudGameFixture(phase: .preparing, cloudPhase: .ready)
+        await game.requireRosetta(decisionId: 17)
+        let sessions = EpicGameSessions(recoverSession: { nil })
+        let gate = EpicCloudPreparationGate()
+        let model = EpicRosettaModel(sessions: sessions, install: {}, readinessDelay: { await gate.wait() })
+        model.connect(accountId: "account")
+        let task = try XCTUnwrap(sessions.launch(libraryID: "sandbox:game", accountId: "account", prepare: { game }))
+        try await eventually { model.prompt != nil }
+        model.install()
+        try await eventually { await gate.waiting }
+        model.connect(accountId: "other-account")
+        await gate.release()
+        try await eventually { game.signals.cancellations == 1 }
+        let checks = await game.rosettaChecks
+        XCTAssertEqual(checks, 0)
+        XCTAssertNil(model.prompt)
+        await game.update(phase: .failed, error: "cancelled", failureReason: .cancelled)
+        await task.value
+    }
+
+    func testEpicModelConnectsAndDisconnectsSharedRosettaPresentation() async throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: "ForgeEpicRosetta-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let credentials = EpicCredentials(accountId: "account", displayName: "Fixture", refreshToken: "fixture")
+        let account = EpicTestSession(credentials: credentials, games: [])
+        let game = EpicCloudGameFixture(phase: .preparing, cloudPhase: .ready)
+        await game.requireRosetta(decisionId: 17)
+        let sessions = EpicGameSessions(recoverSession: { nil })
+        let model = EpicModel(directory: directory, keychain: EpicMemoryStore(credentials), restore: { _ in account },
+                              gameSessions: sessions)
+        await model.start()
+        let task = try XCTUnwrap(sessions.launch(libraryID: "sandbox:game", accountId: "account", prepare: { game }))
+        try await eventually { model.rosetta.prompt != nil }
+        model.signOut()
+        XCTAssertNil(model.rosetta.prompt)
+        try await eventually { game.signals.cancellations >= 1 }
+        XCTAssertTrue(sessions.isBusy)
+        await game.update(phase: .failed, error: "cancelled", failureReason: .cancelled)
+        await task.value
+    }
+
     private func makeCloud(_ sessions: EpicGameSessions) -> EpicCloudModel {
         EpicCloudModel(root: "/fixture-cloud", sessionDirectory: "/fixture-sessions", sessions: sessions,
                        loadPending: { _, _ in [] })
@@ -436,6 +542,9 @@ private actor EpicCloudGameFixture: EpicGameSessionProtocol {
     private(set) var choices: [Choice] = []
     private(set) var revocations: [String] = []
     private(set) var beginnings = 0
+    private(set) var rosettaChecks = 0
+    private(set) var rosettaResumes: [UInt64] = []
+    private var unavailableAttempts = 0
     private var rejectsRevocation = false
     private var current: EpicGameSnapshot
     private var waiting: CheckedContinuation<EpicGameSnapshot, Error>?
@@ -444,7 +553,7 @@ private actor EpicCloudGameFixture: EpicGameSessionProtocol {
     init(phase: EpicGamePhase, cloudPhase: EpicCloudPhase) {
         current = EpicGameSnapshot(id: UUID().uuidString, accountId: "account", namespace: "sandbox", appName: "game",
             phase: phase, cloudPhase: cloudPhase, decisionId: 1, allowedChoices: [.local, .cloud, .cancel],
-            error: nil, failureReason: nil, exitCode: nil, revision: 1, reconnecting: false)
+            error: nil, failureReason: nil, exitCode: nil, revision: 1, reconnecting: false, rosetta: nil)
     }
     nonisolated func cancelPreparation() { signals.cancel() }
     func begin() async throws { beginnings += 1 }
@@ -455,6 +564,22 @@ private actor EpicCloudGameFixture: EpicGameSessionProtocol {
     }
     func choose(accountId: String, decisionId: UInt64, choice: EpicCloudChoice) async throws {
         choices.append(Choice(accountId: accountId, decisionId: decisionId, choice: choice))
+    }
+    func requireRosetta(decisionId: UInt64) {
+        current.rosetta = RosettaRequest(decisionId: decisionId)
+        update()
+    }
+    func failNextRosettaResumes(_ attempts: Int) { unavailableAttempts = attempts }
+    func resumeAfterRosetta(accountId: String, decisionId: UInt64) async throws {
+        rosettaChecks += 1
+        if unavailableAttempts > 0 {
+            unavailableAttempts -= 1
+            throw EpicError.Service(message: EpicGameSessions.rosettaUnavailableKey)
+        }
+        guard current.accountId == accountId, current.rosetta?.decisionId == decisionId else {
+            throw EpicError.Service(message: "backend.epic.cloud.invalidSession")
+        }
+        rosettaResumes.append(decisionId)
     }
     func snapshot(afterRevision: UInt64?) async throws -> EpicGameSnapshot {
         if afterRevision != current.revision { return current }

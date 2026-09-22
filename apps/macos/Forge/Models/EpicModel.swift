@@ -31,6 +31,7 @@ final class EpicModel {
 
     let gameSessions: EpicGameSessions
     let cloud: EpicCloudModel
+    let rosetta: EpicRosettaModel
 
     let achievements = GameAchievementsModel(storeID: "epic", describe: EpicModel.message)
     private(set) var selectedGame: EpicGame?
@@ -109,6 +110,7 @@ final class EpicModel {
         self.restoreSession = restore
         self.launchLanguage = language
         self.gameSessions = gameSessions
+        self.rosetta = EpicRosettaModel(sessions: gameSessions)
         self.cloud = EpicCloudModel(root: SteamGameLauncher.cloudDirectory(in: directory),
                                     sessionDirectory: EpicGameSessions.sessionDirectory(in: directory),
                                     sessions: gameSessions)
@@ -344,6 +346,7 @@ final class EpicModel {
             isLoadingGames = true
             await rememberedSession.activate(connected, accountID: credentials.accountId)
             guard current == generation else { return }
+            rosetta.connect(accountId: credentials.accountId)
             cloud.connect(accountId: credentials.accountId) { [weak self] configuration in
                 guard let self, current == self.generation else { throw CancellationError() }
                 return try await self.supervise(on: connected, accountId: credentials.accountId, generation: current) {
@@ -398,6 +401,7 @@ final class EpicModel {
         generation += 1
         let current = generation
         let disconnected = session
+        rosetta.connect(accountId: nil)
         cloud.signedOut()
         let removal = rememberedSession.forget()
         friendsObservationGeneration += 1

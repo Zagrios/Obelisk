@@ -78,12 +78,14 @@ fn fixture() {
         Ok(runtime)
     };
     if let Some(root) = std::env::var_os("FORGE_CLOUD_LIFECYCLE_FIXTURE") {
+        let root = PathBuf::from(root);
         server::serve_with_cloud(
             std::io::stdin().lock(),
             std::io::stderr().lock(),
             identity,
             prepare,
-            Box::new(CloudRecorder { root: root.into() }),
+            Box::new(CloudRecorder { root: root.clone() }),
+            recorded_presence(Some(root)),
         )
         .unwrap();
     } else {
@@ -92,6 +94,7 @@ fn fixture() {
             std::io::stderr().lock(),
             identity,
             prepare,
+            recorded_presence(std::env::var_os("FORGE_GAME_PRESENCE_FIXTURE").map(PathBuf::from)),
         )
         .unwrap();
     }
@@ -101,12 +104,33 @@ struct CloudRecorder {
     root: PathBuf,
 }
 
+/// The production presence fence, publishing into `presence-events` instead of a host.
+fn recorded_presence(root: Option<PathBuf>) -> crate::presence::GamePresence {
+    crate::presence::GamePresence::new(Box::new(move |_, online| {
+        if let Some(root) = &root {
+            record_file(
+                root,
+                "presence-events",
+                if online { "start" } else { "stop" },
+            );
+        }
+    }))
+}
+
+fn presence_events(root: &Path) -> String {
+    fs::read_to_string(root.join("presence-events")).unwrap_or_default()
+}
+
 fn record(root: &Path, event: &str) {
+    record_file(root, "cloud-events", event);
+}
+
+fn record_file(root: &Path, name: &str, event: &str) {
     use std::io::Write;
     let mut file = fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(root.join("cloud-events"))
+        .open(root.join(name))
         .unwrap();
     writeln!(file, "{event}").unwrap();
     file.sync_all().unwrap();
@@ -133,33 +157,43 @@ fn fixture_pid(root: &Path, name: &str) -> u32 {
 }
 
 impl server::CloudLifecycle for CloudRecorder {
-    fn prepare(&mut self) -> Result<(), Error> {
-        assert!(!self.root.join("runtime/host-pid").exists());
-        assert!(!self.root.join("game-started").exists());
-        record(&self.root, "cloud.prepare");
-        fs::write(self.root.join("preflight-ready"), b"ready").unwrap();
-        wait_for_file(&self.root.join("release-preflight"));
-        fs::write(self.root.join("preflight-complete"), b"ready").unwrap();
-        record(&self.root, "cloud.prepared");
-        Ok(())
+    fn prepare(&mut self) -> server::Operation<'_, Result<(), Error>> {
+        Box::pin(async move {
+            assert!(presence_events(&self.root).is_empty());
+            assert!(!self.root.join("runtime/host-pid").exists());
+            assert!(!self.root.join("game-started").exists());
+            record(&self.root, "cloud.prepare");
+            fs::write(self.root.join("preflight-ready"), b"ready").unwrap();
+            wait_for_file(&self.root.join("release-preflight"));
+            fs::write(self.root.join("preflight-complete"), b"ready").unwrap();
+            record(&self.root, "cloud.prepared");
+            Ok(())
+        })
     }
 
     fn started(&mut self) -> Result<(), Error> {
+        assert!(presence_events(&self.root).is_empty());
         assert!(identity(fixture_pid(&self.root, "runtime/host-pid")).is_some());
         assert!(!self.root.join("game-started").exists());
         record(&self.root, "cloud.started");
         Ok(())
     }
 
-    fn finished(&mut self) {
-        // These are real reaped children, not simulated lifecycle booleans.
-        assert!(self.root.join("game-exited").exists());
-        assert!(identity(fixture_pid(&self.root, "game-pid")).is_none());
-        assert!(identity(fixture_pid(&self.root, "runtime/host-pid")).is_none());
-        record(&self.root, "cloud.finalizing");
-        fs::write(self.root.join("finalization-ready"), b"ready").unwrap();
-        wait_for_file(&self.root.join("release-finalization"));
-        record(&self.root, "cloud.finished");
+    fn finished(&mut self) -> server::Operation<'_, ()> {
+        Box::pin(async move {
+            assert!(matches!(
+                presence_events(&self.root).as_str(),
+                "" | "start\nstop\n"
+            ));
+            // These are real reaped children, not simulated lifecycle booleans.
+            assert!(self.root.join("game-exited").exists());
+            assert!(identity(fixture_pid(&self.root, "game-pid")).is_none());
+            assert!(identity(fixture_pid(&self.root, "runtime/host-pid")).is_none());
+            record(&self.root, "cloud.finalizing");
+            fs::write(self.root.join("finalization-ready"), b"ready").unwrap();
+            wait_for_file(&self.root.join("release-finalization"));
+            record(&self.root, "cloud.finished");
+        })
     }
 
     fn aborted(&mut self) {
@@ -202,10 +236,12 @@ fn cloud_preflight_and_detached_finalization_preserve_the_session_reservation() 
     assert!(!root.path().join("runtime/host-pid").exists());
     assert!(!root.path().join("game-started").exists());
     assert_eq!(client.snapshot(None).unwrap().phase, Phase::Preparing);
+    assert!(presence_events(root.path()).is_empty());
     fs::write(root.path().join("release-preflight"), b"go").unwrap();
     let running = until(&client, |snapshot| {
         snapshot.phase == Phase::Running && snapshot.game.is_some()
     });
+    assert_eq!(presence_events(root.path()), "start\n");
     drop(client);
     // The disposable ps adapter may report "(sh)" during exec and "/bin/sh"
     // afterwards. This check proves detachment preserves liveness, not identity.
@@ -219,6 +255,7 @@ fn cloud_preflight_and_detached_finalization_preserve_the_session_reservation() 
     assert!(!finalizing.finished());
     assert_eq!(finalizing.exit_code, Some(0));
     assert_eq!(finalizing.host, HostState::Stopped);
+    assert_eq!(presence_events(root.path()), "start\nstop\n");
     assert!(identity(running.game.as_ref().unwrap().pid).is_none());
     assert!(identity(fixture_pid(root.path(), "runtime/host-pid")).is_none());
     assert!(matches!(
@@ -312,12 +349,14 @@ fn credentials() -> Credentials {
     }
 }
 fn start_fixture(request: Request) -> Client {
+    let mut command = fixture_command();
+    command.env("FORGE_GAME_PRESENCE_FIXTURE", &request.config.home);
     client::start_command(
         Path::new("unused"),
         &credentials(),
         request,
         &AtomicBool::new(false),
-        fixture_command(),
+        command,
         probe,
     )
     .unwrap()
@@ -344,6 +383,7 @@ fn detach_recover_keeps_host_and_game_alive_then_cleans_up_without_ui() {
         .parse()
         .unwrap();
     drop(client);
+    assert_eq!(presence_events(root.path()), "start\n");
     assert!(identity(host).is_some());
     assert_eq!(identity(running.game.as_ref().unwrap().pid), running.game);
     let recovered = Client::recover_with(&root.path().join("sessions"), Path::new("unused"), probe)
@@ -372,6 +412,7 @@ fn detach_recover_keeps_host_and_game_alive_then_cleans_up_without_ui() {
         .unwrap();
     assert_eq!(final_state.exit_code, Some(0));
     assert!(!final_state.socket.exists());
+    assert_eq!(presence_events(root.path()), "start\nstop\n");
     assert!(
         !fs::read_to_string(root.path().join("sessions/session.json"))
             .unwrap()
@@ -390,6 +431,7 @@ fn preparation_cancel_and_failed_spawn_release_owner_without_running_a_game() {
         let done = until(&client, Snapshot::finished);
         assert_eq!(done.phase, Phase::Failed);
         assert!(done.game.is_none());
+        assert!(presence_events(root.path()).is_empty());
     }
 }
 
@@ -411,6 +453,7 @@ fn cancellation_after_spawn_does_not_stop_game_and_host_loss_does_not_release_it
     let client = start_fixture(request(root.path(), "/bin/sleep", &["1.5"], 42));
     let running = until(&client, |s| s.game.is_some());
     client.cancel_preparation();
+    assert_eq!(presence_events(root.path()), "start\n");
     let host = fs::read_to_string(root.path().join("runtime/host-pid")).unwrap();
     assert!(
         Process::new("/bin/kill")
@@ -421,8 +464,26 @@ fn cancellation_after_spawn_does_not_stop_game_and_host_loss_does_not_release_it
     );
     let lost = until(&client, |s| s.host == HostState::Lost);
     assert_eq!(lost.phase, Phase::Running);
+    assert_eq!(presence_events(root.path()), "start\n");
     assert_eq!(identity(running.game.as_ref().unwrap().pid), running.game);
     assert_eq!(until(&client, Snapshot::finished).exit_code, Some(0));
+    assert_eq!(presence_events(root.path()), "start\nstop\n");
+}
+
+#[test]
+fn account_revocation_withdraws_presence_without_terminating_the_game() {
+    let root = tempfile::tempdir().unwrap();
+    let client = start_fixture(request(root.path(), "/bin/sleep", &["1.5"], 42));
+    let running = until(&client, |s| s.phase == Phase::Running && s.game.is_some());
+    assert_eq!(presence_events(root.path()), "start\n");
+    assert!(client.revoke_cloud(456).is_err());
+    assert_eq!(presence_events(root.path()), "start\n");
+    client.revoke_cloud(123).unwrap();
+    assert_eq!(presence_events(root.path()), "start\nstop\n");
+    assert_eq!(identity(running.game.as_ref().unwrap().pid), running.game);
+    assert_eq!(client.snapshot(None).unwrap().phase, Phase::Running);
+    assert_eq!(until(&client, Snapshot::finished).exit_code, Some(0));
+    assert_eq!(presence_events(root.path()), "start\nstop\n");
 }
 
 // A separate parent simulates Forge. Killing only this fixture must leave its
@@ -695,34 +756,8 @@ mod idle_admission {
     use super::*;
 
     fn assert_locks_released(root: &Path) {
-        let root = root.to_path_buf();
-        let (send, receive) = std::sync::mpsc::sync_channel(1);
-        std::thread::spawn(move || {
-            let acquire = || -> std::io::Result<()> {
-                let starting = fs::OpenOptions::new()
-                    .read(true)
-                    .write(true)
-                    .open(root.join("start.lock"))?;
-                // Concurrent subprocess spawning can inherit flock descriptors
-                // briefly until exec, even after this process drops its copy.
-                // Wait for the kernel release, bounded by the receiver below.
-                starting.lock()?;
-                let owner = fs::OpenOptions::new()
-                    .read(true)
-                    .write(true)
-                    .open(root.join("owner.lock"))?;
-                owner.lock()?;
-                // Explicitly release the test's own probe locks so another
-                // concurrent spawn cannot carry them into the next assertion.
-                owner.unlock()?;
-                starting.unlock()
-            };
-            let _ = send.send(acquire());
-        });
-        receive
-            .recv_timeout(Duration::from_secs(2))
-            .expect("maintenance locks were not released within two seconds")
-            .expect("reacquiring released maintenance locks failed");
+        crate::tests::wait_for_lock_release(&root.join("start.lock"));
+        crate::tests::wait_for_lock_release(&root.join("owner.lock"));
     }
 
     // A synthetic kernel table keeps these recovery checks independent of PID
@@ -844,6 +879,7 @@ mod idle_admission {
             let finished = client.snapshot(Some(snapshot.revision)).unwrap();
             assert!(finished.finished());
             assert!(finished.starting.is_none());
+            assert_locks_released(&sessions);
             drop(Client::idle_guard_with(&sessions, &helper, inspect_table).unwrap());
             assert_locks_released(&sessions);
         }
@@ -870,6 +906,7 @@ mod idle_admission {
                         .unwrap()
                         .is_none()
                 );
+                assert_locks_released(&sessions);
                 drop(Client::idle_guard_with(&sessions, &helper, inspect_table).unwrap());
             }
         }

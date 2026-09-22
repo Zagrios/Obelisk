@@ -7,23 +7,10 @@ use std::path::Path;
 /// Replace this architecture-specific helper with the selected slice of a game.
 /// No shell or platform wrapper gets a chance to strip the game's dyld variables.
 pub fn exec_game(arguments: &[std::ffi::OsString]) -> std::io::Result<()> {
-    use std::{
-        fs::File,
-        io::{Read, Write},
-        os::fd::{AsRawFd, FromRawFd},
-    };
-    // The supervisor treats EOF as successful exec. Retain a separate descriptor
-    // that closes atomically on exec, while the game itself gets null stdout.
-    // SAFETY: duplicate this helper's inherited stdout; ownership transfers below.
-    let descriptor = unsafe { libc::fcntl(1, libc::F_DUPFD_CLOEXEC, 3) };
-    if descriptor < 0 {
-        let error = std::io::Error::last_os_error();
-        let _ = std::io::stdout().write_all(b"exec-failed\n");
-        return Err(error);
-    }
-    // SAFETY: successful fcntl returned a new owned descriptor.
-    let mut control = unsafe { File::from_raw_fd(descriptor) };
-    let result = (|| {
+    use std::{fs::File, io::Read, os::fd::AsRawFd};
+    // The confirmation descriptor closes atomically on exec, while the game
+    // itself gets null stdout.
+    steam_runtime::protocol::exec_or_report(|| {
         let null = File::options().read(true).write(true).open("/dev/null")?;
         // SAFETY: valid null descriptor, redirecting only this helper's stdout.
         if unsafe { libc::dup2(null.as_raw_fd(), 1) } < 0 {
@@ -42,11 +29,7 @@ pub fn exec_game(arguments: &[std::ffi::OsString]) -> std::io::Result<()> {
             return Err(std::io::Error::last_os_error());
         }
         exec_game_inner(arguments)
-    })();
-    // Successful SETEXEC cannot reach this write. Normal setup/exec failures
-    // always send an explicit bounded marker before closing the control pipe.
-    let _ = control.write_all(b"exec-failed\n");
-    result
+    })
 }
 
 fn exec_game_inner(arguments: &[std::ffi::OsString]) -> std::io::Result<()> {
@@ -230,6 +213,19 @@ pub fn process_identity(pid: u32) -> Option<steam_runtime::supervisor::Identity>
 }
 
 pub fn detach_supervisor() -> Result<()> {
+    // Rust preserves the launching thread's signal mask across exec. Start
+    // this standalone supervisor with signals enabled before creating Tokio
+    // or any threads, so child-exit notifications cannot remain blocked.
+    // SAFETY: initialized mask storage; this changes only the new helper's
+    // calling thread, which future supervisor threads will inherit.
+    let status = unsafe {
+        let mut mask = std::mem::zeroed();
+        libc::sigemptyset(&mut mask);
+        libc::pthread_sigmask(libc::SIG_SETMASK, &mask, std::ptr::null_mut())
+    };
+    if status != 0 {
+        return Err(std::io::Error::from_raw_os_error(status).into());
+    }
     // SAFETY: setsid affects only this freshly spawned helper. It has no terminal
     // or UI log descriptors (stderr carries a private launch acknowledgement).
     // It must survive its parent's termination.

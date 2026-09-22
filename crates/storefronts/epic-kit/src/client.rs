@@ -243,10 +243,20 @@ impl Client {
     }
 
     pub fn start_friends(&self) {
-        self.social.start(self.social_auth(), false);
+        self.social.start(self.social_auth(), false, None);
+    }
+    /// Advertise the native game owned by this client's detached supervisor.
+    /// The activity ID is the catalog PresenceId or namespace, not the app name.
+    /// Stop the connection when that process exits or its account is revoked.
+    pub fn start_game_presence(&self, activity: crate::friends::Activity) -> Result<(), EpicError> {
+        if !activity.publishable() {
+            return Err(EpicError::Protocol);
+        }
+        self.social.start(self.social_auth(), true, Some(activity));
+        Ok(())
     }
     pub fn reconnect_friends(&self) {
-        self.social.start(self.social_auth(), true);
+        self.social.start(self.social_auth(), true, None);
     }
     pub fn stop_friends(&self) {
         self.social.stop();

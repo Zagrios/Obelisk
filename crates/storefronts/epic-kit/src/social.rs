@@ -3,7 +3,7 @@
 use crate::{
     EpicError, auth,
     client::SocialAuth,
-    friends::{Connection, Roster, Snapshot},
+    friends::{Activity, Connection, Roster, Snapshot},
     stomp,
 };
 use futures_util::{SinkExt, StreamExt};
@@ -54,7 +54,7 @@ impl SocialService {
         .await
         .unwrap_or_else(|last| last)
     }
-    pub(crate) fn start(&self, auth: SocialAuth, force: bool) {
+    pub(crate) fn start(&self, auth: SocialAuth, force: bool, activity: Option<Activity>) {
         let mut task = self.task.lock().unwrap_or_else(|e| e.into_inner());
         if !force && task.as_ref().is_some_and(|t| !t.is_finished()) {
             return;
@@ -69,7 +69,7 @@ impl SocialService {
             generation,
         };
         publish.set(Connection::Loading, None, None);
-        *task = Some(tokio::spawn(run(auth, publish)));
+        *task = Some(tokio::spawn(run(auth, publish, activity)));
     }
     pub(crate) fn stop(&self) {
         let mut task = self.task.lock().unwrap_or_else(|e| e.into_inner());
@@ -177,29 +177,43 @@ fn http_status(
         _ => Err(Failure::Protocol),
     }
 }
-async fn run(auth: SocialAuth, publish: Publisher) {
+async fn run(auth: SocialAuth, publish: Publisher, activity: Option<Activity>) {
     let account = publish.state.borrow().account_id.clone();
     let mut attempts = 0u32;
     let mut rejected = None;
+    // The detached game supervisor has no user action to reconnect after an
+    // outage. It keeps network recovery alive until the game stops or access is refused.
+    let supervised = activity.is_some();
     loop {
-        let token = match auth.access_token(rejected.as_deref()).await {
-            Ok(token) => token,
+        let mut ready_since = None;
+        let (error, token) = match auth.access_token(rejected.as_deref()).await {
+            Ok(token) => {
+                let result = connection(
+                    &auth,
+                    &token,
+                    &account,
+                    &publish,
+                    &mut ready_since,
+                    activity.as_ref(),
+                )
+                .await;
+                (result.err().unwrap_or(Failure::Network), Some(token))
+            }
             Err(error) => {
                 let error = Failure::from(error);
-                let state = if matches!(error, Failure::Expired) {
-                    Connection::AuthenticationRequired
-                } else {
-                    Connection::Failed
-                };
-                publish.set(state, None, Some(error.message()));
-                return;
+                // A supervisor's renewal outage is retried below, like any other
+                // network failure; the UI reports it and waits for the user.
+                if !supervised || !matches!(error, Failure::Network) {
+                    let state = if matches!(error, Failure::Expired) {
+                        Connection::AuthenticationRequired
+                    } else {
+                        Connection::Failed
+                    };
+                    publish.set(state, None, Some(error.message()));
+                    return;
+                }
+                (error, None)
             }
-        };
-        let mut ready_since = None;
-        let result = connection(&auth, &token, &account, &publish, &mut ready_since).await;
-        let error = match result {
-            Ok(()) => Failure::Network,
-            Err(e) => e,
         };
         if matches!(error, Failure::Renew) {
             publish.set(Connection::Interrupted, None, None);
@@ -208,7 +222,8 @@ async fn run(auth: SocialAuth, publish: Publisher) {
         }
         if matches!(error, Failure::TokenRejected) && rejected.is_none() {
             publish.set(Connection::Interrupted, None, Some(error.message()));
-            rejected = Some(token);
+            // Only a connection that held a token can have it rejected.
+            rejected = token;
             continue;
         }
         if matches!(
@@ -229,15 +244,16 @@ async fn run(auth: SocialAuth, publish: Publisher) {
         if ready_since.is_some_and(|since: Instant| since.elapsed() >= Duration::from_secs(60)) {
             attempts = 0;
         }
-        attempts += 1;
-        if attempts >= 5
+        attempts = attempts.saturating_add(1);
+        let retry_network = supervised && matches!(error, Failure::Network);
+        if (attempts >= 5 && !retry_network)
             || matches!(error, Failure::RateLimited(d) if d > Duration::from_secs(3600))
         {
             publish.set(Connection::Failed, None, Some(error.message()));
             return;
         }
         publish.set(Connection::Interrupted, None, Some(error.message()));
-        let backoff = Duration::from_secs((1u64 << (attempts - 1)).min(30));
+        let backoff = Duration::from_secs((1u64 << (attempts - 1).min(5)).min(30));
         let wait = match error {
             Failure::RateLimited(wait) => wait.max(backoff),
             _ => backoff,
@@ -322,18 +338,33 @@ async fn register_presence(
     auth: &SocialAuth,
     token: &str,
     account: &str,
-    connection: &str,
+    registration: &Registration,
 ) -> Result<(), Failure> {
     let mut url = reqwest::Url::parse(&auth.api.presence).map_err(|_| Failure::Protocol)?;
     url.path_segments_mut()
         .map_err(|_| Failure::Protocol)?
         .clear()
         .extend([
-            "epic", "presence", "internal", "v1", "_", account, "presence", connection,
+            "epic",
+            "presence",
+            "internal",
+            "v1",
+            "_",
+            account,
+            "presence",
+            &registration.connection,
         ]);
     // Epic requires an automatic connection status. Omitting statusSettings follows
     // the launcher's automatic registration and leaves manual preferences to Epic.
-    // This connection never advertises a game, party, or another client's properties.
+    // The supervisor advertises only the game it owns, on its own connection.
+    let mut conn = serde_json::json!({"props": {}});
+    if let Some(activity) = &registration.activity {
+        let mut running = serde_json::json!({"id": activity.id});
+        if let Some(name) = &activity.name {
+            running["displayName"] = name.clone().into();
+        }
+        conn["runningApp"] = running;
+    }
     let response = auth
         .api
         .http
@@ -341,7 +372,7 @@ async fn register_presence(
         .bearer_auth(token)
         .header("X-Epic-Agent", "epic-social")
         .header("X-HTTP-Method-Override", "PATCH")
-        .json(&serde_json::json!({"status":"online", "conn":{"props":{}}}))
+        .json(&serde_json::json!({"status":"online", "conn":conn}))
         .send()
         .await
         .map_err(|_| Failure::Network)?;
@@ -400,17 +431,11 @@ async fn hydrate_names(
                 let Some(id) = account["id"].as_str().filter(|id| ids.contains(id)) else {
                     continue;
                 };
-                let valid_name = |value: &Value| {
-                    value
-                        .as_str()
-                        .filter(|name| !name.trim().is_empty() && name.len() <= 4096)
-                        .map(str::to_owned)
-                };
-                let name = valid_name(&account["displayName"]).or_else(|| {
+                let name = crate::friends::text(&account["displayName"]).or_else(|| {
                     account["externalAuths"]
                         .as_object()?
                         .values()
-                        .find_map(|external| valid_name(&external["externalDisplayName"]))
+                        .find_map(|external| crate::friends::text(&external["externalDisplayName"]))
                 });
                 profiles.insert(id.to_owned(), name);
             }
@@ -424,8 +449,18 @@ async fn bootstrap(
     token: &str,
     account: &str,
     mut profiles: ProfileNames,
-    registration: Option<String>,
+    registration: Option<Registration>,
 ) -> Result<BootstrapState, Failure> {
+    if let Some(registration) = registration.as_ref().filter(|r| r.activity.is_some()) {
+        // The detached game supervisor needs only its own presence. Do not gate
+        // it on friends permissions or load another copy of the user's roster.
+        register_presence(auth, token, account, registration).await?;
+        return Ok(BootstrapState {
+            roster: Roster::new(account.into()),
+            presence_forbidden: Some(false),
+            profiles,
+        });
+    }
     let summary_path = ["friends", "api", "v1", account, "summary"];
     let (summary, presence) = tokio::join!(
         get(
@@ -437,7 +472,7 @@ async fn bootstrap(
         ),
         async {
             match registration {
-                Some(connection) => register_presence(auth, token, account, &connection)
+                Some(registration) => register_presence(auth, token, account, &registration)
                     .await
                     .map(|()| Some(false)),
                 None => Ok(None),
@@ -464,7 +499,7 @@ async fn bounded_bootstrap(
     token: &str,
     account: &str,
     profiles: ProfileNames,
-    registration: Option<String>,
+    registration: Option<Registration>,
 ) -> Result<BootstrapState, Failure> {
     timeout(
         REQUEST_TIMEOUT,
@@ -478,12 +513,18 @@ type Bootstrap<'a> = std::pin::Pin<
     Box<dyn std::future::Future<Output = Result<BootstrapState, Failure>> + Send + 'a>,
 >;
 
+struct Registration {
+    connection: String,
+    activity: Option<Activity>,
+}
+
 async fn connection(
     auth: &SocialAuth,
     token: &str,
     account: &str,
     publish: &Publisher,
     ready_since: &mut Option<Instant>,
+    activity: Option<&Activity>,
 ) -> Result<(), Failure> {
     let mut request = auth
         .api
@@ -600,13 +641,20 @@ async fn connection(
                             if frame.headers.get("subscription").map(String::as_str) != Some("sub-0") { continue; }
                             let content = frame.headers.get("content-type").or_else(|| frame.headers.get("Content-Type"));
                             if !content.is_some_and(|v| v.split(';').next() == Some("application/json")) { continue; }
+                            // A game connection consumes nothing past the welcome; skip the parse
+                            // rather than build and drop a tree for every friend's event.
+                            if subscribed && activity.is_some() { continue; }
                             let event: Value = serde_json::from_slice(&frame.body).map_err(|_| Failure::Protocol)?;
                             if event["type"] == "core.connect.v1.connected" {
                                 if !event["connectionId"].as_str().is_some_and(|s| !s.is_empty() && s.len() < 4096) { return Err(Failure::Protocol); }
                                 // Welcome also proves subscription on servers without receipts.
                                 if !subscribed {
                                     subscribed = true;
-                                    refresh = Some(Box::pin(bounded_bootstrap(auth, token, account, profiles.clone(), Some(event["connectionId"].as_str().unwrap().to_owned()))));
+                                    let registration = Registration {
+                                        connection: event["connectionId"].as_str().unwrap().to_owned(),
+                                        activity: activity.cloned(),
+                                    };
+                                    refresh = Some(Box::pin(bounded_bootstrap(auth, token, account, profiles.clone(), Some(registration))));
                                 }
                                 continue;
                             }

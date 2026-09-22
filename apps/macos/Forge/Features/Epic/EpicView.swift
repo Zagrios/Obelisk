@@ -30,16 +30,20 @@ struct EpicView: View {
             .frame(maxWidth: 1400, alignment: .leading)
         }
         .task { await model.start() }
-        .sheet(isPresented: Binding(get: { model.cloud.promptPresented }, set: { _ in })) {
-            SteamCloudPromptView(
-                title: cloudPromptTitle,
-                message: model.cloud.promptMessage,
-                busy: model.cloud.promptWorking,
-                onCancel: { model.cloud.respond(.cancel) },
-                onChooseLocal: { model.cloud.respond(.local) },
-                onChooseCloud: { model.cloud.respond(.cloud) },
-                storefront: "epic"
-            )
+        .sheet(isPresented: Binding(get: { model.cloud.promptPresented || model.rosetta.prompt != nil }, set: { _ in })) {
+            if model.rosetta.prompt != nil {
+                RosettaPromptView(model: model.rosetta, storefront: "epic")
+            } else {
+                SteamCloudPromptView(
+                    title: cloudPromptTitle,
+                    message: model.cloud.promptMessage,
+                    busy: model.cloud.promptWorking,
+                    onCancel: { model.cloud.respond(.cancel) },
+                    onChooseLocal: { model.cloud.respond(.local) },
+                    onChooseCloud: { model.cloud.respond(.cloud) },
+                    storefront: "epic"
+                )
+            }
         }
         .errorAlert(L10n.string("ui.store.epic"), message: $model.errorMessage)
     }

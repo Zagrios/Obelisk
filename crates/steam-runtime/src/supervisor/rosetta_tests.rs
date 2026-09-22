@@ -25,7 +25,12 @@ fn fixture() {
                 "#!/bin/sh\nshift\nexec \"$@\"\n"
             };
             let admission = "#!/bin/sh\nIFS= read -r admitted || :\nif [ \"$admitted\" != 1 ]; then printf 'exec-failed\\n'; exit 126; fi\nexec </dev/null\n";
-            fs::write(&helper, format!("{admission}{}", script.strip_prefix("#!/bin/sh\n").unwrap())).unwrap();
+            let hold = if std::env::var_os("FORGE_ROSETTA_EXEC_HOLD").is_some() {
+                "printf ready > exec-ready\nwhile [ ! -f release-exec ]; do /bin/sleep 0.01; done\n"
+            } else {
+                ""
+            };
+            fs::write(&helper, format!("{admission}{hold}{}", script.strip_prefix("#!/bin/sh\n").unwrap())).unwrap();
             fs::set_permissions(&helper, fs::Permissions::from_mode(0o700)).unwrap();
             let runtime = crate::tests::runtime("read line", &config.cache);
             fs::write(
@@ -35,7 +40,7 @@ fn fixture() {
             .unwrap();
             Ok(runtime)
         },
-        Box::new(CloudRecorder { root }),
+        Box::new(CloudRecorder { root: root.clone() }),
         server::NativeChecks {
             select: |_, _| Ok(Some(crate::architecture::Architecture::Intel)),
             rosetta: |_| {
@@ -45,15 +50,16 @@ fn fixture() {
                 Ok(root.join("rosetta-ready").exists())
             },
         },
+        recorded_presence(Some(root)),
     )
     .unwrap();
 }
 
 fn start(root: &Path) -> Client {
-    start_mode(root, false)
+    start_mode(root, false, false)
 }
 
-fn start_mode(root: &Path, failed_exec: bool) -> Client {
+fn start_mode(root: &Path, failed_exec: bool, hold_exec: bool) -> Client {
     let request = request(
         root,
         "/bin/sh",
@@ -73,6 +79,9 @@ fn start_mode(root: &Path, failed_exec: bool) -> Client {
         .env("FORGE_ROSETTA_FIXTURE", root);
     if failed_exec {
         command.env("FORGE_ROSETTA_EXEC_FAIL", "1");
+    }
+    if hold_exec {
+        command.env("FORGE_ROSETTA_EXEC_HOLD", "1");
     }
     client::start_command(
         Path::new("unused"),
@@ -102,6 +111,7 @@ fn waits_after_cloud_retains_admission_and_rechecks_before_resuming() {
     assert_eq!(pending.phase, Phase::Preparing);
     assert!(!root.path().join("runtime/host-pid").exists());
     assert!(!root.path().join("game-started").exists());
+    assert!(presence_events(root.path()).is_empty());
     assert!(matches!(
         client.resume_after_rosetta(456, decision),
         Err(Error::InvalidSession)
@@ -115,6 +125,7 @@ fn waits_after_cloud_retains_admission_and_rechecks_before_resuming() {
         Client::idle_guard_with(&root.path().join("sessions"), Path::new("unused"), probe),
         Err(Error::SessionBusy)
     ));
+    crate::tests::wait_for_lock_release(&root.path().join("sessions/start.lock"));
     drop(client);
     let recovered = Client::recover_with(&root.path().join("sessions"), Path::new("unused"), probe)
         .unwrap()
@@ -188,7 +199,7 @@ fn failed_exec_reaps_the_helper_and_aborts_without_claiming_a_running_game() {
     let root = tempfile::tempdir().unwrap();
     fs::write(root.path().join("rosetta-ready"), b"ready").unwrap();
     fs::write(root.path().join("release-preflight"), b"go").unwrap();
-    let client = start_mode(root.path(), true);
+    let client = start_mode(root.path(), true, false);
     let done = until(&client, |snapshot| {
         assert_ne!(snapshot.phase, Phase::Running);
         snapshot.finished()
@@ -199,10 +210,37 @@ fn failed_exec_reaps_the_helper_and_aborts_without_claiming_a_running_game() {
         Some("backend.steam.runtime.startFailed")
     );
     assert!(!root.path().join("game-started").exists());
+    assert!(presence_events(root.path()).is_empty());
     assert!(!root.path().join("finalization-ready").exists());
     assert!(identity(fixture_pid(root.path(), "runtime/host-pid")).is_none());
     assert_eq!(
         fs::read_to_string(root.path().join("cloud-events")).unwrap(),
         "cloud.prepare\ncloud.prepared\nnative.prepare\ncloud.started\ncloud.aborted\n"
     );
+}
+
+#[test]
+fn presence_waits_for_exec_and_account_revocation_fences_late_confirmation() {
+    for revoke in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("rosetta-ready"), b"ready").unwrap();
+        fs::write(root.path().join("release-preflight"), b"go").unwrap();
+        fs::write(root.path().join("release-finalization"), b"go").unwrap();
+        let client = start_mode(root.path(), false, true);
+        wait_for_file(&root.path().join("exec-ready"));
+        assert!(presence_events(root.path()).is_empty());
+        assert!(!root.path().join("game-started").exists());
+        if revoke {
+            client.revoke_cloud(123).unwrap();
+        }
+        fs::write(root.path().join("release-exec"), b"go").unwrap();
+        let done = until(&client, Snapshot::finished);
+        assert_eq!(done.phase, Phase::Finished);
+        assert_eq!(done.exit_code, Some(0));
+        assert_eq!(
+            presence_events(root.path()),
+            if revoke { "" } else { "start\nstop\n" }
+        );
+        assert!(root.path().join("game-exited").exists());
+    }
 }

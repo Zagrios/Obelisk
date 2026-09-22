@@ -27,7 +27,7 @@ connection. It bundles neither SteamKit, SteamCMD, nor a .NET executable.
   push. Names and avatars, including offline friends, are hydrated with
   `ClientRequestFriendData` in batches of at most 100 using only
   `PlayerName | Presence = 18`. Relationship bursts coalesce while a status
-  request is in flight. Forge sends no command that changes the account's presence.
+  request is in flight. These friend reads do not change the account's presence.
 - Revisioned full social snapshots through a Tokio watch channel and UniFFI.
   The observer suspends until a revision changes, independently of the mutex
   used by library and download queries. The reader publishes once per received
@@ -45,6 +45,43 @@ connection. It bundles neither SteamKit, SteamCMD, nor a .NET executable.
 
 Steam checks access rights on every key or manifest request. The module provides
 no mechanism to bypass that validation.
+
+## Publishing the supervised game
+
+Steam presence uses the native host's existing authenticated user. After game
+execution is confirmed, the supervisor sends a bounded Online command over the
+host's private stdin pipe. The host applies `IClientFriends::SetPersonaState(1)`.
+It runs with `-nofriendsui` so the engine applies persona changes itself instead
+of delegating them to the absent Steam friends UI. Without that option the setter
+can return successfully while leaving the persona Offline.
+The game's own Steam SDK registers the game on that same native session. Forge
+does not initialize the game's SDK to publish presence. The new native accessor
+and setter are checked against the pinned Valve library; see the
+[ABI evidence](evidence/steam-native-presence-abi.md).
+
+Account revocation sends Offline without stopping the host or game. Revocation
+before confirmed exec permanently prevents a late Online command. Game exit
+withdraws presence before host teardown and Cloud finalization. The host retains
+the latest requested persona and reapplies it after reconnecting. Closing Forge
+does not stop the detached supervisor. Losing the native host can lose presence
+without ending the supervised game.
+
+A September 22, 2026 Silksong trial demonstrated why a separate game-publishing
+CM connection is unsuitable: it authenticated, wrote Online and GamesPlayed,
+then received `ClientLoggedOff` with EResult 6 while the native game kept running.
+The profile remained Offline. This matches the competing gameplay sessions
+reported in [node-steam-user issue 94](https://github.com/DoctorMcKay/node-steam-user/issues/94).
+The separate CM publisher and its reconnect loop have been removed.
+
+After enabling `-nofriendsui` on the native host, a subsequent Silksong launch
+showed `Dans un jeu Hollow Knight: Silksong` on the signed-out public Steam
+Community profile. This is the live witness for the native publication path.
+
+Disposable-host tests check Online/Offline commands, repeated start/stop,
+revocation before exec, and that withdrawing presence leaves the host alive.
+Supervisor fixtures retain coverage for failed/late Intel execution, account
+revocation and UI detachment. These fixtures alone do not prove a Steam profile's
+visible game, or presence for a Steam game that does not register through its SDK.
 
 ## Social state and recovery
 

@@ -12,6 +12,7 @@ use std::{
 use serde_json::{Value, json};
 
 use super::*;
+use crate::friends::Activity;
 
 struct Reply {
     path: String,
@@ -1255,7 +1256,7 @@ fn launch_replies(ownership: bool) -> Vec<Reply> {
         reply(
             LAUNCH_CATALOG_PATH,
             200,
-            json!({"base":{"id":"base", "namespace":"space", "customAttributes":{
+            json!({"base":{"id":"base", "namespace":"space", "title":"A fixture game", "customAttributes":{
                 "AdditionalCommandLine":{"value":"--publisher \"Epic build\" --literal '$(id)'"},
                 "OwnershipToken":{"value":if ownership { "TrUe" } else { "false" }}
             }}}),
@@ -1274,6 +1275,27 @@ fn launch_replies(ownership: bool) -> Vec<Reply> {
     replies
 }
 
+/// Plan a launch whose catalog reply body has been patched by `patch`.
+async fn launch_plan_with_catalog(
+    directory: &std::path::Path,
+    patch: impl FnOnce(&mut Value),
+) -> LaunchPlan {
+    launch_installation(directory);
+    let mut replies = launch_replies(false);
+    let catalog = replies
+        .iter_mut()
+        .find(|reply| reply.path == LAUNCH_CATALOG_PATH)
+        .unwrap();
+    let mut body: Value = serde_json::from_str(&catalog.body).unwrap();
+    patch(&mut body);
+    catalog.body = body.to_string();
+    let mock = Mock::new(replies);
+    mock.client(false)
+        .launch_plan("space", "base", "game", "Mac", directory, "en")
+        .await
+        .unwrap()
+}
+
 fn request_url(request: &str) -> reqwest::Url {
     let target = request
         .lines()
@@ -1283,6 +1305,59 @@ fn request_url(request: &str) -> reqwest::Url {
         .nth(1)
         .unwrap();
     reqwest::Url::parse(&format!("http://fixture{target}")).unwrap()
+}
+
+#[tokio::test]
+async fn launch_tolerates_catalog_items_without_a_display_title() {
+    for title in [
+        None,
+        Some(Value::Null),
+        Some(json!("  ")),
+        Some(json!(42)),
+        Some(json!("bad\u{0000}title")),
+    ] {
+        let temporary = tempfile::tempdir().unwrap();
+        let plan = launch_plan_with_catalog(temporary.path(), |body| match title {
+            Some(title) => body["base"]["title"] = title,
+            None => {
+                body["base"].as_object_mut().unwrap().remove("title");
+            }
+        })
+        .await;
+        // An unusable title still advertises the game, without a display name.
+        assert_eq!(
+            plan.activity,
+            Some(Activity {
+                id: "space".into(),
+                name: None
+            })
+        );
+        assert_eq!(plan.app_name, "game");
+    }
+}
+
+#[tokio::test]
+async fn launch_uses_catalog_presence_identity_and_ignores_unpublishable_values() {
+    for (attribute, expected) in [
+        (json!({"value":"published-game"}), Some("published-game")),
+        (json!({"value":"p-private-game"}), None),
+        (json!({"value":""}), None),
+        (json!({"value":"bad\u{0000}id"}), None),
+        (json!({"value":"x".repeat(1025)}), None),
+        (json!({"value":42}), None),
+        (Value::Null, None),
+    ] {
+        let temporary = tempfile::tempdir().unwrap();
+        let plan = launch_plan_with_catalog(temporary.path(), |body| {
+            body["base"]["customAttributes"]["PresenceId"] = attribute;
+        })
+        .await;
+        assert_eq!(
+            plan.activity.as_ref().map(|activity| activity.id.as_str()),
+            expected
+        );
+        assert_eq!(plan.app_name, "game");
+    }
 }
 
 #[tokio::test]
@@ -1296,6 +1371,13 @@ async fn launch_builds_authenticated_literal_arguments_from_verified_installatio
         .await
         .unwrap();
     assert_eq!(plan.app_name, "game");
+    assert_eq!(
+        plan.activity,
+        Some(Activity {
+            id: "space".into(),
+            name: Some("A fixture game".into())
+        })
+    );
     assert_eq!(plan.platform, "Mac");
     assert!(plan.ownership_token.is_none());
     assert!(!plan.target.is_application_bundle);

@@ -25,6 +25,7 @@ final class EpicGameSessions {
         var decisionId: UInt64 = 0
         var allowedChoices: [EpicCloudChoice] = []
         var error: String?
+        var rosetta: RosettaRequest?
         var reconnecting = false
         var observed = false
 
@@ -43,6 +44,7 @@ final class EpicGameSessions {
             decisionId = snapshot.decisionId
             allowedChoices = snapshot.allowedChoices
             error = snapshot.error
+            rosetta = snapshot.rosetta
             reconnecting = snapshot.reconnecting
             observed = true
         }
@@ -53,6 +55,7 @@ final class EpicGameSessions {
     private(set) var isRecovering = false
     private(set) var recoveryError: String?
     var isBusy: Bool { active != nil || isRecovering }
+    private var cancelledRosetta: RosettaPrompt?
     @ObservationIgnored private var operation: Task<Void, Never>?
     @ObservationIgnored private var client: (any EpicGameSessionProtocol)?
     @ObservationIgnored private var revokedAccounts: Set<String> = []
@@ -131,6 +134,29 @@ final class EpicGameSessions {
             throw EpicError.Service(message: "backend.epic.cloud.invalidDecision")
         }
         try await client.choose(accountId: accountId, decisionId: expected.decisionId, choice: choice)
+    }
+
+    typealias RosettaPrompt = RosettaLaunchPrompt<String, String>
+
+    func rosettaPrompt(accountId: String) -> RosettaPrompt? {
+        guard let active, active.phase == .preparing, active.accountId == accountId,
+              !active.reconnecting, !revokedAccounts.contains(accountId), let request = active.rosetta else { return nil }
+        let prompt = RosettaPrompt(id: active.id, accountId: accountId, decisionId: request.decisionId)
+        return prompt == cancelledRosetta ? nil : prompt
+    }
+
+    func resumeAfterRosetta(_ prompt: RosettaPrompt) async throws {
+        guard rosettaPrompt(accountId: prompt.accountId) == prompt, let client else {
+            throw EpicError.Service(message: "backend.epic.cloud.invalidSession")
+        }
+        try Task.checkCancellation()
+        try await client.resumeAfterRosetta(accountId: prompt.accountId, decisionId: prompt.decisionId)
+    }
+
+    func cancelRosetta(_ prompt: RosettaPrompt) {
+        guard rosettaPrompt(accountId: prompt.accountId) == prompt else { return }
+        cancelledRosetta = prompt
+        operation?.cancel()
     }
 
     func revokeCloud(accountId: String) async throws {
@@ -248,6 +274,7 @@ final class EpicGameSessions {
     }
 
     private func finish() {
+        cancelledRosetta = nil
         active = nil
         client = nil
         appliedRevocations.removeAll()
@@ -288,5 +315,14 @@ final class EpicGameHandoff: @unchecked Sendable {
     func revoke(accountId: String) async throws {
         guard let target = lock.withLock({ client }) else { return }
         try await Task.detached { try await target.revokeCloud(accountId: accountId) }.value
+    }
+}
+
+extension EpicGameSessions: RosettaSessions {
+    static func rosettaUnavailable(_ error: Error) -> Bool {
+        if case let EpicError.Service(message) = error {
+            return message == rosettaUnavailableKey
+        }
+        return false
     }
 }

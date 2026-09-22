@@ -62,6 +62,62 @@ fn invalid() -> std::io::Error {
     )
 }
 
+/// Commands after the credential handoff. EOF still releases the native host.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HostCommand {
+    SetPresence { online: bool },
+}
+impl HostCommand {
+    pub fn read(mut input: impl Read) -> std::io::Result<Option<Self>> {
+        let mut byte = [0];
+        match input.read_exact(&mut byte) {
+            Ok(()) => match byte[0] {
+                0 | 1 => Ok(Some(Self::SetPresence {
+                    online: byte[0] == 1,
+                })),
+                _ => Err(invalid()),
+            },
+            Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+    pub fn write(self, mut output: impl Write) -> std::io::Result<()> {
+        match self {
+            Self::SetPresence { online } => output.write_all(&[u8::from(online)]),
+        }
+    }
+}
+
+/// Reply of an exec helper whose preparation or exec failed. A helper that
+/// replaced itself with the game instead closes its confirmation pipe silently.
+pub const EXEC_FAILED: &[u8] = b"exec-failed\n";
+
+/// Runs an exec helper's preparation and exec. The supervisor treats EOF as a
+/// successful exec, which never returns here; every other outcome sends
+/// `EXEC_FAILED` before the confirmation pipe closes.
+pub fn exec_or_report<E: From<std::io::Error>>(
+    exec: impl FnOnce() -> Result<(), E>,
+) -> Result<(), E> {
+    let mut confirmation = exec_confirmation()?;
+    let result = exec();
+    let _ = confirmation.write_all(EXEC_FAILED);
+    result
+}
+
+/// A CLOEXEC duplicate of stdout that closes atomically on a successful exec.
+/// When even that fails, the marker still reaches the supervisor through stdout.
+fn exec_confirmation() -> std::io::Result<std::fs::File> {
+    use std::os::fd::AsFd;
+    let stdout = std::io::stdout();
+    stdout
+        .as_fd()
+        .try_clone_to_owned()
+        .map(std::fs::File::from)
+        .inspect_err(|_| {
+            let _ = stdout.lock().write_all(EXEC_FAILED);
+        })
+}
+
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 #[serde(tag = "event", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Event {
@@ -94,6 +150,28 @@ pub enum Failure {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn presence_commands_preserve_the_host_pipe_until_eof() {
+        let mut wire = Vec::new();
+        HostCommand::SetPresence { online: true }
+            .write(&mut wire)
+            .unwrap();
+        HostCommand::SetPresence { online: false }
+            .write(&mut wire)
+            .unwrap();
+        assert_eq!(wire, [1, 0]);
+        let mut input = wire.as_slice();
+        assert_eq!(
+            HostCommand::read(&mut input).unwrap(),
+            Some(HostCommand::SetPresence { online: true })
+        );
+        assert_eq!(
+            HostCommand::read(&mut input).unwrap(),
+            Some(HostCommand::SetPresence { online: false })
+        );
+        assert_eq!(HostCommand::read(&mut input).unwrap(), None);
+        assert!(HostCommand::read(&[2][..]).is_err());
+    }
     #[test]
     fn session_packet_is_bounded_and_rejects_truncation_and_nul() {
         let session = Credentials {

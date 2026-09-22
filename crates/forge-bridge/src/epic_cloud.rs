@@ -1,5 +1,5 @@
 //! Presentation of the Rust-owned Epic supervisor and Cloud decisions.
-use crate::{EpicError, EpicSession};
+use crate::{EpicError, EpicSession, RosettaRequest};
 use std::{path::Path, sync::Arc};
 use steam_runtime::epic;
 
@@ -116,6 +116,7 @@ pub struct EpicGameSnapshot {
     pub exit_code: Option<i32>,
     pub revision: u64,
     pub reconnecting: bool,
+    pub rosetta: Option<RosettaRequest>,
 }
 impl From<epic::Snapshot> for EpicGameSnapshot {
     fn from(s: epic::Snapshot) -> Self {
@@ -134,6 +135,7 @@ impl From<epic::Snapshot> for EpicGameSnapshot {
             exit_code: s.exit_code,
             revision: s.revision,
             reconnecting: s.reconnecting,
+            rosetta: s.rosetta.map(Into::into),
         }
     }
 }
@@ -174,6 +176,13 @@ impl EpicGameSession {
         choice: EpicCloudChoice,
     ) -> Result<(), EpicError> {
         blocking(move || self.client.choose(&account_id, decision_id, choice.into())).await
+    }
+    pub async fn resume_after_rosetta(
+        self: Arc<Self>,
+        account_id: String,
+        decision_id: u64,
+    ) -> Result<(), EpicError> {
+        blocking(move || self.client.resume_after_rosetta(&account_id, decision_id)).await
     }
     pub async fn revoke_cloud(self: Arc<Self>, account_id: String) -> Result<(), EpicError> {
         blocking(move || self.client.revoke_cloud(&account_id)).await
@@ -328,6 +337,24 @@ mod tests {
     fn bridge_snapshot(value: Value) -> EpicGameSnapshot {
         let snapshot: epic::Snapshot = serde_json::from_value(value).unwrap();
         snapshot.into()
+    }
+
+    #[test]
+    fn epic_publishes_the_shared_rosetta_decision() {
+        let mut value = failed_snapshot("fixture");
+        value["phase"] = json!("Preparing");
+        value["rosetta"] = json!({"decision_id": 17});
+        let snapshot = bridge_snapshot(value);
+        assert_eq!(snapshot.rosetta.unwrap().decision_id, 17);
+    }
+
+    #[test]
+    fn old_epic_snapshots_have_no_rosetta_requirement() {
+        assert!(
+            bridge_snapshot(failed_snapshot("fixture"))
+                .rosetta
+                .is_none()
+        );
     }
 
     #[test]

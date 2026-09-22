@@ -1,4 +1,4 @@
-//! Select matching Mach-O slices before any Steam SDK code is loaded.
+//! Select supported Mach-O slices before launching native games or Steam SDK code.
 use crate::Error;
 use std::{
     fs::File,
@@ -15,18 +15,20 @@ pub(crate) enum Architecture {
 }
 impl Architecture {
     pub fn select(executable: &Path, library: &Path) -> Result<Self, Error> {
-        let game = slices(executable)?;
-        let sdk = slices(library)?;
-        if game & sdk & 1 != 0 {
+        Self::from_slices(slices(executable)? & slices(library)?)
+    }
+    /// The preferred supported slice of an executable or library on its own.
+    pub fn preferred(binary: &Path) -> Result<Self, Error> {
+        Self::from_slices(slices(binary)?)
+    }
+    fn from_slices(mask: u8) -> Result<Self, Error> {
+        if mask & 1 != 0 {
             Ok(Self::Arm64)
-        } else if game & sdk & 2 != 0 {
+        } else if mask & 2 != 0 {
             Ok(Self::Intel)
         } else {
             Err(Error::IncompatibleArchitecture)
         }
-    }
-    pub fn for_library(library: &Path) -> Result<Self, Error> {
-        Self::select(library, library)
     }
 }
 
@@ -169,4 +171,4 @@ pub(crate) fn rosetta_available(helper: &Path) -> Result<bool, Error> {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

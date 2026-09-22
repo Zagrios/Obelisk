@@ -16,6 +16,16 @@ The helper persists its identity and acknowledges the handoff before doing Cloud
 
 For a launch, the helper prepares Cloud saves before requesting fresh launch arguments. It records a durable capture marker and game guard before opening a private exec pipe to its child. The target cannot execute until the helper has recorded the child's kernel identity. Launch admission, cancellation and account revocation share the same admission lock.
 
+After resolving the native executable, Epic uses the shared Mach-O selection
+and [Rosetta requirement](steam-rosetta-intel.md#shared-steam-and-epic-requirement).
+An Intel-only game waits for the signed probe before admission. If installation
+was required, the supervisor refreshes the short-lived launch plan and ownership
+token, then validates the new executable before admission. Steam and Epic
+share `game_session` for exec confirmation and asynchronous child exit. The
+helper reports exec failure explicitly; it is reaped before releasing a failed
+launch. The presence task runs on the supervisor's executor until game exit or
+account revocation.
+
 The helper waits for actual child exit before taking the exit snapshot and uploading. Closing Forge only detaches the observer. Cancelling preparation cannot release a running game's installation. Signing out cancels Cloud transfers; a running game stays tracked and its eventual local exit snapshot is archived for the original account.
 
 Recovery compares PID, UID and kernel birth time. A process can change executable with `exec()` without losing ownership. Failed inspection or lost IPC remains an unknown live state and keeps mutations blocked. A dead helper alone does not prove that its game exited.

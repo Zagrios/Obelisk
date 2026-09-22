@@ -609,6 +609,8 @@ public protocol EpicGameSessionProtocol: AnyObject, Sendable {
     
     func choose(accountId: String, decisionId: UInt64, choice: EpicCloudChoice) async throws 
     
+    func resumeAfterRosetta(accountId: String, decisionId: UInt64) async throws 
+    
     func revokeCloud(accountId: String) async throws 
     
     func snapshot(afterRevision: UInt64?) async throws  -> EpicGameSnapshot
@@ -697,6 +699,22 @@ open func choose(accountId: String, decisionId: UInt64, choice: EpicCloudChoice)
             rustFutureFunc: {
                 uniffi_forge_bridge_fn_method_epicgamesession_choose(
                         self.uniffiCloneHandle(),FfiConverterString.lower(accountId),FfiConverterUInt64.lower(decisionId),FfiConverterTypeEpicCloudChoice_lower(choice)
+                )
+            },
+            pollFunc: ffi_forge_bridge_rust_future_poll_void,
+            completeFunc: ffi_forge_bridge_rust_future_complete_void,
+            freeFunc: ffi_forge_bridge_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeEpicError_lift
+        )
+}
+    
+open func resumeAfterRosetta(accountId: String, decisionId: UInt64)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_forge_bridge_fn_method_epicgamesession_resume_after_rosetta(
+                        self.uniffiCloneHandle(),FfiConverterString.lower(accountId),FfiConverterUInt64.lower(decisionId)
                 )
             },
             pollFunc: ffi_forge_bridge_rust_future_poll_void,
@@ -3415,10 +3433,11 @@ public struct EpicGameSnapshot: Equatable, Hashable {
     public var exitCode: Int32?
     public var revision: UInt64
     public var reconnecting: Bool
+    public var rosetta: RosettaRequest?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(id: String, accountId: String, namespace: String, appName: String, phase: EpicGamePhase, cloudPhase: EpicCloudPhase, decisionId: UInt64, allowedChoices: [EpicCloudChoice], error: String?, failureReason: EpicGameFailureReason?, exitCode: Int32?, revision: UInt64, reconnecting: Bool) {
+    public init(id: String, accountId: String, namespace: String, appName: String, phase: EpicGamePhase, cloudPhase: EpicCloudPhase, decisionId: UInt64, allowedChoices: [EpicCloudChoice], error: String?, failureReason: EpicGameFailureReason?, exitCode: Int32?, revision: UInt64, reconnecting: Bool, rosetta: RosettaRequest?) {
         self.id = id
         self.accountId = accountId
         self.namespace = namespace
@@ -3432,6 +3451,7 @@ public struct EpicGameSnapshot: Equatable, Hashable {
         self.exitCode = exitCode
         self.revision = revision
         self.reconnecting = reconnecting
+        self.rosetta = rosetta
     }
 
     
@@ -3462,7 +3482,8 @@ public struct FfiConverterTypeEpicGameSnapshot: FfiConverterRustBuffer {
                 failureReason: FfiConverterOptionTypeEpicGameFailureReason.read(from: &buf), 
                 exitCode: FfiConverterOptionInt32.read(from: &buf), 
                 revision: FfiConverterUInt64.read(from: &buf), 
-                reconnecting: FfiConverterBool.read(from: &buf)
+                reconnecting: FfiConverterBool.read(from: &buf), 
+                rosetta: FfiConverterOptionTypeRosettaRequest.read(from: &buf)
         )
     }
 
@@ -3480,6 +3501,7 @@ public struct FfiConverterTypeEpicGameSnapshot: FfiConverterRustBuffer {
         FfiConverterOptionInt32.write(value.exitCode, into: &buf)
         FfiConverterUInt64.write(value.revision, into: &buf)
         FfiConverterBool.write(value.reconnecting, into: &buf)
+        FfiConverterOptionTypeRosettaRequest.write(value.rosetta, into: &buf)
     }
 }
 
@@ -3833,6 +3855,56 @@ public func FfiConverterTypeLaunchTarget_lift(_ buf: RustBuffer) throws -> Launc
 #endif
 public func FfiConverterTypeLaunchTarget_lower(_ value: LaunchTarget) -> RustBuffer {
     return FfiConverterTypeLaunchTarget.lower(value)
+}
+
+
+public struct RosettaRequest: Equatable, Hashable {
+    public var decisionId: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(decisionId: UInt64) {
+        self.decisionId = decisionId
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension RosettaRequest: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRosettaRequest: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RosettaRequest {
+        return
+            try RosettaRequest(
+                decisionId: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RosettaRequest, into buf: inout [UInt8]) {
+        FfiConverterUInt64.write(value.decisionId, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRosettaRequest_lift(_ buf: RustBuffer) throws -> RosettaRequest {
+    return try FfiConverterTypeRosettaRequest.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRosettaRequest_lower(_ value: RosettaRequest) -> RustBuffer {
+    return FfiConverterTypeRosettaRequest.lower(value)
 }
 
 
@@ -4541,11 +4613,11 @@ public struct SteamGameSnapshot: Equatable, Hashable {
     public var exitCode: Int32?
     public var error: String?
     public var revision: UInt64
-    public var rosetta: SteamRosettaRequest?
+    public var rosetta: RosettaRequest?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(id: String, appId: UInt32, accountId: UInt64, phase: SteamGamePhase, cloudPhase: SteamCloudPhase, cloudDecisionId: UInt64, cloudError: String?, cloudDecisionToken: String?, cloudAllowedChoices: [SteamCloudChoice], connection: SteamSupervisorConnection, host: SteamHostState, exitCode: Int32?, error: String?, revision: UInt64, rosetta: SteamRosettaRequest?) {
+    public init(id: String, appId: UInt32, accountId: UInt64, phase: SteamGamePhase, cloudPhase: SteamCloudPhase, cloudDecisionId: UInt64, cloudError: String?, cloudDecisionToken: String?, cloudAllowedChoices: [SteamCloudChoice], connection: SteamSupervisorConnection, host: SteamHostState, exitCode: Int32?, error: String?, revision: UInt64, rosetta: RosettaRequest?) {
         self.id = id
         self.appId = appId
         self.accountId = accountId
@@ -4593,7 +4665,7 @@ public struct FfiConverterTypeSteamGameSnapshot: FfiConverterRustBuffer {
                 exitCode: FfiConverterOptionInt32.read(from: &buf), 
                 error: FfiConverterOptionString.read(from: &buf), 
                 revision: FfiConverterUInt64.read(from: &buf), 
-                rosetta: FfiConverterOptionTypeSteamRosettaRequest.read(from: &buf)
+                rosetta: FfiConverterOptionTypeRosettaRequest.read(from: &buf)
         )
     }
 
@@ -4612,7 +4684,7 @@ public struct FfiConverterTypeSteamGameSnapshot: FfiConverterRustBuffer {
         FfiConverterOptionInt32.write(value.exitCode, into: &buf)
         FfiConverterOptionString.write(value.error, into: &buf)
         FfiConverterUInt64.write(value.revision, into: &buf)
-        FfiConverterOptionTypeSteamRosettaRequest.write(value.rosetta, into: &buf)
+        FfiConverterOptionTypeRosettaRequest.write(value.rosetta, into: &buf)
     }
 }
 
@@ -5021,56 +5093,6 @@ public func FfiConverterTypeSteamProfile_lift(_ buf: RustBuffer) throws -> Steam
 #endif
 public func FfiConverterTypeSteamProfile_lower(_ value: SteamProfile) -> RustBuffer {
     return FfiConverterTypeSteamProfile.lower(value)
-}
-
-
-public struct SteamRosettaRequest: Equatable, Hashable {
-    public var decisionId: UInt64
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(decisionId: UInt64) {
-        self.decisionId = decisionId
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension SteamRosettaRequest: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeSteamRosettaRequest: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SteamRosettaRequest {
-        return
-            try SteamRosettaRequest(
-                decisionId: FfiConverterUInt64.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: SteamRosettaRequest, into buf: inout [UInt8]) {
-        FfiConverterUInt64.write(value.decisionId, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeSteamRosettaRequest_lift(_ buf: RustBuffer) throws -> SteamRosettaRequest {
-    return try FfiConverterTypeSteamRosettaRequest.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeSteamRosettaRequest_lower(_ value: SteamRosettaRequest) -> RustBuffer {
-    return FfiConverterTypeSteamRosettaRequest.lower(value)
 }
 
 
@@ -7319,6 +7341,30 @@ fileprivate struct FfiConverterOptionTypeEpicTransfer: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeRosettaRequest: FfiConverterRustBuffer {
+    typealias SwiftType = RosettaRequest?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeRosettaRequest.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeRosettaRequest.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeSteamCredentials: FfiConverterRustBuffer {
     typealias SwiftType = SteamCredentials?
 
@@ -7359,30 +7405,6 @@ fileprivate struct FfiConverterOptionTypeSteamFriendGame: FfiConverterRustBuffer
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeSteamFriendGame.read(from: &buf)
-        default: throw UniffiInternalError.unexpectedOptionalTag
-        }
-    }
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-fileprivate struct FfiConverterOptionTypeSteamRosettaRequest: FfiConverterRustBuffer {
-    typealias SwiftType = SteamRosettaRequest?
-
-    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
-        guard let value = value else {
-            writeInt(&buf, Int8(0))
-            return
-        }
-        writeInt(&buf, Int8(1))
-        FfiConverterTypeSteamRosettaRequest.write(value, into: &buf)
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
-        switch try readInt(&buf) as Int8 {
-        case 0: return nil
-        case 1: return try FfiConverterTypeSteamRosettaRequest.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -8210,6 +8232,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_forge_bridge_checksum_method_epicgamesession_choose() != 29977) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_forge_bridge_checksum_method_epicgamesession_resume_after_rosetta() != 32026) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_forge_bridge_checksum_method_epicgamesession_revoke_cloud() != 45100) {

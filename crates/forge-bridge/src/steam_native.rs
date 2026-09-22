@@ -166,12 +166,19 @@ pub struct SteamGameSnapshot {
     pub exit_code: Option<i32>,
     pub error: Option<String>,
     pub revision: u64,
-    pub rosetta: Option<SteamRosettaRequest>,
+    pub rosetta: Option<RosettaRequest>,
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
-pub struct SteamRosettaRequest {
+pub struct RosettaRequest {
     pub decision_id: u64,
+}
+impl From<steam_runtime::supervisor::RosettaRequest> for RosettaRequest {
+    fn from(request: steam_runtime::supervisor::RosettaRequest) -> Self {
+        Self {
+            decision_id: request.decision_id,
+        }
+    }
 }
 
 impl From<steam_runtime::supervisor::Snapshot> for SteamGameSnapshot {
@@ -200,9 +207,7 @@ impl From<steam_runtime::supervisor::Snapshot> for SteamGameSnapshot {
             exit_code: s.exit_code,
             error: s.error,
             revision: s.revision,
-            rosetta: s.rosetta.map(|r| SteamRosettaRequest {
-                decision_id: r.decision_id,
-            }),
+            rosetta: s.rosetta.map(Into::into),
         }
     }
 }

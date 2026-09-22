@@ -214,8 +214,8 @@ mod tests {
         (temp, session, source)
     }
 
-    #[test]
-    fn sdk_download_projection_restart_and_deletion_use_the_cloud_vault() {
+    #[tokio::test]
+    async fn sdk_download_projection_restart_and_deletion_use_the_cloud_vault() {
         let (_temp, mut session, mut source) = fixture();
         session.config.root = session.config.root.with_file_name("sdk-cloud");
         session.vault = Vault::open(
@@ -238,10 +238,7 @@ mod tests {
         source.listing.files[0].name = "slot.sav".into();
         let listing = source.listing.clone();
         session.context_mut().unwrap().listing = listing.clone();
-        let runtime = session.runtime.clone();
-        let remote = runtime
-            .block_on(session.read_remote(&mut source, &listing))
-            .unwrap();
+        let remote = session.read_remote(&mut source, &listing).await.unwrap();
         session.set_listing(listing, remote.clone()).unwrap();
         let local = session.capture_before_launch().unwrap().unwrap();
         assert!(local.0.is_empty());
@@ -334,17 +331,12 @@ mod tests {
         assert_eq!(session.vault.local(), Some(&captured));
     }
 
-    #[test]
-    fn unchanged_files_reuse_verified_bytes_across_retry_and_restart() {
+    #[tokio::test]
+    async fn unchanged_files_reuse_verified_bytes_across_retry_and_restart() {
         let (_temp, mut session, mut source) = fixture();
-        let runtime = session.runtime.clone();
         let listing = source.listing.clone();
-        let remote = runtime
-            .block_on(session.read_remote(&mut source, &listing))
-            .unwrap();
-        runtime
-            .block_on(session.read_remote(&mut source, &listing))
-            .unwrap();
+        let remote = session.read_remote(&mut source, &listing).await.unwrap();
+        session.read_remote(&mut source, &listing).await.unwrap();
         assert_eq!(source.downloads, 1);
         assert_eq!(source.listings, 2);
         session.set_listing(listing.clone(), remote).unwrap();
@@ -359,22 +351,16 @@ mod tests {
             control,
         )
         .unwrap();
-        let runtime = session.runtime.clone();
-        runtime
-            .block_on(session.read_remote(&mut source, &listing))
-            .unwrap();
+        session.read_remote(&mut source, &listing).await.unwrap();
         assert_eq!(source.downloads, 1);
         assert_eq!(source.listings, 3);
     }
 
-    #[test]
-    fn changed_content_missing_blob_and_remote_races_never_use_stale_cache() {
+    #[tokio::test]
+    async fn changed_content_missing_blob_and_remote_races_never_use_stale_cache() {
         let (_temp, mut session, mut source) = fixture();
-        let runtime = session.runtime.clone();
         let first = source.listing.clone();
-        let remote = runtime
-            .block_on(session.read_remote(&mut source, &first))
-            .unwrap();
+        let remote = session.read_remote(&mut source, &first).await.unwrap();
         let blob = session
             .config
             .root
@@ -383,17 +369,13 @@ mod tests {
             .join("blobs")
             .join(remote.files.0[NAME].hash.as_str());
         std::fs::remove_file(&blob).unwrap();
-        runtime
-            .block_on(session.read_remote(&mut source, &first))
-            .unwrap();
+        session.read_remote(&mut source, &first).await.unwrap();
         assert_eq!(source.downloads, 2);
         source.listing.change_number = 2;
         source.listing.files[0].sha1 = "2df584286a54a4b83b7fc9161069b37d61cf8e07".into();
         source.bytes = SECOND.into();
         let second = source.listing.clone();
-        let remote = runtime
-            .block_on(session.read_remote(&mut source, &second))
-            .unwrap();
+        let remote = session.read_remote(&mut source, &second).await.unwrap();
         assert_eq!(source.downloads, 3);
         assert_eq!(
             session.vault.read_content(&remote.files.0[NAME]).unwrap(),
@@ -401,26 +383,24 @@ mod tests {
         );
         source.listing.change_number = 3;
         assert!(matches!(
-            runtime.block_on(session.read_remote(&mut source, &second)),
+            session.read_remote(&mut source, &second).await,
             Err(Failure::Changed)
         ));
         assert_eq!(source.downloads, 3);
         let mut foreign = second.clone();
         foreign.steam_id += 1;
         assert!(matches!(
-            runtime.block_on(session.read_remote(&mut source, &foreign)),
+            session.read_remote(&mut source, &foreign).await,
             Err(Failure::Authentication)
         ));
         source.listing.files.clear();
         let deleted = source.listing.clone();
-        let remote = runtime
-            .block_on(session.read_remote(&mut source, &deleted))
-            .unwrap();
+        let remote = session.read_remote(&mut source, &deleted).await.unwrap();
         assert!(remote.files.0.is_empty());
         assert!(session.downloaded.0.is_empty());
         session.control.cancel();
         assert!(matches!(
-            runtime.block_on(session.read_remote(&mut source, &second)),
+            session.read_remote(&mut source, &second).await,
             Err(Failure::Cancelled)
         ));
     }

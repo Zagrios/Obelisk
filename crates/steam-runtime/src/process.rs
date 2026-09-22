@@ -55,6 +55,8 @@ impl Child {
             .arg(prepared.directory.join("steamclient.dylib"))
             .arg(config.app_id.to_string())
             .arg(service)
+            // This host has no Steam friends UI to apply persona changes.
+            .arg("-nofriendsui")
             .current_dir(&prepared.directory)
             .env_clear()
             .env("PATH", "/usr/bin:/bin")
@@ -192,6 +194,10 @@ mod tests {
         };
         let service = "com.zagrios.forge.discovery.fixture";
         let host = Child::host_command(&prepared, &config, service);
+        assert_eq!(
+            host.get_args().last(),
+            Some(std::ffi::OsStr::new("-nofriendsui"))
+        );
         let game = prepared.consumer_environment(service);
         for key in ["Steam3Master", "SteamClientService"] {
             let expected = std::ffi::OsStr::new(&game[key]);

@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     path::PathBuf,
     sync::{
-        Arc, Condvar, Mutex,
+        Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
     time::{Duration, Instant},
@@ -191,7 +191,7 @@ pub struct Control {
     revoked: AtomicBool,
     cancelled: AtomicBool,
     state: Mutex<DecisionState>,
-    changed: Condvar,
+    changed: tokio::sync::Notify,
     stop: tokio::sync::Notify,
     publish: Box<dyn Fn(Status) + Send + Sync>,
 }
@@ -205,7 +205,7 @@ impl Control {
                 status: Status::default(),
                 answer: None,
             }),
-            changed: Condvar::new(),
+            changed: tokio::sync::Notify::new(),
             stop: tokio::sync::Notify::new(),
             publish: Box::new(publish),
         }
@@ -219,7 +219,7 @@ impl Control {
             return Err(crate::Error::InvalidSession);
         }
         state.answer = Some(choice);
-        self.changed.notify_all();
+        self.changed.notify_waiters();
         Ok(())
     }
     pub fn revoke(&self, account_id: u64) -> Result<(), crate::Error> {
@@ -228,13 +228,13 @@ impl Control {
         }
         self.revoked.store(true, Ordering::Release);
         self.stop.notify_waiters();
-        self.changed.notify_all();
+        self.changed.notify_waiters();
         Ok(())
     }
     pub fn cancel(&self) {
         self.cancelled.store(true, Ordering::Release);
         self.stop.notify_waiters();
-        self.changed.notify_all();
+        self.changed.notify_waiters();
     }
     fn check(&self) -> Result<(), Failure> {
         if self.cancelled.load(Ordering::Acquire) {
@@ -278,7 +278,7 @@ impl Control {
         };
         (self.publish)(status);
     }
-    fn ask(&self, failure: Failure) -> Result<Choice, Failure> {
+    async fn ask(&self, failure: Failure) -> Result<Choice, Failure> {
         self.status(
             if matches!(failure, Failure::Conflict) {
                 Phase::Conflict
@@ -287,21 +287,22 @@ impl Control {
             },
             Some(failure),
         );
-        let deadline = Instant::now() + Duration::from_secs(600);
-        let mut state = self.state.lock().unwrap();
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(600);
         loop {
+            let changed = self.changed.notified();
+            tokio::pin!(changed);
+            changed.as_mut().enable();
             self.check()?;
-            if let Some(choice) = state.answer.take() {
-                if choice == Choice::Cancel {
-                    return Err(Failure::Cancelled);
-                }
-                return Ok(choice);
+            if let Some(choice) = self.state.lock().unwrap().answer.take() {
+                return if choice == Choice::Cancel {
+                    Err(Failure::Cancelled)
+                } else {
+                    Ok(choice)
+                };
             }
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
+            if tokio::time::timeout_at(deadline, changed).await.is_err() {
                 return Err(Failure::Cancelled);
             }
-            state = self.changed.wait_timeout(state, remaining).unwrap().0;
         }
     }
     async fn guarded<T>(
@@ -319,10 +320,12 @@ impl Control {
             result = tokio::time::timeout(duration, future) => result.map_err(|_| Failure::Network)?,
         }
     }
-    fn wait(&self, duration: Duration) -> Result<(), Failure> {
-        let state = self.state.lock().unwrap();
+    async fn wait(&self, duration: Duration) -> Result<(), Failure> {
+        let changed = self.changed.notified();
+        tokio::pin!(changed);
+        changed.as_mut().enable();
         self.check()?;
-        let _guard = self.changed.wait_timeout(state, duration).unwrap();
+        let _ = tokio::time::timeout(duration, changed).await;
         self.check()
     }
 }
@@ -416,16 +419,27 @@ mod tests {
         control.revoke(42).unwrap();
         assert!(matches!(control.check(), Err(Failure::Authentication)));
     }
-    #[test]
-    fn signout_wakes_pending_decision_and_detachment_does_not_revoke() {
+    #[tokio::test]
+    async fn a_pending_choice_keeps_the_supervisors_executor_running() {
+        let (published, mut requests) = tokio::sync::mpsc::unbounded_channel();
+        let control = Control::new(42, move |status| {
+            published.send(status).unwrap();
+        });
+        let (choice, ()) = tokio::join!(control.ask(Failure::Conflict), async {
+            let status = requests.recv().await.unwrap();
+            tokio::task::yield_now().await;
+            control.respond(status.id, Choice::Local).unwrap();
+        });
+        assert_eq!(choice.unwrap(), Choice::Local);
+    }
+
+    #[tokio::test]
+    async fn signout_wakes_pending_decision_and_detachment_does_not_revoke() {
         let control = Arc::new(Control::new(42, |_| {}));
         let worker = control.clone();
-        let thread = std::thread::spawn(move || worker.ask(Failure::Conflict));
+        let task = tokio::spawn(async move { worker.ask(Failure::Conflict).await });
         control.revoke(42).unwrap();
-        assert!(matches!(
-            thread.join().unwrap(),
-            Err(Failure::Authentication)
-        ));
+        assert!(matches!(task.await.unwrap(), Err(Failure::Authentication)));
         let control = Arc::new(Control::new(42, |_| {}));
         let observer = control.clone();
         drop(observer);

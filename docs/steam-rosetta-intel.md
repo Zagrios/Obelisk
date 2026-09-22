@@ -1,8 +1,30 @@
-# Intel Steam games and Rosetta
+# Intel games and Rosetta
 
 The existing Launch action retains its file-verification setting, reconciles Cloud, and then checks the selected native architecture. On Apple silicon, an Intel launch requires a successful execution of Forge's signed Intel probe. If Rosetta is unavailable, the supervisor keeps the launch reservation and publishes a request for the current session and account. Swift presents the approved Rosetta sheet and opens `Contents/Helpers/Forge Rosetta.app` through `NSWorkspace` when the user selects Install. The system owns installation and any authentication prompts. Swift checks readiness through the Rust supervisor once per second, independently of the system opening callback, for at most ten minutes. The supervisor requires successful Intel execution before resuming.
 
 Cancellation and account revocation wake the waiting supervisor. Installation callbacks belonging to an old session, account or decision cannot resume a game. An opening error does not stop readiness checks unless it reports cancellation. The sheet offers retry if readiness times out or the supervisor reports another failure. The file verification, Cloud coordinator, environment, save ownership and single-session guards retain their existing responsibilities.
+
+## Shared Steam and Epic requirement
+
+Both storefronts use the same bounded Mach-O parser and signed Rosetta probe,
+the same asynchronous Rust wait in `rosetta::Gate::wait`, and the shared `RosettaModel`
+and `RosettaPromptView`. The wait uses `Notify` for resume and cancellation;
+only the bounded execution probe runs on a blocking worker. Steam selects a slice
+compatible with its original Steam API library; Epic selects from the game
+executable alone, preferring ARM64 and otherwise accepting x86_64. Epic does not
+load the Steam runtime. Its native exec helper lets macOS launch the selected
+Intel executable after Rosetta availability has been confirmed.
+
+Each provider retains its own account identity and session journal. The common
+Rosetta request carries a decision ID. A resume must match session, account and
+decision, and the supervisor probes again before admitting the game. Cancelling
+or signing out before admission prevents execution; closing the UI after an
+admitted launch never terminates the game. `game_session` shares exec
+confirmation and event-driven child exit for both providers.
+
+The shared path is covered by disposable process and Mach-O fixtures and Swift
+session tests. Those checks do not prove a real Epic Intel game or a Rosetta
+installation on a Mac where Rosetta is absent.
 
 ## Installation completion
 

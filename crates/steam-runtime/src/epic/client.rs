@@ -90,6 +90,7 @@ impl Client {
                 saved.cloud_phase = CloudPhase::Pending;
             }
             saved.allowed_choices.clear();
+            saved.rosetta = None;
             saved.revision += 1;
             write_snapshot(&self.root, saved)?;
         }
@@ -123,18 +124,38 @@ impl Client {
             },
         )
     }
+    pub fn resume_after_rosetta(&self, account: &str, decision_id: u64) -> Result<()> {
+        let response = self.command_snapshot(
+            Some(account),
+            Command::ResumeAfterRosetta {
+                id: self.id.clone(),
+                account: account.into(),
+                decision_id,
+            },
+        )?;
+        if response.rosetta.is_some() {
+            return Err(Error::RosettaUnavailable);
+        }
+        if response.finished() && response.phase != Phase::Finished {
+            return Err(Error::Session);
+        }
+        Ok(())
+    }
     fn command(&self, account: Option<&str>, command: Command) -> Result<()> {
+        self.command_snapshot(account, command).map(|_| ())
+    }
+    fn command_snapshot(&self, account: Option<&str>, command: Command) -> Result<Snapshot> {
         let saved = read_snapshot(&self.root, Some(&self.id))?.ok_or(Error::Session)?;
         if account.is_some_and(|a| a != saved.account_id) {
             return Err(Error::Session);
         }
         if saved.finished() {
-            return Ok(());
+            return Ok(saved);
         }
         if inspect(&self.helper, saved.supervisor.pid)?.as_ref() != Some(&saved.supervisor) {
             return Err(Error::Session);
         }
-        exchange(&saved, &command).map(|_| ())
+        exchange(&saved, &command)
     }
 }
 

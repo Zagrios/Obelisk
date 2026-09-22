@@ -2,7 +2,7 @@
 
 Forge's existing Launch button starts a separate Rust supervisor, which starts
 the Steam host before the native macOS game. It passes the session already held
-by `SteamModel` through a one-time private stdin pipe. No extra login or Keychain query is involved. After Cloud reconciliation, Intel games can present the [Rosetta requirement](steam-rosetta-intel.md) if translation is unavailable.
+by `SteamModel` through a one-time private stdin pipe. No interactive sign-in or additional Keychain query is involved. After Cloud reconciliation, Intel games can present the [Rosetta requirement](steam-rosetta-intel.md) if translation is unavailable.
 
 The app bundles a minimal, hash-pinned Valve runtime archive. The host loads its
 original libraries from a verified private cache prepared from that archive. It
@@ -147,6 +147,38 @@ and no failures, app signature verification and isolated runtime loading. That
 automated validation did not use a real game or save.
 
 ## Surviving Forge closure and crash
+
+Steam and Epic share `game_session` for exec confirmation, process identity
+resolution and asynchronous child reaping. Each supervisor runs one Tokio
+executor through preparation, gameplay and finalization. Steam Cloud uses that
+executor. Steam presence uses the native host's existing connection. Native
+Steam host preparation stays in an awaited blocking task, while host events
+retain their independent pipe observer. Account and Cloud protocols remain in
+their storefront adapters.
+
+After confirmed execution, including the Intel exec handshake, the supervisor
+requests Online persona on the native host's existing Steam user. The game's
+own SDK registers its activity with that same host. Account revocation requests
+Offline permanently without killing the game; normal exit withdraws presence
+before closing the host and finalizing Cloud. Closing Forge leaves the supervisor
+and host alive. Reopening observes the existing session. A lost host can lose
+Steam presence while the game continues; process observation does not replace
+that connection. See the [presence lifecycle](steam-cm-notes.md#publishing-the-supervised-game)
+and [pinned native ABI evidence](evidence/steam-native-presence-abi.md).
+
+Both supervisor entry points clear the inherited signal mask before creating
+Tokio or worker threads. Rust preserves the launching thread's mask across
+`Command::spawn`; a blocked `SIGCHLD` prevents Tokio's child-exit notification
+from waking `Child::wait`. The former blocking Steam wait and Epic `try_wait`
+loop did not depend on that notification, so switching to the shared async wait
+exposed this startup requirement. The native regression fixture starts with
+`SIGCHLD` and `SIGTERM` blocked and verifies that `detach_supervisor` enables
+signals inside the new process. No polling fallback is added to game tracking.
+An isolated Swift probe on September 22, 2026 found both signals unblocked on
+the main thread and blocked on a `DispatchQueue.global()` worker. A live stuck
+supervisor retained its exited Silksong child as a zombie; neither a new
+`SIGCHLD` nor `SIGTERM` woke it. The corrected initialization passed the native
+fixture, but a new real launch/exit check was blocked by the locked Mac.
 
 The supervisor receives its bounded launch request and credentials once over a
 private Unix socket pair mapped to stdin and stderr. After publishing its initial

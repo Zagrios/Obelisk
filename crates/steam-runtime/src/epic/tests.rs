@@ -1,4 +1,5 @@
 use super::*;
+use crate::architecture::tests::{ARM64, INTEL};
 use crate::supervisor::storage;
 use std::{
     collections::HashMap,
@@ -21,6 +22,7 @@ fn control(root: &Path) -> Arc<Control> {
         cancel: CancelToken::new(),
         admission: Mutex::new(false),
         changed: Condvar::new(),
+        rosetta: crate::rosetta::Gate::new(root.join("rosetta"), |path| Ok(path.exists())),
         state: Mutex::new(State {
             begun: false,
             observed: Instant::now(),
@@ -42,6 +44,7 @@ fn control(root: &Path) -> Arc<Control> {
                 supervisor: identity(std::process::id()),
                 game: None,
                 starting: None,
+                rosetta: None,
                 socket: root.join("control.sock"),
             },
         }),
@@ -176,23 +179,22 @@ fn decisions_are_bound_to_account_session_revision_and_allowed_choices() {
             Choice::LaunchAnyway,
         ),
     ] {
-        let (mut send, receive) = UnixStream::pair().unwrap();
-        storage::send(
-            &mut send,
-            &Command::Choose {
-                id,
-                account,
-                decision,
-                choice,
-            },
-        )
-        .unwrap();
-        assert!(server::handle(receive, &control).is_err());
+        assert!(
+            send_command(
+                &control,
+                &Command::Choose {
+                    id,
+                    account,
+                    decision,
+                    choice,
+                },
+            )
+            .is_err()
+        );
         assert!(control.state.lock().unwrap().choice.is_none());
     }
-    let (mut send, receive) = UnixStream::pair().unwrap();
-    storage::send(
-        &mut send,
+    send_command(
+        &control,
         &Command::Choose {
             id: snapshot.id,
             account: snapshot.account_id,
@@ -201,8 +203,282 @@ fn decisions_are_bound_to_account_session_revision_and_allowed_choices() {
         },
     )
     .unwrap();
-    server::handle(receive, &control).unwrap();
     assert_eq!(control.state.lock().unwrap().choice, Some(Choice::Cloud));
+}
+
+fn send_command(control: &Control, command: &Command) -> Result<Snapshot> {
+    let (mut send, receive) = UnixStream::pair().unwrap();
+    storage::send(&mut send, command).unwrap();
+    server::handle(receive, control)?;
+    storage::packet(send).map_err(Into::into)
+}
+
+fn resume_rosetta(
+    control: &Control,
+    id: &str,
+    account: &str,
+    decision_id: u64,
+) -> Result<Snapshot> {
+    send_command(
+        control,
+        &Command::ResumeAfterRosetta {
+            id: id.into(),
+            account: account.into(),
+            decision_id,
+        },
+    )
+}
+
+async fn rosetta_request(control: &Control) -> RosettaRequest {
+    tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            if let Some(request) = control.snapshot().rosetta {
+                return request;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn intel_rosetta_wait_requires_matching_session_and_a_successful_new_probe() {
+    let root = tempfile::tempdir().unwrap();
+    let mut control = control(root.path());
+    Arc::get_mut(&mut control).unwrap().rosetta.check = |path| {
+        let count = path.with_extension("count");
+        let previous = std::fs::read_to_string(&count).unwrap_or_else(|_| "0".into());
+        std::fs::write(count, (previous.parse::<u32>().unwrap() + 1).to_string())?;
+        Ok(path.exists())
+    };
+    let pending = Arc::clone(&control);
+    let gate = tokio::spawn(async move { server::wait_for_rosetta(&pending).await });
+    let request = rosetta_request(&control).await;
+    let snapshot = control.snapshot();
+    assert!(snapshot.game.is_none() && snapshot.starting.is_none());
+    let saved = read_snapshot(root.path(), None).unwrap().unwrap();
+    assert_eq!(saved.rosetta, Some(request.clone()));
+    for (id, account, decision) in [
+        ("wrong", snapshot.account_id.as_str(), request.decision_id),
+        (snapshot.id.as_str(), "wrong", request.decision_id),
+        (
+            snapshot.id.as_str(),
+            snapshot.account_id.as_str(),
+            request.decision_id + 1,
+        ),
+    ] {
+        assert!(resume_rosetta(&control, id, account, decision).is_err());
+    }
+    let unchanged = resume_rosetta(
+        &control,
+        &snapshot.id,
+        &snapshot.account_id,
+        request.decision_id,
+    )
+    .unwrap();
+    assert_eq!(unchanged.rosetta, Some(request.clone()));
+    assert!(!gate.is_finished());
+    std::fs::write(&control.rosetta.helper, b"available").unwrap();
+    let resumed = resume_rosetta(
+        &control,
+        &snapshot.id,
+        &snapshot.account_id,
+        request.decision_id,
+    )
+    .unwrap();
+    assert!(resumed.rosetta.is_none());
+    gate.await.unwrap().unwrap();
+    assert_eq!(
+        std::fs::read_to_string(control.rosetta.helper.with_extension("count")).unwrap(),
+        "4"
+    );
+    assert!(
+        resume_rosetta(
+            &control,
+            &snapshot.id,
+            &snapshot.account_id,
+            request.decision_id
+        )
+        .is_err()
+    );
+}
+
+#[tokio::test]
+async fn rosetta_cancellation_and_account_revocation_prevent_later_admission() {
+    for revoke in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let control = control(root.path());
+        let pending = Arc::clone(&control);
+        let gate = tokio::spawn(async move { server::wait_for_rosetta(&pending).await });
+        let request = rosetta_request(&control).await;
+        let snapshot = control.snapshot();
+        let command = if revoke {
+            Command::Revoke {
+                id: snapshot.id.clone(),
+                account: snapshot.account_id.clone(),
+            }
+        } else {
+            Command::Cancel {
+                id: snapshot.id.clone(),
+            }
+        };
+        send_command(&control, &command).unwrap();
+        assert!(matches!(gate.await.unwrap(), Err(Error::Cancelled)));
+        std::fs::write(&control.rosetta.helper, b"available").unwrap();
+        assert!(
+            resume_rosetta(
+                &control,
+                &snapshot.id,
+                &snapshot.account_id,
+                request.decision_id
+            )
+            .is_err()
+        );
+        assert!(matches!(
+            server::spawn_game(
+                &helper(root.path()),
+                disposable_target(root.path()),
+                &control,
+                inspect_fixture
+            )
+            .await,
+            Err(Error::Cancelled)
+        ));
+        assert!(!root.path().join("marker").exists());
+        control.fail(&Error::Cancelled).unwrap();
+        assert!(control.snapshot().rosetta.is_none());
+    }
+}
+
+#[tokio::test]
+async fn available_rosetta_needs_no_prompt_and_legacy_snapshots_remain_readable() {
+    let root = tempfile::tempdir().unwrap();
+    let control = control(root.path());
+    std::fs::write(&control.rosetta.helper, b"available").unwrap();
+    server::wait_for_rosetta(&control).await.unwrap();
+    let mut legacy = serde_json::to_value(control.snapshot()).unwrap();
+    legacy.as_object_mut().unwrap().remove("rosetta");
+    let snapshot: Snapshot = serde_json::from_value(legacy).unwrap();
+    assert!(snapshot.rosetta.is_none());
+}
+
+fn launch_fixture(root: &Path) -> (Configuration, epic_kit::client::LaunchPlan) {
+    let executable = root.join("game");
+    let config = Configuration {
+        root: root.join("vault"),
+        home: root.into(),
+        install: root.into(),
+        session_directory: root.join("session"),
+        helper: root.join("helper"),
+        namespace: "fixture".into(),
+        catalog_item_id: "fixture".into(),
+        app_name: "fixture".into(),
+        platform: "Mac".into(),
+        language: "en".into(),
+    };
+    let plan = epic_kit::client::LaunchPlan {
+        app_name: "fixture".into(),
+        platform: "Mac".into(),
+        activity: None,
+        ownership_token: None,
+        target: forge_core::launch::LaunchTarget {
+            executable: executable.to_string_lossy().into_owned(),
+            arguments: vec![],
+            working_directory: root.to_string_lossy().into_owned(),
+            is_application_bundle: false,
+        },
+    };
+    (config, plan)
+}
+
+fn write_macho(executable: &Path, cpu: u32) {
+    std::fs::write(executable, crate::architecture::tests::thin(cpu, true)).unwrap();
+}
+
+#[test]
+fn epic_target_checks_the_full_macho_before_repairing_executable_permission() {
+    use crate::architecture::Architecture;
+    let root = tempfile::tempdir().unwrap();
+    let executable = root.path().join("game");
+    let (config, plan) = launch_fixture(root.path());
+    std::fs::write(&executable, b"\xcf\xfa\xed\xfe").unwrap();
+    std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o600)).unwrap();
+    assert!(matches!(
+        server::native_target(&plan, &config),
+        Err(Error::Unsupported)
+    ));
+    assert_eq!(
+        std::fs::metadata(&executable).unwrap().permissions().mode() & 0o100,
+        0
+    );
+    for (cpu, expected) in [(INTEL, Architecture::Intel), (ARM64, Architecture::Arm64)] {
+        write_macho(&executable, cpu);
+        let (target, architecture, ownership) = server::native_target(&plan, &config).unwrap();
+        assert_eq!(architecture, expected);
+        assert_eq!(target.executable, executable.canonicalize().unwrap());
+        assert!(ownership.is_none());
+        assert_ne!(
+            std::fs::metadata(&executable).unwrap().permissions().mode() & 0o100,
+            0
+        );
+    }
+}
+
+#[tokio::test]
+async fn rosetta_installation_refreshes_credentials_and_revalidates_the_new_target() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    for refreshed_cpu in [INTEL, ARM64] {
+        let root = tempfile::tempdir().unwrap();
+        write_macho(&root.path().join("game"), INTEL);
+        let control = control(root.path());
+        let calls = Arc::new(AtomicUsize::new(0));
+        let prepared = {
+            let pending = Arc::clone(&control);
+            let calls = Arc::clone(&calls);
+            let install = root.path().to_owned();
+            tokio::spawn(async move {
+                let (config, _) = launch_fixture(&install);
+                server::prepare_game(&config, &pending, || {
+                    let generation = calls.fetch_add(1, Ordering::SeqCst);
+                    let (_, mut plan) = launch_fixture(&install);
+                    if generation == 1 {
+                        write_macho(&install.join("game"), refreshed_cpu);
+                        if refreshed_cpu == ARM64 {
+                            // The refreshed target is native and no longer needs Rosetta.
+                            std::fs::remove_file(&pending.rosetta.helper).unwrap();
+                        }
+                    }
+                    plan.target.arguments.push(format!("code-{generation}"));
+                    plan.ownership_token = Some(format!("ownership-{generation}").into_bytes());
+                    std::future::ready(Ok(plan))
+                })
+                .await
+            })
+        };
+        let request = rosetta_request(&control).await;
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        let snapshot = control.snapshot();
+        std::fs::write(&control.rosetta.helper, b"available").unwrap();
+        resume_rosetta(
+            &control,
+            &snapshot.id,
+            &snapshot.account_id,
+            request.decision_id,
+        )
+        .unwrap();
+        let prepared = prepared.await.unwrap().unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        assert_eq!(prepared.target.arguments[0], "code-1");
+        let token = PathBuf::from(
+            prepared.target.arguments[1]
+                .strip_prefix("-epicovt=")
+                .unwrap(),
+        );
+        assert_eq!(std::fs::read(&token).unwrap(), b"ownership-1");
+        drop(prepared);
+        assert!(!token.exists());
+    }
 }
 
 #[test]
@@ -217,26 +493,22 @@ fn cancellation_after_admission_does_not_mean_game_exit_but_signout_revokes_clou
         })
         .unwrap();
     let snapshot = control.snapshot();
-    let (mut send, receive) = UnixStream::pair().unwrap();
-    storage::send(
-        &mut send,
+    send_command(
+        &control,
         &Command::Cancel {
             id: snapshot.id.clone(),
         },
     )
     .unwrap();
-    server::handle(receive, &control).unwrap();
     assert!(!control.cancel.is_cancelled());
-    let (mut send, receive) = UnixStream::pair().unwrap();
-    storage::send(
-        &mut send,
+    send_command(
+        &control,
         &Command::Revoke {
             id: snapshot.id,
             account: snapshot.account_id,
         },
     )
     .unwrap();
-    server::handle(receive, &control).unwrap();
     assert!(control.cancel.is_cancelled());
     assert_eq!(control.snapshot().game, Some(identity(42)));
     assert!(!control.snapshot().finished());
@@ -252,27 +524,25 @@ async fn preparation_waits_for_explicit_matching_begin_and_honors_cancellation()
             .is_err()
     );
     let snapshot = control.snapshot();
-    let (mut send, receive) = UnixStream::pair().unwrap();
-    storage::send(
-        &mut send,
-        &Command::Begin {
-            id: snapshot.id.clone(),
-            account: "b".repeat(32),
-        },
-    )
-    .unwrap();
-    assert!(server::handle(receive, &control).is_err());
+    assert!(
+        send_command(
+            &control,
+            &Command::Begin {
+                id: snapshot.id.clone(),
+                account: "b".repeat(32),
+            },
+        )
+        .is_err()
+    );
     assert!(!control.state.lock().unwrap().begun);
-    let (mut send, receive) = UnixStream::pair().unwrap();
-    storage::send(
-        &mut send,
+    send_command(
+        &control,
         &Command::Begin {
             id: snapshot.id,
             account: snapshot.account_id,
         },
     )
     .unwrap();
-    server::handle(receive, &control).unwrap();
     server::await_begin(&control).await.unwrap();
     control.cancel.cancel();
     assert!(matches!(
@@ -373,7 +643,7 @@ fn helper(root: &Path) -> PathBuf {
     std::fs::write(
         &path,
         format!(
-            "#!/bin/sh\nexec '{executable}' --exact epic::tests::exec_child_fixture --ignored\n"
+            "#!/bin/sh\nexec '{executable}' --exact epic::tests::exec_child_fixture --ignored >/dev/null\n"
         ),
     )
     .unwrap();
@@ -471,8 +741,8 @@ fn real_supervisor_channel_is_observable_before_game_admission() {
     assert_eq!(observed.revision, peer.revision);
 }
 
-#[test]
-fn exec_is_admitted_only_after_durable_ownership_and_survives_observer_drop() {
+#[tokio::test]
+async fn exec_is_admitted_only_after_durable_ownership_and_survives_observer_drop() {
     let root = tempfile::tempdir().unwrap();
     let control = control(root.path());
     let mut child = server::spawn_game(
@@ -481,34 +751,161 @@ fn exec_is_admitted_only_after_durable_ownership_and_survives_observer_drop() {
         &control,
         inspect_fixture,
     )
+    .await
     .unwrap();
     let saved = read_snapshot(root.path(), None).unwrap().unwrap();
     assert_eq!(saved.phase, Phase::Running);
     assert!(saved.starting.is_some());
     drop(control);
-    assert_eq!(child.wait().unwrap().code(), Some(7));
+    assert_eq!(child.wait().await.unwrap().code(), Some(7));
     assert_eq!(
         std::fs::read(root.path().join("marker")).unwrap(),
         b"fixture"
     );
 }
 
-#[test]
-fn journal_failure_before_exec_never_runs_target() {
+#[tokio::test]
+async fn journal_failure_before_exec_never_runs_target() {
     let root = tempfile::tempdir().unwrap();
     let invalid = root.path().join("not-a-directory");
     std::fs::write(&invalid, b"fixture").unwrap();
     let control = control(&invalid);
+    let helper = helper(root.path());
+    let reaped = root.path().join("helper-exited");
+    std::fs::write(
+        &helper,
+        format!(
+            "#!/bin/sh\n/bin/cat >/dev/null\nsleep 0.05\nprintf done > '{}'\n",
+            reaped.to_string_lossy().replace('\'', "'\\''")
+        ),
+    )
+    .unwrap();
     assert!(
         server::spawn_game(
-            &helper(root.path()),
+            &helper,
             disposable_target(root.path()),
             &control,
             inspect_fixture
         )
+        .await
         .is_err()
     );
+    assert_eq!(std::fs::read(&reaped).unwrap(), b"done");
+    assert!(control.snapshot().starting.is_none());
     assert!(!root.path().join("marker").exists());
+}
+
+fn inspect_executing_fixture(pid: u32) -> Result<Option<Identity>> {
+    let mut executing = identity(pid);
+    executing.executable = "/bin/sh".into();
+    Ok(Some(executing))
+}
+
+#[tokio::test]
+async fn game_presence_is_removed_at_exit_before_cloud_finalization() {
+    let root = tempfile::tempdir().unwrap();
+    let control = control(root.path());
+    let target = disposable_target(root.path());
+    let executable = target.executable.clone();
+    let mut child = server::spawn_game(&helper(root.path()), target, &control, inspect_fixture)
+        .await
+        .unwrap();
+    let mut publication = Vec::new();
+    let exit = server::wait_for_game(
+        &mut child,
+        &control,
+        inspect_executing_fixture,
+        &executable,
+        |active| publication.push(active),
+    )
+    .await
+    .unwrap();
+    assert_eq!(exit, 7);
+    assert_eq!(publication, [true, false]);
+    assert_eq!(control.snapshot().phase, Phase::Running);
+}
+
+#[tokio::test]
+async fn game_presence_never_advertises_an_unexecuted_target_or_revoked_account() {
+    for revoked in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let control = control(root.path());
+        let target = disposable_target(root.path());
+        let executable = target.executable.clone();
+        let helper = helper(root.path());
+        if !revoked {
+            std::fs::write(
+                &helper,
+                "#!/bin/sh\n/bin/cat >/dev/null\nprintf 'exec-failed\\n'\nexit 126\n",
+            )
+            .unwrap();
+        }
+        let mut child = server::spawn_game(&helper, target, &control, inspect_fixture)
+            .await
+            .unwrap();
+        if revoked {
+            control.cancel.cancel();
+        }
+        let mut publication = Vec::new();
+        let inspect = if revoked {
+            inspect_executing_fixture
+        } else {
+            inspect_fixture
+        };
+        let result = server::wait_for_game(&mut child, &control, inspect, &executable, |active| {
+            publication.push(active)
+        })
+        .await;
+        if revoked {
+            assert_eq!(result.unwrap(), 7);
+        } else {
+            assert!(matches!(result, Err(Error::Failed)));
+            assert!(control.snapshot().starting.is_none());
+            assert!(!root.path().join("marker").exists());
+        }
+        assert!(publication.is_empty());
+    }
+}
+
+#[tokio::test]
+async fn game_presence_revocation_withdraws_the_activity_while_the_process_keeps_running() {
+    let root = tempfile::tempdir().unwrap();
+    let control = control(root.path());
+    let mut target = disposable_target(root.path());
+    target.arguments[1] =
+        "while [ ! -f release ]; do sleep 0.01; done; printf done > exited; exit 7".into();
+    let executable = target.executable.clone();
+    let mut child = server::spawn_game(&helper(root.path()), target, &control, inspect_fixture)
+        .await
+        .unwrap();
+    let mut publication = Vec::new();
+    let result = tokio::time::timeout(
+        Duration::from_secs(5),
+        server::wait_for_game(
+            &mut child,
+            &control,
+            inspect_executing_fixture,
+            &executable,
+            |active| {
+                publication.push(active);
+                if active {
+                    control.cancel.cancel();
+                } else {
+                    assert!(!root.path().join("exited").exists());
+                    std::fs::write(root.path().join("release"), b"").unwrap();
+                }
+            },
+        ),
+    )
+    .await;
+    if result.is_err() {
+        let _ = child.kill().await;
+        let _ = child.wait().await;
+    }
+    let exit = result.unwrap().unwrap();
+    assert_eq!(publication, [true, false]);
+    assert_eq!(exit, 7);
+    assert_eq!(std::fs::read(root.path().join("exited")).unwrap(), b"done");
 }
 
 #[test]

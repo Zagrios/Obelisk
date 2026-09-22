@@ -14,7 +14,6 @@ pub struct Session {
     credentials: Credentials,
     session_id: String,
     control: Arc<Control>,
-    runtime: Arc<tokio::runtime::Runtime>,
     http: reqwest::Client,
     preferences: CloudPreferencesCache,
     downloaded: Manifest,
@@ -48,15 +47,11 @@ impl Session {
         store::directory(&config, credentials.steam_id)?;
         let vault = Vault::open(&config.root, scope(&config, credentials.steam_id))?;
         let context = Context::load(&config, credentials.steam_id)?;
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()?;
         Ok(Self {
             config,
             credentials,
             session_id,
             control,
-            runtime: Arc::new(runtime),
             http: steam_kit::client::http_client().map_err(|_| Failure::Network)?,
             preferences: CloudPreferencesCache::default(),
             downloaded: Manifest::default(),
@@ -76,15 +71,15 @@ impl Session {
         self.vault.recover_local()?;
         Ok(())
     }
-    pub fn prepare(&mut self) -> Result<(), crate::Error> {
-        let result = self.prepare_inner();
+    pub async fn prepare(&mut self) -> Result<(), crate::Error> {
+        let result = self.prepare_inner().await;
         if matches!(result, Err(crate::Error::Cloud(Failure::Authentication))) {
             self.control
                 .status(Phase::Failed, Some(Failure::Authentication));
         }
         result
     }
-    fn prepare_inner(&mut self) -> Result<(), crate::Error> {
+    async fn prepare_inner(&mut self) -> Result<(), crate::Error> {
         // The supervisor has acquired its process-owner lock and checked the
         // previous game identity before admitting this launch.
         self.recover_dead_owner()?;
@@ -95,11 +90,11 @@ impl Session {
         loop {
             let remaining = match budget.poll(Instant::now()) {
                 Retry::Wait(wait) => {
-                    self.control.wait(wait)?;
+                    self.control.wait(wait).await?;
                     continue;
                 }
                 Retry::Defer => {
-                    match self.control.ask(last)? {
+                    match self.control.ask(last).await? {
                         Choice::Retry => choice = None,
                         Choice::Local => choice = Some(Choice::Local),
                         Choice::Cloud => choice = Some(Choice::Cloud),
@@ -118,10 +113,10 @@ impl Session {
                 Retry::Attempt { remaining } => remaining,
             };
             self.control.status(Phase::Checking, None);
-            let runtime = self.runtime.clone();
             let control = self.control.clone();
-            let result =
-                runtime.block_on(control.guarded(remaining, self.preflight(choice.take())));
+            let result = control
+                .guarded(remaining, self.preflight(choice.take()))
+                .await;
             match result {
                 Ok(()) => return Ok(()),
                 Err(failure @ (Failure::Cancelled | Failure::Authentication)) => {
@@ -449,7 +444,7 @@ impl Session {
             let _ = self.vault.game_exited(&self.session_id);
         }
     }
-    pub fn finished(&mut self) {
+    pub async fn finished(&mut self) {
         let capture = (|| -> Result<(), Failure> {
             if self.game_guard_held() {
                 self.vault.game_exited(&self.session_id)?;
@@ -470,9 +465,9 @@ impl Session {
         if self.context.is_none() {
             return;
         }
-        self.finalize(None);
+        self.finalize(None).await;
     }
-    fn finalize(&mut self, choice: Option<Choice>) {
+    async fn finalize(&mut self, choice: Option<Choice>) {
         self.collect_garbage();
         let approved = choice.and_then(|_| self.context.as_ref().map(|c| c.remote.clone()));
         let mut budget = RetryBudget::new(Instant::now());
@@ -481,18 +476,18 @@ impl Session {
             match budget.poll(Instant::now()) {
                 Retry::Defer => break,
                 Retry::Wait(wait) => {
-                    if let Err(error) = self.control.wait(wait) {
+                    if let Err(error) = self.control.wait(wait).await {
                         last = error;
                         break;
                     }
                 }
                 Retry::Attempt { remaining } => {
                     self.control.status(Phase::Syncing, None);
-                    let runtime = self.runtime.clone();
                     let control = self.control.clone();
-                    match runtime.block_on(
-                        control.guarded(remaining, self.upload(choice, approved.as_ref())),
-                    ) {
+                    match control
+                        .guarded(remaining, self.upload(choice, approved.as_ref()))
+                        .await
+                    {
                         Ok(()) => {
                             return;
                         }
@@ -768,8 +763,9 @@ pub fn resume(
     _idle: &crate::supervisor::IdleGuard,
     excluded_app_ids: &[u32],
 ) -> Result<Vec<(u32, Status, String)>, Failure> {
+    let runtime = crate::executor()?;
     resume_stores(root, credentials, control, excluded_app_ids, |session| {
-        session.finalize(None)
+        runtime.block_on(session.finalize(None))
     })
 }
 
@@ -845,7 +841,7 @@ pub fn resolve(
     if session.context()?.token()? != token {
         return Err(Failure::Changed);
     }
-    session.finalize(Some(choice));
+    crate::executor()?.block_on(session.finalize(Some(choice)));
     Ok((
         control.state.lock().unwrap().status.clone(),
         session.context()?.token()?,
@@ -1052,13 +1048,13 @@ mod removal_tests {
         }
     }
 
-    #[test]
-    fn preparation_authentication_failure_is_not_reported_as_cancellation() {
+    #[tokio::test]
+    async fn preparation_authentication_failure_is_not_reported_as_cancellation() {
         let (_temporary, mut session, _) = fixture();
         session.control.revoke(ACCOUNT).unwrap();
 
         assert!(matches!(
-            session.prepare(),
+            session.prepare().await,
             Err(crate::Error::Cloud(Failure::Authentication))
         ));
         let status = session.control.state.lock().unwrap().status.clone();
@@ -1548,6 +1544,7 @@ mod removal_tests {
             let credentials = session.credentials.clone();
             let control = session.control.clone();
             drop(session);
+            crate::tests::wait_for_lock_release(&config.root.join("owner.lock"));
 
             let mut session = Session::open(
                 config,

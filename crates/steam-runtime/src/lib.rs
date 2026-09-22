@@ -3,11 +3,14 @@ mod architecture;
 pub mod cloud;
 pub mod epic;
 mod files;
+mod game_session;
 pub mod package;
 #[cfg(feature = "packaging")]
 pub mod packaging;
+mod presence;
 mod process;
 pub mod protocol;
+mod rosetta;
 pub mod supervisor;
 use protocol::{Credentials, Event};
 use std::{
@@ -18,6 +21,33 @@ use std::{
     },
     time::{Duration, Instant},
 };
+
+/// Every supervisor entry point drives its async work from one blocking thread.
+pub(crate) fn executor() -> std::io::Result<Executor> {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map(|runtime| Executor(Some(runtime)))
+}
+
+/// Dropping waits at most a second for blocking work, so a pending DNS lookup
+/// cannot hold a caller whose async work has already completed.
+pub(crate) struct Executor(Option<tokio::runtime::Runtime>);
+impl Executor {
+    pub(crate) fn block_on<F: std::future::Future>(&self, future: F) -> F::Output {
+        self.0
+            .as_ref()
+            .expect("executor runs until dropped")
+            .block_on(future)
+    }
+}
+impl Drop for Executor {
+    fn drop(&mut self) {
+        if let Some(runtime) = self.0.take() {
+            runtime.shutdown_timeout(Duration::from_secs(1));
+        }
+    }
+}
 
 /// The pinned engine hash lives only in the runtime manifest; this reads it back.
 pub fn client_sha256() -> &'static str {
@@ -336,6 +366,15 @@ impl Runtime {
     pub fn diagnostic_path(&self) -> String {
         self.report.to_string_lossy().into_owned()
     }
+    pub(crate) fn set_presence(&self, online: bool) -> Result<(), Error> {
+        let mut inner = self.inner.lock().map_err(|_| Error::StartFailed)?;
+        if inner.stopped {
+            return Ok(());
+        }
+        protocol::HostCommand::SetPresence { online }
+            .write(inner.host.input.as_mut().ok_or(Error::StartFailed)?)
+            .map_err(|_| Error::StartFailed)
+    }
     pub fn started(&self, pid: u32) -> Result<(), Error> {
         let mut inner = self.inner.lock().map_err(|_| Error::StartFailed)?;
         if inner.stopped {
@@ -449,6 +488,28 @@ mod tests {
         let mut command = std::process::Command::new("/bin/sh");
         command.arg("-c").arg(script);
         process::Child::spawn(command).unwrap()
+    }
+    /// Parallel fixture processes may retain a dropped flock until exec. Bound
+    /// the wait and unlock the probe before the caller reopens the lock file.
+    pub(crate) fn wait_for_lock_release(path: &std::path::Path) {
+        let lock = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(path)
+            .unwrap();
+        if lock.try_lock().is_ok() {
+            lock.unlock().unwrap();
+            return;
+        }
+        let (send, receive) = std::sync::mpsc::sync_channel(1);
+        std::thread::spawn(move || {
+            let result = lock.lock().and_then(|()| lock.unlock());
+            let _ = send.send(result);
+        });
+        receive
+            .recv_timeout(Duration::from_secs(2))
+            .expect("dropped fixture lock remained held")
+            .expect("probing the released fixture lock failed");
     }
     pub(crate) fn prepared(root: &std::path::Path) -> files::Prepared {
         files::Prepared {

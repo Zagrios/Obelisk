@@ -1,7 +1,7 @@
 use super::*;
 
-const ARM64: u32 = 0x0100_000c;
-const INTEL: u32 = 0x0100_0007;
+pub(crate) const ARM64: u32 = 0x0100_000c;
+pub(crate) const INTEL: u32 = 0x0100_0007;
 
 fn word(value: u32, little: bool) -> [u8; 4] {
     if little {
@@ -19,7 +19,7 @@ fn long_word(value: u64, little: bool) -> [u8; 8] {
     }
 }
 
-fn thin(cpu: u32, little: bool) -> Vec<u8> {
+pub(crate) fn thin(cpu: u32, little: bool) -> Vec<u8> {
     let mut bytes = vec![0; 32];
     bytes[..4].copy_from_slice(&word(0xfeedfacf, little));
     bytes[4..8].copy_from_slice(&word(cpu, little));
@@ -89,6 +89,29 @@ fn selects_shared_slice_and_preserves_native_universal_launches() {
         std::fs::write(&sdk, sdk_bytes).unwrap();
         assert_eq!(Architecture::select(&game, &sdk).ok(), expected);
     }
+}
+
+#[test]
+fn standalone_executable_prefers_arm64_without_an_sdk_dependency() {
+    let root = tempfile::tempdir().unwrap();
+    let game = root.path().join("game");
+    for (bytes, expected) in [
+        (thin(ARM64, true), Architecture::Arm64),
+        (thin(INTEL, true), Architecture::Intel),
+        (
+            universal(&[INTEL, ARM64], false, false),
+            Architecture::Arm64,
+        ),
+        (universal(&[INTEL, ARM64], true, true), Architecture::Arm64),
+    ] {
+        std::fs::write(&game, bytes).unwrap();
+        assert_eq!(Architecture::preferred(&game).unwrap(), expected);
+    }
+    std::fs::write(&game, b"\xcf\xfa\xed\xfe").unwrap();
+    assert!(matches!(
+        Architecture::preferred(&game),
+        Err(Error::IncompatibleArchitecture)
+    ));
 }
 
 #[test]

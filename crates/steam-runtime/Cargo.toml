@@ -18,7 +18,7 @@ zip = { version = "=8.2.0", default-features = false, features = ["deflate-flate
 # standalone steam-native workspace, where no other crate unifies it in.
 flate2.workspace = true
 reqwest.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["process", "io-util"] }
 steam-kit.workspace = true
 steam-cloud.workspace = true
 epic-kit.workspace = true

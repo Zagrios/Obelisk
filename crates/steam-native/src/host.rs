@@ -2,14 +2,13 @@ use crate::{Result, abi::Engine, mach};
 use std::{
     ffi::{CStr, CString},
     fs::File,
-    io::Read,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
     time::{Duration, Instant},
 };
-use steam_runtime::protocol::{Credentials, Event, Failure};
+use steam_runtime::protocol::{Credentials, Event, Failure, HostCommand};
 use zeroize::Zeroizing;
 
 pub use crate::events::{emit, event_pipe};
@@ -26,10 +25,15 @@ pub fn serve(
     let credentials = Credentials::read(std::io::stdin().lock())?;
     let expected_id = credentials.steam_id;
     let stop = Arc::new(AtomicBool::new(false));
+    // No persona change until the supervisor has confirmed the game's exec.
+    let presence = Arc::new(Mutex::new(None));
     let parent_closed = stop.clone();
+    let requested_presence = presence.clone();
     std::thread::spawn(move || {
-        let mut byte = [0];
-        let _ = std::io::stdin().read(&mut byte);
+        let mut input = std::io::stdin().lock();
+        while let Ok(Some(HostCommand::SetPresence { online })) = HostCommand::read(&mut input) {
+            *requested_presence.lock().unwrap() = Some(online);
+        }
         parent_closed.store(true, Ordering::Release);
     });
     let engine = Engine::open(engine_path)?;
@@ -38,6 +42,7 @@ pub fn serve(
         return Err("Global user unavailable".into());
     }
     let client = engine.user(user, pipe)?;
+    let friends = engine.friends(user, pipe)?;
     let mut token = Zeroizing::new(credentials.refresh_token.as_bytes().to_vec());
     token.push(0);
     let mut account = Zeroizing::new(credentials.account_name.as_bytes().to_vec());
@@ -63,6 +68,7 @@ pub fn serve(
     let mut authenticated = false;
     let mut ready = false;
     let mut disconnected = false;
+    let mut applied_presence = None;
     let mut last_check = Instant::now() - Duration::from_secs(1);
     let mut paths = 0_u32;
     while !stop.load(Ordering::Acquire) {
@@ -75,6 +81,7 @@ pub fn serve(
             }
             if id == 103 {
                 observed_connection = false;
+                applied_presence = None;
             }
         }
         if last_check.elapsed() >= Duration::from_millis(250) {
@@ -83,6 +90,17 @@ pub fn serve(
                 && engine.logged_on(user, pipe)
                 && observed_connection
                 && client.steam_id()? == expected_id;
+            if online {
+                let requested = *presence.lock().unwrap();
+                if let Some(wanted) = requested
+                    && applied_presence != Some(wanted)
+                {
+                    friends.set_presence(wanted)?;
+                    applied_presence = Some(wanted);
+                }
+            } else {
+                applied_presence = None;
+            }
             if online && !authenticated {
                 authenticated = true;
                 emit(output, &Event::Authenticated {})?;

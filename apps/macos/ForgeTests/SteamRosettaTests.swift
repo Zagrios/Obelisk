@@ -404,7 +404,7 @@ final class SteamRosettaTests: XCTestCase {
 
     @MainActor
     private func render(_ model: SteamRosettaModel, to file: URL) async throws {
-        let view = SteamRosettaPromptView(model: model)
+        let view = RosettaPromptView(model: model)
             .environment(\.colorScheme, .dark)
             .background(ForgePalette(colorScheme: .dark).background)
         let renderer = ImageRenderer(content: view)

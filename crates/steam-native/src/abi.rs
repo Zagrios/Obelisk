@@ -190,6 +190,21 @@ impl Engine {
             image_base: self.interface.image_base,
         }))
     }
+    pub fn friends(&self, user: i32, pipe: i32) -> Result<ClientFriends> {
+        let address = self.interface.method(13, 0xa02cb4)?;
+        // SAFETY: pinned Engine005 accessor takes this,user,pipe and returns
+        // the Friends proxy constructed in the same native session. Evidence:
+        // docs/evidence/steam-native-presence-abi.md.
+        let object = unsafe {
+            let get: unsafe extern "C" fn(Object, i32, i32) -> Object =
+                std::mem::transmute(address);
+            get(self.interface.object.as_ptr(), user, pipe)
+        };
+        Ok(ClientFriends(Interface {
+            object: NonNull::new(object).ok_or("Client friends interface unavailable")?,
+            image_base: self.interface.image_base,
+        }))
+    }
     pub fn request_app_info(&self, user: i32, pipe: i32, app: u32) -> Result<()> {
         let address = self.interface.method(17, 0xa02e4c)?;
         // SAFETY: pinned Engine005 Apps accessor and RequestAppInfoUpdate ABI
@@ -251,5 +266,15 @@ impl ClientUser {
     }
     pub fn ticket_length(&self, app: u32) -> Result<u32> {
         Ok(method!(self, 103, 0x89b004, (u32) -> u32, app))
+    }
+}
+
+pub struct ClientFriends(Interface);
+impl ClientFriends {
+    pub fn set_presence(&self, online: bool) -> Result<()> {
+        // The pinned proxy serializes one i32 and returns no value. Its server
+        // dispatcher independently calls Friends slot 5 with that same scalar.
+        method!(self, 5, 0x8b23a0, (i32) -> (), i32::from(online));
+        Ok(())
     }
 }
