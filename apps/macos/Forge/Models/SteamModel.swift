@@ -166,7 +166,8 @@ final class SteamModel {
         reconnectDelay: @escaping @Sendable (Int) async throws -> Void = { attempt in
             try await Task.sleep(for: .seconds(1 << attempt))
         },
-        gameSessions: SteamGameSessions = .shared
+        gameSessions: SteamGameSessions = .shared,
+        cloudServices: SteamCloudServices = .live
     ) {
         self.directory = directory
         self.keychain = keychain
@@ -179,7 +180,8 @@ final class SteamModel {
         self.verifyBeforeLaunch = preferences.object(forKey: Self.verifyBeforeLaunchPreferenceKey) == nil
             ? true : preferences.bool(forKey: Self.verifyBeforeLaunchPreferenceKey)
         self.gameSessions = gameSessions
-        self.cloud = SteamCloudModel(root: SteamGameLauncher.cloudDirectory(in: directory), sessions: gameSessions)
+        self.cloud = SteamCloudModel(root: SteamGameLauncher.cloudDirectory(in: directory), sessions: gameSessions,
+                                     services: cloudServices)
         self.rosetta = SteamRosettaModel(sessions: gameSessions)
         wakeObserver = SystemWakeObservation { [weak self] in
             Task { @MainActor [weak self] in self?.retryFriends() }
@@ -203,9 +205,48 @@ final class SteamModel {
     }
 
     /// Every installation-mutating entry point asks this, so a new one cannot
-    /// silently gain permission to touch a running game's files.
+    /// silently gain permission to touch a running game's files. Cloud
+    /// maintenance holds the game's Reservation; its idle guard also excludes
+    /// every other Steam launch, so the whole storefront waits.
     private func canModifyInstallation(of appId: UInt32?) -> Bool {
-        !isDownloading && !isLaunching && !isUninstalling && !cloud.isBusy && !gameSessions.protects(appId)
+        !isDownloading && !isLaunching && !isUninstalling && !cloud.isMaintaining && !gameSessions.protects(appId)
+    }
+
+    /// The selected game's Cloud indicator, or nil when it is hidden.
+    var cloudIndicator: CloudIndicatorPresentation? {
+        guard let game = selectedGame, isConnected else { return nil }
+        let playing = gameSessions.active.map { $0.appId == game.appId && $0.accountId == steamId } ?? false
+        return CloudIndicatorPresentation.make(saved: cloud.indicator(for: game.appId), isSyncing: isSynchronizingSaves,
+                                               isPlaying: playing, isInstalled: selectedInstallation != nil)
+    }
+
+    /// One Steam Cloud operation at a time: a game session or maintenance of
+    /// any Steam game, or this game's Transfer or uninstall, keeps it closed.
+    private func canMaintainCloud(_ appId: UInt32) -> Bool {
+        isConnected && !gameSessions.isBusy && !cloud.isMaintaining && !isLaunching
+            && activeTransferAppId != appId && !(isUninstalling && uninstallAppId == appId)
+    }
+
+    var canSyncCloud: Bool { selectedGame.map { canMaintainCloud($0.appId) } ?? false }
+
+    func syncCloud() {
+        guard canSyncCloud, let game = selectedGame else { return }
+        cloud.startMaintenance(appId: game.appId, install: selectedInstallation?.directory)
+    }
+
+    func refreshCloudIndicator() {
+        guard let game = selectedGame else { return }
+        cloud.refreshIndicators(for: [game.appId])
+    }
+
+    /// Names the game a Cloud question or banner is about.
+    func cloudTitle(for appId: UInt32?) -> String {
+        let title = L10n.string("ui.steam.cloud.title")
+        guard let appId else { return title }
+        let name = games.first { $0.appId == appId }?.name
+            ?? installations.first { $0.appId == appId }?.name
+            ?? String(appId)
+        return "\(title) · \(name)"
     }
 
     var canResumeDownload: Bool {
@@ -548,7 +589,7 @@ final class SteamModel {
             case "--steam-cloud-preferences":
                 json = try await native.cloudPreferences(appId: appID)
             case "--steam-cloud-interruption-probe":
-                guard !cloud.isBusy, gameSessions.reserveCloudProbe() else { throw CocoaError(.featureUnsupported) }
+                guard gameSessions.reserveCloudProbe() else { throw CocoaError(.featureUnsupported) }
                 json = try await native.cloudInterruptionProbe(appId: appID, directory: directory.path)
                 // Keep game admission fenced while the interrupted diagnostic
                 // awaits a process restart, including after a diagnostic error.
@@ -686,7 +727,6 @@ final class SteamModel {
                         }
                         self.libraryPlatforms.reset()
                         self.session = replacement
-                        self.cloud.resume()
                         active = replacement
                         revision = 0
                         Task { [weak self] in
@@ -826,6 +866,7 @@ final class SteamModel {
         let current = generation
         reloadDetails()
         reloadAchievements()
+        refreshCloudIndicator()
         Task {
             do {
                 let loaded = try await loadNews(game.appId)
@@ -986,7 +1027,6 @@ final class SteamModel {
             self.isVerifyingBeforeLaunch = false
             self.launchAppId = nil
             self.launchTask = nil
-            self.cloud.resume()
             guard let error, !(error is CancellationError),
                   gameWasRunning || (!Task.isCancelled && !self.downloadCancellationRequested) else { return }
             self.errorMessage = Self.message(error)

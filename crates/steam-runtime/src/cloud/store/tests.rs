@@ -170,51 +170,6 @@ fn refreshing_remote_and_local_bindings_never_recreates_removed_install() {
 }
 
 #[test]
-fn conflict_token_fences_desired_remote_and_account_across_reopen() {
-    let fixture = Fixture::new();
-    let vault = fixture.vault();
-    let first = Manifest([(SLOT.into(), vault.stage(b"first", 7).unwrap())].into());
-    let second = Manifest([(SLOT.into(), vault.stage(b"second", 7).unwrap())].into());
-    let mut context = fixture.context();
-    context.remote = RemoteView {
-        revision: "7".into(),
-        files: first.clone(),
-    };
-    context.desired = Some(second.clone());
-    context.save().unwrap();
-    let token = context.token().unwrap();
-    assert_eq!(
-        Context::load(&fixture.config, ACCOUNT)
-            .unwrap()
-            .unwrap()
-            .token()
-            .unwrap(),
-        token
-    );
-
-    let mut changed = context.clone();
-    changed.desired = Some(first);
-    assert_ne!(changed.token().unwrap(), token);
-    changed = context.clone();
-    changed.desired = None;
-    assert_ne!(changed.token().unwrap(), token);
-    changed = context.clone();
-    changed.remote.files = second;
-    assert_ne!(changed.token().unwrap(), token);
-    changed = context.clone();
-    changed.remote.revision = "8".into();
-    assert_ne!(changed.token().unwrap(), token);
-    changed = context.clone();
-    changed.account_id = OTHER_ACCOUNT;
-    changed.listing.steam_id = OTHER_ACCOUNT;
-    assert_ne!(changed.token().unwrap(), token);
-    changed = context;
-    changed.config.app_id += 1;
-    changed.listing.app_id += 1;
-    assert_ne!(changed.token().unwrap(), token);
-}
-
-#[test]
 fn fresh_uninstall_archive_keeps_complete_install_saves_after_removal() {
     let fixture = Fixture::new();
     fixture.save("slot.sav", b"slot before uninstall");

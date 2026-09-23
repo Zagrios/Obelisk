@@ -17,7 +17,13 @@ struct EpicGameDetailView: View {
                 playtime: model.selectedGameDetails?.playtimeSeconds.map(EpicFormatting.playtime),
                 size: (model.selectedInstallation?.totalBytes ?? model.selectedGameDetails?.installationBytes).map(SteamFormatting.bytes),
                 back: model.closeGame,
-                additionalMetrics: { GameAchievementsButton(model: achievements) }
+                additionalMetrics: {
+                    GameAchievementsButton(model: achievements)
+                    if let cloud = model.cloudIndicator {
+                        CloudIndicatorButton(presentation: cloud, canSync: model.canSyncCloud, sync: model.syncCloud,
+                                             storefront: "epic")
+                    }
+                }
             ) {
                 EpicArtwork(imageURL: game.headerImageUrl ?? game.imageUrl, maxPixelSize: 2048)
             } action: {
@@ -53,23 +59,6 @@ struct EpicGameDetailView: View {
                 Text(message).font(.system(size: 12)).foregroundStyle(.secondary)
             }
 
-            let cloudMessage = model.cloud.message(for: game.libraryID)
-            let pending = model.cloud.hasPending(for: game.libraryID)
-            if !model.isSynchronizingSaves && (cloudMessage != nil || pending) {
-                HStack(spacing: 8) {
-                    if let cloudMessage {
-                        Text(cloudMessage).font(.system(size: 12)).foregroundStyle(.secondary)
-                    }
-                    if pending && !model.cloud.promptPresented && !model.cloud.failurePresented {
-                        Button(L10n.string("ui.common.retry")) {
-                            model.cloud.retryPending(libraryID: game.libraryID)
-                        }
-                        .forgeButtonStyle(.borderless)
-                        .controlSize(.small)
-                        .disabled(model.gameSessions.isBusy)
-                    }
-                }
-            }
 
             if let transfer = gameTransfer, transfer.state == .failed || transfer.state == .cancelled {
                 Text(transfer.message.isEmpty ? transfer.activityTitle : L10n.message(transfer.message))

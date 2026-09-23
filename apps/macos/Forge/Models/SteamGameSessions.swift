@@ -33,7 +33,6 @@ final class SteamGameSessions {
         var phase = SteamCloudPhase.idle
         var decisionId: UInt64 = 0
         var error: String?
-        var decisionToken: String?
         var allowedChoices: [SteamCloudChoice] = []
 
         init() {}
@@ -42,7 +41,6 @@ final class SteamGameSessions {
             phase = snapshot.cloudPhase
             decisionId = snapshot.cloudDecisionId
             error = snapshot.cloudError
-            decisionToken = snapshot.cloudDecisionToken
             allowedChoices = snapshot.cloudAllowedChoices
         }
     }
@@ -64,8 +62,9 @@ final class SteamGameSessions {
     private var revokedAccounts: Set<UInt64> = []
     private var cancelledRosetta: RosettaPrompt?
 
+    /// A Cloud question is asked before the game starts and after it exits.
     var cloudPrompt: Session? {
-        guard let active, active.phase == .preparing,
+        guard let active, active.phase == .preparing || active.phase == .finalizing,
               !revokedAccounts.contains(active.accountId),
               [.checking, .failed, .conflict].contains(active.cloud.phase) else { return nil }
         return active
@@ -153,10 +152,10 @@ final class SteamGameSessions {
     func chooseCloud(_ choice: SteamCloudChoice, accountId: UInt64) async throws {
         guard let active, let client = activeClient, accountId != 0,
               active.accountId == accountId, !revokedAccounts.contains(accountId),
-              active.phase == .preparing else {
+              active.phase == .preparing || active.phase == .finalizing else {
             throw SteamError.Failure(reason: "backend.steam.runtime.invalidSession")
         }
-        if choice == .cancel && active.cloud.phase == .checking {
+        if choice == .cancel && active.cloud.phase == .checking && active.phase == .preparing {
             client.cancelPreparation()
             return
         }

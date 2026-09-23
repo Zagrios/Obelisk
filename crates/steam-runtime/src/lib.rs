@@ -1,6 +1,7 @@
 //! Safe launcher-side supervision. Native ABI code lives in the separate helper.
 mod architecture;
 pub mod cloud;
+pub mod cloud_status;
 pub mod epic;
 mod files;
 mod game_session;

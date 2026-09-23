@@ -27,11 +27,22 @@ pub struct Client {
     last: Mutex<Option<Snapshot>>,
 }
 
-/// Excludes launch admission while maintenance handles stores left by a dead
-/// supervisor. Construction checks the kernel identities, including birth time.
+/// Excludes launch admission while Cloud maintenance runs in Forge, including
+/// stores left by a dead supervisor. Construction checks the kernel
+/// identities, including birth time. Both storefronts' guards share this type.
 pub struct IdleGuard {
     _starting: fs::File,
     _owner: fs::File,
+}
+impl IdleGuard {
+    /// `starting` and `owner` are a provider's held `start.lock` and
+    /// `owner.lock`, after it has found no live supervisor or game.
+    pub(crate) fn hold(starting: fs::File, owner: fs::File) -> Self {
+        Self {
+            _starting: starting,
+            _owner: owner,
+        }
+    }
 }
 impl Client {
     pub fn idle_guard(root: &Path, helper: &Path) -> Result<IdleGuard, Error> {
@@ -52,10 +63,7 @@ impl Client {
         {
             return Err(Error::SessionBusy);
         }
-        Ok(IdleGuard {
-            _starting: starting,
-            _owner: owner,
-        })
+        Ok(IdleGuard::hold(starting, owner))
     }
     pub fn recover(root: &Path, helper: &Path) -> Result<Option<Self>, Error> {
         paced(Self::recover_with(root, helper, inspect))
@@ -460,7 +468,6 @@ mod cloud_commands {
                 phase: crate::cloud::Phase::Conflict,
                 id: 7,
                 error: None,
-                decision_token: None,
                 allowed_choices: vec![
                     crate::cloud::Choice::Local,
                     crate::cloud::Choice::Cloud,

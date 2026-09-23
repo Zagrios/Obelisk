@@ -9,3 +9,27 @@ One account-scoped attempt to install, verify or repair a game's files. Its life
 
 **Installation receipt**:
 A record identifying a game installation whose required files were successfully installed. Partial download data is not an installation receipt.
+
+**Cloud archive**:
+Forge's own local store of each account's save versions, together with the record of which account currently owns each physical save location. One archive serves every storefront, so two storefront copies of a game that share a save location cannot silently adopt each other's saves.
+_Avoid_: vault root, SteamCloud folder
+
+**Last Cloud sync**:
+The last moment Forge confirmed that an account's local saves for a game and its Cloud saves were identical, by uploading, downloading or finding them equal. Capturing or choosing a version without that confirmation does not count.
+_Avoid_: last upload, last played
+
+**Reservation**:
+The exclusive claim a Game session or Cloud maintenance holds on a game's installation. While it exists, no Transfer, uninstall or other launch of that game can start.
+_Avoid_: lock, busy state
+
+**Game session**:
+One account-scoped launch of a game, holding a Reservation from admission until the game has really exited and its Cloud saves are settled. It outlives Forge quitting.
+_Avoid_: launch, supervisor session
+
+**Cloud maintenance**:
+Synchronizing one game's Cloud saves without launching it, at the player's request. It runs inside Forge, holds the game's Reservation while it runs, and stops if Forge quits.
+_Avoid_: Cloud resume, cloud-only session, background sync
+
+**Account revocation**:
+Signing a storefront account out while its Game sessions may still run. It stops that account's network work and presence, keeps any exit save locally as pending for that account, and never ends a running game.
+_Avoid_: sign-out cancel, logout kill

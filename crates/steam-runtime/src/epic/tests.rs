@@ -16,7 +16,7 @@ fn identity(pid: u32) -> Identity {
         executable: "/fixture/helper".into(),
     }
 }
-fn control(root: &Path) -> Arc<Control> {
+pub(super) fn control(root: &Path) -> Arc<Control> {
     Arc::new(Control {
         root: root.into(),
         cancel: CancelToken::new(),
@@ -689,7 +689,6 @@ fn real_supervisor_channel_is_observable_before_game_admission() {
         id: uuid::Uuid::new_v4().to_string(),
         account_id: "a".repeat(32),
         exchange_code: "unused-fixture-code".into(),
-        launch: true,
     };
     let mut input = Vec::new();
     storage::send(&mut input, &request).unwrap();
@@ -922,5 +921,79 @@ fn snapshot_roundtrip_contains_no_authentication_material() {
     assert_eq!(
         read_snapshot(root.path(), None).unwrap().unwrap(),
         control.snapshot()
+    );
+}
+
+/// A concurrently spawned process can hold an inherited lock descriptor for a
+/// moment, so an acquisition that must succeed gets a short, bounded retry.
+fn eventually_idle(root: &Path) -> crate::supervisor::IdleGuard {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        match client::idle_guard_with(root, |_| Ok(None)) {
+            Ok(guard) => return guard,
+            Err(Error::Busy) if Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(20))
+            }
+            Err(error) => panic!("no idle guard: {error}"),
+        }
+    }
+}
+
+#[test]
+fn cloud_maintenance_guard_refuses_a_live_supervisor_or_an_owned_game() {
+    let root = tempfile::tempdir().unwrap();
+    let control = control(root.path());
+    control.update(|s| s.game = Some(identity(42))).unwrap();
+    let supervisor = control.snapshot().supervisor;
+    let alive = |live: Identity| move |pid: u32| Ok((pid == live.pid).then(|| live.clone()));
+
+    assert!(matches!(
+        client::idle_guard_with(root.path(), alive(supervisor)),
+        Err(Error::Busy)
+    ));
+    assert!(matches!(
+        client::idle_guard_with(root.path(), alive(identity(42))),
+        Err(Error::Busy)
+    ));
+    assert!(client::idle_guard_with(root.path(), |_| Err(Error::Session)).is_err());
+
+    let guard = eventually_idle(root.path());
+    assert!(matches!(
+        client::idle_guard_with(root.path(), |_| Ok(None)),
+        Err(Error::Busy)
+    ));
+    drop(guard);
+    drop(eventually_idle(root.path()));
+}
+
+#[test]
+fn cloud_maintenance_guard_excludes_an_epic_launch_until_dropped() {
+    let root = tempfile::tempdir().unwrap();
+    let (config, _) = launch_fixture(root.path());
+    let guard = eventually_idle(&config.session_directory);
+
+    assert!(
+        start(
+            config.clone(),
+            "a".repeat(32),
+            "unused-fixture-code".into(),
+            CancelToken::new(),
+        )
+        .is_err()
+    );
+    assert!(!config.session_directory.join("session.json").exists());
+    drop(guard);
+}
+
+#[test]
+fn epic_finds_the_rosetta_helper_beside_the_storefront_helpers() {
+    let root = tempfile::tempdir().unwrap();
+    let (mut config, _) = launch_fixture(root.path());
+    let helpers = root.path().join("Forge.app/Contents/Helpers");
+    config.helper = helpers.join("SteamNative/forge-steam-host");
+
+    assert_eq!(
+        server::rosetta_helper(&config).unwrap(),
+        helpers.join("Forge Rosetta.app/Contents/MacOS/ForgeRosetta")
     );
 }

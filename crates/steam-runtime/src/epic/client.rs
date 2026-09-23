@@ -159,11 +159,37 @@ impl Client {
     }
 }
 
+impl Client {
+    /// Excludes Epic launch admission while Cloud maintenance runs in Forge.
+    pub fn idle_guard(root: &Path, helper: &Path) -> Result<crate::supervisor::IdleGuard> {
+        idle_guard_with(root, |pid| inspect(helper, pid))
+    }
+}
+
+pub(super) fn idle_guard_with(
+    root: &Path,
+    inspect: impl Fn(u32) -> Result<Option<Identity>>,
+) -> Result<crate::supervisor::IdleGuard> {
+    let busy = |error| match error {
+        crate::Error::SessionBusy => Error::Busy,
+        error => error.into(),
+    };
+    let starting = storage::lock(root, "start.lock").map_err(busy)?;
+    let owner = storage::lock(root, "owner.lock").map_err(busy)?;
+    if let Some(saved) = read_snapshot(root, None)?
+        && !saved.finished()
+        && (inspect(saved.supervisor.pid)?.as_ref() == Some(&saved.supervisor)
+            || owns_child(&saved, &inspect)?)
+    {
+        return Err(Error::Busy);
+    }
+    Ok(crate::supervisor::IdleGuard::hold(starting, owner))
+}
+
 pub fn start(
     config: Configuration,
     account_id: String,
     exchange_code: String,
-    launch: bool,
     cancel: CancelToken,
 ) -> Result<Client> {
     config.validate(&account_id)?;
@@ -182,7 +208,6 @@ pub fn start(
         id: uuid::Uuid::new_v4().to_string(),
         account_id,
         exchange_code,
-        launch,
     };
     let (mut pipe, child_pipe) = UnixStream::pair()?;
     pipe.set_read_timeout(Some(Duration::from_secs(15)))?;

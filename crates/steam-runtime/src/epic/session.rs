@@ -1,4 +1,5 @@
 use super::*;
+use crate::cloud_status::{self, ProblemKind, UnavailableReason};
 use epic_kit::{
     EpicError,
     client::Client as EpicClient,
@@ -8,48 +9,89 @@ use std::{collections::BTreeMap, path::Path};
 use steam_cloud::{
     Bindings, Decision, Manifest, Preferences, RemoteView, Retry, RetryBudget, Vault,
 };
+mod remote;
 mod store;
+pub(crate) use remote::CloudRemote;
 use store::{Context, Pending};
+#[cfg(test)]
+mod cycle_tests;
+#[cfg(test)]
+mod fake;
 #[cfg(test)]
 mod tests;
 
-pub(super) struct Session {
+pub(super) struct Session<R: CloudRemote> {
     context: Context,
     vault: Vault,
-    api: Arc<EpicClient>,
-    control: Arc<Control>,
+    api: Arc<R>,
+    control: Arc<dyn CloudChannel>,
+    /// How a dead owner's process identity is checked. Tests replace it.
+    inspect: fn(&Path, u32) -> Result<Option<Identity>>,
     shown: Option<(RemoteView, Manifest)>,
     offline: bool,
+    /// How the current operation ended without a sync, for the status file.
+    problem: Option<(ProblemKind, String)>,
 }
 
-impl Session {
+/// Display state only: a failed write must not fail the sync itself.
+fn mark(config: &Configuration, account: &str, change: impl FnOnce(&mut cloud_status::Record)) {
+    let scope = steam_cloud::StoreScope::from(config.scope(account));
+    if let Err(error) = cloud_status::update(&config.root, &scope, change) {
+        eprintln!("Epic Cloud status not recorded: {error}");
+    }
+}
+
+impl<R: CloudRemote> Session<R> {
     pub async fn new(
         config: Configuration,
         account: String,
-        api: Arc<EpicClient>,
-        control: Arc<Control>,
+        api: Arc<R>,
+        control: Arc<dyn CloudChannel>,
     ) -> Result<Option<Self>> {
         config.validate(&account)?;
         store::safe(&config.root)?;
-        if api.credentials().await?.account_id != account {
+        if api.account_id().await? != account {
             return Err(Error::Session);
         }
         control.check()?;
         let mut vault = Vault::open(&config.root, config.scope(&account))?;
         let saved = Context::load(&config, &account)?;
-        let (rules, offline) = configuration_rules(&config, saved.as_ref(), &api, &control).await?;
+        let (rules, offline) =
+            match configuration_rules(&config, saved.as_ref(), api.as_ref(), &control).await {
+                Ok(rules) => rules,
+                Err(error) => {
+                    if !has_pending_work(&vault, saved.as_ref()) {
+                        mark(
+                            &config,
+                            &account,
+                            cloud_status::problem(ProblemKind::Failed, &error.to_string()),
+                        );
+                    }
+                    return Err(error);
+                }
+            };
         control.check()?;
+        let unsupported = || {
+            mark(
+                &config,
+                &account,
+                cloud_status::unavailable(UnavailableReason::Unsupported),
+            )
+        };
         let Some(rules) = rules else {
+            unsupported();
             if has_saved_state(&vault, saved.as_ref()) {
                 return Err(Error::Unsupported);
             }
-            control.phase(CloudPhase::Unsupported)?;
+            control.show(CloudPhase::Unsupported, None)?;
             return Ok(None);
         };
         if !supports_rules(&config, &account, &rules, &vault, saved.as_ref())? {
-            control.phase(CloudPhase::Unsupported)?;
+            unsupported();
+            control.show(CloudPhase::Unsupported, None)?;
             return Ok(None);
         }
+        mark(&config, &account, cloud_status::available);
         let mut context = saved.unwrap_or_else(|| Context {
             config: config.clone(),
             rules: rules.clone(),
@@ -79,14 +121,48 @@ impl Session {
             control,
             shown: None,
             offline,
+            problem: None,
+            inspect: client::inspect,
         }))
     }
 
+    fn mark(&self, change: impl FnOnce(&mut cloud_status::Record)) {
+        mark(&self.context.config, &self.context.account_id, change);
+    }
+
+    /// A sync clears the last problem. Otherwise a failed operation leaves a
+    /// problem, unless pending work already shows it or `exit` says the game
+    /// just exited; an unanswered conflict is recorded either way.
+    fn record_outcome(&mut self, syncs: u64, exit: bool) {
+        let problem = self.problem.take();
+        if self.vault.syncs() != syncs {
+            self.mark(cloud_status::synced);
+        } else if let Some((kind, key)) = problem
+            && (kind == ProblemKind::Conflict
+                || !exit && !has_pending_work(&self.vault, Some(&self.context)))
+        {
+            self.mark(cloud_status::problem(kind, &key));
+        }
+    }
+
     pub async fn prepare(&mut self) -> Result<()> {
+        let syncs = self.vault.syncs();
+        self.problem = None;
+        let result = self.prepare_inner().await;
+        if let Err(error) = &result
+            && self.problem.is_none()
+        {
+            self.problem = Some((ProblemKind::Failed, error.to_string()));
+        }
+        self.record_outcome(syncs, false);
+        result
+    }
+
+    async fn prepare_inner(&mut self) -> Result<()> {
         self.recover_dead_owner()?;
         if self.offline {
             self.capture_offline()?;
-            return self.control.phase(CloudPhase::Pending);
+            return self.control.show(CloudPhase::Pending, None);
         }
         self.run(true).await
     }
@@ -102,12 +178,56 @@ impl Session {
     }
 
     pub async fn finished(&mut self, id: &str) -> Result<()> {
+        let syncs = self.vault.syncs();
+        self.problem = None;
+        let result = self.finish(id).await;
+        self.record_outcome(syncs, true);
+        result
+    }
+
+    async fn finish(&mut self, id: &str) -> Result<()> {
         self.vault.game_exited(id)?;
         self.capture_exit()?;
-        if self.control.cancel.is_cancelled() {
+        if self.control.cancellation().is_cancelled() {
             self.vault.revoke()?;
-            self.control.phase(CloudPhase::Pending)?;
+            self.control.show(CloudPhase::Pending, None)?;
             return Ok(());
+        }
+        self.run(false).await
+    }
+
+    /// Cloud maintenance of this game: a two-way sync without a launch. The
+    /// caller holds the idle guard, so no supervisor or game owns the saves.
+    pub(crate) async fn maintain(&mut self) -> Result<()> {
+        let syncs = self.vault.syncs();
+        self.problem = None;
+        let result = self.maintain_inner().await;
+        if let Err(error) = &result
+            && self.problem.is_none()
+        {
+            self.problem = Some((ProblemKind::Failed, error.to_string()));
+        }
+        self.record_outcome(syncs, false);
+        result
+    }
+
+    async fn maintain_inner(&mut self) -> Result<()> {
+        self.recover_dead_owner()?;
+        // An uninstalled game only finishes its remote work; its archived
+        // saves are never projected into a missing installation.
+        if !self.context.absent()? && !self.context.installation_removed {
+            let had_work = has_pending_work(&self.vault, Some(&self.context));
+            let bindings = store::bindings(&self.context, &self.vault, None, true)?;
+            self.vault.activate(&bindings)?;
+            self.capture_exit()?;
+            // Saves unchanged since the last sync are compared, not queued: a
+            // failed check must not report them as waiting to be sent.
+            let scope = self.context.config.scope(&self.context.account_id);
+            let journal = steam_cloud::peek(&self.context.config.root, scope)?;
+            if !had_work && journal.baseline && !journal.local_changes {
+                self.context.pending = None;
+                self.context.save()?;
+            }
         }
         self.run(false).await
     }
@@ -116,18 +236,7 @@ impl Session {
     pub fn aborted(&mut self, id: &str) -> Result<()> {
         self.vault.game_exited(id)?;
         self.capture_exit()?;
-        self.control.phase(CloudPhase::Pending)
-    }
-
-    pub async fn resume(&mut self) -> Result<()> {
-        self.recover_dead_owner()?;
-        if self.offline {
-            return self.control.phase(CloudPhase::Pending);
-        }
-        if self.context.pending.is_none() && self.vault.pending().is_none() {
-            return self.control.phase(CloudPhase::Ready);
-        }
-        self.run(false).await
+        self.control.show(CloudPhase::Pending, None)
     }
 
     fn recover_dead_owner(&mut self) -> Result<()> {
@@ -142,9 +251,9 @@ impl Session {
             {
                 return Err(Error::Recovery);
             }
-            if client::inspect(&config.helper, snapshot.supervisor.pid)?.as_ref()
+            if (self.inspect)(&config.helper, snapshot.supervisor.pid)?.as_ref()
                 == Some(&snapshot.supervisor)
-                || owns_child(&snapshot, |pid| client::inspect(&config.helper, pid))?
+                || owns_child(&snapshot, |pid| (self.inspect)(&config.helper, pid))?
             {
                 return Err(Error::Busy);
             }
@@ -187,31 +296,33 @@ impl Session {
                 }
                 Retry::Defer => {
                     if !launching {
-                        self.control.update(|s| {
-                            s.cloud_phase = CloudPhase::Pending;
-                            s.error = Some(last.to_string());
-                            s.allowed_choices.clear();
-                        })?;
+                        self.control
+                            .show(CloudPhase::Pending, Some(last.to_string()))?;
                         return Err(last);
                     }
-                    match deferred_choice(&self.control, &last, retryable(&last)).await? {
+                    let answer = deferred_choice(&self.control, &last, retryable(&last)).await;
+                    self.problem = Some((ProblemKind::Failed, last.to_string()));
+                    match answer? {
                         Choice::Retry => {
                             budget = RetryBudget::new(Instant::now());
                             continue;
                         }
                         _ => {
                             self.capture_offline()?;
-                            return self.control.phase(CloudPhase::Pending);
+                            return self.control.show(CloudPhase::Pending, None);
                         }
                     }
                 }
                 Retry::Attempt { remaining } => remaining,
             };
-            self.control.phase(if launching {
-                CloudPhase::Checking
-            } else {
-                CloudPhase::Syncing
-            })?;
+            self.control.show(
+                if launching {
+                    CloudPhase::Checking
+                } else {
+                    CloudPhase::Syncing
+                },
+                None,
+            )?;
             let result = tokio::time::timeout(remaining, self.cycle(launching, choice.take()))
                 .await
                 .unwrap_or(Err(Error::Failed));
@@ -230,10 +341,14 @@ impl Session {
                         .await;
                     match result {
                         Ok(answer @ (Choice::Local | Choice::Cloud)) => {
+                            self.mark(cloud_status::answered);
                             choice = Some(answer);
                             budget = RetryBudget::new(Instant::now());
                         }
-                        _ => return Err(Error::Cancelled),
+                        _ => {
+                            self.problem = Some((ProblemKind::Conflict, error.to_string()));
+                            return Err(Error::Cancelled);
+                        }
                     }
                 }
                 Err(
@@ -262,12 +377,12 @@ impl Session {
         self.control.check()?;
         self.vault.recover_local()?;
         recover_pending(&self.vault, &mut self.context)?;
-        if self.api.credentials().await?.account_id != self.context.account_id {
+        if self.api.account_id().await? != self.context.account_id {
             return Err(Error::Session);
         }
         let full = self
             .api
-            .cloud_download(self.cloud_game(), &self.control.cancel)
+            .cloud_download(self.cloud_game(), self.control.cancellation())
             .await?;
         let remote = stage_remote(&self.vault, &self.context.rules, &full)?;
         self.control.check()?;
@@ -373,11 +488,14 @@ impl Session {
             self.context.pending = None;
         }
         self.context.save()?;
-        self.control.phase(if launching {
-            CloudPhase::Ready
-        } else {
-            CloudPhase::Synced
-        })
+        self.control.show(
+            if launching {
+                CloudPhase::Ready
+            } else {
+                CloudPhase::Synced
+            },
+            None,
+        )
     }
 
     async fn upload(
@@ -407,7 +525,7 @@ impl Session {
                 &self.context.rules,
                 &files,
                 &revision,
-                &self.control.cancel,
+                self.control.cancellation(),
             )
             .await?;
         self.control.check()?;
@@ -545,7 +663,7 @@ fn retryable(error: &Error) -> bool {
     )
 }
 
-pub fn pending(root: &Path, account: &str) -> Result<Vec<Configuration>> {
+pub(crate) fn pending(root: &Path, account: &str) -> Result<Vec<Configuration>> {
     store::safe(root)?;
     let directory = steam_cloud::epic_account_directory(root, account)?;
     store::safe(&directory)?;
@@ -567,18 +685,133 @@ pub fn pending(root: &Path, account: &str) -> Result<Vec<Configuration>> {
         if context.config.root != root || Context::path(&context.config, account)? != path {
             return Err(Error::Storage);
         }
-        if context.pending.is_some() {
+        // Vault work outlives the context marker: an uncertain upload or an
+        // interrupted replacement still needs this game's next sync.
+        let vault = steam_cloud::peek(root, context.config.scope(account))?;
+        if context.pending.is_some() || vault.pending.is_some() || vault.applying {
             configs.push(context.config);
         }
     }
     Ok(configs)
 }
 
+/// One Epic game's Cloud indicator, with the saved configuration that Cloud
+/// maintenance of an uninstalled game needs.
+pub struct EpicIndicator {
+    pub namespace: String,
+    pub app_name: String,
+    pub indicator: cloud_status::Indicator,
+    pub configuration: Option<Configuration>,
+}
+
+/// The Cloud indicators of `games` (namespace, app name), plus every other
+/// game of this account with pending work, such as an uninstalled one.
+/// Nothing here takes a lock: a game or maintenance may be writing meanwhile.
+pub fn indicators(
+    root: &Path,
+    account: &str,
+    games: &[(String, String)],
+) -> Result<Vec<EpicIndicator>> {
+    let mut wanted: std::collections::BTreeSet<(String, String)> = games.iter().cloned().collect();
+    wanted.extend(
+        pending(root, account)?
+            .into_iter()
+            .map(|config| (config.namespace, config.app_name)),
+    );
+    let mut indicators = Vec::new();
+    for (namespace, app_name) in wanted {
+        match indicator(root, account, &namespace, &app_name) {
+            Ok((indicator, configuration)) => indicators.push(EpicIndicator {
+                namespace,
+                app_name,
+                indicator,
+                configuration,
+            }),
+            Err(error) => eprintln!("Epic Cloud indicator of {app_name} unavailable: {error}"),
+        }
+    }
+    Ok(indicators)
+}
+
+fn indicator(
+    root: &Path,
+    account: &str,
+    namespace: &str,
+    app_name: &str,
+) -> Result<(cloud_status::Indicator, Option<Configuration>)> {
+    store::safe(root)?;
+    let scope = steam_cloud::StoreScope::from(steam_cloud::EpicScope {
+        account_id: account.into(),
+        namespace: namespace.into(),
+        app_name: app_name.into(),
+    });
+    let vault = steam_cloud::peek(root, scope.clone())?;
+    // An uninstalled game has neither its installation nor a session to
+    // validate against: check only that the context names this game.
+    let path = scope.directory(root)?.join("epic-context.json");
+    let context: Option<Context> = steam_cloud::journal::read(&path)?;
+    if let Some(context) = &context
+        && (context.account_id != account
+            || context.config.namespace != namespace
+            || context.config.app_name != app_name
+            || context.config.root != root)
+    {
+        return Err(Error::Storage);
+    }
+    let journal = context
+        .as_ref()
+        .map_or_else(cloud_status::Journal::default, |context| {
+            cloud_status::Journal {
+                pending: matches!(
+                    context.pending,
+                    Some(Pending::Upload { .. } | Pending::Capture)
+                ),
+                uncertain: false,
+                applying: matches!(context.pending, Some(Pending::Applying { .. })),
+                installation_removed: context.installation_removed,
+            }
+        });
+    let record = cloud_status::read(root, &scope)?;
+    Ok((
+        cloud_status::indicator(&scope, &vault, &journal, &record),
+        context.map(|context| context.config),
+    ))
+}
+
+/// Cloud maintenance of one Epic game, run inside Forge with the UI's
+/// authenticated client. `_idle` proves no Epic launch or supervisor can
+/// start while it runs.
+pub async fn maintain(
+    config: Configuration,
+    api: Arc<EpicClient>,
+    channel: Arc<MaintenanceChannel>,
+    _idle: &crate::supervisor::IdleGuard,
+) -> Result<()> {
+    maintain_with(config, api, channel).await
+}
+
+pub(crate) async fn maintain_with<R: CloudRemote>(
+    config: Configuration,
+    api: Arc<R>,
+    channel: Arc<dyn CloudChannel>,
+) -> Result<()> {
+    let account = api.account_id().await?;
+    match Session::new(config, account, api, channel).await? {
+        Some(mut session) => session.maintain().await,
+        // Unsupported rules were reported, and recorded as unavailable.
+        None => Ok(()),
+    }
+}
+
 pub async fn archive(config: Configuration, api: &EpicClient) -> Result<()> {
+    archive_with(config, api).await
+}
+
+async fn archive_with(config: Configuration, api: &impl CloudRemote) -> Result<()> {
     if config.platform == "Windows" {
         return Ok(());
     }
-    let account = api.credentials().await?.account_id;
+    let account = api.account_id().await?;
     config.validate(&account)?;
     store::safe(&config.root)?;
     let mut vault = Vault::open(&config.root, config.scope(&account))?;
@@ -685,17 +918,17 @@ fn recover_pending(vault: &Vault, context: &mut Context) -> Result<()> {
 }
 
 /// Pace a retry, but let cancellation cut the wait short.
-async fn pause(control: &Arc<Control>, wait: Duration) -> Result<()> {
+async fn pause(control: &Arc<dyn CloudChannel>, wait: Duration) -> Result<()> {
     tokio::select! {
         _ = tokio::time::sleep(wait) => Ok(()),
-        _ = control.cancel.cancelled() => Err(Error::Cancelled),
+        _ = control.cancellation().cancelled() => Err(Error::Cancelled),
     }
 }
 
 /// The prompt shown once a retry budget is spent. Returns only `Retry` or
 /// `LaunchAnyway`; anything else — including a revoked account — is a cancel.
 async fn deferred_choice(
-    control: &Arc<Control>,
+    control: &Arc<dyn CloudChannel>,
     last: &Error,
     allow_launch_anyway: bool,
 ) -> Result<Choice> {
@@ -709,16 +942,16 @@ async fn deferred_choice(
     }
 }
 
-/// The operator prompt always crosses to a blocking thread; `Control::ask`
+/// The operator prompt always crosses to a blocking thread; the channel
 /// parks until the UI answers, revokes the account or cancels.
 async fn ask(
-    control: &Arc<Control>,
+    control: &Arc<dyn CloudChannel>,
     phase: CloudPhase,
     error: Option<String>,
     choices: Vec<Choice>,
 ) -> Result<Choice> {
     let owner = control.clone();
-    tokio::task::spawn_blocking(move || owner.ask(phase, error, choices))
+    tokio::task::spawn_blocking(move || owner.question(phase, error, choices))
         .await
         .map_err(|_| Error::Session)?
 }
@@ -726,8 +959,8 @@ async fn ask(
 async fn configuration_rules(
     config: &Configuration,
     saved: Option<&Context>,
-    api: &EpicClient,
-    control: &Arc<Control>,
+    api: &impl CloudRemote,
+    control: &Arc<dyn CloudChannel>,
 ) -> Result<(Option<CloudRules>, bool)> {
     let mut budget = RetryBudget::new(Instant::now());
     let mut last = Error::Failed;
@@ -739,9 +972,11 @@ async fn configuration_rules(
                 continue;
             }
             Retry::Defer => {
-                let offer_launch = retryable(&last)
-                    && saved.is_some()
-                    && control.snapshot().phase == Phase::Preparing;
+                // Cloud maintenance asks only about conflicts.
+                if !control.launching() {
+                    return Err(last);
+                }
+                let offer_launch = retryable(&last) && saved.is_some();
                 match deferred_choice(control, &last, offer_launch).await? {
                     Choice::Retry => {
                         budget = RetryBudget::new(Instant::now());
@@ -750,7 +985,7 @@ async fn configuration_rules(
                     _ => {
                         let context = saved.ok_or(Error::Recovery)?;
                         context.validate(config, &context.account_id)?;
-                        if api.credentials().await?.account_id != context.account_id {
+                        if api.account_id().await? != context.account_id {
                             return Err(Error::Session);
                         }
                         return Ok((Some(context.rules.clone()), true));
@@ -760,7 +995,7 @@ async fn configuration_rules(
             Retry::Attempt { remaining } => remaining,
         };
         let result = tokio::select! {
-            _ = control.cancel.cancelled() => return Err(Error::Cancelled),
+            _ = control.cancellation().cancelled() => return Err(Error::Cancelled),
             result = tokio::time::timeout(remaining, api.cloud_configuration(
                 &config.namespace, &config.catalog_item_id, &config.app_name, &config.platform,
             )) => result.map_err(|_| Error::Failed).and_then(|result| result.map_err(Error::from)),
@@ -774,6 +1009,10 @@ async fn configuration_rules(
             Err(error) => return Err(error),
         }
     }
+}
+
+fn has_pending_work(vault: &Vault, context: Option<&Context>) -> bool {
+    context.is_some_and(|context| context.pending.is_some()) || vault.pending().is_some()
 }
 
 fn has_saved_state(vault: &Vault, context: Option<&Context>) -> bool {

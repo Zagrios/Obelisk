@@ -218,7 +218,9 @@ fn local_edit_after_download_decision_requires_another_comparison() {
         revision: "2".into(),
         files: after.clone(),
     };
+    let guard = vault.owners_guard().unwrap();
     let result = vault.prepare_checked_apply(
+        &guard,
         &bindings,
         after,
         Effect::Download { remote },
@@ -249,12 +251,14 @@ fn interrupted_current_snapshot_restoration_retains_the_baseline_and_rejects_ext
         for file in bindings.values() {
             fs::write(&file.path, b"reinstalled preimage").unwrap();
         }
-        vault.prepare_local_restore(&bindings).unwrap();
+        let guard = vault.owners_guard().unwrap();
+        vault.prepare_local_restore(&guard, &bindings).unwrap();
         assert_eq!(vault.local(), Some(&desired));
         assert!(matches!(
-            vault.recover_after(Some(interrupted_after)),
+            vault.recover_with(&guard, Some(interrupted_after)),
             Err(Error::Recovery)
         ));
+        drop(guard);
         drop(vault);
         let mut vault = Vault::open(root.path(), scope(1)).unwrap();
         if interrupted_after == 0 {

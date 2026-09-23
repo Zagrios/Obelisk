@@ -36,7 +36,7 @@ Terminal failures carry a typed reason through the persisted snapshot and UniFFI
 
 The shared archive uses `StoreScope::Steam` and `StoreScope::Epic`. Existing Steam JSON and directory paths remain unchanged. Epic identity contains the complete account ID, namespace and app name. Epic archives live under `SteamCloud/epic/<account>/<game-key>`; the game key hashes the namespace/app tuple, whose original identifiers remain in the journals. Account identities are not converted to Steam IDs or app IDs.
 
-`steam-cloud::Vault` provides content-addressed snapshots, local projection journals, physical-path ownership and upload settlement. Ownership fences also apply when two stores or accounts select the same physical save directory. Capture does not adopt another account's bytes.
+`steam-cloud::Vault` provides content-addressed snapshots, local projection journals, physical-path ownership and upload settlement. Ownership fences also apply when two stores or accounts select the same physical save directory. Capture does not adopt another account's bytes. Epic holds its own archive lock, `SteamCloud/epic/owner.lock`, so a running Steam game never blocks Epic Cloud work. Both storefronts share `owners.json` under `owners.lock`. Epic cannot take a save path from a Steam game that holds the Steam lock: that refusal names the same game on another platform.
 
 The shared journal reader rejects files with group or other permission bits, checking the opened file before reading JSON. Missing journals remain absent; symlinks and nonregular files are refused. Atomic writes create private files, and the existing size limits remain unchanged.
 
@@ -46,7 +46,7 @@ The shared journal reader rejects files with group or other permission bits, che
 - `Upload` refers to an immutable archived local manifest.
 - `Applying` records a verified remote choice before changing local files or the baseline, so a crash cannot later upload an older exit snapshot.
 
-Conflicts persist their local snapshot before prompting, including the first prelaunch conflict. Pending discovery checks the account, game identity, directory and configuration before resuming.
+Conflicts persist their local snapshot before prompting, including the first prelaunch conflict. Pending discovery checks the account, game identity, directory and configuration. It also counts an upload or replacement the vault still holds.
 
 Before uninstall, Forge archives selected saves and persists an installation-removal marker. A partial uninstall preserves already archived missing files. Later synchronization can finish remote work without recreating an absent installation. Reinstall compares preserved local content against the fresh remote view and requires a new choice when they differ. The archive has no user-facing history screen or old-schema migration path.
 
@@ -64,7 +64,7 @@ The remote inventory fingerprint is not an atomic compare-and-swap token. No ato
 
 Transient preparation failures get three bounded attempts within a 120-second budget, then explicit Retry or Cancel. Launch Anyway is available only for a retryable Cloud failure with safe local ownership. If fresh metadata fails, it additionally requires previously validated unchanged rules. It captures pending local work and does not infer permission from elapsed time. Missing or changed rules with an existing archive stop preparation.
 
-Post-exit failures remain pending. The UI attempts pending work for the current account at connection, wake, network return and explicit Retry. It avoids repeating the same failed game continuously. Deferred work does not launch the game.
+Post-exit failures remain pending. Nothing retries them automatically: the next launch syncs them, or the player starts Cloud maintenance from the game's Cloud indicator. Cloud maintenance runs inside Forge with the UI's session, behind the same idle guard as a launch, and never launches the game. For an installed game it captures the current saves first. For an uninstalled game it only finishes the remote work. A failure ends it without asking Retry and without a banner: the game's Cloud indicator shows it, and Sync now in its menu is the retry. The detached supervisor now only launches games.
 
 ## Supported rules and limits
 

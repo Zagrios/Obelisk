@@ -35,6 +35,20 @@ final class AppModel {
         self.epic = epic ?? EpicModel(directory: directory)
     }
 
+    /// The Cloud or Rosetta question shown over the whole app, whichever tab is
+    /// open. One sheet at a time, in a fixed order.
+    enum StorefrontPrompt: Equatable {
+        case steamRosetta, steamCloud, epicRosetta, epicCloud
+    }
+
+    var presentedPrompt: StorefrontPrompt? {
+        if steam.rosetta.prompt != nil { return .steamRosetta }
+        if steam.cloud.promptPresented { return .steamCloud }
+        if epic.rosetta.prompt != nil { return .epicRosetta }
+        if epic.cloud.promptPresented { return .epicCloud }
+        return nil
+    }
+
     var presentedFriends: FriendsPresentationState? {
         guard let activeFriendsAccount else { return nil }
         let state = activeFriendsAccount.storeID == "steam" ? steam.friends : epic.friends

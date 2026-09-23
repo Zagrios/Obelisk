@@ -2031,6 +2031,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "sha1 0.11.0",
  "sha2",
  "steam-cloud",
  "steam-kit",

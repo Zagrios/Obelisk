@@ -1,35 +1,37 @@
 use super::{store::Context, *};
-use crate::protocol::Credentials;
-use std::path::Path;
+use crate::{
+    cloud_status::{self, ProblemKind, UnavailableReason},
+    protocol::Credentials,
+};
 use steam_cloud::{Decision, Manifest, Preferences, RemoteView, Retry, RetryBudget, Vault};
 use steam_kit::{
     cloud::{CloudListing, CloudPreferencesCache, CloudUpload, UploadTransaction},
     cm::SteamConnection,
 };
 
+#[cfg(test)]
+mod cycle_tests;
+#[cfg(test)]
+mod fake;
 mod remote;
+pub(crate) use remote::SteamCm;
+pub(crate) use remote::{CloudConnection, CloudRemote, RemoteSource};
 
-pub struct Session {
+pub(crate) struct Session<R: CloudRemote = SteamCm> {
     config: Config,
     credentials: Credentials,
     session_id: String,
     control: Arc<Control>,
-    http: reqwest::Client,
+    remote: R,
     preferences: CloudPreferencesCache,
     downloaded: Manifest,
     vault: Vault,
     context: Option<Context>,
     shown: Option<(RemoteView, Manifest)>,
+    /// How the current operation ended without a sync, for the status file.
+    problem: Option<(ProblemKind, Failure)>,
 }
 impl Session {
-    pub fn native_storage(&self) -> Result<Option<crate::NativeStorage>, crate::Error> {
-        self.context
-            .as_ref()
-            .map(|context| context.prepare_sdk())
-            .transpose()
-            .map(Option::flatten)
-            .map_err(Into::into)
-    }
     pub fn new(
         config: Config,
         credentials: Credentials,
@@ -44,6 +46,26 @@ impl Session {
         session_id: String,
         control: Arc<Control>,
     ) -> Result<Self, Failure> {
+        Self::open_with(SteamCm::new()?, config, credentials, session_id, control)
+    }
+}
+
+impl<R: CloudRemote> Session<R> {
+    pub fn native_storage(&self) -> Result<Option<crate::NativeStorage>, crate::Error> {
+        self.context
+            .as_ref()
+            .map(|context| context.prepare_sdk())
+            .transpose()
+            .map(Option::flatten)
+            .map_err(Into::into)
+    }
+    fn open_with(
+        remote: R,
+        config: Config,
+        credentials: Credentials,
+        session_id: String,
+        control: Arc<Control>,
+    ) -> Result<Self, Failure> {
         store::directory(&config, credentials.steam_id)?;
         let vault = Vault::open(&config.root, scope(&config, credentials.steam_id))?;
         let context = Context::load(&config, credentials.steam_id)?;
@@ -52,13 +74,40 @@ impl Session {
             credentials,
             session_id,
             control,
-            http: steam_kit::client::http_client().map_err(|_| Failure::Network)?,
+            remote,
             preferences: CloudPreferencesCache::default(),
             downloaded: Manifest::default(),
             vault,
             context,
             shown: None,
+            problem: None,
         })
+    }
+    fn mark(&self, change: impl FnOnce(&mut cloud_status::Record)) {
+        let scope = scope(&self.config, self.credentials.steam_id).into();
+        // Display state only: a failed write must not fail the sync itself.
+        if let Err(error) = cloud_status::update(&self.config.root, &scope, change) {
+            eprintln!("Steam Cloud status not recorded: {error}");
+        }
+    }
+    fn has_pending_work(&self) -> bool {
+        self.context
+            .as_ref()
+            .is_some_and(|context| context.needs_work)
+            || self.vault.pending().is_some()
+    }
+    /// A sync clears the last problem. Otherwise a failed operation leaves a
+    /// problem, unless pending work already shows it or `exit` says the game
+    /// just exited; an unanswered conflict is recorded either way.
+    fn record_outcome(&mut self, syncs: u64, exit: bool) {
+        let problem = self.problem.take();
+        if self.vault.syncs() != syncs {
+            self.mark(cloud_status::synced);
+        } else if let Some((kind, failure)) = problem
+            && (kind == ProblemKind::Conflict || !exit && !self.has_pending_work())
+        {
+            self.mark(cloud_status::problem(kind, failure.key()));
+        }
     }
     /// Clear a dead prior owner's durable game guard and roll forward any
     /// interrupted local transaction. Only a caller that has established that
@@ -72,17 +121,26 @@ impl Session {
         Ok(())
     }
     pub async fn prepare(&mut self) -> Result<(), crate::Error> {
+        let syncs = self.vault.syncs();
+        self.problem = None;
         let result = self.prepare_inner().await;
         if matches!(result, Err(crate::Error::Cloud(Failure::Authentication))) {
             self.control
                 .status(Phase::Failed, Some(Failure::Authentication));
         }
+        self.record_outcome(syncs, false);
         result
     }
     async fn prepare_inner(&mut self) -> Result<(), crate::Error> {
         // The supervisor has acquired its process-owner lock and checked the
         // previous game identity before admitting this launch.
         self.recover_dead_owner()?;
+        Ok(self.compare(false).await?)
+    }
+    /// Compares local and Cloud saves until they agree, the player decides or
+    /// the retry budget runs out. `force` is Cloud maintenance: it syncs even
+    /// without earlier pending work, and a failure ends it instead of asking.
+    async fn compare(&mut self, force: bool) -> Result<(), Failure> {
         self.collect_garbage();
         let mut choice = None;
         let mut budget = RetryBudget::new(Instant::now());
@@ -94,18 +152,39 @@ impl Session {
                     continue;
                 }
                 Retry::Defer => {
-                    match self.control.ask(last).await? {
+                    let conflict = matches!(last, Failure::Conflict);
+                    if force && !conflict {
+                        self.problem = Some((ProblemKind::Failed, last));
+                        return Err(last);
+                    }
+                    let answer = match self.control.ask(last).await {
+                        Ok(answer) => answer,
+                        Err(error) => {
+                            let kind = if conflict {
+                                ProblemKind::Conflict
+                            } else {
+                                ProblemKind::Failed
+                            };
+                            self.problem = Some((kind, last));
+                            return Err(error);
+                        }
+                    };
+                    if conflict {
+                        self.mark(cloud_status::answered);
+                    }
+                    match answer {
                         Choice::Retry => choice = None,
                         Choice::Local => choice = Some(Choice::Local),
                         Choice::Cloud => choice = Some(Choice::Cloud),
                         Choice::LaunchAnyway => {
+                            self.problem = Some((ProblemKind::Failed, last));
                             // Offline launch still checks account ownership and
                             // preserves any captured work for the next sync.
                             self.capture_without_sync()?;
                             self.control.status(Phase::Pending, Some(last));
                             return Ok(());
                         }
-                        Choice::Cancel => return Err(crate::Error::Cancelled),
+                        Choice::Cancel => return Err(Failure::Cancelled),
                     }
                     budget = RetryBudget::new(Instant::now());
                     continue;
@@ -115,12 +194,13 @@ impl Session {
             self.control.status(Phase::Checking, None);
             let control = self.control.clone();
             let result = control
-                .guarded(remaining, self.preflight(choice.take()))
+                .guarded(remaining, self.preflight(choice.take(), force))
                 .await;
             match result {
                 Ok(()) => return Ok(()),
                 Err(failure @ (Failure::Cancelled | Failure::Authentication)) => {
-                    return Err(failure.into());
+                    self.problem = Some((ProblemKind::Failed, failure));
+                    return Err(failure);
                 }
                 Err(failure) => {
                     last = failure;
@@ -137,44 +217,36 @@ impl Session {
     }
     /// Unknown preferences never authorize a transfer, and an explicitly
     /// disabled one is not an error. Returns false when Cloud is off.
-    async fn preferences_enabled(
-        &mut self,
-        cm: &mut SteamConnection,
-        http: &reqwest::Client,
-    ) -> Result<bool, Failure> {
-        let preferences = cm
-            .cloud_preferences_cached(http, self.config.app_id, &mut self.preferences)
-            .await?;
+    async fn preferences_enabled(&mut self, cm: &mut R::Connection) -> Result<bool, Failure> {
+        let preferences = cm.preferences(&mut self.preferences).await?;
         self.vault.set_preferences(Preferences {
             account_enabled: preferences.account_enabled,
             game_enabled: preferences.game_enabled,
         });
         if preferences.account_enabled == Some(false) || preferences.game_enabled == Some(false) {
+            self.mark(cloud_status::unavailable(UnavailableReason::Disabled));
             return Ok(false);
         }
         if preferences.account_enabled != Some(true) || preferences.game_enabled != Some(true) {
             return Err(Failure::Preferences);
         }
+        self.mark(cloud_status::available);
         Ok(true)
     }
-    async fn connect(&self) -> Result<(SteamConnection, reqwest::Client), Failure> {
+    async fn connect(&self) -> Result<R::Connection, Failure> {
         self.control.check()?;
-        let http = self.http.clone();
-        let mut cm = SteamConnection::connect(http.clone()).await?;
-        cm.log_on(
-            &self.credentials.account_name,
-            self.credentials.steam_id,
-            &self.credentials.refresh_token,
-        )
-        .await?;
+        let cm = self
+            .remote
+            .connect(&self.credentials, self.config.app_id, self.control.clone())
+            .await?;
         self.control.check()?;
-        Ok((cm, http))
+        Ok(cm)
     }
-    async fn preflight(&mut self, choice: Option<Choice>) -> Result<(), Failure> {
-        let (mut cm, http) = self.connect().await?;
-        let info = cm.app_info(self.config.app_id).await?;
-        let Some(metadata) = info.cloud else {
+    async fn preflight(&mut self, choice: Option<Choice>, force: bool) -> Result<(), Failure> {
+        let mut cm = self.connect().await?;
+        let Some(metadata) = cm.cloud_metadata().await? else {
             self.context = None;
+            self.mark(cloud_status::unavailable(UnavailableReason::NoCloud));
             self.control.status(Phase::Disabled, None);
             return Ok(());
         };
@@ -182,6 +254,7 @@ impl Session {
             .field("appidredirect")
             .is_some_and(|v| v.text() != Some("0"))
         {
+            self.mark(cloud_status::unavailable(UnavailableReason::Unsupported));
             return Err(Failure::Unsupported);
         }
         if metadata.field("savefiles").is_some() {
@@ -204,10 +277,11 @@ impl Session {
         }
         // Learn the server's exact remote identities before adopting local
         // files. Optional root separators must not create archive aliases.
-        let listing = cm.cloud_listing(self.config.app_id).await?;
+        let listing = cm.listing().await?;
         self.context_mut()?.listing = listing.clone();
-        let retrying =
-            self.context.as_ref().is_some_and(|c| c.needs_work) || self.vault.pending().is_some();
+        let retrying = force
+            || self.context.as_ref().is_some_and(|c| c.needs_work)
+            || self.vault.pending().is_some();
         if retrying {
             // Preserve today's local bytes before retiring earlier work.
             self.capture_without_sync()?;
@@ -217,16 +291,16 @@ impl Session {
             self.activate_before_launch()?;
             self.context()?.save()?;
         }
-        if !self.preferences_enabled(&mut cm, &http).await? {
+        if !self.preferences_enabled(&mut cm).await? {
             if !retrying {
                 self.capture_without_sync()?;
             }
             self.control.status(Phase::Disabled, None);
             return Ok(());
         }
-        self.recover_previous(&mut cm, &http).await?;
-        let listing = cm.cloud_listing(self.config.app_id).await?;
-        let remote = self.remote(&mut cm, &http, &listing).await?;
+        self.recover_previous(&mut cm).await?;
+        let listing = cm.listing().await?;
+        let remote = self.read_remote(&mut cm, &listing).await?;
         self.set_listing(listing, remote.clone())?;
         let local = self.capture_before_launch()?.ok_or(Failure::Storage)?;
         if retrying {
@@ -241,13 +315,14 @@ impl Session {
         if retrying {
             if decision == Decision::KeepLocal {
                 let listing = self.context()?.listing.clone();
-                self.upload_local(&mut cm, &http, listing, &local, &remote)
-                    .await?;
+                self.upload_local(&mut cm, listing, &local, &remote).await?;
             }
             self.completed()?;
         }
         self.collect_garbage();
-        self.control.status(Phase::Ready, None);
+        if !force {
+            self.control.status(Phase::Ready, None);
+        }
         Ok(())
     }
     fn reconcile_launch(
@@ -351,11 +426,7 @@ impl Session {
         context.needs_work = false;
         context.save()
     }
-    async fn recover_previous(
-        &mut self,
-        cm: &mut SteamConnection,
-        http: &reqwest::Client,
-    ) -> Result<(), Failure> {
+    async fn recover_previous(&mut self, cm: &mut R::Connection) -> Result<(), Failure> {
         let Some(pending) = self.vault.pending().cloned() else {
             return Ok(());
         };
@@ -374,15 +445,13 @@ impl Session {
             }
             // Keep the proven cleanup for an interrupted HTTP body. A lost
             // receipt must not permanently prevent a new comparison, though.
-            let result = cm
-                .cloud_settle_upload(http, &mut transaction, || self.control.check().is_ok())
-                .await;
+            let result = cm.settle_upload(&mut transaction).await;
             settled = recovery_is_settled(result, transaction.is_settled())?;
         }
         // An unavailable/partial view never clears pending work. On an unknown
         // outcome, this is a new observation, not proof of server cancellation.
-        let listing = cm.cloud_listing(self.config.app_id).await?;
-        let current = self.remote(cm, http, &listing).await?;
+        let listing = cm.listing().await?;
+        let current = self.read_remote(cm, &listing).await?;
         self.reconcile_previous(&current, settled)
     }
     fn reconcile_previous(&mut self, current: &RemoteView, settled: bool) -> Result<(), Failure> {
@@ -423,21 +492,52 @@ impl Session {
     fn game_guard_held(&self) -> bool {
         self.vault.game_session() == Some(self.session_id.as_str())
     }
+    /// The exit save an uninstalled game's maintenance sends. Without one, an
+    /// upload still in the vault supplies it.
     fn recover_exit_snapshot(&mut self) -> Result<(), Failure> {
+        let queued = self.vault.pending().map(|pending| pending.desired.clone());
         if let Some(context) = &mut self.context
             && context.desired.is_none()
         {
-            if context.installation_removed {
-                // There was no completed exit snapshot before removal. A new
-                // launch must compare the projection; maintenance cannot infer
-                // save deletions from a partially removed installation.
-                return Err(Failure::Changed);
-            }
-            context.refresh_bindings(self.vault.local())?;
-            context.desired = Some(self.vault.capture(&context.bindings)?);
+            // There was no completed exit snapshot before removal. A new
+            // launch must compare the projection; maintenance cannot infer
+            // save deletions from a partially removed installation.
+            context.desired = Some(queued.ok_or(Failure::Changed)?);
+            context.needs_work = true;
             context.save()?;
         }
         Ok(())
+    }
+    /// Cloud maintenance of this game: a two-way sync without a launch. The
+    /// caller holds the idle guard, so no supervisor or game owns the saves.
+    pub(crate) async fn maintain(&mut self) -> Result<(), Failure> {
+        let syncs = self.vault.syncs();
+        self.problem = None;
+        let result = self.maintain_inner().await;
+        if let Err(failure) = result
+            && self.problem.is_none()
+        {
+            self.problem = Some((ProblemKind::Failed, failure));
+        }
+        self.record_outcome(syncs, false);
+        result
+    }
+    async fn maintain_inner(&mut self) -> Result<(), Failure> {
+        self.recover_dead_owner()?;
+        let uninstalled = match &self.context {
+            Some(context) => context.removed_installation_absent()?,
+            None => false,
+        };
+        if !uninstalled {
+            return self.compare(true).await;
+        }
+        // Preflight needs the installation. The exit save is sent as captured.
+        self.recover_exit_snapshot()?;
+        if !self.has_pending_work() {
+            self.control.status(Phase::Synced, None);
+            return Ok(());
+        }
+        self.finalize().await
     }
     pub fn aborted(&mut self) {
         if self.game_guard_held() {
@@ -445,6 +545,13 @@ impl Session {
         }
     }
     pub async fn finished(&mut self) {
+        let syncs = self.vault.syncs();
+        self.problem = None;
+        self.finish().await;
+        // Exit failures show through the pending work they leave.
+        self.record_outcome(syncs, true);
+    }
+    async fn finish(&mut self) {
         let capture = (|| -> Result<(), Failure> {
             if self.game_guard_held() {
                 self.vault.game_exited(&self.session_id)?;
@@ -465,15 +572,42 @@ impl Session {
         if self.context.is_none() {
             return;
         }
-        self.finalize(None).await;
+        if let Err(error) = self.finalize().await {
+            // An unanswered conflict still reports why the save waits.
+            let reason = match self.problem {
+                Some((ProblemKind::Conflict, _)) => Failure::Conflict,
+                _ => error,
+            };
+            self.control.status(Phase::Pending, Some(reason));
+        }
     }
-    async fn finalize(&mut self, choice: Option<Choice>) {
+    /// Sends the captured exit save, asking live on a conflict. Returns the
+    /// failure that leaves it pending, or `Cancelled` for an unanswered conflict.
+    async fn finalize(&mut self) -> Result<(), Failure> {
         self.collect_garbage();
-        let approved = choice.and_then(|_| self.context.as_ref().map(|c| c.remote.clone()));
+        let mut choice = None;
+        let mut approved = None;
         let mut budget = RetryBudget::new(Instant::now());
         let mut last = Failure::Network;
         loop {
             match budget.poll(Instant::now()) {
+                Retry::Defer if matches!(last, Failure::Conflict) => {
+                    // Ask now, as at launch. An unanswered conflict leaves the
+                    // exit save pending until the next launch or maintenance.
+                    match self.control.ask(last).await {
+                        Ok(answer) => {
+                            self.mark(cloud_status::answered);
+                            choice = Some(answer);
+                            approved = self.context.as_ref().map(|c| c.remote.clone());
+                            budget = RetryBudget::new(Instant::now());
+                        }
+                        Err(error) => {
+                            self.problem = Some((ProblemKind::Conflict, last));
+                            last = error;
+                            break;
+                        }
+                    }
+                }
                 Retry::Defer => break,
                 Retry::Wait(wait) => {
                     if let Err(error) = self.control.wait(wait).await {
@@ -489,7 +623,7 @@ impl Session {
                         .await
                     {
                         Ok(()) => {
-                            return;
+                            return Ok(());
                         }
                         Err(error) => {
                             last = error;
@@ -503,48 +637,38 @@ impl Session {
             let _ = self.vault.revoke();
         }
         self.collect_garbage();
-        self.publish_deferred(last);
-    }
-    fn publish_deferred(&self, failure: Failure) {
-        if matches!(failure, Failure::Conflict) {
-            // The UI can present this known conflict without repeating the
-            // network comparison. resolve() still revalidates the token and
-            // remote view before applying the user's choice.
-            match self.context().and_then(Context::token) {
-                Ok(token) => {
-                    self.control
-                        .status_with_token(Phase::Conflict, Some(failure), Some(token))
-                }
-                Err(error) => self.control.status(Phase::Pending, Some(error)),
-            }
-        } else {
-            self.control.status(Phase::Pending, Some(failure));
-        }
+        Err(last)
     }
     async fn upload(
         &mut self,
         choice: Option<Choice>,
         approved: Option<&RemoteView>,
     ) -> Result<(), Failure> {
-        let (mut cm, http) = self.connect().await?;
-        let metadata = cm
-            .app_info(self.config.app_id)
-            .await?
-            .cloud
-            .ok_or(Failure::Unsupported)?;
+        let mut cm = self.connect().await?;
+        let metadata = cm.cloud_metadata().await?.ok_or(Failure::Unsupported)?;
         let context = self.context()?;
         if metadata != context.metadata {
-            return Err(Failure::Unsupported);
+            // An uninstalled game's exit save can only be sent under the rules
+            // it was captured with. A reinstall compares it under the new ones.
+            return Err(if context.installation_removed {
+                Failure::RulesChanged
+            } else {
+                Failure::Unsupported
+            });
         }
-        if !self.preferences_enabled(&mut cm, &http).await? {
-            // Keep the captured version for a later enabled session, without
-            // presenting an intentionally disabled transfer as an error.
+        if !self.preferences_enabled(&mut cm).await? {
+            // Cloud is off in Steam, so this exit save is never sent. It stays
+            // in the archive as the local snapshot, but not as pending work.
+            let context = self.context_mut()?;
+            context.needs_work = false;
+            context.desired = None;
+            context.save()?;
             self.control.status(Phase::Disabled, None);
             return Ok(());
         }
-        self.recover_previous(&mut cm, &http).await?;
-        let listing = cm.cloud_listing(self.config.app_id).await?;
-        let remote = self.remote(&mut cm, &http, &listing).await?;
+        self.recover_previous(&mut cm).await?;
+        let listing = cm.listing().await?;
+        let remote = self.read_remote(&mut cm, &listing).await?;
         // A resume operates on immutable captured bytes, including after the
         // installation has been removed. It does not scan unrelated games.
         let local = self.context()?.desired.clone().ok_or(Failure::Storage)?;
@@ -588,8 +712,7 @@ impl Session {
             }
             Decision::KeepLocal => {}
         }
-        self.upload_local(&mut cm, &http, listing, &local, &remote)
-            .await?;
+        self.upload_local(&mut cm, listing, &local, &remote).await?;
         self.completed()
     }
     fn check_removed_upload(
@@ -607,8 +730,7 @@ impl Session {
     }
     async fn upload_local(
         &mut self,
-        cm: &mut SteamConnection,
-        http: &reqwest::Client,
+        cm: &mut R::Connection,
         listing: CloudListing,
         local: &Manifest,
         remote: &RemoteView,
@@ -650,21 +772,16 @@ impl Session {
         let paths = self.context()?.paths()?;
         let mut files = Manifest::default();
         let listing = cm
-            .cloud_upload_verified(
-                http,
-                &mut transaction,
-                || self.control.check().is_ok(),
-                |file, bytes| {
-                    if paths.existing_file(file)?.is_some() {
-                        let version = self
-                            .vault
-                            .stage(&bytes, file.platforms)
-                            .map_err(|_| steam_kit::cloud::CloudError::Storage)?;
-                        files.0.insert(file.name.clone(), version);
-                    }
-                    Ok(())
-                },
-            )
+            .upload_verified(&mut transaction, |file, bytes| {
+                if paths.existing_file(file)?.is_some() {
+                    let version = self
+                        .vault
+                        .stage(&bytes, file.platforms)
+                        .map_err(|_| steam_kit::cloud::CloudError::Storage)?;
+                    files.0.insert(file.name.clone(), version);
+                }
+                Ok(())
+            })
             .await?;
         // The adapter read every surviving remote file and checked the complete
         // listing again. Only that successful receipt publishes staged bytes.
@@ -754,98 +871,38 @@ fn recovery_is_settled(
     }
 }
 
-/// Invoked on account connection or network return, never on a library timer.
-/// Only durable pending stores for this authenticated account are opened.
-pub fn resume(
-    root: &Path,
+/// Cloud maintenance of one Steam game, run inside Forge. `_idle` proves that
+/// no Steam launch or supervisor can start while it runs.
+pub fn maintain(
+    target: MaintenanceTarget,
     credentials: &Credentials,
     control: Arc<Control>,
     _idle: &crate::supervisor::IdleGuard,
-    excluded_app_ids: &[u32],
-) -> Result<Vec<(u32, Status, String)>, Failure> {
+) -> Result<(), Failure> {
     let runtime = crate::executor()?;
-    resume_stores(root, credentials, control, excluded_app_ids, |session| {
-        runtime.block_on(session.finalize(None))
-    })
+    runtime.block_on(maintain_with(SteamCm::new()?, target, credentials, control))
 }
 
-fn resume_stores(
-    root: &Path,
+pub(crate) async fn maintain_with<R: CloudRemote>(
+    remote: R,
+    target: MaintenanceTarget,
     credentials: &Credentials,
     control: Arc<Control>,
-    excluded_app_ids: &[u32],
-    mut finalize: impl FnMut(&mut Session),
-) -> Result<Vec<(u32, Status, String)>, Failure> {
-    let mut results = Vec::new();
-    for store::PendingStore { app_id, config } in store::pending(root, credentials.steam_id)? {
-        control.check()?;
-        if excluded_app_ids.contains(&app_id) {
-            continue;
+) -> Result<(), Failure> {
+    let config = match target {
+        MaintenanceTarget::Installed(config) => config,
+        MaintenanceTarget::Uninstalled { root, app_id } => {
+            Context::load_app(&root, credentials.steam_id, app_id)?.config
         }
-        let result = (|| {
-            let mut session = Session::open(
-                config?,
-                credentials.clone(),
-                uuid::Uuid::new_v4().to_string(),
-                control.clone(),
-            )?;
-            // The public entry point holds the idle guard throughout recovery
-            // and finalization. A failed store must not hide the next game's work.
-            session.recover_dead_owner()?;
-            session.recover_exit_snapshot()?;
-            finalize(&mut session);
-            control.check()?;
-            Ok((
-                control.state.lock().unwrap().status.clone(),
-                session.context()?.token()?,
-            ))
-        })();
-        let (status, token) = match result {
-            Ok(result) => result,
-            Err(error @ (Failure::Cancelled | Failure::Authentication)) => return Err(error),
-            Err(error) => {
-                control.status(Phase::Pending, Some(error));
-                (control.state.lock().unwrap().status.clone(), String::new())
-            }
-        };
-        let authentication_failed = status.error.as_deref() == Some(Failure::Authentication.key());
-        results.push((app_id, status, token));
-        if authentication_failed {
-            // Server rejection applies to this credential, not just this game.
-            // Keep its visible error, without issuing more authenticated requests.
-            break;
-        }
-    }
-    Ok(results)
-}
-
-pub fn resolve(
-    root: &Path,
-    app_id: u32,
-    credentials: &Credentials,
-    control: Arc<Control>,
-    choice: Choice,
-    token: &str,
-) -> Result<(Status, String), Failure> {
-    control.check()?;
-    let config = Context::load_app(root, credentials.steam_id, app_id)?.config;
-    let mut session = Session::open(
+    };
+    let mut session = Session::open_with(
+        remote,
         config,
         credentials.clone(),
         uuid::Uuid::new_v4().to_string(),
-        control.clone(),
+        control,
     )?;
-    if session.vault.game_session().is_some() {
-        return Err(Failure::Busy);
-    }
-    if session.context()?.token()? != token {
-        return Err(Failure::Changed);
-    }
-    crate::executor()?.block_on(session.finalize(Some(choice)));
-    Ok((
-        control.state.lock().unwrap().status.clone(),
-        session.context()?.token()?,
-    ))
+    session.maintain().await
 }
 
 #[cfg(test)]
@@ -1081,71 +1138,6 @@ mod removal_tests {
     }
 
     #[test]
-    fn maintenance_continues_after_capture_failure_and_can_exclude_a_deferred_game() {
-        let (_temporary, mut session, before) = installed_fixture();
-        let mut broken_config = session.config.clone();
-        broken_config.app_id = 41;
-        broken_config.install = broken_config.install.with_file_name("removed-game");
-        let context = session.context_mut().unwrap();
-        context.desired = Some(before.files.clone());
-        context.needs_work = true;
-        context.save().unwrap();
-        let metadata = context.metadata.clone();
-        let root = session.config.root.clone();
-        let credentials = session.credentials.clone();
-        let control = session.control.clone();
-        drop(session);
-        fs::create_dir(&broken_config.install).unwrap();
-        fs::write(broken_config.install.join("slot.sav"), b"other game").unwrap();
-        let mut broken = Session::open(
-            broken_config.clone(),
-            credentials.clone(),
-            uuid::Uuid::new_v4().to_string(),
-            control.clone(),
-        )
-        .unwrap();
-        broken.context = Some(Context::new(&broken_config, ACCOUNT, metadata));
-        broken.capture_before_launch().unwrap();
-        broken.context_mut().unwrap().needs_work = true;
-        broken.context().unwrap().save().unwrap();
-        fs::remove_dir_all(&broken_config.install).unwrap();
-        drop(broken);
-
-        for excluded in [vec![], vec![41]] {
-            let mut finalized = Vec::new();
-            let results =
-                resume_stores(&root, &credentials, control.clone(), &excluded, |session| {
-                    finalized.push(session.config.app_id);
-                    assert_eq!(
-                        session.context().unwrap().desired.as_ref(),
-                        Some(&before.files)
-                    );
-                    session.control.status(Phase::Synced, None);
-                })
-                .unwrap();
-            assert_eq!(finalized, vec![42]);
-            if excluded.is_empty() {
-                assert_eq!(results.len(), 2);
-                assert_eq!(results[0].0, 41);
-                assert_eq!(results[0].1.phase, Phase::Pending);
-                assert_eq!(results[0].1.error.as_deref(), Some(Failure::Storage.key()));
-                assert!(results[0].2.is_empty());
-            } else {
-                assert_eq!(results.len(), 1);
-            }
-            assert_eq!(results.last().unwrap().0, 42);
-            assert_eq!(results.last().unwrap().1.phase, Phase::Synced);
-        }
-        control.cancel();
-        assert!(matches!(
-            resume_stores(&root, &credentials, control, &[], |_| panic!(
-                "Cancelled maintenance must not finalize"
-            )),
-            Err(Failure::Cancelled)
-        ));
-    }
-
-    #[test]
     fn equal_reinstall_and_explicit_cloud_choice_clear_the_marker() {
         for cloud_choice in [false, true] {
             let (_temporary, mut session, remote) = fixture();
@@ -1217,7 +1209,7 @@ mod removal_tests {
         context.desired = Some(local.clone());
         context.needs_work = true;
         context.save().unwrap();
-        let old_token = context.token().unwrap();
+        let old_fingerprint = context.fingerprint();
         fs::remove_dir_all(&session.config.install).unwrap();
         fs::write(&outside, b"outside progress after exit").unwrap();
 
@@ -1245,7 +1237,7 @@ mod removal_tests {
         assert!(!saved.needs_work);
         assert!(saved.desired.is_none());
         assert!(saved.transaction.is_none());
-        assert_ne!(saved.token().unwrap(), old_token);
+        assert_ne!(saved.fingerprint(), old_fingerprint);
         assert_eq!(
             session.control.state.lock().unwrap().status.phase,
             Phase::Synced
@@ -1260,7 +1252,7 @@ mod removal_tests {
         context.desired = Some(remote.files.clone());
         context.needs_work = true;
         context.save().unwrap();
-        let before_token = context.token().unwrap();
+        let before_fingerprint = context.fingerprint();
         fs::remove_dir_all(&session.config.install).unwrap();
 
         assert!(matches!(
@@ -1272,7 +1264,7 @@ mod removal_tests {
             Context::load_app(&session.config.root, ACCOUNT, session.config.app_id).unwrap();
         assert!(saved.needs_work);
         assert_eq!(saved.desired, Some(remote.files.clone()));
-        assert_eq!(saved.token().unwrap(), before_token);
+        assert_eq!(saved.fingerprint(), before_fingerprint);
         assert!(!session.config.install.exists());
     }
 
@@ -1311,26 +1303,15 @@ mod removal_tests {
     }
 
     #[test]
-    fn durable_root_resolution_rejects_a_stale_token_before_connecting() {
+    fn loading_by_app_rejects_a_context_copied_into_another_account_or_app() {
         let (_temporary, session, remote) = fixture();
         let root = session.config.root.clone();
         let app_id = session.config.app_id;
-        let install = session.config.install.clone();
-        let credentials = session.credentials.clone();
-        let control = session.control.clone();
-        fs::remove_dir_all(&install).unwrap();
         drop(session);
 
-        assert!(matches!(
-            resolve(&root, app_id, &credentials, control, Choice::Cloud, "stale"),
-            Err(Failure::Changed)
-        ));
-
         let context = Context::load_app(&root, ACCOUNT, app_id).unwrap();
-        assert_eq!(context.config.install, install);
+
         assert_eq!(context.remote, remote);
-        assert!(context.installation_removed);
-        assert!(!install.exists());
         for (account, requested_app) in [(ACCOUNT + 1, app_id), (ACCOUNT, app_id + 1)] {
             let copied = root
                 .join(account.to_string())
@@ -1342,22 +1323,6 @@ mod removal_tests {
                 Err(Failure::Storage)
             ));
         }
-    }
-
-    #[test]
-    fn postgame_conflict_publishes_the_captured_choice_token_without_reconnecting() {
-        let (_temporary, session, _) = fixture();
-        let expected = session.context.as_ref().unwrap().token().unwrap();
-        session.publish_deferred(Failure::Conflict);
-        let status = session.control.state.lock().unwrap().status.clone();
-        assert_eq!(status.phase, Phase::Conflict);
-        assert_eq!(status.decision_token, Some(expected));
-        assert_eq!(status.error.as_deref(), Some(Failure::Conflict.key()));
-
-        session.publish_deferred(Failure::Network);
-        let status = session.control.state.lock().unwrap().status.clone();
-        assert_eq!(status.phase, Phase::Pending);
-        assert_eq!(status.decision_token, None);
     }
 
     #[test]
@@ -1386,7 +1351,7 @@ mod removal_tests {
         context.desired = Some(desired.clone());
         context.remote = conflict.clone();
         context.save().unwrap();
-        let token = context.token().unwrap();
+        let fingerprint = context.fingerprint();
         let config = session.config.clone();
         let credentials = session.credentials.clone();
         let control = session.control.clone();
@@ -1418,7 +1383,7 @@ mod removal_tests {
             b"install"
         );
         assert!(session.vault.read_content(&orphan).is_err());
-        assert_eq!(session.context().unwrap().token().unwrap(), token);
+        assert_eq!(session.context().unwrap().fingerprint(), fingerprint);
         // Successful finalization durably drops the old exit reference first.
         session.completed().unwrap();
         assert!(session.vault.read_content(&desired.0["install"]).is_err());

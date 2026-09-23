@@ -204,11 +204,11 @@ impl Drop for Admission {
         }
     }
 }
+#[uniffi::export(async_runtime = "tokio")]
 impl EpicSession {
-    async fn supervised(
+    pub async fn launch_game(
         &self,
         configuration: EpicCloudConfiguration,
-        launch: bool,
     ) -> Result<Arc<EpicGameSession>, EpicError> {
         let cancel = forge_core::transfer::CancelToken::new();
         let client_slot = Arc::new(std::sync::Mutex::new(None));
@@ -227,7 +227,6 @@ impl EpicSession {
                 configuration.into(),
                 account,
                 exchange,
-                launch,
                 cancel.clone(),
             )?);
             *client_slot.lock().unwrap() = Some(Arc::clone(&client));
@@ -241,21 +240,6 @@ impl EpicSession {
         // Completion transfers cancellation to the observer's explicit controls.
         admission.armed = false;
         Ok(Arc::new(EpicGameSession { client }))
-    }
-}
-#[uniffi::export(async_runtime = "tokio")]
-impl EpicSession {
-    pub async fn launch_game(
-        &self,
-        configuration: EpicCloudConfiguration,
-    ) -> Result<Arc<EpicGameSession>, EpicError> {
-        self.supervised(configuration, true).await
-    }
-    pub async fn resume_cloud(
-        &self,
-        configuration: EpicCloudConfiguration,
-    ) -> Result<Arc<EpicGameSession>, EpicError> {
-        self.supervised(configuration, false).await
     }
     pub async fn archive_cloud(
         &self,
@@ -284,16 +268,6 @@ pub async fn recover_epic_game_session(
         )
     })
     .await
-}
-#[uniffi::export]
-pub fn epic_cloud_pending(
-    root: String,
-    account_id: String,
-) -> Result<Vec<EpicCloudConfiguration>, EpicError> {
-    Ok(epic::pending(Path::new(&root), &account_id)?
-        .into_iter()
-        .map(Into::into)
-        .collect())
 }
 #[uniffi::export(async_runtime = "tokio")]
 pub async fn epic_cloud_removed(

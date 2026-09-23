@@ -184,6 +184,23 @@ impl UploadTransaction {
     pub fn app_id(&self) -> u32 {
         self.state.before.app_id
     }
+    /// The planned file writes, in upload order.
+    pub fn uploads(&self) -> &[CloudFile] {
+        &self.state.uploads
+    }
+    /// The planned remote deletions.
+    pub fn deletes(&self) -> &[String] {
+        &self.state.deletes
+    }
+    /// The immutable body of planned upload `index`, checked against its hash.
+    pub fn upload_body(&self, index: usize) -> Result<Vec<u8>, CloudError> {
+        let file = self
+            .state
+            .uploads
+            .get(index)
+            .ok_or(CloudError::Invalid("upload index"))?;
+        self.content(index, file)
+    }
 
     /// Reports complete receipts for the coordinator's confirmed recovery path.
     /// False does not prevent a separate fresh-comparison retry policy. This

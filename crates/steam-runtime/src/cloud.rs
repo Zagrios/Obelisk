@@ -6,8 +6,9 @@ mod store;
 pub(crate) fn safe_storage_path(path: &std::path::Path) -> Result<(), crate::Error> {
     store::safe(path).map_err(Into::into)
 }
-pub use session::{Session, resolve, resume};
-pub use store::{archive, archive_with_rules, removed};
+pub(crate) use session::Session;
+pub use session::maintain;
+pub use store::{archive, archive_with_rules, indicators, removed};
 
 use serde::{Deserialize, Serialize};
 use std::{
@@ -25,6 +26,14 @@ pub struct Config {
     pub home: PathBuf,
     pub install: PathBuf,
     pub app_id: u32,
+}
+
+/// What Cloud maintenance syncs: an installed game, or an uninstalled game
+/// whose saved context still holds pending work.
+#[derive(Clone, Debug)]
+pub enum MaintenanceTarget {
+    Installed(Config),
+    Uninstalled { root: PathBuf, app_id: u32 },
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -46,9 +55,6 @@ pub struct Status {
     pub phase: Phase,
     pub id: u64,
     pub error: Option<String>,
-    /// A post-game choice is bound to the already captured local/remote views.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub decision_token: Option<String>,
     /// Older persisted snapshots expose no choices until the supervisor sends
     /// a current decision. Presentation never derives policy from error text.
     #[serde(default)]
@@ -80,6 +86,10 @@ pub enum Failure {
     Changed,
     Busy,
     Quota,
+    /// The other storefront's copy of this game uses the same save paths.
+    SharedSaves,
+    /// An uninstalled game's Cloud rules changed since its exit save.
+    RulesChanged,
 }
 impl Failure {
     pub fn key(self) -> &'static str {
@@ -97,6 +107,8 @@ impl Failure {
             Self::Changed => "backend.steam.cloud.changed",
             Self::Busy => "backend.steam.runtime.sessionBusy",
             Self::Quota => "backend.steam.cloud.quota",
+            Self::SharedSaves => "backend.cloud.sharedSavesInUse",
+            Self::RulesChanged => "backend.steam.cloud.rulesChanged",
         }
     }
     fn retryable(self) -> bool {
@@ -119,6 +131,7 @@ impl From<steam_cloud::Error> for Failure {
         use steam_cloud::Error;
         match e {
             Error::Busy => Self::Busy,
+            Error::OtherStoreBusy => Self::SharedSaves,
             Error::Authentication => Self::Ownership,
             Error::Preferences => Self::Preferences,
             Error::Recovery => Self::Recovery,
@@ -246,21 +259,12 @@ impl Control {
         }
     }
     fn status(&self, phase: Phase, error: Option<Failure>) {
-        self.status_with_token(phase, error, None);
-    }
-    fn status_with_token(
-        &self,
-        phase: Phase,
-        error: Option<Failure>,
-        decision_token: Option<String>,
-    ) {
         let status = {
             let mut state = self.state.lock().unwrap();
             state.status = Status {
                 phase,
                 id: state.status.id + 1,
                 error: error.map(|e| e.key().into()),
-                decision_token,
                 allowed_choices: match phase {
                     Phase::Conflict => vec![Choice::Local, Choice::Cloud, Choice::Cancel],
                     Phase::Failed => {
@@ -348,17 +352,6 @@ fn scope(config: &Config, account: u64) -> steam_cloud::Scope {
 mod tests {
     use super::*;
     #[test]
-    fn previous_supervisor_status_without_a_decision_token_remains_readable() {
-        let status: Status = serde_json::from_str(
-            r#"{"phase":"Conflict","id":4,"error":"backend.steam.cloud.conflict"}"#,
-        )
-        .unwrap();
-        assert_eq!(status.phase, Phase::Conflict);
-        assert_eq!(status.decision_token, None);
-        assert!(status.allowed_choices.is_empty());
-    }
-
-    #[test]
     fn only_published_choices_are_accepted_without_reissuing_the_decision() {
         for failure in [
             Failure::Network,
@@ -374,6 +367,8 @@ mod tests {
             Failure::Changed,
             Failure::Busy,
             Failure::Quota,
+            Failure::SharedSaves,
+            Failure::RulesChanged,
         ] {
             let control = Control::new(42, |_| {});
             let phase = if matches!(failure, Failure::Conflict) {

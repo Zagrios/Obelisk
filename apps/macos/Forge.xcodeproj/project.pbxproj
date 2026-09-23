@@ -7,8 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		003D91412EEA790880283279 /* RosettaSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F73D29E7A5F758380DC3F0B3 /* RosettaSheet.swift */; };
+		012D5BBCF76E09FB54937F9E /* CloudMaintenance.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEEDF33067250B38FF2BEEC2 /* CloudMaintenance.swift */; };
 		02BC84696B3B8EE3BC36CCE9 /* EpicFriendsPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BCE1A0D6BD4EEFF47E9CBD3 /* EpicFriendsPresentation.swift */; };
+		0B083667FCA19613DD4EA2B9 /* RosettaSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04973E6F7D859FF12D29A008 /* RosettaSheet.swift */; };
 		10C581B71FF440754C761934 /* FriendsPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FB37D072FF16F0F2DCC149B /* FriendsPresentation.swift */; };
 		13837E499879A33C52AD397C /* LibraryGame.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1664ED36C605F31D82A3E72 /* LibraryGame.swift */; };
 		14DE2DBD0589032008E08263 /* EpicGameDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E25D6B2E3464B37B070415A /* EpicGameDetailView.swift */; };
@@ -22,11 +23,13 @@
 		2F91CCD888E8788F60431A9E /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = D979EF0505C67FC50B2A2F59 /* Localizable.xcstrings */; };
 		374635806F6EDCDB61BED79C /* EpicCloudModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 644C90D190C2EA786DDFA00C /* EpicCloudModel.swift */; };
 		38FB57F0F23F39216748DD70 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A1655DE24CAAB14B8F0714 /* KeychainStore.swift */; };
+		3ADD45DD0BCA05B6F001984A /* RosettaModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F1A1AF5CBD506709DBB2D7A /* RosettaModel.swift */; };
 		3B64D69E93129B251F78F939 /* SteamGameLauncherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A972E05E93000A5359057E5 /* SteamGameLauncherTests.swift */; };
 		3C029D363419DFDEB036EE59 /* EpicIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDD3AA0BAAC61DB224F70402 /* EpicIntegrationTests.swift */; };
 		3CD3ADF44D4E5960BE160CAF /* SteamCloudModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E84A88E71BDCFA82C03F5F /* SteamCloudModelTests.swift */; };
 		3FD99B153E0730BD9C2B42C2 /* L10n.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AD3C0E3697D266105689C20 /* L10n.swift */; };
 		43EF55532FE2CFAC2202CCFC /* EpicView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD0A0DC8ACE612E05D36B8B7 /* EpicView.swift */; };
+		44BE4221AF4A7C706A17F0D2 /* CloudServicesFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 268E50D861E8D93EF5C4DFE8 /* CloudServicesFixture.swift */; };
 		465C857D73951C7BE101F84A /* FriendsPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE5A8B134F8442821229A607 /* FriendsPanel.swift */; };
 		46B700C80308FF5CF8B97DCF /* SteamGameSessionsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E47B1436285BBD02A9E651F2 /* SteamGameSessionsTests.swift */; };
 		47F32C4FECFEB8EF6A33361C /* StorefrontScrollView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38294B18B244272CB8D5F575 /* StorefrontScrollView.swift */; };
@@ -36,6 +39,7 @@
 		4C9272AB838B55DE39BF2D3B /* StorefrontPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF955173260F15B4B9C5E088 /* StorefrontPage.swift */; };
 		4E87C85D1418F1483E86E191 /* SteamSessionConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D9B720B8ED169DCE2FA4FAC /* SteamSessionConnection.swift */; };
 		4F4E4294632B882ACBD8F4C2 /* EpicDownloadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B1F2A8901C7A9E542D6CCE4 /* EpicDownloadTests.swift */; };
+		5111DE921BD93C90D86AEBA6 /* CloudIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 578149D53426FB9DF377EC0B /* CloudIndicator.swift */; };
 		51AAB91670AD08ABF4D32996 /* SteamRosettaTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A2362F3796AC5AFCEB54FC9 /* SteamRosettaTests.swift */; };
 		52545FBF953501023544DFFF /* GameInstallationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94CC90E36B596F2B6E91F8E0 /* GameInstallationManager.swift */; };
 		5756BA39E77383BFCAF37803 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F3839390BDE8DD11221E196 /* SettingsView.swift */; };
@@ -52,7 +56,6 @@
 		8C38B4D59BC02083771E806D /* EpicLoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A2950844D6D6DBF3E13830D /* EpicLoginView.swift */; };
 		8E124C61D61CE1B5F5BD47E4 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98F6EACE0D45A6701E1C8ADF /* AppModel.swift */; };
 		8FBC8E93FC18423A427E9759 /* GameDetailHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 674A5536C6611FC245CD39AB /* GameDetailHeader.swift */; };
-		901CA3D521C5CFF977EB3037 /* NetworkReturnObservation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8802D7096F39A95A763122D8 /* NetworkReturnObservation.swift */; };
 		920B0AB060C6C4CF52EB829F /* SteamGameSessions.swift in Sources */ = {isa = PBXBuildFile; fileRef = F305215C524A42E710329D35 /* SteamGameSessions.swift */; };
 		94074FC328ACBA93AABCD8D8 /* LocalizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EED32FEA87DFC841D2D5C419 /* LocalizationTests.swift */; };
 		94B8E70A241EB52D11DA714E /* SteamLibraryPlatformsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9290A4DA3AF42EC2C780FA4 /* SteamLibraryPlatformsTests.swift */; };
@@ -80,8 +83,8 @@
 		D77E051F5C0CEFF03FD7F794 /* EpicRememberedSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9A60FAE05EBA307B91043C4 /* EpicRememberedSessionTests.swift */; };
 		D86E9D36A13B509F8560CC06 /* SteamSessionTestDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75A923A3CCBCCE77FB49F6D8 /* SteamSessionTestDefaults.swift */; };
 		DEDD7A2619FD3A9A1C8F53CF /* StorefrontSortPopoverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BDB110B25475B52E1E89467 /* StorefrontSortPopoverTests.swift */; };
+		E4D1DAAB54E06532821E9721 /* CloudMaintenanceFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC9B360B19C7C8B3E549F356 /* CloudMaintenanceFixture.swift */; };
 		E4EF80CE2940A934B44712C0 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AACAE9BAFE13F6FC72F3BF9 /* LibraryView.swift */; };
-		E8BD9E18E5510FA5A0CB9BA0 /* RosettaModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A480A44DA40ACB8BCCB2FEA /* RosettaModel.swift */; };
 		E9A547F86A4C7E9458150E6B /* SteamCloudSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73B2152D13E23F4CEAB27619 /* SteamCloudSheets.swift */; };
 		ECB79FF1783DB63FBD0ABCF1 /* EpicModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE16F3ECF53D38FA1174A765 /* EpicModel.swift */; };
 		ED4CDDC6839D286B8EE99D6D /* SteamView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF8949A647263510CF70BD8D /* SteamView.swift */; };
@@ -90,6 +93,7 @@
 		F4FCCB8B7D0FC163264E760A /* ForgeStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FB908138A216E4B0B607F71 /* ForgeStyle.swift */; };
 		F69DB4908B1F534562D6B4B7 /* SteamLoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 727EED09D3C730189C7DDE48 /* SteamLoginView.swift */; };
 		FA95656B2FFAE75BC5F42CAA /* SteamGameDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6264E924E83157DE87A6FF49 /* SteamGameDetailView.swift */; };
+		FE618C5244399234EE9FE7B8 /* CloudIndicatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D68CC88C4E8C0E397ABD0D7 /* CloudIndicatorTests.swift */; };
 		FEF595D84B418AF723A0DD1E /* SteamSortingPerformanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C53A61ED48A5C86549D91F34 /* SteamSortingPerformanceTests.swift */; };
 		FFA24FD8DD3E66E0EDB76762 /* EpicRememberedSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = E79E33D0FEB378591CBDA1B8 /* EpicRememberedSession.swift */; };
 /* End PBXBuildFile section */
@@ -107,17 +111,20 @@
 /* Begin PBXFileReference section */
 		016D59379C0EF36F000BB765 /* EpicGameSessions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EpicGameSessions.swift; sourceTree = "<group>"; };
 		02E9717695ED8EFB942C4815 /* CachedArtwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CachedArtwork.swift; sourceTree = "<group>"; };
+		04973E6F7D859FF12D29A008 /* RosettaSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RosettaSheet.swift; sourceTree = "<group>"; };
 		083616D473CEA14CCE83E1B6 /* ForgeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ForgeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		0AACAE9BAFE13F6FC72F3BF9 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
 		0C05E0AF7F5E186D3A8A4BC5 /* AppAppearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppAppearance.swift; sourceTree = "<group>"; };
 		0C67F3ACD4D8E2FD015C9B5E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		0D87C5370660EC668DDB6102 /* GameInstallationManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameInstallationManagerTests.swift; sourceTree = "<group>"; };
+		0F1A1AF5CBD506709DBB2D7A /* RosettaModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RosettaModel.swift; sourceTree = "<group>"; };
 		0F3839390BDE8DD11221E196 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		17FBC8D5E57A595B3FDB5DEB /* EpicFriendsIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EpicFriendsIntegrationTests.swift; sourceTree = "<group>"; };
 		1B36F9CA59B2790A50967DB7 /* SteamKeychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SteamKeychain.swift; sourceTree = "<group>"; };
 		1C43561A57359FCEDB4F16BF /* FriendsPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendsPresentationTests.swift; sourceTree = "<group>"; };
 		260B2DDB8C28DFB065113D18 /* StorefrontTitleBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorefrontTitleBar.swift; sourceTree = "<group>"; };
 		266B0CC7247FA44710D56C86 /* GameActionButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameActionButton.swift; sourceTree = "<group>"; };
+		268E50D861E8D93EF5C4DFE8 /* CloudServicesFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudServicesFixture.swift; sourceTree = "<group>"; };
 		29DD57C6A1B4F9B15626008E /* EpicAuthorizationCallback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EpicAuthorizationCallback.swift; sourceTree = "<group>"; };
 		2A972E05E93000A5359057E5 /* SteamGameLauncherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SteamGameLauncherTests.swift; sourceTree = "<group>"; };
 		2E25D6B2E3464B37B070415A /* EpicGameDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EpicGameDetailView.swift; sourceTree = "<group>"; };
@@ -125,7 +132,6 @@
 		2FB908138A216E4B0B607F71 /* ForgeStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForgeStyle.swift; sourceTree = "<group>"; };
 		321516EA7F4F0B4D23B46442 /* CoreClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreClient.swift; sourceTree = "<group>"; };
 		38294B18B244272CB8D5F575 /* StorefrontScrollView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorefrontScrollView.swift; sourceTree = "<group>"; };
-		3A480A44DA40ACB8BCCB2FEA /* RosettaModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RosettaModel.swift; sourceTree = "<group>"; };
 		3BCE1A0D6BD4EEFF47E9CBD3 /* EpicFriendsPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EpicFriendsPresentation.swift; sourceTree = "<group>"; };
 		3E4FDFDE0C8E8DB88B051899 /* EpicKeychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EpicKeychain.swift; sourceTree = "<group>"; };
 		41C3619228A938344CEA5BA9 /* EpicAuthorizationCallbackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EpicAuthorizationCallbackTests.swift; sourceTree = "<group>"; };
@@ -134,6 +140,7 @@
 		5246261BF0CC2D0222A81C44 /* GamePlatformBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GamePlatformBadge.swift; sourceTree = "<group>"; };
 		53CBD08353CF29B7929C4254 /* FriendsModal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendsModal.swift; sourceTree = "<group>"; };
 		56FFF65800E88461ECFD1A4C /* AppIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIdentity.swift; sourceTree = "<group>"; };
+		578149D53426FB9DF377EC0B /* CloudIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudIndicator.swift; sourceTree = "<group>"; };
 		5AD3C0E3697D266105689C20 /* L10n.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = L10n.swift; sourceTree = "<group>"; };
 		5B1F2A8901C7A9E542D6CCE4 /* EpicDownloadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EpicDownloadTests.swift; sourceTree = "<group>"; };
 		5BDB110B25475B52E1E89467 /* StorefrontSortPopoverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorefrontSortPopoverTests.swift; sourceTree = "<group>"; };
@@ -150,7 +157,7 @@
 		763C44146C8C8C30BDF18F45 /* GameAchievementsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameAchievementsModel.swift; sourceTree = "<group>"; };
 		764416E5D69CD0A3FED0F623 /* SteamLibraryPlatforms.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SteamLibraryPlatforms.swift; sourceTree = "<group>"; };
 		7A2362F3796AC5AFCEB54FC9 /* SteamRosettaTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SteamRosettaTests.swift; sourceTree = "<group>"; };
-		8802D7096F39A95A763122D8 /* NetworkReturnObservation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkReturnObservation.swift; sourceTree = "<group>"; };
+		8D68CC88C4E8C0E397ABD0D7 /* CloudIndicatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudIndicatorTests.swift; sourceTree = "<group>"; };
 		908E9C3919CCFA98BE10A569 /* SteamArtwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SteamArtwork.swift; sourceTree = "<group>"; };
 		94CC90E36B596F2B6E91F8E0 /* GameInstallationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameInstallationManager.swift; sourceTree = "<group>"; };
 		9747093401C3BE94BA547677 /* EpicModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EpicModelTests.swift; sourceTree = "<group>"; };
@@ -163,6 +170,7 @@
 		9FB37D072FF16F0F2DCC149B /* FriendsPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendsPresentation.swift; sourceTree = "<group>"; };
 		A7E84A88E71BDCFA82C03F5F /* SteamCloudModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SteamCloudModelTests.swift; sourceTree = "<group>"; };
 		ABEE86D56CC1255F64C9FB79 /* StorefrontLibraryFilterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorefrontLibraryFilterTests.swift; sourceTree = "<group>"; };
+		AEEDF33067250B38FF2BEEC2 /* CloudMaintenance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudMaintenance.swift; sourceTree = "<group>"; };
 		B0B4352BCAE846F7CDDDAE75 /* SteamIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SteamIntegrationTests.swift; sourceTree = "<group>"; };
 		B1664ED36C605F31D82A3E72 /* LibraryGame.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryGame.swift; sourceTree = "<group>"; };
 		B3539AE3E1411E3A15535E0E /* EpicWebAuthenticationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EpicWebAuthenticationTests.swift; sourceTree = "<group>"; };
@@ -185,10 +193,10 @@
 		E47B1436285BBD02A9E651F2 /* SteamGameSessionsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SteamGameSessionsTests.swift; sourceTree = "<group>"; };
 		E79E33D0FEB378591CBDA1B8 /* EpicRememberedSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EpicRememberedSession.swift; sourceTree = "<group>"; };
 		EAD57FE43439B2C292022C07 /* Forge.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Forge.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		EC9B360B19C7C8B3E549F356 /* CloudMaintenanceFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudMaintenanceFixture.swift; sourceTree = "<group>"; };
 		EED32FEA87DFC841D2D5C419 /* LocalizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalizationTests.swift; sourceTree = "<group>"; };
 		F1A1655DE24CAAB14B8F0714 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
 		F305215C524A42E710329D35 /* SteamGameSessions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SteamGameSessions.swift; sourceTree = "<group>"; };
-		F73D29E7A5F758380DC3F0B3 /* RosettaSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RosettaSheet.swift; sourceTree = "<group>"; };
 		F81FEBA748B8A33E62E25A77 /* EpicWebAuthentication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EpicWebAuthentication.swift; sourceTree = "<group>"; };
 		F85D0496B5FA33F75CEAA4E8 /* GameCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameCard.swift; sourceTree = "<group>"; };
 		F9290A4DA3AF42EC2C780FA4 /* SteamLibraryPlatformsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SteamLibraryPlatformsTests.swift; sourceTree = "<group>"; };
@@ -209,6 +217,7 @@
 			isa = PBXGroup;
 			children = (
 				0C05E0AF7F5E186D3A8A4BC5 /* AppAppearance.swift */,
+				AEEDF33067250B38FF2BEEC2 /* CloudMaintenance.swift */,
 				644C90D190C2EA786DDFA00C /* EpicCloudModel.swift */,
 				016D59379C0EF36F000BB765 /* EpicGameSessions.swift */,
 				CE16F3ECF53D38FA1174A765 /* EpicModel.swift */,
@@ -218,13 +227,12 @@
 				94CC90E36B596F2B6E91F8E0 /* GameInstallationManager.swift */,
 				B1664ED36C605F31D82A3E72 /* LibraryGame.swift */,
 				C89C5FFBB7CE818136763A7E /* LibrarySection.swift */,
-				8802D7096F39A95A763122D8 /* NetworkReturnObservation.swift */,
+				0F1A1AF5CBD506709DBB2D7A /* RosettaModel.swift */,
 				B959B8944DCD0EB87948D114 /* SteamCloudModel.swift */,
 				2E7EDAD61E6EA94978F9F0D9 /* SteamGameLauncher.swift */,
 				F305215C524A42E710329D35 /* SteamGameSessions.swift */,
 				764416E5D69CD0A3FED0F623 /* SteamLibraryPlatforms.swift */,
 				97F1F67177AE630DE4BD984B /* SteamModel.swift */,
-				3A480A44DA40ACB8BCCB2FEA /* RosettaModel.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -287,6 +295,7 @@
 			isa = PBXGroup;
 			children = (
 				02E9717695ED8EFB942C4815 /* CachedArtwork.swift */,
+				578149D53426FB9DF377EC0B /* CloudIndicator.swift */,
 				2FB908138A216E4B0B607F71 /* ForgeStyle.swift */,
 				53CBD08353CF29B7929C4254 /* FriendsModal.swift */,
 				FE5A8B134F8442821229A607 /* FriendsPanel.swift */,
@@ -316,6 +325,9 @@
 		A8EDD928972BE9F7AD6E8768 /* ForgeTests */ = {
 			isa = PBXGroup;
 			children = (
+				8D68CC88C4E8C0E397ABD0D7 /* CloudIndicatorTests.swift */,
+				EC9B360B19C7C8B3E549F356 /* CloudMaintenanceFixture.swift */,
+				268E50D861E8D93EF5C4DFE8 /* CloudServicesFixture.swift */,
 				E46F5AE7B5BCF7B6209B402D /* CoreIntegrationTests.swift */,
 				41C3619228A938344CEA5BA9 /* EpicAuthorizationCallbackTests.swift */,
 				7165631B4EBD367D9DC7D4D4 /* EpicCloudTests.swift */,
@@ -422,8 +434,8 @@
 		F61F6E1539D7D02F58D1943D /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				04973E6F7D859FF12D29A008 /* RosettaSheet.swift */,
 				73B2152D13E23F4CEAB27619 /* SteamCloudSheets.swift */,
-				F73D29E7A5F758380DC3F0B3 /* RosettaSheet.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -565,6 +577,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FE618C5244399234EE9FE7B8 /* CloudIndicatorTests.swift in Sources */,
+				E4D1DAAB54E06532821E9721 /* CloudMaintenanceFixture.swift in Sources */,
+				44BE4221AF4A7C706A17F0D2 /* CloudServicesFixture.swift in Sources */,
 				B882D00A65545997451F529A /* CoreIntegrationTests.swift in Sources */,
 				6D237E078257EFFE22CD51E0 /* EpicAuthorizationCallbackTests.swift in Sources */,
 				A22AAA3B78FDAF95F03F9E71 /* EpicCloudTests.swift in Sources */,
@@ -603,6 +618,8 @@
 				2D47DE34C7F11338BD0182BC /* AppIdentity.swift in Sources */,
 				8E124C61D61CE1B5F5BD47E4 /* AppModel.swift in Sources */,
 				F0E0E78A9EC44B93DC2C1ACE /* CachedArtwork.swift in Sources */,
+				5111DE921BD93C90D86AEBA6 /* CloudIndicator.swift in Sources */,
+				012D5BBCF76E09FB54937F9E /* CloudMaintenance.swift in Sources */,
 				9E9D566385113EC3FDD41DF6 /* CoreClient.swift in Sources */,
 				6EA0B52D606A55C3B317BAE8 /* EpicAuthorizationCallback.swift in Sources */,
 				374635806F6EDCDB61BED79C /* EpicCloudModel.swift in Sources */,
@@ -633,8 +650,9 @@
 				13837E499879A33C52AD397C /* LibraryGame.swift in Sources */,
 				CBE2EB2C21781BA7961D0B75 /* LibrarySection.swift in Sources */,
 				E4EF80CE2940A934B44712C0 /* LibraryView.swift in Sources */,
-				901CA3D521C5CFF977EB3037 /* NetworkReturnObservation.swift in Sources */,
 				58EB4BDF1FCA8E2AD1C9AB2A /* RootView.swift in Sources */,
+				3ADD45DD0BCA05B6F001984A /* RosettaModel.swift in Sources */,
+				0B083667FCA19613DD4EA2B9 /* RosettaSheet.swift in Sources */,
 				5756BA39E77383BFCAF37803 /* SettingsView.swift in Sources */,
 				B02502361A82D12A6F99D9F1 /* SidebarView.swift in Sources */,
 				672A5F37B2BF2AAF07FB3B3A /* SteamArtwork.swift in Sources */,
@@ -647,8 +665,6 @@
 				B96BEF608644DF191E472C4E /* SteamLibraryPlatforms.swift in Sources */,
 				F69DB4908B1F534562D6B4B7 /* SteamLoginView.swift in Sources */,
 				BBACD98793474193321D00CC /* SteamModel.swift in Sources */,
-				E8BD9E18E5510FA5A0CB9BA0 /* RosettaModel.swift in Sources */,
-				003D91412EEA790880283279 /* RosettaSheet.swift in Sources */,
 				4E87C85D1418F1483E86E191 /* SteamSessionConnection.swift in Sources */,
 				ED4CDDC6839D286B8EE99D6D /* SteamView.swift in Sources */,
 				9EEB9C5635CE309971A4F542 /* StorefrontLibraryComponents.swift in Sources */,

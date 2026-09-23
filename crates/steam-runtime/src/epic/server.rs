@@ -39,11 +39,7 @@ pub fn serve(input: impl Read, mut output: impl Write, inspect: Inspect) -> Resu
                 account_id: request.account_id.clone(),
                 namespace: request.config.namespace.clone(),
                 app_name: request.config.app_name.clone(),
-                phase: if request.launch {
-                    Phase::Preparing
-                } else {
-                    Phase::Finalizing
-                },
+                phase: Phase::Preparing,
                 cloud_phase: CloudPhase::Checking,
                 decision_id: 0,
                 allowed_choices: vec![],
@@ -66,7 +62,7 @@ pub fn serve(input: impl Read, mut output: impl Write, inspect: Inspect) -> Resu
         cancel: CancelToken::new(),
         root: request.config.session_directory.clone(),
         rosetta: crate::rosetta::Gate::new(
-            crate::rosetta::helper(request.config.helper.parent().ok_or(Error::Session)?),
+            rosetta_helper(&request.config)?,
             crate::architecture::rosetta_available,
         ),
     });
@@ -101,6 +97,17 @@ pub fn serve(input: impl Read, mut output: impl Write, inspect: Inspect) -> Resu
     stopped.store(true, Ordering::Release);
     let _ = listener_thread.join();
     result
+}
+
+/// `config.helper` is `Helpers/SteamNative/forge-steam-host`; the Rosetta
+/// helper app sits beside `SteamNative`, as the Steam supervisor expects too.
+pub(super) fn rosetta_helper(config: &Configuration) -> Result<std::path::PathBuf> {
+    let helpers = config
+        .helper
+        .parent()
+        .and_then(Path::parent)
+        .ok_or(Error::Session)?;
+    Ok(crate::rosetta::helper(helpers))
 }
 
 async fn run(request: Request, control: Arc<Control>, inspect: Inspect) -> Result<()> {
@@ -142,16 +149,9 @@ async fn run_authenticated(
         request.config.clone(),
         request.account_id.clone(),
         Arc::clone(&api),
-        Arc::clone(control),
+        control.clone(),
     )
     .await?;
-    if !request.launch {
-        if let Some(cloud) = &mut cloud {
-            cloud.resume().await?;
-        }
-        control.update(|s| s.phase = Phase::Finished)?;
-        return Ok(());
-    }
     if let Some(cloud) = &mut cloud {
         cloud.prepare().await?;
     }

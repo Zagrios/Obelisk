@@ -364,3 +364,38 @@ fn delayed_exit_capture_after_uninstall_preserves_bytes_without_recreating_the_i
     );
     assert!(context.installation_removed);
 }
+
+#[test]
+fn removal_needs_only_the_epic_storefront_lock() {
+    let (_temporary, vault, context) = fixture();
+    let config = context.config.clone();
+    fs::remove_dir_all(&config.install).unwrap();
+    assert!(matches!(removed(&config, ACCOUNT), Err(Error::Busy)));
+    drop(vault);
+    let steam = steam_cloud::Scope {
+        steam_id: 0x0110_0001_0000_0001,
+        app_id: 10,
+        cloud_app_id: 10,
+    };
+    let _steam_game = Vault::open(&config.root, steam).unwrap();
+
+    removed(&config, ACCOUNT).unwrap();
+
+    assert!(
+        Context::load(&config, ACCOUNT)
+            .unwrap()
+            .unwrap()
+            .installation_removed
+    );
+}
+
+#[test]
+fn archive_errors_name_the_storefront_that_holds_the_saves() {
+    assert!(matches!(Error::from(steam_cloud::Error::Busy), Error::Busy));
+    let shared = Error::from(steam_cloud::Error::OtherStoreBusy);
+    assert_eq!(shared.to_string(), "backend.cloud.sharedSavesInUse");
+    assert_eq!(
+        Error::from(steam_cloud::Error::Stale).to_string(),
+        "backend.epic.cloud.storage"
+    );
+}

@@ -1,19 +1,28 @@
 import Foundation
 import Observation
 
+/// The Rust entry points the Steam Cloud presentation uses. Tests replace them.
+struct SteamCloudServices: Sendable {
+    var indicators: @Sendable (_ root: String, _ accountId: UInt64, _ appIds: [UInt32]) throws -> [SteamCloudIndicator]
+    var startMaintenance: @MainActor @Sendable (SteamCredentials, SteamCloudMaintenanceRequest) -> any CloudMaintenanceProtocol
+
+    static let live = SteamCloudServices(
+        indicators: { try steamCloudIndicators(root: $0, accountId: $1, appIds: $2) },
+        startMaintenance: { startSteamCloudMaintenance(credentials: $0, request: $1) }
+    )
+}
+
 /// Presents the Rust coordinator. It owns no save comparison or transfer loop.
 @MainActor @Observable
 final class SteamCloudModel {
     let root: String
     private let sessions: SteamGameSessions
+    @ObservationIgnored private let services: SteamCloudServices
     private var account: SteamCredentials?
     private var generation = 0
-    @ObservationIgnored private var maintenance: (any SteamCloudMaintenanceProtocol)?
-    @ObservationIgnored private let makeMaintenance: (SteamCredentials) -> any SteamCloudMaintenanceProtocol
-    @ObservationIgnored private var work: Task<Void, Never>?
-    private(set) var isBusy = false
-    private(set) var pending: [SteamCloudPending] = []
-    private(set) var deferredPrompt: SteamCloudPending?
+    private(set) var indicators: [UInt32: CloudIndicator] = [:]
+    private(set) var maintenance: CloudMaintenanceState<UInt32>?
+    @ObservationIgnored private var attempt: (any CloudMaintenanceProtocol)?
     private(set) var promptBusy = false
     private var promptError: String?
     private struct Decision: Equatable {
@@ -26,18 +35,15 @@ final class SteamCloudModel {
         }
     }
     private var dismissedDecision: Decision?
-    private var presentedFinalizationToken: String?
 
-    init(root: String, sessions: SteamGameSessions,
-         makeMaintenance: @escaping (SteamCredentials) -> any SteamCloudMaintenanceProtocol = { SteamCloudMaintenance(credentials: $0) }) {
+    init(root: String, sessions: SteamGameSessions, services: SteamCloudServices = .live) {
         self.root = root
         self.sessions = sessions
-        self.makeMaintenance = makeMaintenance
+        self.services = services
     }
 
     func connect(_ credentials: SteamCredentials) {
         reset(to: credentials)
-        resume()
     }
 
     func signedOut() {
@@ -51,96 +57,80 @@ final class SteamCloudModel {
     /// Everything presented belongs to one account; a change invalidates it all.
     private func reset(to credentials: SteamCredentials?) {
         generation += 1
-        maintenance?.cancel()
-        work?.cancel()
+        // Cloud maintenance runs inside Forge for one account only.
+        attempt?.cancel()
+        attempt = nil
+        maintenance = nil
+        indicators = [:]
         account = credentials
-        maintenance = credentials.map(makeMaintenance)
-        pending = []
         promptError = nil
-        deferredPrompt = nil
         promptBusy = false
         dismissedDecision = nil
-        presentedFinalizationToken = nil
-        isBusy = false
     }
 
-    func resume() {
-        guard let maintenance, let account, !sessions.isBusy, !isBusy else { return }
-        presentDetectedConflict()
-        // Unresolved choices belong to their game. Other games may still drain
-        // their durable work without reopening a dismissed conflict.
-        let excludedAppIds = pending.filter { $0.phase == .conflict }.map(\.appId)
-        guard FileManager.default.fileExists(atPath: root + "/" + String(account.steamId)) else { return }
+    func indicator(for appId: UInt32) -> CloudIndicator? { indicators[appId] }
+
+    /// Reads the journals off the main thread. Never polls: callers refresh
+    /// when a game page opens, the account changes, or a sync ends.
+    func refreshIndicators(for appIds: [UInt32]) {
+        guard let account else { return }
         let current = generation
-        isBusy = true
-        work = Task {
-            defer { if current == generation { isBusy = false; work = nil } }
-            do {
-                let sessionDirectory = URL(fileURLWithPath: root).deletingLastPathComponent().appending(path: "SteamSessions").path
-                let results = try await maintenance.resume(root: root, sessionDirectory: sessionDirectory,
-                                                           helper: SteamGameLauncher.helper, excludedAppIds: excludedAppIds)
-                guard current == generation, !Task.isCancelled else { return }
-                let retained = pending.filter { excludedAppIds.contains($0.appId) }
-                let updated = results.filter { $0.phase != .synced && $0.phase != .disabled }
-                pending = retained + updated
-                if !excludedAppIds.contains(where: { $0 == deferredPrompt?.appId }) {
-                    deferredPrompt = updated.first { $0.phase == .conflict }
-                }
-            } catch {
-                guard current == generation, !Task.isCancelled else { return }
-                // Durable pending data remains the source of truth. A failed
-                // wake is retried by a new network event or an explicit action.
+        let (root, load) = (root, services.indicators)
+        Task {
+            guard let values = try? await Task.detached(operation: { try load(root, account.steamId, appIds) }).value,
+                  current == generation else { return }
+            for value in values { indicators[value.appId] = value.indicator }
+        }
+    }
+
+    var isMaintaining: Bool { maintenance != nil }
+
+    /// Starts Cloud maintenance. `install` is nil for an uninstalled game.
+    func startMaintenance(appId: UInt32, install: String?) {
+        let request = SteamCloudMaintenanceRequest(root: root, home: NSHomeDirectory(), install: install, appId: appId,
+                                                   sessionDirectory: SteamGameLauncher.sessionDirectory,
+                                                   helper: SteamGameLauncher.helper)
+        guard let account, maintenance == nil else { return }
+        promptError = nil
+        let attempt = services.startMaintenance(account, request)
+        self.attempt = attempt
+        maintenance = CloudMaintenanceState(game: request.appId)
+        let current = generation
+        Task {
+            await followCloudMaintenance(attempt) { status in
+                guard current == generation, self.attempt === attempt else { return false }
+                maintenance?.status = status
+                if status.finished { finish(appId: request.appId) }
+                return true
             }
         }
     }
+
+    /// A failure shows only in the game's Cloud indicator; Sync now retries.
+    private func finish(appId: UInt32) {
+        attempt = nil
+        maintenance = nil
+        promptError = nil
+        refreshIndicators(for: [appId])
+    }
+
+    private var maintenanceConflict: CloudMaintenanceStatus? { maintenance?.conflict }
 
     var prompt: SteamGameSessions.Session? {
         guard let account, let prompt = sessions.cloudPrompt,
               prompt.accountId == account.steamId, Decision(prompt) != dismissedDecision else { return nil }
         return prompt
     }
-    var promptPresented: Bool {
-        prompt?.cloud.phase == .conflict || deferredPrompt?.phase == .conflict || detectedConflict != nil
-    }
-    var promptAppId: UInt32? { prompt?.appId ?? deferredPrompt?.appId ?? detectedConflict?.appId }
-    var failurePresented: Bool {
-        prompt?.cloud.phase == .failed || (deferredPrompt != nil && !promptPresented)
-    }
+    var promptPresented: Bool { prompt?.cloud.phase == .conflict || maintenanceConflict != nil }
+    var promptAppId: UInt32? { prompt?.appId ?? (maintenanceConflict == nil ? nil : maintenance?.game) }
+    /// Only a launch check shows a banner. A failed maintenance shows in the
+    /// game's Cloud indicator instead.
+    var failurePresented: Bool { prompt?.cloud.phase == .failed }
     var promptMessage: String {
-        promptError ?? prompt?.cloud.error ?? deferredPrompt?.error ?? detectedConflict?.error ?? "ui.cloud.working"
+        promptError ?? prompt?.cloud.error ?? maintenanceConflict?.error ?? "ui.cloud.working"
     }
-    var promptWorking: Bool {
-        promptBusy || prompt?.cloud.phase == .checking || isBusy
-            || ((detectedConflict != nil || deferredPrompt != nil) && sessions.isBusy)
-    }
+    var promptWorking: Bool { promptBusy || prompt?.cloud.phase == .checking }
 
-    /// The last status a supervisor published, only while it belongs to the
-    /// signed-in account.
-    private var lastCloud: SteamGameSessions.LastCloud? {
-        guard let account, let last = sessions.lastCloud, last.accountId == account.steamId else { return nil }
-        return last
-    }
-    private func lastStatus(for appId: UInt32) -> SteamGameSessions.CloudStatus? {
-        guard let last = lastCloud, last.appId == appId else { return nil }
-        return last.status
-    }
-
-    private var detectedConflict: SteamCloudPending? {
-        guard let last = lastCloud, last.status.phase == .conflict,
-              let token = last.status.decisionToken,
-              !token.isEmpty, token != presentedFinalizationToken else { return nil }
-        return SteamCloudPending(appId: last.appId, phase: .conflict, error: last.status.error, decisionToken: token)
-    }
-
-    @discardableResult
-    private func presentDetectedConflict() -> Bool {
-        guard let conflict = detectedConflict else { return false }
-        presentedFinalizationToken = conflict.decisionToken
-        pending.removeAll { $0.appId == conflict.appId }
-        pending.append(conflict)
-        deferredPrompt = conflict
-        return true
-    }
     var canLaunchAnyway: Bool {
         guard let prompt, prompt.cloud.phase == .failed else { return false }
         return prompt.cloud.allowedChoices.contains(.launchAnyway)
@@ -154,100 +144,38 @@ final class SteamCloudModel {
 
     func isSynchronizing(for appId: UInt32) -> Bool {
         if let phase = activeStatus(for: appId)?.phase, [.checking, .syncing].contains(phase) { return true }
-        if promptBusy, prompt?.appId == appId { return true }
-        return isBusy && (deferredPrompt?.appId == appId || pending.contains { $0.appId == appId })
+        if let maintenance, maintenance.game == appId, maintenance.isSyncing { return true }
+        return promptBusy && prompt?.appId == appId
     }
 
     func canCancelSynchronization(for appId: UInt32) -> Bool {
-        prompt?.appId == appId && prompt?.cloud.phase == .checking && !promptBusy
+        prompt?.appId == appId && prompt?.phase == .preparing && prompt?.cloud.phase == .checking && !promptBusy
     }
 
     func respond(_ choice: SteamCloudChoice) {
-        guard let account, !promptBusy else { return }
+        if prompt == nil, let conflict = maintenanceConflict, let attempt {
+            guard let answer = CloudMaintenanceChoice(choice) else { return }
+            promptError = attempt.answer(decisionId: conflict.decisionId, choice: answer)
+                ? nil : "backend.steam.runtime.invalidSession"
+            return
+        }
+        guard let account, let prompt, !promptBusy else { return }
         promptError = nil
-        if let prompt {
-            let current = generation
-            promptBusy = true
-            Task {
-                defer { if current == generation { promptBusy = false } }
-                guard current == generation, self.account?.steamId == account.steamId,
-                      !Task.isCancelled, let active = sessions.cloudPrompt,
-                      active.id == prompt.id, active.cloud.decisionId == prompt.cloud.decisionId else { return }
-                do {
-                    try await sessions.chooseCloud(choice, accountId: account.steamId)
-                    guard current == generation else { return }
-                    if choice == .cancel { dismissedDecision = Decision(prompt) }
-                } catch {
-                    guard current == generation else { return }
-                    promptError = SteamModel.message(error)
-                }
-            }
-            return
-        }
-        // A finalizing supervisor may have published its conflict just before
-        // releasing the archive. Show the sheet now; resolve after that handoff.
-        if detectedConflict != nil {
-            if choice == .cancel {
-                presentDetectedConflict()
-                deferredPrompt = nil
-                resume()
-                return
-            }
-            guard !sessions.isBusy else { return }
-            presentDetectedConflict()
-        }
-        guard let deferred = deferredPrompt, !isBusy else { return }
-        if choice == .cancel || choice == .launchAnyway {
-            deferredPrompt = nil
-            if deferred.phase == .conflict { resume() }
-            return
-        }
-        guard !sessions.isBusy else { return }
-        if choice == .retry {
-            pending.removeAll { $0.appId == deferred.appId }
-            deferredPrompt = nil
-            resume()
-            return
-        }
-        guard let maintenance else { return }
         let current = generation
-        isBusy = true
-        work = Task {
-            defer { if current == generation { isBusy = false; work = nil } }
-            guard current == generation, self.account?.steamId == account.steamId, !Task.isCancelled else { return }
+        promptBusy = true
+        Task {
+            defer { if current == generation { promptBusy = false } }
+            guard current == generation, self.account?.steamId == account.steamId,
+                  !Task.isCancelled, let active = sessions.cloudPrompt,
+                  active.id == prompt.id, active.cloud.decisionId == prompt.cloud.decisionId else { return }
             do {
-                let result = try await maintenance.resolve(root: root, appId: deferred.appId,
-                                                           choice: choice, decisionToken: deferred.decisionToken)
-                guard current == generation, !Task.isCancelled else { return }
-                pending.removeAll { $0.appId == result.appId }
-                let deferred = result.phase != .synced && result.phase != .disabled
-                if deferred { pending.append(result) }
-                deferredPrompt = deferred ? result : nil
+                try await sessions.chooseCloud(choice, accountId: account.steamId)
+                guard current == generation else { return }
+                if choice == .cancel { dismissedDecision = Decision(prompt) }
             } catch {
-                guard current == generation, !Task.isCancelled else { return }
-                deferredPrompt = SteamCloudPending(appId: deferred.appId, phase: .pending, error: SteamModel.message(error), decisionToken: deferred.decisionToken)
+                guard current == generation else { return }
+                promptError = SteamModel.message(error)
             }
-        }
-    }
-
-    func hasPending(for appId: UInt32) -> Bool {
-        pending.contains { $0.appId == appId } || lastStatus(for: appId)?.phase == .pending
-    }
-    func retryPending(appId: UInt32) {
-        if let entry = pending.first(where: { $0.appId == appId && $0.phase == .conflict }) { deferredPrompt = entry }
-        else { resume() }
-    }
-    func message(for appId: UInt32) -> String? {
-        let phase = activeStatus(for: appId)?.phase
-            ?? pending.first { $0.appId == appId }?.phase
-            ?? lastStatus(for: appId)?.phase
-        switch phase {
-        case .checking, .syncing: return L10n.string("ui.cloud.working")
-        case .pending, .failed: return L10n.string("ui.cloud.pending")
-        case .conflict: return nil
-        case .synced: return L10n.string("ui.cloud.synced")
-        case .disabled: return L10n.string("ui.cloud.disabled")
-        default: return nil
         }
     }
 

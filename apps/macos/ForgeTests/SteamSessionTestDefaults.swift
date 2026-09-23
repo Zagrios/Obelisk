@@ -45,10 +45,10 @@ extension EpicSessionProtocol {
     func launchGame(configuration: EpicCloudConfiguration) async throws -> EpicGameSession {
         throw CocoaError(.featureUnsupported)
     }
-    func resumeCloud(configuration: EpicCloudConfiguration) async throws -> EpicGameSession {
-        throw CocoaError(.featureUnsupported)
-    }
     func archiveCloud(configuration: EpicCloudConfiguration) async throws {}
+    func maintainCloud(configuration: EpicCloudConfiguration) async -> CloudMaintenance {
+        CloudMaintenanceFixture()
+    }
 
     func achievements(namespace: String, locale: String) async throws -> [EpicAchievement] {
         throw CocoaError(.featureUnsupported)

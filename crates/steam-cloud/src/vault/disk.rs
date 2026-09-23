@@ -5,6 +5,7 @@ use std::{
     io::{Read, Write},
     os::unix::fs::{OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
+    time::{Duration, Instant},
 };
 
 const MAX_JOURNAL: u64 = 64 * 1024 * 1024;
@@ -46,18 +47,52 @@ pub fn regular(path: &Path) -> Result<bool> {
     }
 }
 
-pub(super) fn lock(root: &Path) -> Result<File> {
-    let path = root.join("owner.lock");
-    regular(&path)?;
-    let file = OpenOptions::new()
+fn lock_file(path: &Path) -> Result<File> {
+    regular(path)?;
+    Ok(OpenOptions::new()
         .create(true)
         .truncate(false)
         .read(true)
         .write(true)
         .mode(0o600)
-        .open(path)?;
+        .open(path)?)
+}
+
+/// One storefront's exclusive claim on its part of the archive. Steam keeps
+/// the original root lock; Epic locks beside its own account directories.
+pub(super) fn store_lock(root: &Path, scope: &StoreScope) -> Result<File> {
+    let directory = scope.store_directory(root);
+    if directory != root {
+        self::directory(&directory)?;
+    }
+    let file = lock_file(&directory.join("owner.lock"))?;
     file.try_lock().map_err(|_| Error::Busy)?;
     Ok(file)
+}
+
+/// Proof that this process holds `owners.lock`. flock belongs to an open file
+/// description, so a nested call must receive this guard instead of locking
+/// the file again, which would contend with itself.
+pub(crate) struct OwnersGuard {
+    _file: File,
+}
+
+pub(super) const OWNERS_WAIT: Duration = Duration::from_secs(10);
+
+/// Serializes `owners.json` across storefronts. A switch copies whole save
+/// sets, but only locally, so a bounded wait replaces an immediate refusal.
+pub(super) fn owners_lock(root: &Path, wait: Duration) -> Result<OwnersGuard> {
+    let file = lock_file(&root.join("owners.lock"))?;
+    let deadline = Instant::now() + wait;
+    loop {
+        if file.try_lock().is_ok() {
+            return Ok(OwnersGuard { _file: file });
+        }
+        if Instant::now() >= deadline {
+            return Err(Error::Busy);
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
 }
 
 /// Bounded private JSON journal read. Missing files are `None`; symlinks and

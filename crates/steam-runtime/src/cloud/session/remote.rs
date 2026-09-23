@@ -1,8 +1,9 @@
 use super::*;
 use steam_cloud::FileVersion;
-use steam_kit::cloud::{CloudError, CloudFile};
+use steam_kit::cloud::{CloudError, CloudFile, CloudMetadata, CloudPreferences};
 
-trait RemoteSource {
+/// Remote file reads, the part of a connection that builds a verified view.
+pub(crate) trait RemoteSource {
     async fn download_files(
         &mut self,
         files: &[CloudFile],
@@ -11,26 +12,96 @@ trait RemoteSource {
     async fn listing(&mut self) -> Result<CloudListing, Failure>;
 }
 
-struct SteamRemote<'a> {
-    cm: &'a mut SteamConnection,
-    http: &'a reqwest::Client,
-    app_id: u32,
-    control: &'a Control,
+/// One authenticated Steam Cloud connection, bound to one app.
+pub(crate) trait CloudConnection: RemoteSource {
+    /// The app's Cloud rules, or `None` when the game has no Steam Cloud.
+    async fn cloud_metadata(&mut self) -> Result<Option<CloudMetadata>, Failure>;
+    async fn preferences(
+        &mut self,
+        cache: &mut CloudPreferencesCache,
+    ) -> Result<CloudPreferences, CloudError>;
+    async fn settle_upload(
+        &mut self,
+        transaction: &mut UploadTransaction,
+    ) -> Result<(), CloudError>;
+    /// Commits the transaction, then hands back every surviving remote file
+    /// for staging and returns the complete listing read afterwards.
+    async fn upload_verified(
+        &mut self,
+        transaction: &mut UploadTransaction,
+        receive: impl FnMut(&CloudFile, Vec<u8>) -> Result<(), CloudError>,
+    ) -> Result<CloudListing, CloudError>;
 }
 
-impl RemoteSource for SteamRemote<'_> {
+/// Where a session's Cloud connections come from: Steam's CM in production,
+/// an in-memory store in tests.
+pub(crate) trait CloudRemote {
+    type Connection: CloudConnection;
+    async fn connect(
+        &self,
+        credentials: &Credentials,
+        app_id: u32,
+        control: Arc<Control>,
+    ) -> Result<Self::Connection, Failure>;
+}
+
+pub(crate) struct SteamCm {
+    http: reqwest::Client,
+}
+
+impl SteamCm {
+    pub(crate) fn new() -> Result<Self, Failure> {
+        Ok(Self {
+            http: steam_kit::client::http_client().map_err(|_| Failure::Network)?,
+        })
+    }
+}
+
+impl CloudRemote for SteamCm {
+    type Connection = CmConnection;
+    async fn connect(
+        &self,
+        credentials: &Credentials,
+        app_id: u32,
+        control: Arc<Control>,
+    ) -> Result<CmConnection, Failure> {
+        let mut cm = SteamConnection::connect(self.http.clone()).await?;
+        cm.log_on(
+            &credentials.account_name,
+            credentials.steam_id,
+            &credentials.refresh_token,
+        )
+        .await?;
+        Ok(CmConnection {
+            cm,
+            http: self.http.clone(),
+            app_id,
+            control,
+        })
+    }
+}
+
+pub(crate) struct CmConnection {
+    cm: SteamConnection,
+    http: reqwest::Client,
+    app_id: u32,
+    control: Arc<Control>,
+}
+
+impl RemoteSource for CmConnection {
     async fn download_files(
         &mut self,
         files: &[CloudFile],
         receive: impl FnMut(&CloudFile, Vec<u8>) -> Result<(), CloudError>,
     ) -> Result<(), Failure> {
+        let control = &self.control;
         Ok(self
             .cm
             .cloud_download_files(
-                self.http,
+                &self.http,
                 self.app_id,
                 files,
-                || self.control.check().is_ok(),
+                || control.check().is_ok(),
                 receive,
             )
             .await?)
@@ -40,23 +111,40 @@ impl RemoteSource for SteamRemote<'_> {
     }
 }
 
-impl Session {
-    pub(super) async fn remote(
-        &mut self,
-        cm: &mut SteamConnection,
-        http: &reqwest::Client,
-        listing: &CloudListing,
-    ) -> Result<RemoteView, Failure> {
-        let control = self.control.clone();
-        let mut source = SteamRemote {
-            cm,
-            http,
-            app_id: self.config.app_id,
-            control: &control,
-        };
-        self.read_remote(&mut source, listing).await
+impl CloudConnection for CmConnection {
+    async fn cloud_metadata(&mut self) -> Result<Option<CloudMetadata>, Failure> {
+        Ok(self.cm.app_info(self.app_id).await?.cloud)
     }
+    async fn preferences(
+        &mut self,
+        cache: &mut CloudPreferencesCache,
+    ) -> Result<CloudPreferences, CloudError> {
+        self.cm
+            .cloud_preferences_cached(&self.http, self.app_id, cache)
+            .await
+    }
+    async fn settle_upload(
+        &mut self,
+        transaction: &mut UploadTransaction,
+    ) -> Result<(), CloudError> {
+        let control = &self.control;
+        self.cm
+            .cloud_settle_upload(&self.http, transaction, || control.check().is_ok())
+            .await
+    }
+    async fn upload_verified(
+        &mut self,
+        transaction: &mut UploadTransaction,
+        receive: impl FnMut(&CloudFile, Vec<u8>) -> Result<(), CloudError>,
+    ) -> Result<CloudListing, CloudError> {
+        let control = &self.control;
+        self.cm
+            .cloud_upload_verified(&self.http, transaction, || control.check().is_ok(), receive)
+            .await
+    }
+}
 
+impl<R: CloudRemote> Session<R> {
     fn cached_file(&self, file: &CloudFile) -> Option<FileVersion> {
         // Context survives restart. Its listing can have been refreshed before
         // remote bytes, so never trust that pairing: verify the actual blob
@@ -83,7 +171,7 @@ impl Session {
         })
     }
 
-    async fn read_remote(
+    pub(super) async fn read_remote(
         &mut self,
         source: &mut impl RemoteSource,
         listing: &CloudListing,

@@ -310,6 +310,26 @@ final class SteamGameSessionsTests: XCTestCase {
     }
 
     @MainActor
+    func testExitConflictIsAskedWhileFinalizingAndAnsweredToTheSupervisor() async throws {
+        let game = RecoveredGameFixture()
+        let sessions = SteamGameSessions(startSession: { _, _ in game })
+        let task = try XCTUnwrap(sessions.launch(appId: 42, prepare: { gameLaunch() }))
+        try await eventually { sessions.active?.running == true }
+        await game.update(phase: .finalizing, cloudPhase: .conflict, cloudError: "backend.steam.cloud.conflict",
+                          decisionID: 5, allowedChoices: [.local, .cloud, .cancel])
+        try await eventually { sessions.cloudPrompt?.cloud.decisionId == 5 }
+
+        try await sessions.chooseCloud(.cancel, accountId: 42)
+
+        let choices = await game.cloudChoices
+        XCTAssertEqual(choices, [.init(accountID: 42, decisionID: 5, choice: .cancel)])
+        let cancellations = await game.cancellations
+        XCTAssertEqual(cancellations, 0, "An exit question never cancels the finished game's session")
+        await game.finish()
+        await task.value
+    }
+
+    @MainActor
     func testCancellingCloudCheckCancelsPreparationWithoutInventingDecision() async throws {
         let game = RecoveredGameFixture(phase: .preparing, cloudPhase: .checking)
         let sessions = SteamGameSessions(startSession: { _, _ in game })
@@ -405,7 +425,7 @@ actor RecoveredGameFixture: SteamGameSessionProtocol {
     init(appID: UInt32 = 42, accountID: UInt64 = 42, phase: SteamGamePhase = .running,
          cloudPhase: SteamCloudPhase = .idle, decisionID: UInt64 = 0) {
         current = SteamGameSnapshot(id: sessionID, appId: appID, accountId: accountID, phase: phase,
-                                    cloudPhase: cloudPhase, cloudDecisionId: decisionID, cloudError: nil, cloudDecisionToken: nil, cloudAllowedChoices: [], connection: .connected,
+                                    cloudPhase: cloudPhase, cloudDecisionId: decisionID, cloudError: nil, cloudAllowedChoices: [], connection: .connected,
                                     host: .online, exitCode: nil, error: nil, revision: 1, rosetta: nil)
     }
 
@@ -452,13 +472,13 @@ actor RecoveredGameFixture: SteamGameSessionProtocol {
 
     func update(host: SteamHostState? = nil, connection: SteamSupervisorConnection? = nil,
                 phase: SteamGamePhase? = nil, cloudPhase: SteamCloudPhase? = nil, cloudError: String? = nil,
-                decisionToken: String? = nil, allowedChoices: [SteamCloudChoice] = []) {
+                decisionID: UInt64? = nil, allowedChoices: [SteamCloudChoice] = []) {
         if let host { current.host = host }
         if let connection { current.connection = connection }
         if let phase { current.phase = phase }
         if let cloudPhase { current.cloudPhase = cloudPhase }
         if let cloudError { current.cloudError = cloudError }
-        current.cloudDecisionToken = decisionToken
+        if let decisionID { current.cloudDecisionId = decisionID }
         current.cloudAllowedChoices = allowedChoices
         current.revision += 1
         wake()

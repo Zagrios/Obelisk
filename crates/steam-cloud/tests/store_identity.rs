@@ -246,6 +246,94 @@ fn epic_scopes_reject_unsafe_identity_and_mixed_store_journals() {
     assert!(serde_json::from_value::<StoreScope>(mixed).is_err());
 }
 
+fn binding(path: &Path) -> Bindings {
+    Bindings::from([(
+        "save.dat".into(),
+        SelectedFile {
+            path: path.to_path_buf(),
+            platforms: 2,
+        },
+    )])
+}
+
+fn session() -> String {
+    uuid::Uuid::new_v4().to_string()
+}
+
+#[test]
+fn a_running_steam_game_leaves_epic_cloud_work_on_other_saves_available() {
+    let root = tempfile::tempdir().unwrap();
+    let saves = tempfile::tempdir().unwrap();
+    let steam_save = saves.path().join("steam.dat");
+    let epic_save = saves.path().join("epic.dat");
+    fs::write(&steam_save, b"Steam progress").unwrap();
+    fs::write(&epic_save, b"Epic progress").unwrap();
+    let mut steam_vault = open(root.path(), steam());
+    steam_vault.activate(&binding(&steam_save)).unwrap();
+    steam_vault.capture(&binding(&steam_save)).unwrap();
+    let game = session();
+    steam_vault.game_started(&game).unwrap();
+
+    let mut epic_vault = open(root.path(), epic(ACCOUNT_A, "namespace", "game"));
+    assert!(!epic_vault.activate(&binding(&epic_save)).unwrap());
+    let local = epic_vault.capture(&binding(&epic_save)).unwrap();
+    let authorization = epic_vault.authorize(ACCOUNT_A).unwrap();
+    epic_vault
+        .queue_upload(&local, &remote(&Manifest::default()), "epic", authorization)
+        .unwrap();
+
+    assert_eq!(epic_vault.pending().unwrap().desired, local);
+    assert_eq!(steam_vault.game_session(), Some(game.as_str()));
+    assert_eq!(fs::read(&steam_save).unwrap(), b"Steam progress");
+}
+
+#[test]
+fn epic_cannot_take_saves_from_a_steam_game_that_holds_its_vault() {
+    let root = tempfile::tempdir().unwrap();
+    let saves = tempfile::tempdir().unwrap();
+    let save = saves.path().join("save.dat");
+    fs::write(&save, b"Steam progress").unwrap();
+    let mut steam_vault = open(root.path(), steam());
+    steam_vault.activate(&binding(&save)).unwrap();
+    steam_vault.capture(&binding(&save)).unwrap();
+    let game = session();
+    steam_vault.game_started(&game).unwrap();
+    let owners = fs::read(root.path().join("owners.json")).unwrap();
+
+    let mut epic_vault = open(root.path(), epic(ACCOUNT_A, "namespace", "game"));
+    let epic_files = staged(&epic_vault, b"Epic progress");
+    epic_vault.record_local(&epic_files).unwrap();
+    assert!(matches!(
+        epic_vault.activate(&binding(&save)),
+        Err(Error::OtherStoreBusy)
+    ));
+
+    assert_eq!(fs::read(&save).unwrap(), b"Steam progress");
+    assert_eq!(fs::read(root.path().join("owners.json")).unwrap(), owners);
+    steam_vault.game_exited(&game).unwrap();
+    drop(steam_vault);
+    assert!(epic_vault.activate(&binding(&save)).unwrap());
+    assert_eq!(fs::read(&save).unwrap(), b"Epic progress");
+}
+
+#[test]
+fn steam_garbage_collection_never_touches_epic_blobs() {
+    let root = tempfile::tempdir().unwrap();
+    let mut epic_vault = open(root.path(), epic(ACCOUNT_A, "namespace", "game"));
+    let orphan = epic_vault.stage(b"unreferenced Epic bytes", 2).unwrap();
+    let mut steam_vault = open(root.path(), steam());
+    steam_vault.stage(b"unreferenced Steam bytes", 2).unwrap();
+
+    assert_eq!(steam_vault.collect_garbage(&[]).unwrap(), 1);
+
+    assert_eq!(
+        epic_vault.read_content(&orphan).unwrap(),
+        b"unreferenced Epic bytes"
+    );
+    assert_eq!(epic_vault.collect_garbage(&[]).unwrap(), 1);
+    assert!(epic_vault.read_content(&orphan).is_err());
+}
+
 #[test]
 fn restoring_current_local_snapshot_preserves_remote_baseline_and_local_choice() {
     let root = tempfile::tempdir().unwrap();

@@ -9040,6 +9040,227 @@
         }
       }
     },
+    "ui.cloud.indicator.caption": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cloud"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cloud"
+          }
+        }
+      }
+    },
+    "ui.cloud.indicator.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cloud saves of this game"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sauvegardes Cloud de ce jeu"
+          }
+        }
+      }
+    },
+    "ui.cloud.indicator.syncing": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Syncing…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Synchronisation…"
+          }
+        }
+      }
+    },
+    "ui.cloud.indicator.pending": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not sent yet"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas encore envoyé"
+          }
+        }
+      }
+    },
+    "ui.cloud.indicator.pending_since": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not sent yet · last sync %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas encore envoyé · dernier succès %@"
+          }
+        }
+      }
+    },
+    "ui.cloud.indicator.conflict": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conflict to resolve"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conflit à résoudre"
+          }
+        }
+      }
+    },
+    "ui.cloud.indicator.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Last sync failed"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La dernière synchronisation a échoué"
+          }
+        }
+      }
+    },
+    "ui.cloud.indicator.unavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cloud unavailable"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cloud non disponible"
+          }
+        }
+      }
+    },
+    "ui.cloud.indicator.synced": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Synced"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Synchronisé"
+          }
+        }
+      }
+    },
+    "ui.cloud.indicator.synced_at": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Synced · %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Synchronisé · %@"
+          }
+        }
+      }
+    },
+    "ui.cloud.indicator.never": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Never synced"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jamais synchronisé"
+          }
+        }
+      }
+    },
+    "ui.cloud.date.just_now": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "just now"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "à l’instant"
+          }
+        }
+      }
+    },
+    "ui.cloud.sync_now": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sync now"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Synchroniser maintenant"
+          }
+        }
+      }
+    },
     "ui.cloud.choose_local": {
       "extractionState": "manual",
       "localizations": {
@@ -9107,54 +9328,6 @@
         }
       }
     },
-    "ui.cloud.pending": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cloud synchronization pending"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Synchronisation Cloud en attente"
-          }
-        }
-      }
-    },
-    "ui.cloud.synced": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cloud saves up to date"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sauvegardes Cloud à jour"
-          }
-        }
-      }
-    },
-    "ui.cloud.disabled": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cloud synchronization disabled"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Synchronisation Cloud désactivée"
-          }
-        }
-      }
-    },
     "backend.steam.cloud.network": {
       "localizations": {
         "en": {
@@ -9215,6 +9388,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Les règles de sauvegarde Cloud de ce jeu ne sont pas encore prises en charge."
+          }
+        }
+      }
+    },
+    "backend.steam.cloud.rulesChanged": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This game’s Cloud rules changed. Reinstall it to send this save."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les règles Cloud de ce jeu ont changé. Réinstallez-le pour envoyer cette sauvegarde."
           }
         }
       }
@@ -9653,23 +9843,6 @@
         }
       }
     },
-    "ui.epic.cloud.unsupported": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Forge Cloud sync is unavailable for this game on macOS. Any in-game Cloud service is managed by the game."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "La synchronisation Cloud de Forge est indisponible pour ce jeu sur macOS. Un éventuel service Cloud intégré reste géré par le jeu."
-          }
-        }
-      }
-    },
     "model.epic.recoveringSession": {
       "extractionState": "manual",
       "localizations": {
@@ -9785,6 +9958,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Un jeu Epic ou une synchronisation Cloud est déjà en cours."
+          }
+        }
+      }
+    },
+    "backend.cloud.sharedSavesInUse": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The same game from another platform is already using these saves."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un même jeu d’une autre plateforme utilise déjà ces saves."
           }
         }
       }

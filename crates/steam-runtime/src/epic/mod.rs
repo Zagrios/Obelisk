@@ -1,6 +1,7 @@
 //! Epic game ownership and EGS Cloud orchestration. The UI only observes and
 //! answers revision-bound choices; a detached process owns the entire session.
 mod client;
+mod maintenance;
 mod server;
 mod session;
 #[cfg(test)]
@@ -9,9 +10,10 @@ mod tests;
 use crate::supervisor::{Identity, RosettaRequest, StartingGame, Target};
 pub use client::{Client, start};
 use forge_core::transfer::CancelToken;
+pub use maintenance::{MaintenanceChannel, MaintenanceStatus};
 use serde::{Deserialize, Serialize};
 pub use server::{exec_game, serve};
-pub use session::{archive, pending, removed};
+pub use session::{EpicIndicator, archive, indicators, maintain, removed};
 use std::{
     path::PathBuf,
     sync::{Arc, Condvar, Mutex},
@@ -34,14 +36,26 @@ pub enum Error {
     Failed,
     #[error("backend.epic.cloud.unsupported")]
     Unsupported,
+    /// The other storefront's copy of this game uses the same save paths.
+    #[error("backend.cloud.sharedSavesInUse")]
+    SharedSaves,
     #[error("backend.steam.runtime.rosettaUnavailable")]
     RosettaUnavailable,
     #[error("{0}")]
     Epic(#[from] epic_kit::EpicError),
     #[error("backend.epic.cloud.storage")]
-    Vault(#[from] steam_cloud::Error),
+    Vault(steam_cloud::Error),
     #[error("backend.epic.cloud.storage")]
     Io(#[from] std::io::Error),
+}
+impl From<steam_cloud::Error> for Error {
+    fn from(error: steam_cloud::Error) -> Self {
+        match error {
+            steam_cloud::Error::Busy => Self::Busy,
+            steam_cloud::Error::OtherStoreBusy => Self::SharedSaves,
+            error => Self::Vault(error),
+        }
+    }
 }
 impl From<crate::Error> for Error {
     fn from(error: crate::Error) -> Self {
@@ -194,7 +208,6 @@ struct Request {
     id: String,
     account_id: String,
     exchange_code: String,
-    launch: bool,
 }
 #[derive(Serialize, Deserialize)]
 enum Command {
@@ -239,6 +252,49 @@ struct Control {
     root: PathBuf,
     rosetta: crate::rosetta::Gate,
 }
+/// Where an Epic Cloud sync reports its progress and asks the player. The
+/// detached supervisor journals it for Forge to observe; Cloud maintenance
+/// keeps it in Forge's memory.
+pub(crate) trait CloudChannel: Send + Sync + 'static {
+    fn cancellation(&self) -> &CancelToken;
+    /// Only a launch may offer Retry or Launch anyway.
+    fn launching(&self) -> bool;
+    fn show(&self, phase: CloudPhase, error: Option<String>) -> Result<()>;
+    /// Blocks until the player answers, the question expires or the sync is
+    /// cancelled.
+    fn question(
+        &self,
+        phase: CloudPhase,
+        error: Option<String>,
+        choices: Vec<Choice>,
+    ) -> Result<Choice>;
+    fn check(&self) -> Result<()> {
+        self.cancellation().check().map_err(|_| Error::Cancelled)
+    }
+}
+impl CloudChannel for Control {
+    fn cancellation(&self) -> &CancelToken {
+        &self.cancel
+    }
+    fn launching(&self) -> bool {
+        self.snapshot().phase == Phase::Preparing
+    }
+    fn show(&self, phase: CloudPhase, error: Option<String>) -> Result<()> {
+        self.update(|s| {
+            s.cloud_phase = phase;
+            s.allowed_choices.clear();
+            s.error = error;
+        })
+    }
+    fn question(
+        &self,
+        phase: CloudPhase,
+        error: Option<String>,
+        choices: Vec<Choice>,
+    ) -> Result<Choice> {
+        self.ask(phase, error, choices)
+    }
+}
 impl Control {
     fn snapshot(&self) -> Snapshot {
         self.state.lock().unwrap().snapshot.clone()
@@ -275,13 +331,6 @@ impl Control {
             s.error = Some(error.to_string());
             s.allowed_choices.clear();
             s.rosetta = None;
-        })
-    }
-    fn phase(&self, phase: CloudPhase) -> Result<()> {
-        self.update(|s| {
-            s.cloud_phase = phase;
-            s.allowed_choices.clear();
-            s.error = None;
         })
     }
     fn check(&self) -> Result<()> {

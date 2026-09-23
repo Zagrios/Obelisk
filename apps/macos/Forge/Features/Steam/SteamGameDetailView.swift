@@ -26,7 +26,12 @@ struct SteamGameDetailView: View {
                 lastPlayed: SteamFormatting.lastPlayed(game.lastPlayed),
                 size: sizeText,
                 back: model.backToLibrary,
-                additionalMetrics: { GameAchievementsButton(model: achievements) }
+                additionalMetrics: {
+                    GameAchievementsButton(model: achievements)
+                    if let cloud = model.cloudIndicator {
+                        CloudIndicatorButton(presentation: cloud, canSync: model.canSyncCloud, sync: model.syncCloud)
+                    }
+                }
             ) {
                 SteamArtwork(appId: game.appId, portrait: false, iconHash: game.iconHash)
             } action: {
@@ -62,22 +67,6 @@ struct SteamGameDetailView: View {
                 Text(message).font(.system(size: 12)).foregroundStyle(.secondary)
             }
 
-            let cloudMessage = model.cloud.message(for: game.appId)
-            let cloudPending = model.cloud.hasPending(for: game.appId)
-            if !model.isSynchronizingSaves && (cloudMessage != nil || cloudPending) {
-                HStack(spacing: 8) {
-                    if let cloudMessage {
-                        Text(cloudMessage).font(.system(size: 12)).foregroundStyle(.secondary)
-                    }
-                    if cloudPending {
-                        Button(L10n.string("ui.common.retry")) {
-                            model.cloud.retryPending(appId: game.appId)
-                        }
-                        .forgeButtonStyle(.borderless)
-                        .controlSize(.small)
-                    }
-                }
-            }
 
             if model.isLoadingDetails {
                 ProgressView(L10n.string("ui.steam.finding_files")).controlSize(.small)

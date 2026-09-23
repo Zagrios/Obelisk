@@ -10,7 +10,7 @@ struct EpicView: View {
                 if model.isConnected {
                     if model.cloud.failurePresented {
                         SteamCloudFailureView(
-                            title: cloudPromptTitle,
+                            title: model.cloudTitle(for: model.cloud.prompt?.libraryID),
                             message: model.cloud.promptMessage,
                             busy: model.cloud.promptWorking,
                             canLaunchAnyway: model.cloud.canLaunchAnyway,
@@ -30,31 +30,14 @@ struct EpicView: View {
             .frame(maxWidth: 1400, alignment: .leading)
         }
         .task { await model.start() }
-        .sheet(isPresented: Binding(get: { model.cloud.promptPresented || model.rosetta.prompt != nil }, set: { _ in })) {
-            if model.rosetta.prompt != nil {
-                RosettaPromptView(model: model.rosetta, storefront: "epic")
-            } else {
-                SteamCloudPromptView(
-                    title: cloudPromptTitle,
-                    message: model.cloud.promptMessage,
-                    busy: model.cloud.promptWorking,
-                    onCancel: { model.cloud.respond(.cancel) },
-                    onChooseLocal: { model.cloud.respond(.local) },
-                    onChooseCloud: { model.cloud.respond(.cloud) },
-                    storefront: "epic"
-                )
-            }
+        .onChange(of: model.gameSessions.isBusy) { _, isBusy in
+            if !isBusy { model.refreshCloudIndicator() }
+        }
+        // The game's guard and launch sync are on disk once it runs.
+        .onChange(of: model.gameSessions.active?.phase == .running) { _, running in
+            if running { model.refreshCloudIndicator() }
         }
         .errorAlert(L10n.string("ui.store.epic"), message: $model.errorMessage)
-    }
-
-    private var cloudPromptTitle: String {
-        let title = L10n.string("ui.epic.cloud.title")
-        guard let id = model.cloud.promptLibraryID else { return title }
-        let name = model.games.first { $0.libraryID == id }?.title
-            ?? model.installations.first { $0.libraryID == id }?.name
-            ?? id
-        return "\(title) · \(name)"
     }
 
     private var titleBar: some View {

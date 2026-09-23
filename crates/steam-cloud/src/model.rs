@@ -137,6 +137,21 @@ impl StoreScope {
         }
     }
 
+    /// Where this storefront's archive lock lives.
+    pub(crate) fn store_directory(&self, root: &Path) -> PathBuf {
+        match self {
+            Self::Steam(_) => root.to_path_buf(),
+            Self::Epic(_) => root.join(EPIC_STORE_DIRECTORY),
+        }
+    }
+
+    pub(crate) fn same_storefront(&self, other: &Self) -> bool {
+        matches!(
+            (self, other),
+            (Self::Steam(_), Self::Steam(_)) | (Self::Epic(_), Self::Epic(_))
+        )
+    }
+
     pub(crate) fn account_directory(&self, root: &Path) -> PathBuf {
         match self {
             Self::Steam(scope) => root.join(scope.steam_id.to_string()),

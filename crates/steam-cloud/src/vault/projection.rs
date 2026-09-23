@@ -5,6 +5,7 @@ use std::{
     io::{Read, Write},
     os::unix::fs::MetadataExt,
     path::{Component, Path},
+    time::Duration,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -95,13 +96,31 @@ struct SwitchBefore {
     file: Option<FileVersion>,
 }
 
-pub(super) fn check_switch(root: &Path) -> Result<()> {
-    if disk::read::<Owners>(&root.join("owners.json"))?
-        .is_some_and(|owners| owners.switching.is_some())
-    {
-        return Err(Error::Recovery);
+/// The scope whose account switch has not finished. Reads without any lock,
+/// so a plan seen here may belong to a switch that is still running.
+pub(super) fn switching(root: &Path) -> Result<Option<StoreScope>> {
+    Ok(disk::read::<Owners>(&root.join("owners.json"))?
+        .and_then(|owners| owners.switching)
+        .map(|plan| plan.scope))
+}
+
+pub(super) fn check_switch(
+    root: &Path,
+    guard: Option<&disk::OwnersGuard>,
+    wait: Duration,
+) -> Result<()> {
+    if switching(root)?.is_none() {
+        return Ok(());
     }
-    Ok(())
+    // Without the owners lock, the plan may belong to another storefront's
+    // switch that is still running. Only a plan that outlives it needs recovery.
+    if guard.is_none() {
+        let _guard = disk::owners_lock(root, wait)?;
+        if switching(root)?.is_none() {
+            return Ok(());
+        }
+    }
+    Err(Error::Recovery)
 }
 
 fn canonical_file(path: &Path) -> Result<PathBuf> {
@@ -170,7 +189,7 @@ impl Vault {
         Ok(normalized)
     }
 
-    fn claim(&self, bindings: &Bindings) -> Result<Bindings> {
+    fn claim(&self, _guard: &disk::OwnersGuard, bindings: &Bindings) -> Result<Bindings> {
         let normalized = self.normalize(bindings)?;
         let path = self.root.join("owners.json");
         let mut owners: Owners = disk::read(&path)?.unwrap_or_default();
@@ -221,7 +240,11 @@ impl Vault {
         if self.state.applying.is_some() {
             return Err(Error::Recovery);
         }
-        if self.recover_switch(stop_after)? {
+        // The owners lock covers the whole transaction, from the displaced
+        // owners read below to the published result of the switch.
+        let guard = self.owners_guard()?;
+        let mut foreign = None;
+        if self.recover_switch(&guard, &mut foreign, stop_after)? {
             return Ok(true);
         }
         let normalized = self.normalize(bindings)?;
@@ -245,7 +268,7 @@ impl Vault {
             }
         }
         if displaced.is_empty() {
-            self.claim(&normalized)?;
+            self.claim(&guard, &normalized)?;
             return Ok(false);
         }
         let desired = self.state.local.clone();
@@ -282,10 +305,10 @@ impl Vault {
         }
         let mut archived = BTreeMap::new();
         for (key, scope) in &displaced {
-            let mut old =
-                Vault::open_locked(self.root.clone(), scope.clone(), self._lock.try_clone()?)?;
-            old.idle()?;
-            let bindings = old.claim(&old_bindings[key])?;
+            let lock = self.store_lock_for(scope, &mut foreign)?;
+            let mut old = Vault::open_locked(self.root.clone(), scope.clone(), lock)?;
+            old.idle_with(Some(&guard))?;
+            let bindings = old.claim(&guard, &old_bindings[key])?;
             // Earlier partial switches may have unprojected other old saves.
             // Preserve those archived entries and refresh every path this old
             // scope still owns, including explicit physical deletions.
@@ -297,7 +320,7 @@ impl Vault {
                     files.0.remove(&name);
                 }
             }
-            old.record_local(&files)?;
+            old.record_local_with(Some(&guard), &files)?;
             archived.insert(key.clone(), files);
         }
         let mut changes = Bindings::new();
@@ -350,11 +373,30 @@ impl Vault {
             before,
             after: desired.unwrap_or_default(),
         });
-        self.save_owners(&owners)?;
-        self.recover_switch(stop_after)
+        self.save_owners(&guard, &owners)?;
+        self.recover_switch(&guard, &mut foreign, stop_after)
     }
 
-    fn save_owners(&mut self, owners: &Owners) -> Result<()> {
+    /// The storefront lock that authorizes opening `owner`'s vault. The same
+    /// storefront shares this vault's lock. The other storefront's lock is
+    /// tried once without waiting, then kept until the ownership change ends.
+    fn store_lock_for(&self, owner: &StoreScope, foreign: &mut Option<File>) -> Result<File> {
+        if owner.same_storefront(&self.scope) {
+            return Ok(self._lock.try_clone()?);
+        }
+        let held = match foreign {
+            Some(held) => held,
+            None => foreign.insert(disk::store_lock(&self.root, owner).map_err(
+                |error| match error {
+                    Error::Busy => Error::OtherStoreBusy,
+                    error => error,
+                },
+            )?),
+        };
+        Ok(held.try_clone()?)
+    }
+
+    fn save_owners(&mut self, _guard: &disk::OwnersGuard, owners: &Owners) -> Result<()> {
         if let Err(error) = disk::write(&self.root.join("owners.json"), owners) {
             self.poisoned = true;
             return Err(error);
@@ -362,7 +404,12 @@ impl Vault {
         Ok(())
     }
 
-    fn recover_switch(&mut self, stop_after: Option<usize>) -> Result<bool> {
+    fn recover_switch(
+        &mut self,
+        guard: &disk::OwnersGuard,
+        foreign: &mut Option<File>,
+        stop_after: Option<usize>,
+    ) -> Result<bool> {
         let mut owners: Owners = disk::read(&self.root.join("owners.json"))?.unwrap_or_default();
         let Some(plan) = owners.switching.clone() else {
             return Ok(false);
@@ -397,7 +444,8 @@ impl Vault {
             }
             if let Some(file) = &before.file {
                 let owner = before.owner.clone().unwrap_or_else(|| self.scope.clone());
-                let old = Vault::open_locked(self.root.clone(), owner, self._lock.try_clone()?)?;
+                let lock = self.store_lock_for(&owner, foreign)?;
+                let old = Vault::open_locked(self.root.clone(), owner, lock)?;
                 old.read_content(file)?;
             }
         }
@@ -424,7 +472,7 @@ impl Vault {
         // One atomic ownership publication releases the recovery fence only
         // after every replacement/removal is durable. Pending uploads stay put.
         owners.switching = None;
-        self.save_owners(&owners)?;
+        self.save_owners(guard, &owners)?;
         Ok(true)
     }
 
@@ -488,32 +536,39 @@ impl Vault {
     }
 
     pub fn capture(&mut self, bindings: &Bindings) -> Result<Manifest> {
-        self.capture_with_missing(bindings, false)
+        let guard = self.owners_guard()?;
+        self.capture_with_missing(&guard, bindings, false)
     }
 
     /// A retry of a partial uninstall must retain already removed files in the
     /// account snapshot while still capturing surviving files' current bytes.
     /// This does not create upload intent or project files back into the game.
     pub fn capture_preserving_missing(&mut self, bindings: &Bindings) -> Result<Manifest> {
-        self.capture_with_missing(bindings, true)
+        let guard = self.owners_guard()?;
+        self.capture_with_missing(&guard, bindings, true)
     }
 
     /// Reproject this account's current snapshot after installation removal.
     /// This restores local ownership, not a Cloud download: the confirmed remote
     /// baseline and any explicit local choice remain unchanged.
     pub fn restore_local(&mut self, bindings: &Bindings) -> Result<()> {
-        self.prepare_local_restore(bindings)?;
-        self.recover_local()
+        let guard = self.owners_guard()?;
+        self.prepare_local_restore(&guard, bindings)?;
+        self.recover_with(&guard, None)
     }
 
-    fn prepare_local_restore(&mut self, bindings: &Bindings) -> Result<()> {
-        self.idle()?;
+    fn prepare_local_restore(
+        &mut self,
+        guard: &disk::OwnersGuard,
+        bindings: &Bindings,
+    ) -> Result<()> {
+        self.idle_with(Some(guard))?;
         if self.state.pending.is_some() {
             return Err(Error::Busy);
         }
         let after = self.state.local.clone().ok_or(Error::Recovery)?;
         self.verify(&after)?;
-        let bindings = self.claim(bindings)?;
+        let bindings = self.claim(guard, bindings)?;
         if after.0.keys().any(|name| !bindings.contains_key(name)) {
             return Err(Error::Invalid);
         }
@@ -541,11 +596,12 @@ impl Vault {
 
     fn capture_with_missing(
         &mut self,
+        guard: &disk::OwnersGuard,
         bindings: &Bindings,
         preserve_missing: bool,
     ) -> Result<Manifest> {
-        self.idle()?;
-        let bindings = self.claim(bindings)?;
+        self.idle_with(Some(guard))?;
+        let bindings = self.claim(guard, bindings)?;
         let mut files = if preserve_missing {
             self.state.local.clone().unwrap_or_default()
         } else {
@@ -556,7 +612,7 @@ impl Vault {
                 files.0.insert(name, self.stage(&bytes, file.platforms)?);
             }
         }
-        self.record_local(&files)?;
+        self.record_local_with(Some(guard), &files)?;
         Ok(files)
     }
 
@@ -569,17 +625,20 @@ impl Vault {
         current: &RemoteView,
         choose_cloud: bool,
     ) -> Result<()> {
+        let guard = self.owners_guard()?;
         self.transfers_enabled()?;
-        self.idle()?;
+        self.idle_with(Some(&guard))?;
         current.validate()?;
         if shown != current {
             return Err(Error::Stale);
         }
-        let local = self.capture(bindings)?;
-        if !choose_cloud && self.decision(&local, current)? != Decision::Download {
+        let local = self.capture_with_missing(&guard, bindings, false)?;
+        if !choose_cloud && self.decision_with(Some(&guard), &local, current)? != Decision::Download
+        {
             return Err(Error::Stale);
         }
         self.prepare_checked_apply(
+            &guard,
             bindings,
             current.files.clone(),
             Effect::Download {
@@ -587,7 +646,7 @@ impl Vault {
             },
             Some(&local),
         )?;
-        self.recover_local()
+        self.recover_with(&guard, None)
     }
 
     #[cfg(test)]
@@ -597,26 +656,28 @@ impl Vault {
         after: Manifest,
         effect: Effect,
     ) -> Result<()> {
-        self.prepare_checked_apply(bindings, after, effect, None)
+        let guard = self.owners_guard()?;
+        self.prepare_checked_apply(&guard, bindings, after, effect, None)
     }
 
     fn prepare_checked_apply(
         &mut self,
+        guard: &disk::OwnersGuard,
         bindings: &Bindings,
         after: Manifest,
         effect: Effect,
         expected_before: Option<&Manifest>,
     ) -> Result<()> {
-        self.idle()?;
+        self.idle_with(Some(guard))?;
         if self.state.pending.is_some() {
             return Err(Error::Busy);
         }
         self.verify(&after)?;
-        let bindings = self.claim(bindings)?;
+        let bindings = self.claim(guard, bindings)?;
         if after.0.keys().any(|name| !bindings.contains_key(name)) {
             return Err(Error::Invalid);
         }
-        let before = self.capture(&bindings)?;
+        let before = self.capture_with_missing(guard, &bindings, false)?;
         if expected_before.is_some_and(|expected| expected != &before) {
             return Err(Error::Stale);
         }
@@ -640,11 +701,16 @@ impl Vault {
     }
 
     fn recover_after(&mut self, stop_after: Option<usize>) -> Result<()> {
+        let guard = self.owners_guard()?;
+        self.recover_with(&guard, stop_after)
+    }
+
+    fn recover_with(&mut self, guard: &disk::OwnersGuard, stop_after: Option<usize>) -> Result<()> {
         self.healthy()?;
         if self.state.game.is_some() {
             return Err(Error::Busy);
         }
-        self.recover_switch(stop_after)?;
+        self.recover_switch(guard, &mut None, stop_after)?;
         let Some(plan) = self.state.applying.clone() else {
             return Ok(());
         };
@@ -654,7 +720,7 @@ impl Vault {
         plan.before.validate()?;
         self.verify(&plan.after)?;
         self.verify(&plan.before)?;
-        let bindings = self.claim(&plan.bindings)?;
+        let bindings = self.claim(guard, &plan.bindings)?;
         if plan
             .before
             .0
@@ -674,6 +740,7 @@ impl Vault {
         if let Effect::Download { remote } = plan.effect {
             next.baseline = Some(remote);
             next.intent = None;
+            self.synced(&mut next);
         }
         next.local = Some(plan.after);
         next.applying = None;
@@ -942,6 +1009,227 @@ mod activation_tests {
         assert_eq!(first.local(), Some(&complete));
         assert!(first.activate(&bindings).unwrap());
         assert_eq!(first.capture(&bindings).unwrap(), complete);
+    }
+
+    fn epic(account: &str, app_name: &str) -> EpicScope {
+        EpicScope {
+            account_id: account.into(),
+            namespace: "namespace".into(),
+            app_name: app_name.into(),
+        }
+    }
+
+    const EPIC_A: &str = "0123456789abcdef0123456789abcdef";
+    const EPIC_B: &str = "abcdef0123456789abcdef0123456789";
+
+    fn hold_owners(root: &Path) -> File {
+        let file = File::create(root.join("owners.lock")).unwrap();
+        file.try_lock().unwrap();
+        file
+    }
+
+    #[test]
+    fn epic_accounts_and_games_share_one_epic_store_lock() {
+        let root = tempfile::tempdir().unwrap();
+        let held = Vault::open(root.path(), epic(EPIC_A, "game")).unwrap();
+        for other in [epic(EPIC_B, "game"), epic(EPIC_A, "other-game")] {
+            assert!(matches!(Vault::open(root.path(), other), Err(Error::Busy)));
+        }
+        assert!(Vault::open(root.path(), scope(1)).is_ok());
+        drop(held);
+        assert!(Vault::open(root.path(), epic(EPIC_B, "game")).is_ok());
+    }
+
+    #[test]
+    fn ownership_changes_wait_for_the_owners_lock_up_to_the_limit() {
+        let root = tempfile::tempdir().unwrap();
+        let saves = tempfile::tempdir().unwrap();
+        let bindings = bindings(saves.path());
+        fs::write(saves.path().join("one"), b"A one").unwrap();
+        let mut vault = Vault::open(root.path(), scope(1)).unwrap();
+        vault.set_owners_wait(std::time::Duration::from_millis(100));
+        let held = hold_owners(root.path());
+        let started = std::time::Instant::now();
+        assert!(matches!(vault.capture(&bindings), Err(Error::Busy)));
+        assert!(started.elapsed() >= std::time::Duration::from_millis(100));
+        assert!(!root.path().join("owners.json").exists());
+
+        vault.set_owners_wait(std::time::Duration::from_secs(5));
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            drop(held);
+        });
+        let captured = vault.capture(&bindings).unwrap();
+        release.join().unwrap();
+        assert_eq!(captured.0.len(), 1);
+    }
+
+    #[test]
+    fn a_guarded_switch_check_never_waits_for_its_own_guard() {
+        let root = tempfile::tempdir().unwrap();
+        let saves = tempfile::tempdir().unwrap();
+        let bindings = bindings(saves.path());
+        fs::write(saves.path().join("one"), b"A one").unwrap();
+        let mut first = Vault::open(root.path(), scope(1)).unwrap();
+        first.capture(&bindings).unwrap();
+        drop(first);
+        let mut second = Vault::open(root.path(), scope(2)).unwrap();
+        assert!(matches!(
+            second.activate_after(&bindings, Some(0)),
+            Err(Error::Recovery)
+        ));
+        second.set_owners_wait(std::time::Duration::from_secs(5));
+        let guard = second.owners_guard().unwrap();
+        let started = std::time::Instant::now();
+        assert!(matches!(
+            second.idle_with(Some(&guard)),
+            Err(Error::Recovery)
+        ));
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
+    }
+
+    #[test]
+    fn an_interrupted_epic_switch_fences_steam_until_epic_recovers() {
+        let root = tempfile::tempdir().unwrap();
+        let saves = tempfile::tempdir().unwrap();
+        let shared = bindings(saves.path());
+        let steam_only = Bindings::from([(
+            "steam".into(),
+            SelectedFile {
+                path: saves.path().join("steam"),
+                platforms: 7,
+            },
+        )]);
+        fs::write(saves.path().join("one"), b"Steam one").unwrap();
+        fs::write(saves.path().join("steam"), b"Steam only").unwrap();
+        let mut steam = Vault::open(root.path(), scope(1)).unwrap();
+        steam.capture(&shared).unwrap();
+        drop(steam);
+        let mut epic_vault = Vault::open(root.path(), epic(EPIC_A, "game")).unwrap();
+        let desired = Manifest(BTreeMap::from([(
+            "one".into(),
+            epic_vault.stage(b"Epic one", 7).unwrap(),
+        )]));
+        epic_vault.record_local(&desired).unwrap();
+        assert!(matches!(
+            epic_vault.activate_after(&shared, Some(0)),
+            Err(Error::Recovery)
+        ));
+
+        let mut steam = Vault::open(root.path(), scope(1)).unwrap();
+        assert!(steam.needs_recovery());
+        assert!(matches!(steam.capture(&steam_only), Err(Error::Recovery)));
+        assert!(matches!(steam.recover_local(), Err(Error::Recovery)));
+        // Epic reads the displaced Steam blobs, so Steam must be closed.
+        drop(steam);
+        epic_vault.recover_local().unwrap();
+        assert_eq!(fs::read(saves.path().join("one")).unwrap(), b"Epic one");
+
+        let mut steam = Vault::open(root.path(), scope(1)).unwrap();
+        assert!(!steam.needs_recovery());
+        assert_eq!(steam.capture(&steam_only).unwrap().0.len(), 1);
+    }
+
+    #[test]
+    fn peeking_reads_the_journal_and_the_switch_while_every_lock_is_held() {
+        let root = tempfile::tempdir().unwrap();
+        let saves = tempfile::tempdir().unwrap();
+        let bindings = bindings(saves.path());
+        fs::write(saves.path().join("one"), b"A one").unwrap();
+        let mut first = Vault::open(root.path(), scope(1)).unwrap();
+        let base = first.capture(&bindings).unwrap();
+        first.set_clock(|| 1_234);
+        first
+            .confirm_equal(
+                &base,
+                &RemoteView {
+                    revision: "1".into(),
+                    files: base.clone(),
+                },
+            )
+            .unwrap();
+        fs::write(saves.path().join("one"), b"A edited").unwrap();
+        first.capture(&bindings).unwrap();
+        drop(first);
+        let mut playing = Vault::open(root.path(), scope(3)).unwrap();
+        playing
+            .game_started(&uuid::Uuid::new_v4().to_string())
+            .unwrap();
+        drop(playing);
+        let mut second = Vault::open(root.path(), scope(2)).unwrap();
+        assert!(matches!(
+            second.activate_after(&bindings, Some(0)),
+            Err(Error::Recovery)
+        ));
+        let _owners = hold_owners(root.path());
+
+        let summary = peek(root.path(), scope(1)).unwrap();
+
+        assert_eq!(
+            summary,
+            Summary {
+                baseline: true,
+                synced_at: Some(1_234),
+                game_session: false,
+                applying: false,
+                pending: None,
+                local_changes: true,
+                switching: Some(scope(2).into()),
+            }
+        );
+        assert!(peek(root.path(), scope(3)).unwrap().game_session);
+        let absent = peek(root.path(), scope(4)).unwrap();
+        assert_eq!(absent.switching, Some(scope(2).into()));
+        assert!(!absent.baseline && absent.synced_at.is_none());
+        assert!(
+            !StoreScope::from(scope(4))
+                .directory(root.path())
+                .unwrap()
+                .exists()
+        );
+    }
+
+    #[test]
+    fn concurrent_steam_and_epic_captures_keep_every_ownership_record() {
+        const FILES: usize = 25;
+        let root = tempfile::tempdir().unwrap();
+        let saves = tempfile::tempdir().unwrap();
+        let workers = [StoreScope::from(scope(1)), epic(EPIC_A, "game").into()].map(|store| {
+            let root = root.path().to_path_buf();
+            let saves = saves.path().to_path_buf();
+            std::thread::spawn(move || {
+                let prefix = match store {
+                    StoreScope::Steam(_) => "steam",
+                    StoreScope::Epic(_) => "epic",
+                };
+                let mut vault = Vault::open(&root, store).unwrap();
+                let mut owned = Bindings::new();
+                for index in 0..FILES {
+                    let name = format!("{prefix}-{index}");
+                    let path = saves.join(&name);
+                    fs::write(&path, name.as_bytes()).unwrap();
+                    owned.insert(name, SelectedFile { path, platforms: 7 });
+                    vault.capture(&owned).unwrap();
+                }
+            })
+        });
+        for worker in workers {
+            worker.join().unwrap();
+        }
+        let owners: Owners = disk::read(&root.path().join("owners.json"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(owners.files.len(), FILES * 2);
+        assert_eq!(owners.metadata.len(), FILES * 2);
+        for (path, owner) in &owners.files {
+            let steam = path
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .starts_with("steam");
+            assert_eq!(matches!(owner, StoreScope::Steam(_)), steam);
+        }
     }
 
     #[test]

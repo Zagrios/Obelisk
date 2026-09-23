@@ -123,22 +123,6 @@ final class EpicCloudTests: XCTestCase {
         }
     }
 
-    func testNetworkRetryOccursOnlyWhenAnObservedOutageEnds() {
-        var retries = 0
-        let observation = NetworkReturnObservation(observeSystem: false) { retries += 1 }
-        observation.receive(isSatisfied: true)
-        observation.receive(isSatisfied: true)
-        XCTAssertEqual(retries, 0)
-        observation.receive(isSatisfied: false)
-        observation.receive(isSatisfied: false)
-        observation.receive(isSatisfied: true)
-        observation.receive(isSatisfied: true)
-        XCTAssertEqual(retries, 1)
-        observation.receive(isSatisfied: false)
-        observation.receive(isSatisfied: true)
-        XCTAssertEqual(retries, 2)
-    }
-
     func testStartupRecoveryReservesFilesBeforeTheFirstSnapshot() async throws {
         let game = EpicCloudGameFixture(phase: .running, cloudPhase: .ready)
         let gate = EpicCloudPreparationGate()
@@ -164,7 +148,7 @@ final class EpicCloudTests: XCTestCase {
         let gate = EpicCloudPreparationGate()
         let sessions = EpicGameSessions(recoverSession: { nil })
         let cloud = makeCloud(sessions)
-        cloud.connect(accountId: "account", resume: { _ in game })
+        cloud.connect(accountId: "account")
         let task = try XCTUnwrap(sessions.launch(libraryID: "sandbox:game", accountId: "account", prepare: {
             await gate.wait()
             return game
@@ -210,7 +194,7 @@ final class EpicCloudTests: XCTestCase {
         let gate = EpicCloudPreparationGate()
         let sessions = EpicGameSessions(recoverSession: { nil })
         let cloud = makeCloud(sessions)
-        cloud.connect(accountId: "account", resume: { _ in game })
+        cloud.connect(accountId: "account")
         let task = try XCTUnwrap(sessions.launch(libraryID: "sandbox:game", accountId: "account", prepare: {
             await gate.wait()
             return game
@@ -278,8 +262,7 @@ final class EpicCloudTests: XCTestCase {
         let game = EpicCloudGameFixture(phase: .preparing, cloudPhase: .checking)
         let sessions = EpicGameSessions(recoverSession: { nil })
         let cloud = makeCloud(sessions)
-        cloud.connect(accountId: "account", resume: { _ in game })
-        try await eventually { !cloud.isLoadingPending }
+        cloud.connect(accountId: "account")
         let task = try XCTUnwrap(sessions.launch(libraryID: "sandbox:game", accountId: "account", prepare: { game }))
         try await eventually { sessions.active?.decisionId == 1 }
         XCTAssertTrue(cloud.isSynchronizing(for: "sandbox:game"))
@@ -294,81 +277,27 @@ final class EpicCloudTests: XCTestCase {
         try await eventually { cloud.promptPresented }
         XCTAssertFalse(cloud.failurePresented)
         XCTAssertFalse(cloud.canCancelSynchronization(for: "sandbox:game"))
-        XCTAssertNil(cloud.message(for: "sandbox:game"))
         cloud.signedOut()
         XCTAssertFalse(cloud.promptPresented)
-        XCTAssertNil(cloud.message(for: "sandbox:game"))
         XCTAssertTrue(sessions.isBusy)
-        cloud.connect(accountId: "other-account", resume: { _ in game })
+        cloud.connect(accountId: "other-account")
         XCTAssertFalse(cloud.promptPresented)
         XCTAssertFalse(cloud.isSynchronizing(for: "sandbox:game"))
         await game.update(phase: .finished, cloudPhase: .synced)
         await task.value
-        XCTAssertNil(cloud.message(for: "sandbox:game"))
     }
 
     func testUnsupportedCloudNeverClaimsSynchronizationAndRetainsProcess() async throws {
         let game = EpicCloudGameFixture(phase: .running, cloudPhase: .unsupported)
         let sessions = EpicGameSessions(recoverSession: { nil })
         let cloud = makeCloud(sessions)
-        cloud.connect(accountId: "account", resume: { _ in game })
-        try await eventually { !cloud.isLoadingPending }
+        cloud.connect(accountId: "account")
         let task = try XCTUnwrap(sessions.launch(libraryID: "sandbox:game", accountId: "account", prepare: { game }))
         try await eventually { sessions.active?.phase == .running }
-        XCTAssertEqual(cloud.message(for: "sandbox:game"), L10n.string("ui.epic.cloud.unsupported"))
-        XCTAssertFalse(cloud.hasPending(for: "sandbox:game"))
         XCTAssertFalse(cloud.isSynchronizing(for: "sandbox:game"))
         XCTAssertTrue(sessions.protects("sandbox:game"))
         await game.update(phase: .finished)
         await task.value
-        XCTAssertNotEqual(cloud.message(for: "sandbox:game"), L10n.string("ui.cloud.synced"))
-    }
-
-    func testPendingResumeUsesCurrentHelperAndDoesNotLoopAfterFailure() async throws {
-        let game = EpicCloudGameFixture(phase: .finalizing, cloudPhase: .checking)
-        let sessions = EpicGameSessions(recoverSession: { nil })
-        let configuration = EpicCloudConfiguration(root: "/old", home: "/fixture-home", install: "/fixture-game",
-            sessionDirectory: "/old-session", helper: "/old-helper", namespace: "sandbox", catalogItemId: "catalog",
-            appName: "game", platform: "Mac", language: "fr")
-        let cloud = EpicCloudModel(root: "/fixture-cloud", sessionDirectory: "/fixture-sessions", sessions: sessions,
-                                   loadPending: { _, _ in [configuration] })
-        var resumed: [EpicCloudConfiguration] = []
-        cloud.connect(accountId: "account", resume: {
-            resumed.append($0)
-            return game
-        })
-        try await eventually { sessions.active?.phase == .finalizing }
-        XCTAssertEqual(resumed.count, 1)
-        XCTAssertEqual(resumed.first?.root, "/fixture-cloud")
-        XCTAssertEqual(resumed.first?.sessionDirectory, "/fixture-sessions")
-        XCTAssertEqual(resumed.first?.helper, SteamGameLauncher.helper)
-        XCTAssertEqual(resumed.first?.install, "/fixture-game")
-        await game.update(phase: .finished, cloudPhase: .pending)
-        try await eventually { !sessions.isBusy && !cloud.isLoadingPending }
-        XCTAssertTrue(cloud.hasPending(for: "sandbox:game"))
-        cloud.sessionFinished()
-        try await eventually { !cloud.isLoadingPending }
-        XCTAssertEqual(resumed.count, 1, "A failed automatic attempt must wait for a wake or explicit retry")
-        cloud.retryPending(libraryID: "sandbox:game")
-        try await eventually { resumed.count == 2 && !sessions.isBusy && !cloud.isLoadingPending }
-    }
-
-    func testTerminalConflictKeepsAnExplicitRetryAfterSupervisorCloses() async throws {
-        let game = EpicCloudGameFixture(phase: .failed, cloudPhase: .conflict)
-        let sessions = EpicGameSessions(recoverSession: { nil })
-        let configuration = EpicCloudConfiguration(root: "/fixture-cloud", home: "/fixture-home", install: "/fixture-game",
-            sessionDirectory: "/fixture-sessions", helper: "/fixture-helper", namespace: "sandbox", catalogItemId: "catalog",
-            appName: "game", platform: "Mac", language: "fr")
-        let cloud = EpicCloudModel(root: "/fixture-cloud", sessionDirectory: "/fixture-sessions", sessions: sessions,
-                                   loadPending: { _, _ in [configuration] })
-        var attempts = 0
-        cloud.connect(accountId: "account", resume: { _ in attempts += 1; return game })
-        try await eventually { attempts == 1 && !sessions.isBusy && !cloud.isLoadingPending }
-        XCTAssertTrue(cloud.hasPending(for: "sandbox:game"))
-        XCTAssertFalse(cloud.promptPresented, "A terminal supervisor cannot accept a choice")
-        cloud.retryPending(libraryID: "sandbox:game")
-        try await eventually { attempts == 2 && !sessions.isBusy && !cloud.isLoadingPending }
-        XCTAssertTrue(cloud.hasPending(for: "sandbox:game"))
     }
 
     func testEpicModelDisablesFileMutationsThroughRunningGameAndSignOut() async throws {
@@ -397,7 +326,94 @@ final class EpicCloudTests: XCTestCase {
         await game.update(phase: .finished, cloudPhase: .pending)
         await task.value
         XCTAssertFalse(sessions.isBusy)
-        XCTAssertNil(model.cloud.message(for: owned.libraryID))
+    }
+
+    func testEpicMaintenanceAsksLiveAndShowsNoBannerAfterAFailure() async throws {
+        let sessions = EpicGameSessions(recoverSession: { nil })
+        let services = CloudServicesFixture()
+        let cloud = EpicCloudModel(root: "/fixture-cloud", sessionDirectory: "/fixture-sessions", sessions: sessions,
+                                   services: services.epic(CloudIndicator(state: .pending, gameSession: false, syncedAt: nil,
+                                                                          pendingUpload: true, installationRemoved: false)))
+        cloud.connect(accountId: "account") { services.startEpicMaintenance($0) }
+        let configuration = EpicCloudConfiguration(root: "/fixture-cloud", home: "/fixture-home", install: "/fixture-game",
+            sessionDirectory: "/fixture-sessions", helper: "/fixture-helper", namespace: "sandbox", catalogItemId: "catalog",
+            appName: "game", platform: "Mac", language: "fr")
+
+        cloud.startMaintenance(configuration)
+
+        XCTAssertTrue(cloud.isMaintaining, "The Reservation starts before the Rust attempt exists")
+        try await eventually { services.epicMaintenance.count == 1 }
+        let attempt = try XCTUnwrap(services.epicMaintenance.last?.attempt)
+        attempt.publish(.conflict, decisionId: 3, choices: [.local, .cloud, .cancel])
+        try await eventually { cloud.promptPresented }
+        XCTAssertEqual(cloud.promptLibraryID, "sandbox:game")
+        cloud.respond(.cloud)
+        XCTAssertEqual(attempt.answers.map(\.1), [.cloud])
+        attempt.finish(.failed, error: "backend.cloud.sharedSavesInUse")
+        try await eventually { !cloud.isMaintaining }
+        XCTAssertFalse(cloud.failurePresented, "Only a launch check shows a banner")
+        try await eventually { cloud.indicator(for: "sandbox:game")?.indicator.state == .pending }
+
+        cloud.startMaintenance(configuration)
+        try await eventually { services.epicMaintenance.count == 2 }
+        XCTAssertEqual(services.epicMaintenance.last?.configuration, configuration, "Sync now is the retry")
+        cloud.signedOut()
+        XCTAssertNil(cloud.indicator(for: "sandbox:game"))
+    }
+
+    func testEpicMaintenanceOfAnUninstalledGameUsesItsSavedConfiguration() async throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: "ForgeEpicCloudTests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let credentials = EpicCredentials(accountId: "account", displayName: "Fixture", refreshToken: "fixture")
+        let owned = EpicGame(appName: "game", namespace: "sandbox", catalogItemId: "catalog", title: "Fixture",
+                             description: "", imageUrl: nil, headerImageUrl: nil, developer: "", windows: false, macos: true)
+        let saved = EpicCloudConfiguration(root: "/old-cloud", home: "/fixture-home", install: "/removed-game",
+            sessionDirectory: "/old-sessions", helper: "/old-helper", namespace: "sandbox", catalogItemId: "catalog",
+            appName: "game", platform: "Mac", language: "fr")
+        let services = CloudServicesFixture()
+        let sessions = EpicGameSessions(recoverSession: { nil })
+        let model = EpicModel(directory: directory, keychain: EpicMemoryStore(credentials),
+                              restore: { _ in EpicTestSession(credentials: credentials, games: [owned]) },
+                              gameSessions: sessions,
+                              cloudServices: services.epic(CloudIndicator(state: .pending, gameSession: false, syncedAt: nil,
+                                                                          pendingUpload: true, installationRemoved: true),
+                                                           configuration: saved))
+        await model.start()
+        model.open(owned)
+        try await eventually { model.cloudIndicator != nil }
+        XCTAssertNil(model.selectedInstallation)
+        XCTAssertTrue(model.canSyncCloud)
+
+        model.syncCloud()
+
+        XCTAssertTrue(model.cloud.isMaintaining)
+        XCTAssertFalse(model.canModifyInstallations, "Maintenance holds the Reservation")
+        XCTAssertFalse(model.canSyncCloud)
+        model.signOut()
+        XCTAssertFalse(model.cloud.isMaintaining)
+    }
+
+    func testAnEpicCloudQuestionAppearsWhileTheSteamTabIsOpen() async throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: "ForgeEpicCloudTests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let credentials = EpicCredentials(accountId: "account", displayName: "Fixture", refreshToken: "fixture")
+        let owned = EpicGame(appName: "game", namespace: "sandbox", catalogItemId: "catalog", title: "Fixture",
+                             description: "", imageUrl: nil, headerImageUrl: nil, developer: "", windows: false, macos: true)
+        let sessions = EpicGameSessions(recoverSession: { nil })
+        let epic = EpicModel(directory: directory, keychain: EpicMemoryStore(credentials),
+                             restore: { _ in EpicTestSession(credentials: credentials, games: [owned]) }, gameSessions: sessions)
+        await epic.start()
+        let app = AppModel(directory: directory, steam: SteamModel(directory: directory, gameSessions: SteamGameSessions()),
+                           epic: epic)
+        app.selection = .steam
+        let game = EpicCloudGameFixture(phase: .finalizing, cloudPhase: .conflict)
+
+        let task = try XCTUnwrap(sessions.launch(libraryID: owned.libraryID, accountId: "account", prepare: { game }))
+
+        try await eventually { app.presentedPrompt == .epicCloud }
+        await game.update(phase: .finished, cloudPhase: .pending)
+        await task.value
+        try await eventually { app.presentedPrompt == nil }
     }
 
     func testEpicRosettaUsesSharedInstallationAndWaitsForSupervisorReadiness() async throws {
@@ -507,8 +523,7 @@ final class EpicCloudTests: XCTestCase {
     }
 
     private func makeCloud(_ sessions: EpicGameSessions) -> EpicCloudModel {
-        EpicCloudModel(root: "/fixture-cloud", sessionDirectory: "/fixture-sessions", sessions: sessions,
-                       loadPending: { _, _ in [] })
+        EpicCloudModel(root: "/fixture-cloud", sessionDirectory: "/fixture-sessions", sessions: sessions)
     }
 
     private func eventually(file: StaticString = #filePath, line: UInt = #line,

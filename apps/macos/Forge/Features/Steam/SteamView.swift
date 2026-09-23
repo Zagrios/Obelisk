@@ -6,37 +6,14 @@ struct SteamView: View {
     var body: some View {
         StorefrontPage { titleBar } content: { content }
         .task { await model.start() }
-        .sheet(isPresented: Binding(
-            get: { model.cloud.promptPresented || model.rosetta.prompt != nil },
-            set: { _ in }
-        )) {
-            if model.rosetta.prompt != nil {
-                RosettaPromptView(model: model.rosetta)
-            } else {
-                SteamCloudPromptView(
-                    title: cloudPromptTitle,
-                    message: L10n.string(model.cloud.promptMessage),
-                    busy: model.cloud.promptWorking,
-                    onCancel: { model.cloud.respond(.cancel) },
-                    onChooseLocal: { model.cloud.respond(.local) },
-                    onChooseCloud: { model.cloud.respond(.cloud) }
-                )
-                .interactiveDismissDisabled()
-            }
-        }
         .onChange(of: model.gameSessions.isBusy) { _, isBusy in
-            if !isBusy { model.cloud.resume() }
+            if !isBusy { model.refreshCloudIndicator() }
+        }
+        // The game's guard and launch sync are on disk once it runs.
+        .onChange(of: model.gameSessions.active?.running == true) { _, running in
+            if running { model.refreshCloudIndicator() }
         }
         .errorAlert(L10n.string("ui.store.steam"), message: $model.errorMessage)
-    }
-
-    private var cloudPromptTitle: String {
-        let title = L10n.string("ui.steam.cloud.title")
-        guard let appId = model.cloud.promptAppId else { return title }
-        let name = model.games.first { $0.appId == appId }?.name
-            ?? model.installations.first { $0.appId == appId }?.name
-            ?? String(appId)
-        return "\(title) · \(name)"
     }
 
     private var content: some View {
@@ -46,7 +23,7 @@ struct SteamView: View {
             if model.isConnected {
                 if model.cloud.failurePresented {
                     SteamCloudFailureView(
-                        title: cloudPromptTitle,
+                        title: model.cloudTitle(for: model.cloud.prompt?.appId),
                         message: model.cloud.promptMessage,
                         busy: model.cloud.promptWorking,
                         canLaunchAnyway: model.cloud.canLaunchAnyway,

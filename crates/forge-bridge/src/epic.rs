@@ -200,7 +200,8 @@ impl From<client::GameDetails> for EpicGameDetails {
 
 #[derive(uniffi::Object)]
 pub struct EpicSession {
-    pub(crate) client: client::Client,
+    /// Shared with the Cloud maintenance this session starts.
+    pub(crate) client: Arc<client::Client>,
 }
 
 #[uniffi::export(async_runtime = "tokio")]
@@ -222,14 +223,14 @@ impl EpicSession {
     #[uniffi::constructor]
     pub async fn sign_in(authorization_code: String) -> Result<Arc<Self>, EpicError> {
         Ok(Arc::new(Self {
-            client: client::Client::sign_in(&authorization_code).await?,
+            client: Arc::new(client::Client::sign_in(&authorization_code).await?),
         }))
     }
 
     #[uniffi::constructor]
     pub async fn restore(credentials: EpicCredentials) -> Result<Arc<Self>, EpicError> {
         Ok(Arc::new(Self {
-            client: client::Client::restore(credentials.into()).await?,
+            client: Arc::new(client::Client::restore(credentials.into()).await?),
         }))
     }
 

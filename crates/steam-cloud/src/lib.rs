@@ -22,6 +22,10 @@ pub enum Error {
     Invalid,
     #[error("Cloud storage is already in use")]
     Busy,
+    /// A save path belongs to the other storefront, whose Cloud storage is in
+    /// use, for example by its running game.
+    #[error("Cloud saves are in use by another storefront")]
+    OtherStoreBusy,
     #[error("Cloud content failed verification")]
     Integrity,
     #[error("Cloud state changed since the decision")]

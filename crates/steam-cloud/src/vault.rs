@@ -3,7 +3,7 @@ mod projection;
 
 use crate::*;
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, fs::File, path::PathBuf};
+use std::{collections::BTreeMap, fs::File, path::PathBuf, time::Duration};
 
 pub use projection::{Bindings, SelectedFile};
 
@@ -51,6 +51,13 @@ struct State {
     pending: Option<PendingUpload>,
     applying: Option<projection::Apply>,
     game: Option<String>,
+    /// Last Cloud sync, in Unix seconds. Display only: it never takes part in
+    /// a comparison or decision, since timestamps never pick a winner.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    synced_at: Option<u64>,
+    /// Set by the transition that records a sync, never persisted.
+    #[serde(skip)]
+    stamped: bool,
 }
 
 impl State {
@@ -86,9 +93,11 @@ impl State {
     }
 }
 
-/// An exclusive owner of the archive. The conservative root-wide lock also
-/// serializes shared physical save paths across accounts and Cloud App IDs.
-/// Production lifecycle wiring must retain this owner until finalization ends.
+/// An exclusive owner of one storefront's part of the archive. Each storefront
+/// has its own lock, which serializes that storefront's accounts and Cloud App
+/// IDs. Physical save paths shared across storefronts are serialized by the
+/// separate `owners.lock`, held only while ownership changes. Production
+/// lifecycle wiring must retain this owner until finalization ends.
 pub struct Vault {
     root: PathBuf,
     directory: PathBuf,
@@ -96,18 +105,91 @@ pub struct Vault {
     state: State,
     preferences: Preferences,
     poisoned: bool,
+    owners_wait: Duration,
+    clock: fn() -> u64,
+    syncs: u64,
     _lock: File,
+}
+
+/// What one scope's journal says about its Cloud saves, read without taking
+/// any lock. It can be one write behind a vault that is open elsewhere.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Summary {
+    pub baseline: bool,
+    pub synced_at: Option<u64>,
+    /// A game session's guard is set. Only its supervisor can tell whether
+    /// that game still runs.
+    pub game_session: bool,
+    pub applying: bool,
+    pub pending: Option<UploadState>,
+    /// Local saves differ from the last confirmed Cloud version, or a local
+    /// choice still waits to be sent.
+    pub local_changes: bool,
+    /// The scope of an unfinished account switch anywhere in the archive.
+    pub switching: Option<StoreScope>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UploadState {
+    Queued,
+    MayHaveCommitted,
+}
+
+/// Never opens a `Vault`: that would take the storefront lock and create
+/// directories.
+pub fn peek(root: &std::path::Path, scope: impl Into<StoreScope>) -> Result<Summary> {
+    let scope = scope.into();
+    let state = disk::read::<State>(&scope.directory(root)?.join("state.json"))?;
+    let switching = projection::switching(root)?;
+    let Some(state) = state else {
+        return Ok(Summary {
+            switching,
+            ..Summary::default()
+        });
+    };
+    state.validate(&scope)?;
+    Ok(Summary {
+        baseline: state.baseline.is_some(),
+        synced_at: state.synced_at,
+        game_session: state.game.is_some(),
+        applying: state.applying.is_some(),
+        pending: state.pending.as_ref().map(|pending| {
+            if pending.may_have_committed {
+                UploadState::MayHaveCommitted
+            } else {
+                UploadState::Queued
+            }
+        }),
+        local_changes: state.baseline.as_ref().is_some_and(|base| {
+            state.intent.is_some()
+                || state
+                    .local
+                    .as_ref()
+                    .is_some_and(|local| local != &base.files)
+        }),
+        switching,
+    })
+}
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
 }
 
 impl Vault {
     pub fn open(root: &std::path::Path, scope: impl Into<StoreScope>) -> Result<Self> {
         let root = disk::root(root)?;
-        let lock = disk::lock(&root)?;
-        Self::open_locked(root, scope.into(), lock)
+        let scope = scope.into();
+        scope.validate()?;
+        let lock = disk::store_lock(&root, &scope)?;
+        Self::open_locked(root, scope, lock)
     }
 
-    // The caller already holds this exact root's lock. File::try_clone retains
-    // the same lock ownership while another account's complete set is archived.
+    // The caller already holds this scope's storefront lock. File::try_clone
+    // retains the same lock ownership while another account's complete set is
+    // archived.
     fn open_locked(root: PathBuf, scope: StoreScope, lock: File) -> Result<Self> {
         scope.validate()?;
         for account in scope.account_directories(&root) {
@@ -126,6 +208,8 @@ impl Vault {
                 pending: None,
                 applying: None,
                 game: None,
+                synced_at: None,
+                stamped: false,
             },
         };
         state.validate(&scope)?;
@@ -136,17 +220,23 @@ impl Vault {
             state,
             preferences: Preferences::default(),
             poisoned: false,
+            owners_wait: disk::OWNERS_WAIT,
+            clock: unix_now,
+            syncs: 0,
             _lock: lock,
         })
     }
 
-    fn save(&mut self, next: State) -> Result<()> {
+    fn save(&mut self, mut next: State) -> Result<()> {
         self.healthy()?;
         if let Err(error) = disk::write(&self.directory.join("state.json"), &next) {
             // Rename may already have committed before parent fsync failed.
             // Do not make another decision from the old in-memory state.
             self.poisoned = true;
             return Err(error);
+        }
+        if std::mem::take(&mut next.stamped) {
+            self.syncs += 1;
         }
         self.state = next;
         Ok(())
@@ -161,6 +251,12 @@ impl Vault {
     }
 
     fn idle(&self) -> Result<()> {
+        self.idle_with(None)
+    }
+
+    /// `guard` proves the caller already holds `owners.lock`, so a switch plan
+    /// seen here cannot belong to a switch still running in another process.
+    pub(super) fn idle_with(&self, guard: Option<&disk::OwnersGuard>) -> Result<()> {
         self.healthy()?;
         if self.state.applying.is_some() {
             return Err(Error::Recovery);
@@ -168,8 +264,40 @@ impl Vault {
         if self.state.game.is_some() {
             return Err(Error::Busy);
         }
-        projection::check_switch(&self.root)?;
+        projection::check_switch(&self.root, guard, self.owners_wait)?;
         Ok(())
+    }
+
+    pub(super) fn owners_guard(&self) -> Result<disk::OwnersGuard> {
+        disk::owners_lock(&self.root, self.owners_wait)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_owners_wait(&mut self, wait: Duration) {
+        self.owners_wait = wait;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_clock(&mut self, clock: fn() -> u64) {
+        self.clock = clock;
+    }
+
+    /// The only place a Last Cloud sync is recorded: a transition that has
+    /// just confirmed local and Cloud saves identical.
+    fn synced(&self, next: &mut State) {
+        next.synced_at = Some((self.clock)());
+        next.stamped = true;
+    }
+
+    pub fn synced_at(&self) -> Option<u64> {
+        self.state.synced_at
+    }
+
+    /// How many Last Cloud syncs this vault recorded since it was opened. An
+    /// adapter compares it across an operation; two syncs in the same second
+    /// still differ here.
+    pub fn syncs(&self) -> u64 {
+        self.syncs
     }
 
     pub fn baseline(&self) -> Option<&RemoteView> {
@@ -191,7 +319,7 @@ impl Vault {
     pub fn needs_recovery(&self) -> bool {
         self.poisoned
             || self.state.applying.is_some()
-            || projection::check_switch(&self.root).is_err()
+            || projection::check_switch(&self.root, None, self.owners_wait).is_err()
     }
 
     pub fn set_preferences(&mut self, preferences: Preferences) {
@@ -229,7 +357,16 @@ impl Vault {
     }
 
     pub fn decision(&self, local: &Manifest, remote: &RemoteView) -> Result<Decision> {
-        self.idle()?;
+        self.decision_with(None, local, remote)
+    }
+
+    pub(super) fn decision_with(
+        &self,
+        guard: Option<&disk::OwnersGuard>,
+        local: &Manifest,
+        remote: &RemoteView,
+    ) -> Result<Decision> {
+        self.idle_with(guard)?;
         local.validate()?;
         remote.validate()?;
         Ok(reconcile(
@@ -250,6 +387,11 @@ impl Vault {
         let mut next = self.state.clone();
         next.baseline = Some(remote.clone());
         next.intent = None;
+        // A Cloud choice for an uninstalled game confirms the remote set while
+        // the archived local version differs. That is not a sync.
+        if self.state.local.as_ref() == Some(&remote.files) {
+            self.synced(&mut next);
+        }
         self.save(next)
     }
 
@@ -397,6 +539,7 @@ impl Vault {
         next.baseline = Some(readback.clone());
         next.intent = None;
         next.pending = None;
+        self.synced(&mut next);
         self.save(next)
     }
 
@@ -422,6 +565,7 @@ impl Vault {
             next.baseline = Some(readback.clone());
             next.intent = None;
             next.pending = None;
+            self.synced(&mut next);
         } else {
             next.pending.as_mut().unwrap().may_have_committed = false;
         }
@@ -565,7 +709,15 @@ impl Vault {
     }
 
     pub fn record_local(&mut self, files: &Manifest) -> Result<()> {
-        self.idle()?;
+        self.record_local_with(None, files)
+    }
+
+    pub(super) fn record_local_with(
+        &mut self,
+        guard: Option<&disk::OwnersGuard>,
+        files: &Manifest,
+    ) -> Result<()> {
+        self.idle_with(guard)?;
         self.verify(files)?;
         let mut next = self.state.clone();
         next.local = Some(files.clone());
@@ -582,6 +734,9 @@ fn same_store(a: &StoreScope, b: &StoreScope) -> bool {
         _ => false,
     }
 }
+
+#[cfg(test)]
+mod sync_tests;
 
 #[cfg(test)]
 mod lifecycle_tests {

@@ -1,5 +1,6 @@
 use super::paths::Paths;
 use super::*;
+use crate::cloud_status;
 use serde::de::DeserializeOwned;
 use std::{fs, path::Path};
 use steam_cloud::{Bindings, Manifest, RemoteView, SelectedFile, Vault};
@@ -233,15 +234,17 @@ impl Context {
         }
         Ok(())
     }
-    pub fn token(&self) -> Result<String, Failure> {
-        Ok(steam_cloud::ContentHash::of(&serde_json::to_vec(&(
+    /// What distinguishes one durable sync decision from another, for tests
+    /// that must see whether an operation changed it.
+    #[cfg(test)]
+    pub fn fingerprint(&self) -> serde_json::Value {
+        serde_json::json!([
             self.account_id,
             self.config.app_id,
-            &self.remote,
-            &self.desired,
+            self.remote,
+            self.desired,
             self.installation_removed,
-        ))?)
-        .into())
+        ])
     }
 }
 
@@ -313,19 +316,16 @@ pub fn removed(config: &Config, account: u64) -> Result<(), Failure> {
     context.save()
 }
 
-pub(super) struct PendingStore {
-    pub app_id: u32,
-    pub config: Result<Config, Failure>,
-}
-
-pub(super) fn pending(root: &Path, account: u64) -> Result<Vec<PendingStore>, Failure> {
+/// The apps of this account whose saves still wait to be sent, including an
+/// app whose context cannot be read, so its indicator reports that failure.
+pub(super) fn pending(root: &Path, account: u64) -> Result<Vec<u32>, Failure> {
     safe(root)?;
     let directory = root.join(account.to_string());
     if !directory.exists() {
         return Ok(Vec::new());
     }
     safe(&directory)?;
-    let mut configs = Vec::new();
+    let mut apps = Vec::new();
     for entry in fs::read_dir(directory)? {
         let entry = entry?;
         if !entry.file_type()?.is_dir() {
@@ -340,7 +340,7 @@ pub(super) fn pending(root: &Path, account: u64) -> Result<Vec<PendingStore>, Fa
         };
         let result = (|| {
             let Some(context): Option<Context> = read(&entry.path().join("context.json"))? else {
-                return Ok(None);
+                return Ok(false);
             };
             if context.account_id != account
                 || context.config.app_id != app_id
@@ -348,22 +348,62 @@ pub(super) fn pending(root: &Path, account: u64) -> Result<Vec<PendingStore>, Fa
             {
                 return Err(Failure::Storage);
             }
-            Ok(context.needs_work.then_some(context.config))
+            // Vault work outlives the context flag: an uncertain upload or an
+            // interrupted replacement still needs this game's next sync.
+            let vault = steam_cloud::peek(root, scope(&context.config, account))?;
+            Ok(context.needs_work || vault.pending.is_some() || vault.applying)
         })();
-        match result {
-            Ok(Some(config)) => configs.push(PendingStore {
-                app_id,
-                config: Ok(config),
-            }),
-            Err(error) => configs.push(PendingStore {
-                app_id,
-                config: Err(error),
-            }),
-            Ok(None) => {}
+        if result.unwrap_or(true) {
+            apps.push(app_id);
         }
     }
-    configs.sort_by_key(|store| store.app_id);
-    Ok(configs)
+    apps.sort_unstable();
+    Ok(apps)
+}
+
+/// The Cloud indicators of `app_ids`, plus every other app of this account
+/// with pending work, such as an uninstalled game. Nothing here takes a lock:
+/// a game or maintenance may be writing these journals meanwhile.
+pub fn indicators(
+    root: &Path,
+    account: u64,
+    app_ids: &[u32],
+) -> Result<Vec<(u32, cloud_status::Indicator)>, Failure> {
+    let mut apps: std::collections::BTreeSet<u32> = app_ids.iter().copied().collect();
+    apps.extend(pending(root, account)?);
+    let mut indicators = Vec::new();
+    for app_id in apps {
+        match indicator(root, account, app_id) {
+            Ok(indicator) => indicators.push((app_id, indicator)),
+            Err(error) => eprintln!("Steam Cloud indicator of {app_id} unavailable: {error}"),
+        }
+    }
+    Ok(indicators)
+}
+
+fn indicator(root: &Path, account: u64, app_id: u32) -> Result<cloud_status::Indicator, Failure> {
+    let scope = steam_cloud::StoreScope::from(steam_cloud::Scope {
+        steam_id: account,
+        app_id,
+        cloud_app_id: app_id,
+    });
+    let vault = steam_cloud::peek(root, scope.clone())?;
+    let context = match Context::load_app(root, account, app_id) {
+        Ok(context) => Some(context),
+        // No context: the game has no Steam Cloud or was never checked.
+        Err(Failure::Unsupported) => None,
+        Err(error) => return Err(error),
+    };
+    let journal = context.map_or_else(cloud_status::Journal::default, |context| {
+        cloud_status::Journal {
+            pending: context.needs_work || context.desired.is_some(),
+            uncertain: context.transaction.is_some(),
+            applying: false,
+            installation_removed: context.installation_removed,
+        }
+    });
+    let record = cloud_status::read(root, &scope)?;
+    Ok(cloud_status::indicator(&scope, &vault, &journal, &record))
 }
 
 #[cfg(test)]
@@ -426,7 +466,7 @@ mod removal_tests {
         context.transaction = Some(directory(&config, ACCOUNT).unwrap().join("upload-existing"));
         context.installation_removed = false;
         context.save().unwrap();
-        let before_archive_token = context.token().unwrap();
+        let before_archive = context.fingerprint();
         drop(vault);
 
         fs::write(&save, b"edited before uninstall").unwrap();
@@ -437,8 +477,8 @@ mod removal_tests {
         assert_eq!(archived.transaction, context.transaction);
         assert!(archived.needs_work);
         assert!(archived.installation_removed);
-        let old_token = archived.token().unwrap();
-        assert_ne!(old_token, before_archive_token);
+        let old_fingerprint = archived.fingerprint();
+        assert_ne!(old_fingerprint, before_archive);
         assert!(matches!(removed(&config, ACCOUNT), Err(Failure::Conflict)));
         fs::remove_dir_all(&config.install).unwrap();
 
@@ -451,7 +491,7 @@ mod removal_tests {
         assert_eq!(absent.transaction, context.transaction);
         assert_eq!(absent.remote, context.remote);
         assert!(absent.needs_work);
-        assert_eq!(absent.token().unwrap(), old_token);
+        assert_eq!(absent.fingerprint(), old_fingerprint);
         assert!(!config.install.exists());
         let vault = Vault::open(&config.root, scope(&config, ACCOUNT)).unwrap();
         assert_eq!(vault.pending().unwrap().id, operation);
@@ -472,6 +512,74 @@ mod removal_tests {
             .unwrap()
             .remove("installation_removed");
         assert!(serde_json::from_value::<Context>(incomplete).is_err());
+    }
+
+    #[test]
+    fn uninstall_needs_only_the_steam_storefront_lock() {
+        let temporary = tempfile::tempdir().unwrap();
+        let base = temporary.path().canonicalize().unwrap();
+        let config = Config {
+            root: base.join("cloud"),
+            home: base.join("home"),
+            install: base.join("game"),
+            app_id: 42,
+        };
+        for path in [&config.root, &config.home, &config.install] {
+            crate::files::private_directory(path).unwrap();
+        }
+        fs::write(config.install.join("slot.sav"), b"progress").unwrap();
+        let metadata = super::tests::save_rule("", "*.sav", "0");
+        let listing = CloudListing {
+            steam_id: ACCOUNT,
+            app_id: config.app_id,
+            change_number: 0,
+            files: Vec::new(),
+        };
+        let epic_game = Vault::open(
+            &config.root,
+            steam_cloud::EpicScope {
+                account_id: "0123456789abcdef0123456789abcdef".into(),
+                namespace: "namespace".into(),
+                app_name: "game".into(),
+            },
+        )
+        .unwrap();
+        archive_with_rules(&config, metadata, listing).unwrap();
+        archive(&config, ACCOUNT).unwrap();
+        let other_steam_game = Vault::open(
+            &config.root,
+            steam_cloud::Scope {
+                steam_id: ACCOUNT,
+                app_id: 7,
+                cloud_app_id: 7,
+            },
+        )
+        .unwrap();
+        assert!(matches!(archive(&config, ACCOUNT), Err(Failure::Busy)));
+        fs::remove_dir_all(&config.install).unwrap();
+        assert!(matches!(removed(&config, ACCOUNT), Err(Failure::Busy)));
+        drop(other_steam_game);
+
+        removed(&config, ACCOUNT).unwrap();
+
+        assert!(
+            Context::load(&config, ACCOUNT)
+                .unwrap()
+                .unwrap()
+                .installation_removed
+        );
+        drop(epic_game);
+    }
+
+    #[test]
+    fn cloud_failures_name_the_storefront_that_holds_the_saves() {
+        assert!(matches!(
+            Failure::from(steam_cloud::Error::OtherStoreBusy),
+            Failure::SharedSaves
+        ));
+        assert_eq!(Failure::SharedSaves.key(), "backend.cloud.sharedSavesInUse");
+        assert!(!Failure::SharedSaves.retryable());
+        assert!(!Failure::SharedSaves.skippable());
     }
 
     #[test]

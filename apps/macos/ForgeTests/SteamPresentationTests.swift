@@ -817,31 +817,108 @@ final class SteamPresentationTests: XCTestCase {
     }
 
     @MainActor
-    func testPostGameConflictPresentsImmediatelyWithoutInlineMessageOrNetworkReplay() async throws {
+    func testPostGameConflictPresentsImmediatelyWithoutInlineMessage() async throws {
         let game = RecoveredGameFixture(appID: 620)
         let fixture = try await launchFixture(verify: false, game: game)
         defer { fixture.cleanUp() }
         let model = fixture.model
         model.primaryAction()
         try await eventually { model.gameSessions.active?.running == true }
-        await game.update(phase: .finalizing, cloudPhase: .conflict,
-                          cloudError: "backend.steam.cloud.conflict", decisionToken: "captured-conflict")
+        await game.update(phase: .finalizing, cloudPhase: .conflict, cloudError: "backend.steam.cloud.conflict",
+                          decisionID: 4, allowedChoices: [.local, .cloud, .cancel])
         try await eventually { model.gameSessions.active?.cloud.phase == .conflict }
 
-        XCTAssertTrue(model.cloud.promptPresented, "Detection must present the sheet before maintenance reconnects")
+        XCTAssertTrue(model.cloud.promptPresented)
         XCTAssertFalse(model.cloud.failurePresented)
-        XCTAssertNil(model.cloud.message(for: 620), "The conflict belongs only in its sheet")
 
+        model.cloud.respond(.cancel)
+        try await eventually { !model.cloud.promptBusy }
+        XCTAssertFalse(model.cloud.promptPresented)
+        let choices = await game.cloudChoices
+        XCTAssertEqual(choices.map(\.choice), [.cancel])
+        await game.update(cloudPhase: .pending, cloudError: "backend.steam.cloud.conflict")
         await game.finish()
         try await eventually { !model.gameSessions.isBusy }
-        XCTAssertTrue(model.cloud.promptPresented)
-        XCTAssertFalse(model.cloud.promptWorking, "The captured decision needs no preliminary network replay")
-        XCTAssertEqual(model.cloud.deferredPrompt?.decisionToken, "captured-conflict")
+        XCTAssertFalse(model.cloud.promptPresented, "A finished session never reopens the sheet by itself")
         XCTAssertNil(model.errorMessage)
-        model.cloud.respond(.cancel)
-        XCTAssertFalse(model.cloud.promptPresented)
-        model.cloud.resume()
-        XCTAssertFalse(model.cloud.promptPresented, "A dismissed terminal snapshot must not reopen the sheet")
+    }
+
+    @MainActor
+    func testCloudMaintenanceHoldsTheReservationAndTheSyncMenuFollowsItsRules() async throws {
+        let services = CloudServicesFixture()
+        services.steamIndicator = CloudIndicator(state: .unavailable, gameSession: false, syncedAt: nil,
+                                                 pendingUpload: false, installationRemoved: false)
+        let game = RecoveredGameFixture(appID: 620)
+        let fixture = try await launchFixture(verify: false, game: game, cloudServices: services.steam)
+        defer { fixture.cleanUp() }
+        let model = fixture.model
+        try await eventually { model.cloudIndicator?.value == L10n.string("ui.cloud.indicator.unavailable") }
+        XCTAssertTrue(model.canSyncCloud, "Cloud found unavailable can be checked again")
+        XCTAssertTrue(model.primaryActionAvailable)
+
+        model.syncCloud()
+
+        XCTAssertTrue(model.cloud.isMaintaining)
+        XCTAssertEqual(services.steamMaintenance.last?.request.appId, 620)
+        XCTAssertNotNil(services.steamMaintenance.last?.request.install)
+        XCTAssertFalse(model.primaryActionAvailable, "Maintenance holds the game's Reservation")
+        XCTAssertFalse(model.canUninstallSelectedGame)
+        XCTAssertFalse(model.canSyncCloud)
+        XCTAssertEqual(model.cloudIndicator?.value, L10n.string("ui.cloud.indicator.syncing"))
+        services.steamMaintenance.last?.attempt.finish(.unavailable)
+        try await eventually { !model.cloud.isMaintaining }
+        XCTAssertTrue(model.primaryActionAvailable)
+        XCTAssertTrue(model.canSyncCloud)
+
+        model.primaryAction()
+        try await eventually { model.gameSessions.active?.running == true }
+        XCTAssertFalse(model.canSyncCloud, "A running Steam game keeps Steam Cloud maintenance closed")
+        await game.finish()
+        try await eventually { !model.gameSessions.isBusy }
+        XCTAssertTrue(model.canSyncCloud)
+        model.signOut()
+        XCTAssertFalse(model.canSyncCloud)
+        XCTAssertNil(model.cloudIndicator)
+    }
+
+    @MainActor
+    func testAFailedSyncShowsNoBannerAndSyncNowRetries() async throws {
+        let services = CloudServicesFixture()
+        let fixture = try await launchFixture(verify: false, cloudServices: services.steam)
+        defer { fixture.cleanUp() }
+        let model = fixture.model
+        model.syncCloud()
+
+        services.steamMaintenance.last?.attempt.finish(.failed, error: "backend.steam.cloud.network")
+
+        try await eventually { !model.cloud.isMaintaining }
+        XCTAssertFalse(model.cloud.failurePresented)
+        XCTAssertTrue(model.canSyncCloud, "Sync now is the retry")
+        model.syncCloud()
+        XCTAssertEqual(services.steamMaintenance.count, 2)
+    }
+
+    @MainActor
+    func testACloudQuestionAppearsOverTheWholeAppWhateverTabIsOpen() async throws {
+        let services = CloudServicesFixture()
+        let fixture = try await launchFixture(verify: false, cloudServices: services.steam)
+        defer { fixture.cleanUp() }
+        let app = AppModel(directory: fixture.root, defaults: fixture.preferences, steam: fixture.model,
+                           epic: EpicModel(directory: fixture.root, gameSessions: EpicGameSessions(recoverSession: { nil })))
+        app.selection = .epic
+        XCTAssertNil(app.presentedPrompt)
+
+        fixture.model.syncCloud()
+        let attempt = try XCTUnwrap(services.steamMaintenance.last?.attempt)
+        attempt.publish(.conflict, decisionId: 1, choices: [.local, .cloud, .cancel])
+
+        try await eventually { app.presentedPrompt == .steamCloud }
+        app.selection = .recent
+        XCTAssertEqual(app.presentedPrompt, .steamCloud, "The question does not wait for the Steam tab")
+        fixture.model.cloud.respond(.cancel)
+        XCTAssertEqual(attempt.answers.map(\.1), [.cancel])
+        attempt.finish(.cancelled)
+        try await eventually { app.presentedPrompt == nil }
     }
 
     @MainActor
@@ -1091,7 +1168,7 @@ final class SteamPresentationTests: XCTestCase {
     }
 
     @MainActor
-    private func launchFixture(verify: Bool? = nil, needsVerification: Bool? = nil, failVerification: Bool = false, game: RecoveredGameFixture? = nil, failLaunch: Bool = false, sessions: SteamGameSessions? = nil, accountID: UInt64 = 42) async throws -> LaunchFixture {
+    private func launchFixture(verify: Bool? = nil, needsVerification: Bool? = nil, failVerification: Bool = false, game: RecoveredGameFixture? = nil, failLaunch: Bool = false, sessions: SteamGameSessions? = nil, accountID: UInt64 = 42, cloudServices: SteamCloudServices = .live) async throws -> LaunchFixture {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let parent = root.appending(path: "Installed games")
         let installedDirectory = parent.appending(path: "steam-620-macos")
@@ -1131,7 +1208,7 @@ final class SteamPresentationTests: XCTestCase {
             XCTFail("A confirmed local launch must not recover another session")
             return nil
         })
-        let model = SteamModel(directory: root, keychain: credentialStore, connect: { _ in session }, news: { _ in [] }, beginLogin: { _ in throw SteamError.Failure(reason: "Fixture: sign-in is offline in tests") }, localeIdentifier: "fr-FR", preferences: preferences, gameSessions: gameSessions)
+        let model = SteamModel(directory: root, keychain: credentialStore, connect: { _ in session }, news: { _ in [] }, beginLogin: { _ in throw SteamError.Failure(reason: "Fixture: sign-in is offline in tests") }, localeIdentifier: "fr-FR", preferences: preferences, gameSessions: gameSessions, cloudServices: cloudServices)
         await model.start()
         model.open(fixtureGames[0])
         try await eventually { model.details != nil }

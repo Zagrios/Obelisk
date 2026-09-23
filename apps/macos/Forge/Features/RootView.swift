@@ -55,6 +55,41 @@ struct RootView: View {
         .onChange(of: model.presentedFriends?.account, initial: true) { _, account in
             friendsAvatars.activate(account: account)
         }
+        .sheet(isPresented: Binding(get: { model.presentedPrompt != nil }, set: { _ in })) {
+            prompt.interactiveDismissDisabled()
+        }
         .errorAlert(L10n.string("ui.common.error"), message: $model.errorMessage)
+    }
+
+    @ViewBuilder private var prompt: some View {
+        switch model.presentedPrompt {
+        case .steamRosetta:
+            RosettaPromptView(model: model.steam.rosetta)
+        case .steamCloud:
+            let cloud = model.steam.cloud
+            SteamCloudPromptView(
+                title: model.steam.cloudTitle(for: cloud.promptAppId),
+                message: L10n.string(cloud.promptMessage),
+                busy: cloud.promptWorking,
+                onCancel: { cloud.respond(.cancel) },
+                onChooseLocal: { cloud.respond(.local) },
+                onChooseCloud: { cloud.respond(.cloud) }
+            )
+        case .epicRosetta:
+            RosettaPromptView(model: model.epic.rosetta, storefront: "epic")
+        case .epicCloud:
+            let cloud = model.epic.cloud
+            SteamCloudPromptView(
+                title: model.epic.cloudTitle(for: cloud.promptLibraryID),
+                message: cloud.promptMessage,
+                busy: cloud.promptWorking,
+                onCancel: { cloud.respond(.cancel) },
+                onChooseLocal: { cloud.respond(.local) },
+                onChooseCloud: { cloud.respond(.cloud) },
+                storefront: "epic"
+            )
+        case nil:
+            EmptyView()
+        }
     }
 }

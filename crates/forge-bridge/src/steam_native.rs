@@ -159,7 +159,6 @@ pub struct SteamGameSnapshot {
     pub cloud_phase: SteamCloudPhase,
     pub cloud_decision_id: u64,
     pub cloud_error: Option<String>,
-    pub cloud_decision_token: Option<String>,
     pub cloud_allowed_choices: Vec<SteamCloudChoice>,
     pub connection: SteamSupervisorConnection,
     pub host: SteamHostState,
@@ -196,7 +195,6 @@ impl From<steam_runtime::supervisor::Snapshot> for SteamGameSnapshot {
             cloud_phase: s.cloud.phase.into(),
             cloud_decision_id: s.cloud.id,
             cloud_error: s.cloud.error,
-            cloud_decision_token: s.cloud.decision_token,
             cloud_allowed_choices: s
                 .cloud
                 .allowed_choices
@@ -350,110 +348,6 @@ impl From<SteamCloudConfiguration> for steam_runtime::cloud::Config {
             install: config.install.into(),
             app_id: config.app_id,
         }
-    }
-}
-
-#[derive(uniffi::Record)]
-pub struct SteamCloudPending {
-    pub app_id: u32,
-    pub phase: SteamCloudPhase,
-    pub error: Option<String>,
-    pub decision_token: String,
-}
-
-/// One authenticated account's bounded maintenance. Cancellation revokes every
-/// future network step; dropping a UI observer never revokes a game supervisor.
-#[derive(uniffi::Object)]
-pub struct SteamCloudMaintenance {
-    credentials: steam_runtime::protocol::Credentials,
-    control: Arc<steam_runtime::cloud::Control>,
-    operation: std::sync::Mutex<()>,
-}
-
-#[uniffi::export(async_runtime = "tokio")]
-impl SteamCloudMaintenance {
-    #[uniffi::constructor]
-    pub fn new(credentials: SteamCredentials) -> Arc<Self> {
-        Arc::new(Self {
-            control: Arc::new(steam_runtime::cloud::Control::new(
-                credentials.steam_id,
-                |_| {},
-            )),
-            credentials: steam_runtime::protocol::Credentials {
-                steam_id: credentials.steam_id,
-                account_name: credentials.account_name,
-                refresh_token: credentials.refresh_token,
-            },
-            operation: std::sync::Mutex::new(()),
-        })
-    }
-    pub fn cancel(&self) {
-        self.control.cancel();
-    }
-    pub async fn resume(
-        self: Arc<Self>,
-        root: String,
-        session_directory: String,
-        helper: String,
-        excluded_app_ids: Vec<u32>,
-    ) -> Result<Vec<SteamCloudPending>, SteamError> {
-        tokio::task::spawn_blocking(move || {
-            let _operation = self
-                .operation
-                .try_lock()
-                .map_err(|_| steam_runtime::Error::SessionBusy)?;
-            let idle = steam_runtime::supervisor::Client::idle_guard(
-                std::path::Path::new(&session_directory),
-                std::path::Path::new(&helper),
-            )?;
-            Ok(steam_runtime::cloud::resume(
-                std::path::Path::new(&root),
-                &self.credentials,
-                self.control.clone(),
-                &idle,
-                &excluded_app_ids,
-            )?
-            .into_iter()
-            .map(|(app_id, status, decision_token)| SteamCloudPending {
-                app_id,
-                phase: status.phase.into(),
-                error: status.error,
-                decision_token,
-            })
-            .collect())
-        })
-        .await
-        .map_err(|_| steam_runtime::Error::StartFailed)?
-    }
-    pub async fn resolve(
-        self: Arc<Self>,
-        root: String,
-        app_id: u32,
-        choice: SteamCloudChoice,
-        decision_token: String,
-    ) -> Result<SteamCloudPending, SteamError> {
-        tokio::task::spawn_blocking(move || {
-            let _operation = self
-                .operation
-                .try_lock()
-                .map_err(|_| steam_runtime::Error::SessionBusy)?;
-            let (status, decision_token) = steam_runtime::cloud::resolve(
-                std::path::Path::new(&root),
-                app_id,
-                &self.credentials,
-                self.control.clone(),
-                choice.into(),
-                &decision_token,
-            )?;
-            Ok(SteamCloudPending {
-                app_id,
-                phase: status.phase.into(),
-                error: status.error,
-                decision_token,
-            })
-        })
-        .await
-        .map_err(|_| steam_runtime::Error::StartFailed)?
     }
 }
 
