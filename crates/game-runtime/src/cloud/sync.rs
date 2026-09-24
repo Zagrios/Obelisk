@@ -640,25 +640,11 @@ impl<S: Storefront> CloudSync<S> {
 
     fn reconcile_previous(&mut self, current: &RemoteView, settled: bool) -> Outcome<S> {
         self.control.check()?;
-        let pending = self
-            .vault
-            .pending()
-            .ok_or_else(S::Failure::recovery)?
-            .clone();
-        let authorization = self.vault.authorize(self.store.account())?;
-        if settled {
-            self.vault
-                .reconcile_pending(&pending.id, authorization, true, current)?;
-            if self.vault.pending().is_some() {
-                self.vault
-                    .resolve_pending_conflict(&pending.id, current, current, false)?;
-            }
-        } else {
-            // Keep the old confirmed baseline and conflict choice. Never mark
-            // the unanswered request acknowledged or replay it.
-            self.vault
-                .recompare_pending(&pending.id, authorization, current)?;
+        if self.vault.pending().is_none() {
+            return Err(S::Failure::recovery());
         }
+        self.vault
+            .settle_pending(self.store.account(), current, settled)?;
         self.store.reconciled()
     }
 

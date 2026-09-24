@@ -1,5 +1,7 @@
 pub(crate) mod disk;
 mod projection;
+#[cfg(any(test, feature = "testing"))]
+mod testing;
 
 use crate::*;
 use serde::{Deserialize, Serialize};
@@ -452,7 +454,63 @@ impl Vault {
         Ok(disk::read(&self.authorization_path())?.unwrap_or(0))
     }
 
-    pub fn queue_upload(
+    /// Sends `desired` over `remote` as one upload. The upload is queued
+    /// first, then `record` persists what the storefront needs to settle it
+    /// if its reply is lost, before it may commit. `send` performs the
+    /// storefront's send after its positive acknowledgement and returns a
+    /// fresh complete readback, staging its bytes in the archive it is given.
+    /// The upload counts only when that readback holds exactly `desired`;
+    /// otherwise it stays pending for [`Vault::settle_pending`].
+    pub async fn upload<T, E: From<Error>>(
+        &mut self,
+        account: impl Into<AccountIdentity>,
+        desired: &Manifest,
+        remote: &RemoteView,
+        adapter: &str,
+        record: impl FnOnce() -> std::result::Result<(), E>,
+        send: impl AsyncFnOnce(&Vault) -> std::result::Result<(RemoteView, T), E>,
+    ) -> std::result::Result<T, E> {
+        let authorization = self.authorize(account)?;
+        let id = self.queue(desired, remote, adapter, authorization)?;
+        record()?;
+        let permit = self.begin(&id, authorization, remote)?;
+        let (readback, value) = send(&*self).await?;
+        self.complete(&permit, true, &readback)?;
+        Ok(value)
+    }
+
+    /// Settles an earlier upload whose outcome was unknown, against a fresh
+    /// complete view. `settled` means the storefront established that the old
+    /// request can no longer commit: the upload then counts if `current`
+    /// holds it, and a deferred conflict is dropped. Otherwise the old request
+    /// is never acknowledged or replayed: only a fresh comparison remains,
+    /// against the confirmed baseline and the player's earlier choice.
+    pub fn settle_pending(
+        &mut self,
+        account: impl Into<AccountIdentity>,
+        current: &RemoteView,
+        settled: bool,
+    ) -> Result<()> {
+        let id = self
+            .state
+            .pending
+            .as_ref()
+            .ok_or(Error::Recovery)?
+            .id
+            .clone();
+        let authorization = self.authorize(account)?;
+        if settled {
+            self.reconcile(&id, authorization, true, current)?;
+            if self.state.pending.is_some() {
+                self.resolve_conflict(&id, current, current, false)?;
+            }
+            Ok(())
+        } else {
+            self.recompare(&id, authorization, current)
+        }
+    }
+
+    fn queue(
         &mut self,
         desired: &Manifest,
         remote: &RemoteView,
@@ -482,7 +540,7 @@ impl Vault {
         Ok(id)
     }
 
-    pub fn begin_upload(
+    fn begin(
         &mut self,
         id: &str,
         authorization: Authorization,
@@ -515,7 +573,7 @@ impl Vault {
 
     /// Requires both the adapter's positive server acknowledgement and a fresh,
     /// complete remote readback. Native admission or an idle flag is insufficient.
-    pub fn complete_upload(
+    fn complete(
         &mut self,
         permit: &UploadPermit,
         server_confirmed: bool,
@@ -546,7 +604,7 @@ impl Vault {
     /// An adapter may settle an ambiguous request only after it has established
     /// that the old transaction can no longer commit. Readback alone cannot
     /// establish this when a server-side batch is still open.
-    pub fn reconcile_pending(
+    fn reconcile(
         &mut self,
         id: &str,
         authorization: Authorization,
@@ -576,7 +634,7 @@ impl Vault {
     /// The next attempt compares against the existing baseline and local choice;
     /// this does not acknowledge or cancel the old server operation. The caller
     /// must stop the old local worker before adopting this retry policy.
-    pub fn recompare_pending(
+    fn recompare(
         &mut self,
         id: &str,
         authorization: Authorization,
@@ -600,7 +658,7 @@ impl Vault {
     /// Resolve a deferred conflict only after any prior transaction is settled.
     /// Choosing Cloud clears the upload; the local snapshot stays intact until
     /// the caller stages and applies the chosen remote set.
-    pub fn resolve_pending_conflict(
+    fn resolve_conflict(
         &mut self,
         id: &str,
         shown: &RemoteView,
@@ -737,6 +795,8 @@ fn same_store(a: &StoreScope, b: &StoreScope) -> bool {
 
 #[cfg(test)]
 mod sync_tests;
+#[cfg(test)]
+mod upload_tests;
 
 #[cfg(test)]
 mod lifecycle_tests {

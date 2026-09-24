@@ -26,6 +26,7 @@ forge-core.workspace = true
 
 [dev-dependencies]
 sha1.workspace = true
+cloud-vault = { workspace = true, features = ["testing"] }
 
 [features]
 packaging = []

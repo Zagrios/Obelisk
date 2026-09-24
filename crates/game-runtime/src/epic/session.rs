@@ -263,23 +263,23 @@ impl<R: CloudRemote> Storefront for Adapter<R> {
         let revision = full.revision;
         let files = upload_files(vault, &rules, full.files, local)?;
         control.check()?;
-        let authorization = vault.authorize(self.account.as_str())?;
-        let id = vault.queue_upload(local, remote, "epic-egs-cloud", authorization)?;
-        let permit = vault.begin_upload(&id, authorization, remote)?;
-        let verified = self
-            .api
-            .cloud_upload(
-                self.cloud_game(),
-                &rules,
-                &files,
-                &revision,
-                control.cancellation(),
+        let (api, game) = (&self.api, self.cloud_game());
+        vault
+            .upload(
+                self.account.as_str(),
+                local,
+                remote,
+                "epic-egs-cloud",
+                || Ok(()),
+                async |vault| {
+                    let verified = api
+                        .cloud_upload(game, &rules, &files, &revision, control.cancellation())
+                        .await?;
+                    control.check()?;
+                    Ok((stage_remote(vault, &rules, &verified)?, ()))
+                },
             )
-            .await?;
-        control.check()?;
-        let readback = stage_remote(vault, &rules, &verified)?;
-        vault.complete_upload(&permit, true, &readback)?;
-        Ok(())
+            .await
     }
 }
 

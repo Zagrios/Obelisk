@@ -355,33 +355,47 @@ impl<R: CloudRemote> Storefront for Adapter<R> {
             uploads,
             deletes,
         )?;
-        let authorization = vault.authorize(self.credentials.steam_id)?;
-        let id = vault.queue_upload(local, remote, "steam-cm-autocloud", authorization)?;
-        let context = self.context_mut()?;
-        context.transaction = Some(transaction.directory().to_path_buf());
-        context.save()?;
-        let permit = vault.begin_upload(&id, authorization, remote)?;
         let paths = self.context()?.paths()?;
-        let mut files = Manifest::default();
-        let listing = cm
-            .upload_verified(&mut transaction, |file, bytes| {
-                if paths.existing_file(file)?.is_some() {
-                    let version = vault
-                        .stage(&bytes, file.platforms)
-                        .map_err(|_| steam_kit::cloud::CloudError::Storage)?;
-                    files.0.insert(file.name.clone(), version);
-                }
-                Ok(())
-            })
-            .await?;
-        // The adapter read every surviving remote file and checked the complete
-        // listing again. Only that successful receipt publishes staged bytes.
-        let verified = RemoteView {
-            revision: listing.change_number.to_string(),
-            files,
+        let directory = transaction.directory().to_path_buf();
+        let steam_id = self.credentials.steam_id;
+        let record = || {
+            // Settling a lost receipt later needs this transaction.
+            let context = self.context_mut()?;
+            context.transaction = Some(directory);
+            context.save()
         };
-        control.check()?;
-        vault.complete_upload(&permit, true, &verified)?;
+        let (listing, verified) = vault
+            .upload(
+                steam_id,
+                local,
+                remote,
+                "steam-cm-autocloud",
+                record,
+                async |vault| {
+                    let mut files = Manifest::default();
+                    let listing = cm
+                        .upload_verified(&mut transaction, |file, bytes| {
+                            if paths.existing_file(file)?.is_some() {
+                                let version = vault
+                                    .stage(&bytes, file.platforms)
+                                    .map_err(|_| steam_kit::cloud::CloudError::Storage)?;
+                                files.0.insert(file.name.clone(), version);
+                            }
+                            Ok(())
+                        })
+                        .await?;
+                    // The adapter read every surviving remote file and checked
+                    // the complete listing again. Only that successful receipt
+                    // publishes staged bytes.
+                    let verified = RemoteView {
+                        revision: listing.change_number.to_string(),
+                        files,
+                    };
+                    control.check()?;
+                    Ok((verified.clone(), (listing, verified)))
+                },
+            )
+            .await?;
         self.context_mut()?.transaction = None;
         self.set_listing(listing, verified, vault)
     }

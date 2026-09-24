@@ -13,5 +13,12 @@ tempfile.workspace = true
 uuid.workspace = true
 sha2 = "0.10"
 
+[features]
+# The individual upload steps, for tests that interrupt an upload between them.
+testing = []
+
+[dev-dependencies]
+cloud-vault = { path = ".", features = ["testing"] }
+
 [lints]
 workspace = true
