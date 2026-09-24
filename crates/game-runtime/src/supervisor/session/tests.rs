@@ -45,9 +45,6 @@ pub(crate) trait Harness: 'static {
     const NAME: &'static str;
     fn account() -> <Self::P as Provider>::Account;
     fn other_account() -> <Self::P as Provider>::Account;
-    fn choice(cloud: bool) -> <Self::P as Provider>::Choice;
-    /// The decision a pending Cloud question waits on.
-    fn question(record: &Record<Self::P>) -> Option<u64>;
     /// Writes this storefront's handoff for a launch.
     fn handoff(
         directory: &Path,
@@ -67,6 +64,19 @@ pub(crate) trait Harness: 'static {
     /// A running record in the format and under the names the previous
     /// build used.
     fn previous_build_record(id: &str, live: &Identity, socket: &Path) -> serde_json::Value;
+}
+
+/// The decision a pending Cloud question waits on.
+fn question<P: Provider>(record: &Record<P>) -> Option<u64> {
+    (!record.cloud.allowed_choices.is_empty()).then_some(record.cloud.decision_id)
+}
+
+fn choice(cloud: bool) -> crate::cloud::Choice {
+    if cloud {
+        crate::cloud::Choice::Cloud
+    } else {
+        crate::cloud::Choice::Local
+    }
 }
 
 /// Events the fakes of every storefront record, in the order they occur.
@@ -757,14 +767,10 @@ pub(crate) fn a_journal_failure_before_spawn_never_runs_the_target<H: Harness>()
         ask: true,
         ..script(QUICK)
     });
-    let asked = run.until(|r| H::question(r).is_some());
+    let asked = run.until(|r| question(r).is_some());
     fs::set_permissions(&run.sessions, fs::Permissions::from_mode(0o500)).unwrap();
     run.client
-        .choose(
-            &H::account(),
-            H::question(&asked).unwrap(),
-            H::choice(false),
-        )
+        .choose(&H::account(), question(&asked).unwrap(), choice(false))
         .unwrap();
     run.wait_for("exit-code");
     fs::set_permissions(&run.sessions, fs::Permissions::from_mode(0o700)).unwrap();
@@ -788,8 +794,8 @@ pub(crate) fn cloud_answers_bind_to_the_session_account_and_decision<H: Harness>
         ask: true,
         ..script(QUICK)
     });
-    let decision = H::question(&run.until(|r| H::question(r).is_some())).unwrap();
-    let cloud = H::choice(true);
+    let decision = question(&run.until(|r| question(r).is_some())).unwrap();
+    let cloud = choice(true);
     assert!(
         run.client
             .choose(&H::other_account(), decision, cloud)

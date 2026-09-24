@@ -25,7 +25,7 @@ pub(super) struct Session<R: CloudRemote> {
     context: Context,
     vault: Vault,
     api: Arc<R>,
-    control: Arc<dyn CloudChannel>,
+    control: Arc<Control>,
     shown: Option<(RemoteView, Manifest)>,
     offline: bool,
     /// How the current operation ended without a sync, for the status file.
@@ -41,11 +41,14 @@ fn mark(config: &Configuration, account: &str, change: impl FnOnce(&mut cloud_st
 }
 
 impl<R: CloudRemote> Session<R> {
+    /// `launching` is a launch check: only it may offer Retry or Launch
+    /// anyway when the Cloud rules cannot be read.
     pub async fn new(
         config: Configuration,
         account: String,
         api: Arc<R>,
-        control: Arc<dyn CloudChannel>,
+        control: Arc<Control>,
+        launching: bool,
     ) -> Result<Option<Self>> {
         config.validate(&account)?;
         store::safe(&config.root)?;
@@ -56,7 +59,9 @@ impl<R: CloudRemote> Session<R> {
         let mut vault = Vault::open(&config.root, config.scope(&account))?;
         let saved = Context::load(&config, &account)?;
         let (rules, offline) =
-            match configuration_rules(&config, saved.as_ref(), api.as_ref(), &control).await {
+            match configuration_rules(&config, saved.as_ref(), api.as_ref(), &control, launching)
+                .await
+            {
                 Ok(rules) => rules,
                 Err(error) => {
                     if !has_pending_work(&vault, saved.as_ref()) {
@@ -82,12 +87,12 @@ impl<R: CloudRemote> Session<R> {
             if has_saved_state(&vault, saved.as_ref()) {
                 return Err(Error::Unsupported);
             }
-            control.show(CloudPhase::Unsupported, None)?;
+            control.show(CloudPhase::Unsupported, None);
             return Ok(None);
         };
         if !supports_rules(&config, &account, &rules, &vault, saved.as_ref())? {
             unsupported();
-            control.show(CloudPhase::Unsupported, None)?;
+            control.show(CloudPhase::Unsupported, None);
             return Ok(None);
         }
         mark(&config, &account, cloud_status::available);
@@ -161,7 +166,8 @@ impl<R: CloudRemote> Session<R> {
         self.recover_dead_owner(alive)?;
         if self.offline {
             self.capture_offline()?;
-            return self.control.show(CloudPhase::Pending, None);
+            self.control.show(CloudPhase::Pending, None);
+            return Ok(());
         }
         self.run(true).await
     }
@@ -189,7 +195,7 @@ impl<R: CloudRemote> Session<R> {
         self.capture_exit()?;
         if self.control.cancellation().is_cancelled() {
             self.vault.revoke()?;
-            self.control.show(CloudPhase::Pending, None)?;
+            self.control.show(CloudPhase::Pending, None);
             return Ok(());
         }
         self.run(false).await
@@ -241,7 +247,8 @@ impl<R: CloudRemote> Session<R> {
     pub fn aborted(&mut self, id: &str) -> Result<()> {
         self.vault.game_exited(id)?;
         self.capture_exit()?;
-        self.control.show(CloudPhase::Pending, None)
+        self.control.show(CloudPhase::Pending, None);
+        Ok(())
     }
 
     /// Only the matching session's actual exit may clear its game guard. The
@@ -269,15 +276,6 @@ impl<R: CloudRemote> Session<R> {
         capture_exit(&mut self.vault, &mut self.context)
     }
 
-    async fn ask(
-        &self,
-        phase: CloudPhase,
-        error: Option<String>,
-        choices: Vec<Choice>,
-    ) -> Result<Choice> {
-        ask(&self.control, phase, error, choices).await
-    }
-
     async fn run(&mut self, launching: bool) -> Result<()> {
         let mut budget = RetryBudget::new(Instant::now());
         let mut last = Error::Failed;
@@ -286,13 +284,13 @@ impl<R: CloudRemote> Session<R> {
             self.control.check()?;
             let remaining = match budget.poll(Instant::now()) {
                 Retry::Wait(wait) => {
-                    pause(&self.control, wait).await?;
+                    self.control.wait(wait).await?;
                     continue;
                 }
                 Retry::Defer => {
                     if !launching {
                         self.control
-                            .show(CloudPhase::Pending, Some(last.to_string()))?;
+                            .show(CloudPhase::Pending, Some(last.to_string()));
                         return Err(last);
                     }
                     let answer = deferred_choice(&self.control, &last, retryable(&last)).await;
@@ -304,7 +302,8 @@ impl<R: CloudRemote> Session<R> {
                         }
                         _ => {
                             self.capture_offline()?;
-                            return self.control.show(CloudPhase::Pending, None);
+                            self.control.show(CloudPhase::Pending, None);
+                            return Ok(());
                         }
                     }
                 }
@@ -317,7 +316,7 @@ impl<R: CloudRemote> Session<R> {
                     CloudPhase::Syncing
                 },
                 None,
-            )?;
+            );
             let result = tokio::time::timeout(remaining, self.cycle(launching, choice.take()))
                 .await
                 .unwrap_or(Err(Error::Failed));
@@ -328,11 +327,8 @@ impl<R: CloudRemote> Session<R> {
                         && matches!(error, Error::Epic(EpicError::CloudConflict)) =>
                 {
                     let result = self
-                        .ask(
-                            CloudPhase::Conflict,
-                            Some(error.to_string()),
-                            vec![Choice::Local, Choice::Cloud, Choice::Cancel],
-                        )
+                        .control
+                        .ask(Question::Conflict, Some(error.to_string()))
                         .await;
                     match result {
                         Ok(answer @ (Choice::Local | Choice::Cloud)) => {
@@ -490,7 +486,8 @@ impl<R: CloudRemote> Session<R> {
                 CloudPhase::Synced
             },
             None,
-        )
+        );
+        Ok(())
     }
 
     async fn upload(
@@ -779,20 +776,20 @@ fn indicator(
 pub async fn maintain(
     config: Configuration,
     api: Arc<EpicClient>,
-    channel: Arc<MaintenanceChannel>,
+    control: Arc<Control>,
     idle: &IdleGuard,
 ) -> Result<()> {
-    maintain_with(config, api, channel, &|id| idle.session_alive(id)).await
+    maintain_with(config, api, control, &|id| idle.session_alive(id)).await
 }
 
 pub(crate) async fn maintain_with<R: CloudRemote>(
     config: Configuration,
     api: Arc<R>,
-    channel: Arc<dyn CloudChannel>,
+    control: Arc<Control>,
     alive: &SessionAlive<'_>,
 ) -> Result<()> {
     let account = api.account_id().await?;
-    match Session::new(config, account, api, channel).await? {
+    match Session::new(config, account, api, control, false).await? {
         Some(mut session) => session.maintain(alive).await,
         // Unsupported rules were reported, and recorded as unavailable.
         None => Ok(()),
@@ -913,50 +910,28 @@ fn recover_pending(vault: &Vault, context: &mut Context) -> Result<()> {
     Ok(())
 }
 
-/// Pace a retry, but let cancellation cut the wait short.
-async fn pause(control: &Arc<dyn CloudChannel>, wait: Duration) -> Result<()> {
-    tokio::select! {
-        _ = tokio::time::sleep(wait) => Ok(()),
-        _ = control.cancellation().cancelled() => Err(Error::Cancelled),
-    }
-}
-
-/// The prompt shown once a retry budget is spent. Returns only `Retry` or
-/// `LaunchAnyway`; anything else — including a revoked account — is a cancel.
+/// The question asked once a retry budget is spent. Returns only `Retry` or
+/// `LaunchAnyway`; anything else, including a revoked account, is a cancel.
 async fn deferred_choice(
-    control: &Arc<dyn CloudChannel>,
+    control: &Control,
     last: &Error,
     allow_launch_anyway: bool,
 ) -> Result<Choice> {
-    let mut choices = vec![Choice::Retry, Choice::Cancel];
-    if allow_launch_anyway {
-        choices.push(Choice::LaunchAnyway);
-    }
-    match ask(control, CloudPhase::Failed, Some(last.to_string()), choices).await? {
+    let question = Question::Failed {
+        launch_anyway: allow_launch_anyway,
+    };
+    match control.ask(question, Some(last.to_string())).await? {
         choice @ (Choice::Retry | Choice::LaunchAnyway) => Ok(choice),
         _ => Err(Error::Cancelled),
     }
-}
-
-/// The operator prompt always crosses to a blocking thread; the channel
-/// parks until the UI answers, revokes the account or cancels.
-async fn ask(
-    control: &Arc<dyn CloudChannel>,
-    phase: CloudPhase,
-    error: Option<String>,
-    choices: Vec<Choice>,
-) -> Result<Choice> {
-    let owner = control.clone();
-    tokio::task::spawn_blocking(move || owner.question(phase, error, choices))
-        .await
-        .map_err(|_| Error::Session)?
 }
 
 async fn configuration_rules(
     config: &Configuration,
     saved: Option<&Context>,
     api: &impl CloudRemote,
-    control: &Arc<dyn CloudChannel>,
+    control: &Control,
+    launching: bool,
 ) -> Result<(Option<CloudRules>, bool)> {
     let mut budget = RetryBudget::new(Instant::now());
     let mut last = Error::Failed;
@@ -964,12 +939,12 @@ async fn configuration_rules(
         control.check()?;
         let remaining = match budget.poll(Instant::now()) {
             Retry::Wait(wait) => {
-                pause(control, wait).await?;
+                control.wait(wait).await?;
                 continue;
             }
             Retry::Defer => {
                 // Cloud maintenance asks only about conflicts.
-                if !control.launching() {
+                if !launching {
                     return Err(last);
                 }
                 let offer_launch = retryable(&last) && saved.is_some();

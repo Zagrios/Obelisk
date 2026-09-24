@@ -1,12 +1,11 @@
 //! Epic Cloud sync through the session interface. An in-memory Epic Cloud
 //! stands in for the network.
 use super::{
-    fake::{Call, FakeCloud, LaunchChannel},
+    fake::{Call, FakeCloud},
     *,
 };
-use crate::epic::MaintenanceChannel;
 use crate::supervisor::client::no_other_session;
-use std::fs;
+use std::{fs, time::Duration};
 
 pub(crate) const ACCOUNT: &str = "0123456789abcdef0123456789abcdef";
 
@@ -14,7 +13,7 @@ pub(crate) struct Game {
     _temporary: tempfile::TempDir,
     pub config: Configuration,
     pub cloud: Arc<FakeCloud>,
-    pub control: Arc<LaunchChannel>,
+    pub control: Arc<Control>,
 }
 
 pub(crate) fn rules() -> CloudRules {
@@ -50,7 +49,7 @@ pub(crate) fn game() -> Game {
         fs::create_dir_all(directory).unwrap();
     }
     Game {
-        control: LaunchChannel::new(),
+        control: Arc::new(Control::new(|_| {})),
         cloud: FakeCloud::new(ACCOUNT, Some(rules())),
         config,
         _temporary: temporary,
@@ -68,6 +67,7 @@ impl Game {
             ACCOUNT.into(),
             Arc::clone(&self.cloud),
             self.control.clone(),
+            true,
         )
         .await
         .unwrap()
@@ -75,7 +75,7 @@ impl Game {
     }
 
     pub fn cloud_phase(&self) -> CloudPhase {
-        self.control.phase()
+        self.control.status().phase
     }
 
     /// A first launch that finds both sides equal and records the baseline.
@@ -92,12 +92,17 @@ impl Game {
 
 /// Answers the next Cloud question offering `choice`, as the UI would. A
 /// question already shown when this starts is an older one.
-pub(crate) fn answer(control: &Arc<LaunchChannel>, choice: Choice) -> std::thread::JoinHandle<()> {
+pub(crate) fn answer(control: &Arc<Control>, choice: Choice) -> std::thread::JoinHandle<()> {
     let control = Arc::clone(control);
-    let shown = control.decision_id();
+    let shown = control.status().decision_id;
     std::thread::spawn(move || {
         let deadline = Instant::now() + Duration::from_secs(5);
-        while !control.answer_after(shown, choice) {
+        loop {
+            let status = control.status();
+            if status.decision_id > shown && status.allowed_choices.contains(&choice) {
+                control.answer(status.decision_id, choice).unwrap();
+                return;
+            }
             assert!(
                 Instant::now() < deadline,
                 "no Cloud question offered {choice:?}"
@@ -210,6 +215,7 @@ async fn unsupported_epic_cloud_rules_are_unavailable_until_supported_rules_retu
         ACCOUNT.into(),
         Arc::clone(&game.cloud),
         game.control.clone(),
+        true,
     )
     .await
     .unwrap();
@@ -351,15 +357,12 @@ async fn uninstall_archive_needs_only_the_epic_storefront_lock() {
     drop((steam_game, other_epic_game));
 }
 
-fn channel() -> Arc<MaintenanceChannel> {
-    Arc::new(MaintenanceChannel::new(|_| {}))
+fn channel() -> Arc<Control> {
+    Arc::new(Control::new(|_| {}))
 }
 
 /// Answers the next maintenance question offering `choice`, as the UI would.
-fn answer_maintenance(
-    channel: &Arc<MaintenanceChannel>,
-    choice: Choice,
-) -> std::thread::JoinHandle<()> {
+fn answer_maintenance(channel: &Arc<Control>, choice: Choice) -> std::thread::JoinHandle<()> {
     let channel = Arc::clone(channel);
     let shown = channel.status().decision_id;
     std::thread::spawn(move || {
@@ -379,13 +382,13 @@ fn answer_maintenance(
     })
 }
 
-async fn maintain(game: &Game, channel: &Arc<MaintenanceChannel>) -> Result<()> {
+async fn maintain(game: &Game, channel: &Arc<Control>) -> Result<()> {
     maintain_beside(game, channel, &no_other_session).await
 }
 
 async fn maintain_beside(
     game: &Game,
-    channel: &Arc<MaintenanceChannel>,
+    channel: &Arc<Control>,
     alive: &SessionAlive<'_>,
 ) -> Result<()> {
     // A maintenance never waits on a question it should not ask.
@@ -394,7 +397,7 @@ async fn maintain_beside(
         maintain_with(
             game.config.clone(),
             Arc::clone(&game.cloud),
-            channel.clone() as Arc<dyn CloudChannel>,
+            channel.clone(),
             alive,
         ),
     )
@@ -421,7 +424,7 @@ async fn maintenance_of_a_synced_epic_game_confirms_it_without_launching() {
 
     maintain(&game, &channel).await.unwrap();
 
-    assert_eq!(channel.status().cloud_phase, CloudPhase::Synced);
+    assert_eq!(channel.status().phase, CloudPhase::Synced);
     assert_eq!(game.cloud.uploads(), 0);
     assert_eq!(record(&game).problem, None);
 }
@@ -552,7 +555,7 @@ async fn maintenance_reports_unsupported_epic_rules_as_unavailable() {
 
     maintain(&game, &channel).await.unwrap();
 
-    assert_eq!(channel.status().cloud_phase, CloudPhase::Unsupported);
+    assert_eq!(channel.status().phase, CloudPhase::Unsupported);
 }
 
 #[tokio::test]

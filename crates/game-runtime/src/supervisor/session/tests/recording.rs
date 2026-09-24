@@ -11,18 +11,6 @@ pub(crate) struct Game {
     name: String,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) enum Answer {
-    Local,
-    Cloud,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct Question {
-    decision_id: u64,
-    allowed_choices: Vec<Answer>,
-}
-
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Failure {
     #[error("fixture.cancelled")]
@@ -42,8 +30,6 @@ impl From<Error> for Failure {
 impl Provider for Recording {
     type Account = u64;
     type Store = Game;
-    type Cloud = Question;
-    type Choice = Answer;
     type Error = Failure;
     const SUPERVISE: &'static str = "unused";
     const CANCELLED: &'static [&'static str] = &["fixture.cancelled"];
@@ -94,12 +80,6 @@ impl Harness for Recording {
     fn other_account() -> u64 {
         ACCOUNT + 1
     }
-    fn choice(cloud: bool) -> Answer {
-        if cloud { Answer::Cloud } else { Answer::Local }
-    }
-    fn question(record: &Record<Recording>) -> Option<u64> {
-        (!record.cloud.allowed_choices.is_empty()).then_some(record.cloud.decision_id)
-    }
     fn handoff(
         directory: &Path,
         sessions: &Path,
@@ -130,12 +110,6 @@ impl Harness for Gated {
     }
     fn other_account() -> u64 {
         ACCOUNT + 1
-    }
-    fn choice(cloud: bool) -> Answer {
-        Recording::choice(cloud)
-    }
-    fn question(record: &Record<Recording>) -> Option<u64> {
-        Recording::question(record)
     }
     fn handoff(
         directory: &Path,
@@ -187,13 +161,6 @@ impl<const BEGIN: bool> Launch for Recorder<BEGIN> {
         ))
     }
 
-    fn channel(&self, session: &Arc<Session<Recording>>) -> Arc<dyn Channel<Recording>> {
-        Arc::new(Recorded {
-            directory: self.directory.clone(),
-            session: Arc::downgrade(session),
-        })
-    }
-
     async fn authenticate(&mut self, _: &Arc<Session<Recording>>) -> Result<(), Failure> {
         record(&self.directory, "authenticate");
         Ok(())
@@ -210,17 +177,13 @@ impl<const BEGIN: bool> Launch for Recorder<BEGIN> {
             hold(&self.directory, "release-cloud", || session.check()).await?;
         }
         if self.script.ask {
-            let decision_id = session.questions().next();
-            session.update(|r| {
-                r.cloud = Question {
-                    decision_id,
-                    allowed_choices: vec![Answer::Local, Answer::Cloud],
-                }
-            })?;
-            hold(&self.directory, "answer", || session.check()).await?;
-            let answer = fs::read_to_string(self.directory.join("answer")).unwrap();
-            record(&self.directory, &format!("answered:{answer}"));
-            session.update(|r| r.cloud = Question::default())?;
+            let cloud = session.cloud();
+            let answer = cloud
+                .ask(crate::cloud::Question::Conflict, None)
+                .await
+                .map_err(|_| Failure::Cancelled)?;
+            record(&self.directory, &format!("answered:{answer:?}"));
+            cloud.show(crate::cloud::Phase::Ready, None);
         }
         Ok(())
     }
@@ -278,29 +241,6 @@ impl<const BEGIN: bool> Launch for Recorder<BEGIN> {
     fn rosetta(helper: &Path) -> Result<bool, Error> {
         Ok(helper.exists())
     }
-}
-
-struct Recorded {
-    directory: PathBuf,
-    session: std::sync::Weak<Session<Recording>>,
-}
-impl Channel<Recording> for Recorded {
-    fn answer(&self, decision_id: u64, choice: Answer) -> Result<(), Error> {
-        let session = self.session.upgrade().ok_or(Error::InvalidSession)?;
-        let question = session.record().cloud;
-        if question.decision_id != decision_id || !question.allowed_choices.contains(&choice) {
-            return Err(Error::InvalidSession);
-        }
-        // Published atomically: the waiting step never reads a partial answer.
-        let partial = self.directory.join("answer.partial");
-        fs::write(&partial, format!("{choice:?}")).unwrap();
-        fs::rename(partial, self.directory.join("answer")).unwrap();
-        Ok(())
-    }
-    fn revoke(&self, _: &u64) -> Result<(), Error> {
-        Ok(())
-    }
-    fn cancel(&self) {}
 }
 
 mod lifecycle_of_the_core {

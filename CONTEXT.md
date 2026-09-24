@@ -30,6 +30,14 @@ _Avoid_: launch, supervisor session
 Synchronizing one game's Cloud saves without launching it, at the player's request. It runs inside Forge, holds the game's Reservation while it runs, and stops if Forge quits.
 _Avoid_: Cloud resume, cloud-only session, background sync
 
+**Cloud sync**:
+One comparison of an account's local saves for a game with its Cloud saves, before a launch, after the game exits, or as Cloud maintenance. It ends with both sides equal, with the player's choice applied, or with work left pending for a later sync.
+_Avoid_: Cloud check, sync cycle
+
+**Cloud question**:
+A choice a Cloud sync asks the player: which saves to keep after a conflict, or whether to retry, cancel or launch anyway after a failed launch check. It takes one answer, and closes unanswered when the sync is cancelled, the account is revoked, or nobody answers in time.
+_Avoid_: prompt, Cloud decision
+
 **Account revocation**:
 Signing a storefront account out while its Game sessions may still run. It stops that account's network work and presence, keeps any exit save locally as pending for that account, and never ends a running game.
 _Avoid_: sign-out cancel, logout kill

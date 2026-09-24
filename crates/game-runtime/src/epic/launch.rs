@@ -6,7 +6,7 @@ use crate::supervisor::{
     Error as Core,
     architecture::Architecture,
     client::SessionAlive,
-    session::{self as lifecycle, Channel, Opening, Operation, Prepared, Session},
+    session::{self as lifecycle, Opening, Operation, Prepared, Session},
     storage,
 };
 use epic_kit::{client::LaunchPlan, friends::Activity};
@@ -15,7 +15,6 @@ use std::{
     os::unix::fs::PermissionsExt,
     path::Path,
     process::Command as Process,
-    sync::{OnceLock, Weak},
 };
 
 /// The Epic services a launch uses. Tests replace them.
@@ -32,7 +31,7 @@ pub(crate) trait Services: Sized + Send + Sync + 'static {
         self: &Arc<Self>,
         config: Configuration,
         account_id: String,
-        channel: Arc<dyn CloudChannel>,
+        control: Arc<Control>,
     ) -> Result<Option<Box<dyn EpicCloud>>>;
     fn rosetta(helper: &Path) -> std::result::Result<bool, Core>;
 }
@@ -69,10 +68,10 @@ impl Services for epic_kit::client::Client {
         self: &Arc<Self>,
         config: Configuration,
         account_id: String,
-        channel: Arc<dyn CloudChannel>,
+        control: Arc<Control>,
     ) -> Result<Option<Box<dyn EpicCloud>>> {
         Ok(
-            cloud_session::Session::new(config, account_id, Arc::clone(self), channel)
+            cloud_session::Session::new(config, account_id, Arc::clone(self), control, true)
                 .await?
                 .map(|cloud| Box::new(cloud) as Box<dyn EpicCloud>),
         )
@@ -124,7 +123,6 @@ impl<R: cloud_session::CloudRemote> EpicCloud for cloud_session::Session<R> {
 pub(crate) struct Launch<S: Services = epic_kit::client::Client> {
     request: Request,
     api: Option<Arc<S>>,
-    channel: OnceLock<Arc<EpicChannel>>,
     cloud: Option<Box<dyn EpicCloud>>,
     started: bool,
     activity: Option<Activity>,
@@ -139,11 +137,6 @@ pub(crate) struct Host {
 impl<S: Services> Launch<S> {
     fn api(&self) -> Result<&Arc<S>> {
         self.api.as_ref().ok_or(Error::Session)
-    }
-    fn cloud_channel(&self) -> &Arc<EpicChannel> {
-        self.channel
-            .get()
-            .expect("the channel is set before launch")
     }
 }
 
@@ -171,24 +164,12 @@ impl<S: Services> lifecycle::Launch for Launch<S> {
         let launch = Self {
             request,
             api: None,
-            channel: OnceLock::new(),
             cloud: None,
             started: false,
             activity: None,
             ownership: None,
         };
         Ok((opening, launch))
-    }
-
-    fn channel(&self, session: &Arc<Session<Epic>>) -> Arc<dyn Channel<Epic>> {
-        let channel = Arc::new(EpicChannel {
-            session: Arc::downgrade(session),
-            cancel: CancelToken::new(),
-            answer: Mutex::new(None),
-            revoked: std::sync::atomic::AtomicBool::new(false),
-        });
-        let _ = self.channel.set(channel.clone());
-        channel
     }
 
     async fn authenticate(&mut self, _: &Arc<Session<Epic>>) -> Result<()> {
@@ -199,16 +180,15 @@ impl<S: Services> lifecycle::Launch for Launch<S> {
 
     async fn prepare_cloud(
         &mut self,
-        _: &Arc<Session<Epic>>,
+        session: &Arc<Session<Epic>>,
         alive: &SessionAlive<'_>,
     ) -> Result<()> {
-        let channel = self.cloud_channel().clone() as Arc<dyn CloudChannel>;
         let api = self.api()?.clone();
         self.cloud = api
             .cloud(
                 self.request.config.clone(),
                 self.request.account_id.clone(),
-                channel,
+                session.cloud().clone(),
             )
             .await?;
         if let Some(cloud) = &mut self.cloud {
@@ -217,9 +197,12 @@ impl<S: Services> lifecycle::Launch for Launch<S> {
         Ok(())
     }
 
-    async fn target(&mut self, _: &Arc<Session<Epic>>) -> Result<(Target, Option<Architecture>)> {
+    async fn target(
+        &mut self,
+        session: &Arc<Session<Epic>>,
+    ) -> Result<(Target, Option<Architecture>)> {
         let plan = self.api()?.launch_plan(&self.request.config).await?;
-        self.cloud_channel().check()?;
+        session.cloud().check()?;
         // A fresh plan, after Rosetta was installed, drops the old token.
         let (target, architecture, ownership) = native_target(&plan, &self.request.config)?;
         self.activity = plan.activity;
@@ -271,11 +254,8 @@ impl<S: Services> lifecycle::Launch for Launch<S> {
         }
     }
 
-    fn abort(&mut self, _: &Arc<Session<Epic>>) {
-        let revoked = self
-            .cloud_channel()
-            .revoked
-            .load(std::sync::atomic::Ordering::Acquire);
+    fn abort(&mut self, session: &Arc<Session<Epic>>) {
+        let revoked = session.cloud().revoked();
         if let Some(cloud) = &mut self.cloud {
             cloud.abandoned(&self.request.id, self.started, revoked);
         }
@@ -301,99 +281,6 @@ impl<S: Services> lifecycle::Launch for Launch<S> {
 
     fn rosetta(helper: &Path) -> std::result::Result<bool, Core> {
         S::rosetta(helper)
-    }
-}
-
-/// What EGS Cloud shows and asks during a supervised launch. It journals
-/// through the core session; network work stops on its token.
-pub(crate) struct EpicChannel {
-    session: Weak<Session<Epic>>,
-    cancel: CancelToken,
-    answer: Mutex<Option<(u64, Choice)>>,
-    revoked: std::sync::atomic::AtomicBool,
-}
-impl EpicChannel {
-    fn session(&self) -> Result<Arc<Session<Epic>>> {
-        self.session.upgrade().ok_or(Error::Session)
-    }
-}
-impl CloudChannel for EpicChannel {
-    fn cancellation(&self) -> &CancelToken {
-        &self.cancel
-    }
-    fn launching(&self) -> bool {
-        self.session()
-            .is_ok_and(|session| session.record().phase == Phase::Preparing)
-    }
-    // Observers read the session itself, so a failed journal write hides
-    // nothing: the core fails closed before spawn and finalization goes on.
-    fn show(&self, phase: CloudPhase, error: Option<String>) -> Result<()> {
-        let _ = self.session()?.update(|record| {
-            record.cloud.phase = phase;
-            record.cloud.allowed_choices.clear();
-            record.error = error;
-        });
-        Ok(())
-    }
-    fn question(
-        &self,
-        phase: CloudPhase,
-        error: Option<String>,
-        choices: Vec<Choice>,
-    ) -> Result<Choice> {
-        let session = self.session()?;
-        let decision_id = session.questions().next();
-        *self.answer.lock().unwrap() = None;
-        let _ = session.update(|record| {
-            record.cloud.phase = phase;
-            record.cloud.decision_id = decision_id;
-            record.cloud.allowed_choices = choices;
-            record.error = error;
-        });
-        // Abandoned after its deadline, or once nobody observes the session.
-        let published = Instant::now();
-        loop {
-            self.check()?;
-            if let Some((answered, choice)) = *self.answer.lock().unwrap()
-                && answered == decision_id
-            {
-                let _ = session.update(|record| record.cloud.allowed_choices.clear());
-                return Ok(choice);
-            }
-            if session.questions().abandoned(published) {
-                return Err(Error::Cancelled);
-            }
-            session.wait_while(Duration::from_secs(1), |record| {
-                record.cloud.decision_id == decision_id && !record.cloud.allowed_choices.is_empty()
-            });
-        }
-    }
-}
-impl Channel<Epic> for EpicChannel {
-    fn answer(&self, decision_id: u64, choice: Choice) -> std::result::Result<(), Core> {
-        let session = self.session().map_err(|_| Core::InvalidSession)?;
-        let record = session.record();
-        let mut answer = self.answer.lock().unwrap();
-        if record.cloud.decision_id != decision_id
-            || !record.cloud.allowed_choices.contains(&choice)
-            || answer.is_some_and(|(answered, _)| answered == decision_id)
-        {
-            return Err(Core::InvalidSession);
-        }
-        *answer = Some((decision_id, choice));
-        drop(answer);
-        let _ = session.update(|record| record.cloud.allowed_choices.clear());
-        Ok(())
-    }
-    fn revoke(&self, _: &String) -> std::result::Result<(), Core> {
-        // Cloud network work stops; the exit save stays local and pending.
-        self.revoked
-            .store(true, std::sync::atomic::Ordering::Release);
-        self.cancel.cancel();
-        Ok(())
-    }
-    fn cancel(&self) {
-        self.cancel.cancel();
     }
 }
 

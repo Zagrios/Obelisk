@@ -40,8 +40,6 @@ pub struct Request {
 impl supervisor::Provider for Steam {
     type Account = u64;
     type Store = Store;
-    type Cloud = cloud::Status;
-    type Choice = cloud::Choice;
     type Error = Error;
     const SUPERVISE: &'static str = "supervise";
     const CANCELLED: &'static [&'static str] = &["backend.steam.runtime.cancelled"];

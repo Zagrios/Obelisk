@@ -1,6 +1,6 @@
 //! The Steam launch through the shared lifecycle suite. Its machine and
-//! Steam Cloud are fakes that follow the suite's script; the Cloud control
-//! channel, the handoff and the helper choice are the adapter's own.
+//! Steam Cloud are fakes that follow the suite's script; the handoff, the
+//! native host's interruption and the helper choice are the adapter's own.
 use super::*;
 use crate::supervisor::session::tests::{
     Harness, Script, fixture_directory, hold, inspect, lifecycle_suite, record, target,
@@ -28,17 +28,6 @@ impl Harness for SteamHarness {
     }
     fn other_account() -> u64 {
         ACCOUNT + 1
-    }
-    fn choice(cloud: bool) -> cloud::Choice {
-        if cloud {
-            cloud::Choice::Cloud
-        } else {
-            cloud::Choice::Local
-        }
-    }
-    fn question(record: &Snapshot) -> Option<u64> {
-        (record.cloud.phase == cloud::Phase::Conflict && !record.cloud.allowed_choices.is_empty())
-            .then_some(record.cloud.id)
     }
     fn handoff(
         directory: &Path,
@@ -92,7 +81,7 @@ impl Harness for SteamHarness {
             "exit_code": null,
             "error": null,
             "revision": 3,
-            "cloud": cloud::Status::default(),
+            "cloud": {"phase": "Idle", "id": 0, "error": null, "allowed_choices": []},
             "rosetta": null,
         })
     }
@@ -145,7 +134,7 @@ impl Machine for FakeMac {
         _: cloud::Config,
         _: Credentials,
         _: String,
-        control: Arc<cloud::Control>,
+        control: Arc<crate::cloud::Control>,
     ) -> Result<Box<dyn SteamCloud>, Error> {
         let (directory, script) = fixture_directory();
         Ok(Box::new(FakeCloud {
@@ -162,7 +151,7 @@ impl Machine for FakeMac {
 struct FakeCloud {
     directory: PathBuf,
     script: Script,
-    control: Arc<cloud::Control>,
+    control: Arc<crate::cloud::Control>,
 }
 impl SteamCloud for FakeCloud {
     fn native_storage(&self) -> Result<Option<NativeStorage>, Error> {
@@ -171,15 +160,23 @@ impl SteamCloud for FakeCloud {
     fn prepare<'a>(&'a mut self, _: &'a SessionAlive<'a>) -> Operation<'a, Result<(), Error>> {
         Box::pin(async move {
             record(&self.directory, "cloud.prepare");
-            let check = || self.control.check().map_err(Error::from);
+            let check = || {
+                self.control
+                    .check()
+                    .map_err(|stop| Error::from(cloud::Failure::from(stop)))
+            };
             if self.script.hold_cloud {
                 fs::write(self.directory.join("cloud-ready"), b"").unwrap();
                 hold(&self.directory, "release-cloud", check).await?;
             }
             if self.script.ask {
-                let choice = self.control.ask(cloud::Failure::Conflict).await?;
+                let choice = self
+                    .control
+                    .ask(crate::cloud::Question::Conflict, None)
+                    .await
+                    .map_err(cloud::Failure::from)?;
                 record(&self.directory, &format!("answered:{choice:?}"));
-                self.control.status(cloud::Phase::Ready, None);
+                self.control.show(crate::cloud::Phase::Ready, None);
             }
             Ok(())
         })
@@ -194,7 +191,7 @@ impl SteamCloud for FakeCloud {
                 fs::write(self.directory.join("finish-ready"), b"").unwrap();
                 let _ = hold(&self.directory, "release-finish", || Ok::<_, Error>(())).await;
             }
-            self.control.status(cloud::Phase::Syncing, None);
+            self.control.show(crate::cloud::Phase::Syncing, None);
             record(&self.directory, &format!("cloud.finished:{confirmed}"));
         })
     }

@@ -1,6 +1,6 @@
 //! Presentation of the Rust-owned Epic supervisor and Cloud decisions.
 use crate::{EpicError, EpicSession, RosettaRequest};
-use game_runtime::epic;
+use game_runtime::{cloud, epic};
 use std::{path::Path, sync::Arc};
 
 impl From<epic::Error> for EpicError {
@@ -78,9 +78,8 @@ bridge_enum!(
     Failed
 );
 bridge_enum!(EpicGameFailureReason, FailureReason, Cancelled, Failed);
-bridge_enum!(
-    EpicCloudPhase,
-    CloudPhase,
+#[derive(Clone, Copy, Debug, uniffi::Enum)]
+pub enum EpicCloudPhase {
     Checking,
     Ready,
     Syncing,
@@ -89,17 +88,55 @@ bridge_enum!(
     Pending,
     Disabled,
     Unsupported,
-    Failed
-);
-bridge_enum!(
-    EpicCloudChoice,
-    Choice,
+    Failed,
+}
+impl From<cloud::Phase> for EpicCloudPhase {
+    fn from(phase: cloud::Phase) -> Self {
+        match phase {
+            // Nothing published yet: the launch check is about to start.
+            cloud::Phase::Idle | cloud::Phase::Checking => Self::Checking,
+            cloud::Phase::Ready => Self::Ready,
+            cloud::Phase::Syncing => Self::Syncing,
+            cloud::Phase::Synced => Self::Synced,
+            cloud::Phase::Conflict => Self::Conflict,
+            cloud::Phase::Pending => Self::Pending,
+            cloud::Phase::Disabled => Self::Disabled,
+            cloud::Phase::Unsupported => Self::Unsupported,
+            cloud::Phase::Failed => Self::Failed,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, uniffi::Enum)]
+pub enum EpicCloudChoice {
     Local,
     Cloud,
     Retry,
     Cancel,
-    LaunchAnyway
-);
+    LaunchAnyway,
+}
+impl From<cloud::Choice> for EpicCloudChoice {
+    fn from(choice: cloud::Choice) -> Self {
+        match choice {
+            cloud::Choice::Local => Self::Local,
+            cloud::Choice::Cloud => Self::Cloud,
+            cloud::Choice::Retry => Self::Retry,
+            cloud::Choice::Cancel => Self::Cancel,
+            cloud::Choice::LaunchAnyway => Self::LaunchAnyway,
+        }
+    }
+}
+impl From<EpicCloudChoice> for cloud::Choice {
+    fn from(choice: EpicCloudChoice) -> Self {
+        match choice {
+            EpicCloudChoice::Local => Self::Local,
+            EpicCloudChoice::Cloud => Self::Cloud,
+            EpicCloudChoice::Retry => Self::Retry,
+            EpicCloudChoice::Cancel => Self::Cancel,
+            EpicCloudChoice::LaunchAnyway => Self::LaunchAnyway,
+        }
+    }
+}
 
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct EpicGameSnapshot {
@@ -135,7 +172,8 @@ impl From<epic::Snapshot> for EpicGameSnapshot {
                 .into_iter()
                 .map(Into::into)
                 .collect(),
-            error: s.error,
+            // The Cloud question's message, unless the session itself failed.
+            error: s.error.or(s.cloud.error),
             failure_reason,
             exit_code: s.exit_code,
             revision: s.revision,

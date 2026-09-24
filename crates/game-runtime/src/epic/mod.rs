@@ -2,22 +2,18 @@
 //! answers revision-bound choices; a detached process owns the entire session.
 mod client;
 pub(crate) mod launch;
-mod maintenance;
 mod session;
 
+// A Game session's phase is `Phase`; its Cloud sync's phase is `CloudPhase`.
+use crate::cloud::{Choice, Control, Phase as CloudPhase, Question};
 use crate::supervisor::{self, Record, Target};
 pub use crate::supervisor::{FailureReason, Phase};
 pub use client::start;
 use forge_core::transfer::CancelToken;
 pub use launch::serve;
-pub use maintenance::{MaintenanceChannel, MaintenanceStatus};
 use serde::{Deserialize, Serialize};
 pub use session::{EpicIndicator, archive, indicators, maintain, removed};
-use std::{
-    path::PathBuf,
-    sync::{Arc, Condvar, Mutex},
-    time::{Duration, Instant},
-};
+use std::{path::PathBuf, sync::Arc, time::Instant};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -46,6 +42,12 @@ pub enum Error {
     Vault(cloud_vault::Error),
     #[error("backend.epic.cloud.storage")]
     Io(#[from] std::io::Error),
+}
+/// Revocation also cancels: an Epic sync then ends like any cancellation.
+impl From<crate::cloud::Stop> for Error {
+    fn from(_: crate::cloud::Stop) -> Self {
+        Self::Cancelled
+    }
 }
 impl From<cloud_vault::Error> for Error {
     fn from(error: cloud_vault::Error) -> Self {
@@ -127,28 +129,6 @@ impl Configuration {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
-pub enum CloudPhase {
-    #[default]
-    Checking,
-    Ready,
-    Syncing,
-    Synced,
-    Conflict,
-    Pending,
-    Disabled,
-    Unsupported,
-    Failed,
-}
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub enum Choice {
-    Local,
-    Cloud,
-    Retry,
-    Cancel,
-    LaunchAnyway,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Epic;
 
@@ -158,14 +138,6 @@ pub struct Store {
     pub app_name: String,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Cloud {
-    pub phase: CloudPhase,
-    /// Shared by Cloud questions and the Rosetta requirement.
-    pub decision_id: u64,
-    pub allowed_choices: Vec<Choice>,
-}
-
 pub type Snapshot = Record<Epic>;
 pub type Client = supervisor::Client<Epic>;
 pub type IdleGuard = supervisor::IdleGuard<Epic>;
@@ -173,8 +145,6 @@ pub type IdleGuard = supervisor::IdleGuard<Epic>;
 impl supervisor::Provider for Epic {
     type Account = String;
     type Store = Store;
-    type Cloud = Cloud;
-    type Choice = Choice;
     type Error = Error;
     const SUPERVISE: &'static str = "epic-supervise";
     const CANCELLED: &'static [&'static str] =
@@ -222,24 +192,4 @@ struct Request {
     id: String,
     account_id: String,
     exchange_code: String,
-}
-/// Where an Epic Cloud sync reports its progress and asks the player. A
-/// supervised launch journals it for Forge to observe; Cloud maintenance
-/// keeps it in Forge's memory.
-pub(crate) trait CloudChannel: Send + Sync + 'static {
-    fn cancellation(&self) -> &CancelToken;
-    /// Only a launch may offer Retry or Launch anyway.
-    fn launching(&self) -> bool;
-    fn show(&self, phase: CloudPhase, error: Option<String>) -> Result<()>;
-    /// Blocks until the player answers, the question expires or the sync is
-    /// cancelled.
-    fn question(
-        &self,
-        phase: CloudPhase,
-        error: Option<String>,
-        choices: Vec<Choice>,
-    ) -> Result<Choice>;
-    fn check(&self) -> Result<()> {
-        self.cancellation().check().map_err(|_| Error::Cancelled)
-    }
 }

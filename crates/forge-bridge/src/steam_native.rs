@@ -213,7 +213,7 @@ impl From<game_runtime::steam::Snapshot> for SteamGameSnapshot {
             app_id: s.store.app_id,
             account_id: s.account_id,
             cloud_phase: s.cloud.phase.into(),
-            cloud_decision_id: s.cloud.id,
+            cloud_decision_id: s.cloud.decision_id,
             cloud_error: s.cloud.error,
             cloud_allowed_choices: s
                 .cloud
@@ -301,15 +301,16 @@ pub enum SteamCloudPhase {
     Synced,
 }
 
-impl From<game_runtime::steam::cloud::Phase> for SteamCloudPhase {
-    fn from(phase: game_runtime::steam::cloud::Phase) -> Self {
-        use game_runtime::steam::cloud::Phase;
+impl From<game_runtime::cloud::Phase> for SteamCloudPhase {
+    fn from(phase: game_runtime::cloud::Phase) -> Self {
+        use game_runtime::cloud::Phase;
         match phase {
             Phase::Idle => Self::Idle,
             Phase::Checking => Self::Checking,
             Phase::Conflict => Self::Conflict,
             Phase::Failed => Self::Failed,
-            Phase::Disabled => Self::Disabled,
+            // Steam reports rules it cannot sync as turned off.
+            Phase::Disabled | Phase::Unsupported => Self::Disabled,
             Phase::Ready => Self::Ready,
             Phase::Syncing => Self::Syncing,
             Phase::Pending => Self::Pending,
@@ -327,7 +328,7 @@ pub enum SteamCloudChoice {
     Cloud,
 }
 
-impl From<SteamCloudChoice> for game_runtime::steam::cloud::Choice {
+impl From<SteamCloudChoice> for game_runtime::cloud::Choice {
     fn from(choice: SteamCloudChoice) -> Self {
         match choice {
             SteamCloudChoice::Retry => Self::Retry,
@@ -339,9 +340,9 @@ impl From<SteamCloudChoice> for game_runtime::steam::cloud::Choice {
     }
 }
 
-impl From<game_runtime::steam::cloud::Choice> for SteamCloudChoice {
-    fn from(choice: game_runtime::steam::cloud::Choice) -> Self {
-        use game_runtime::steam::cloud::Choice;
+impl From<game_runtime::cloud::Choice> for SteamCloudChoice {
+    fn from(choice: game_runtime::cloud::Choice) -> Self {
+        use game_runtime::cloud::Choice;
         match choice {
             Choice::Retry => Self::Retry,
             Choice::Cancel => Self::Cancel,

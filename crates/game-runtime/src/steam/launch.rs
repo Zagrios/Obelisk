@@ -7,15 +7,11 @@ use crate::{
         Error as Core,
         architecture::Architecture,
         client::SessionAlive,
-        session::{self, Channel, Opening, Operation, Prepared, Session},
+        session::{self, Opening, Operation, Prepared, Session},
         storage,
     },
 };
-use std::{
-    io::Read,
-    marker::PhantomData,
-    sync::{Arc, OnceLock},
-};
+use std::{io::Read, marker::PhantomData, sync::Arc};
 
 /// What a Steam launch asks of the machine. Tests replace it.
 pub(crate) trait Machine: Send + Sync + 'static {
@@ -32,7 +28,7 @@ pub(crate) trait Machine: Send + Sync + 'static {
         config: cloud::Config,
         credentials: Credentials,
         id: String,
-        control: Arc<cloud::Control>,
+        control: Arc<crate::cloud::Control>,
     ) -> Result<Box<dyn SteamCloud>, Error>;
     fn rosetta(helper: &Path) -> Result<bool, Core>;
 }
@@ -57,7 +53,7 @@ impl Machine for Mac {
         config: cloud::Config,
         credentials: Credentials,
         id: String,
-        control: Arc<cloud::Control>,
+        control: Arc<crate::cloud::Control>,
     ) -> Result<Box<dyn SteamCloud>, Error> {
         Ok(Box::new(cloud::Session::new(
             config,
@@ -102,7 +98,6 @@ pub(crate) struct Launch<M: Machine = Mac> {
     /// Zeroized on drop. Only the host and Steam Cloud receive them.
     credentials: Credentials,
     launch: Arc<crate::Launch>,
-    control: OnceLock<Arc<cloud::Control>>,
     cloud: Option<Box<dyn SteamCloud>>,
     machine: PhantomData<M>,
 }
@@ -143,37 +138,23 @@ impl<M: Machine> session::Launch for Launch<M> {
             launch: Arc::new(crate::Launch::new(credentials.clone())),
             credentials,
             request,
-            control: OnceLock::new(),
             cloud: None,
             machine: PhantomData,
         };
         Ok((opening, launch))
     }
 
-    fn channel(&self, session: &Arc<Session<Steam>>) -> Arc<dyn Channel<Steam>> {
-        let observer = Arc::downgrade(session);
-        let control = Arc::new(cloud::Control::with_questions(
-            self.credentials.steam_id,
-            session.questions().clone(),
-            move |status| {
-                if let Some(session) = observer.upgrade() {
-                    let _ = session.update(|record| record.cloud = status);
-                }
-            },
-        ));
-        let _ = self.control.set(control.clone());
-        Arc::new(SteamChannel {
-            control,
-            launch: self.launch.clone(),
-        })
+    fn interrupt(&self) -> Box<dyn Fn() + Send + Sync> {
+        let launch = self.launch.clone();
+        Box::new(move || launch.cancel())
     }
 
     async fn prepare_cloud(
         &mut self,
-        _: &Arc<Session<Steam>>,
+        session: &Arc<Session<Steam>>,
         alive: &SessionAlive<'_>,
     ) -> Result<(), Error> {
-        let (Some(config), Some(control)) = (self.request.cloud.clone(), self.control.get()) else {
+        let Some(config) = self.request.cloud.clone() else {
             return Ok(());
         };
         // Kept even if preparation fails, so an abandoned launch still
@@ -182,7 +163,7 @@ impl<M: Machine> session::Launch for Launch<M> {
             config,
             self.credentials.clone(),
             self.request.id.clone(),
-            control.clone(),
+            session.cloud().clone(),
         )?);
         cloud.prepare(alive).await
     }
@@ -286,27 +267,6 @@ impl<M: Machine> session::Launch for Launch<M> {
 
     fn rosetta(helper: &Path) -> Result<bool, Core> {
         M::rosetta(helper)
-    }
-}
-
-struct SteamChannel {
-    control: Arc<cloud::Control>,
-    launch: Arc<crate::Launch>,
-}
-impl Channel<Steam> for SteamChannel {
-    fn answer(&self, decision_id: u64, choice: cloud::Choice) -> Result<(), Core> {
-        self.control
-            .respond(decision_id, choice)
-            .map_err(|_| Core::InvalidSession)
-    }
-    fn revoke(&self, account_id: &u64) -> Result<(), Core> {
-        self.control
-            .revoke(*account_id)
-            .map_err(|_| Core::InvalidSession)
-    }
-    fn cancel(&self) {
-        self.launch.cancel();
-        self.control.cancel();
     }
 }
 

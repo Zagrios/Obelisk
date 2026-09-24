@@ -59,16 +59,6 @@ pub(crate) struct Prepared<H> {
     pub environment: std::collections::HashMap<String, String>,
 }
 
-/// Cloud answers, Account revocation and cancellation before spawn reach a
-/// storefront's Cloud work through its channel.
-pub(crate) trait Channel<P: Provider>: Send + Sync {
-    fn answer(&self, decision_id: u64, choice: P::Choice) -> Result<(), Error>;
-    /// Stops the account's network work. The game keeps running.
-    fn revoke(&self, account_id: &P::Account) -> Result<(), Error>;
-    /// Cancels preparation before the game is spawned.
-    fn cancel(&self);
-}
-
 /// A storefront's launch. The core calls it in this order: authentication,
 /// Cloud preparation, target and architecture, the Rosetta gate (then the
 /// target again, once Rosetta was just installed), host preparation, then
@@ -83,7 +73,11 @@ pub(crate) trait Launch: Sized + 'static {
     const BEGIN: bool = false;
 
     fn open(input: &mut dyn Read) -> Result<(Opening<Self::P>, Self), Failure<Self>>;
-    fn channel(&self, session: &Arc<Session<Self::P>>) -> Arc<dyn Channel<Self::P>>;
+    /// Stops the storefront's own preparation outside Cloud, such as Steam's
+    /// native host, when the launch is cancelled or revoked before spawn.
+    fn interrupt(&self) -> Box<dyn Fn() + Send + Sync> {
+        Box::new(|| {})
+    }
     async fn authenticate(
         &mut self,
         _session: &Arc<Session<Self::P>>,
@@ -221,14 +215,16 @@ pub(crate) struct Session<P: Provider> {
     questions: Arc<Questions>,
     presence: Presence,
     rosetta: crate::supervisor::rosetta::Gate,
-    channel: OnceLock<Arc<dyn Channel<P>>>,
+    /// The session's Cloud sync publishes into the record through it.
+    cloud: Arc<crate::cloud::Control>,
+    interrupt: OnceLock<Box<dyn Fn() + Send + Sync>>,
 }
 impl<P: Provider> Session<P> {
     pub(crate) fn record(&self) -> Record<P> {
         self.state.lock().unwrap().record.clone()
     }
-    pub(crate) fn questions(&self) -> &Arc<Questions> {
-        &self.questions
+    pub(crate) fn cloud(&self) -> &Arc<crate::cloud::Control> {
+        &self.cloud
     }
     /// Wakes blocking observers and the Rosetta wait.
     pub(crate) fn notify(&self) {
@@ -260,14 +256,6 @@ impl<P: Provider> Session<P> {
             Ok(())
         }
     }
-    /// Waits while `pending` holds, waking on every change, or `timeout`.
-    pub(crate) fn wait_while(&self, timeout: Duration, pending: impl Fn(&Record<P>) -> bool) {
-        let state = self.state.lock().unwrap();
-        let _ = self
-            .changed
-            .wait_timeout_while(state, timeout, |state| pending(&state.record));
-    }
-
     async fn begun(&self) -> Result<(), Error> {
         let deadline = Instant::now() + BEGIN_DEADLINE;
         loop {
@@ -303,10 +291,13 @@ impl<P: Provider> Session<P> {
             .await
     }
 
-    fn channel(&self) -> &Arc<dyn Channel<P>> {
-        self.channel
-            .get()
-            .expect("the channel is set before listening")
+    /// Stops preparation before spawn: the core, the storefront and Cloud.
+    fn stop_preparation(&self) {
+        self.cancel.cancel();
+        if let Some(interrupt) = self.interrupt.get() {
+            interrupt();
+        }
+        self.cloud.cancel();
     }
 }
 
@@ -356,7 +347,8 @@ pub(crate) fn serve<L: Launch>(
         socket: socket.clone(),
     };
     journal::write(&opening.root, &record)?;
-    let session = Arc::new(Session {
+    let questions = Arc::new(Questions::supervised());
+    let session = Arc::new_cyclic(|session: &std::sync::Weak<Session<L::P>>| Session {
         state: Mutex::new(State {
             record,
             spawned: false,
@@ -368,15 +360,25 @@ pub(crate) fn serve<L: Launch>(
         admission: Mutex::new(()),
         cancel: CancelToken::new(),
         root: opening.root,
-        questions: Arc::new(Questions::supervised()),
+        questions: questions.clone(),
         presence: Presence(Mutex::new(PresenceState::Pending)),
         rosetta: crate::supervisor::rosetta::Gate::new(
             crate::supervisor::rosetta::helper(&opening.helpers),
             L::rosetta,
         ),
-        channel: OnceLock::new(),
+        cloud: Arc::new(crate::cloud::Control::with_questions(questions, {
+            let session = session.clone();
+            // Observers read the session itself, so a failed journal write
+            // hides nothing: the core fails closed before spawn.
+            move |status| {
+                if let Some(session) = session.upgrade() {
+                    let _ = session.update(|record| record.cloud = status);
+                }
+            }
+        })),
+        interrupt: OnceLock::new(),
     });
-    let _ = session.channel.set(launch.channel(&session));
+    let _ = session.interrupt.set(launch.interrupt());
     let finished = Arc::new(AtomicBool::new(false));
     let listening = {
         let session = session.clone();
@@ -660,8 +662,7 @@ fn respond<L: Launch>(mut stream: UnixStream, session: &Session<L::P>) -> Result
             let preparing = !state.spawned;
             drop(state);
             if preparing {
-                session.cancel.cancel();
-                session.channel().cancel();
+                session.stop_preparation();
                 session.notify();
             }
         }
@@ -674,7 +675,10 @@ fn respond<L: Launch>(mut stream: UnixStream, session: &Session<L::P>) -> Result
             if !same(&session.state.lock().unwrap(), &id, Some(&account_id)) {
                 return Err(Error::InvalidSession);
             }
-            session.channel().answer(decision_id, choice)?;
+            session
+                .cloud
+                .answer(decision_id, choice)
+                .map_err(|_| Error::InvalidSession)?;
             session.notify();
         }
         Command::Revoke { id, account_id } => {
@@ -691,11 +695,11 @@ fn respond<L: Launch>(mut stream: UnixStream, session: &Session<L::P>) -> Result
             }
             drop(state);
             if preparing {
-                session.cancel.cancel();
-                session.channel().cancel();
+                session.stop_preparation();
             }
             session.presence.stop();
-            session.channel().revoke(&account_id)?;
+            // Cloud network work stops; the exit save stays local and pending.
+            session.cloud.revoke();
             session.notify();
         }
         Command::ResumeAfterRosetta {

@@ -1,7 +1,6 @@
 //! The Epic launch through the shared lifecycle suite. Its Epic services and
 //! EGS Cloud are fakes that follow the suite's script; the Begin gate, the
-//! Cloud channel, the launch plan's target checks and the handoff are the
-//! adapter's own.
+//! launch plan's target checks and the handoff are the adapter's own.
 use super::*;
 use crate::supervisor::architecture::tests::{ARM64, INTEL, thin};
 use crate::supervisor::session::tests::{
@@ -38,12 +37,6 @@ impl Harness for EpicHarness {
     }
     fn other_account() -> String {
         "f".repeat(32)
-    }
-    fn choice(cloud: bool) -> Choice {
-        if cloud { Choice::Cloud } else { Choice::Local }
-    }
-    fn question(record: &Snapshot) -> Option<u64> {
-        (!record.cloud.allowed_choices.is_empty()).then_some(record.cloud.decision_id)
     }
     fn handoff(
         directory: &Path,
@@ -142,13 +135,13 @@ impl Services for FakeEpic {
         self: &Arc<Self>,
         _: Configuration,
         _: String,
-        channel: Arc<dyn CloudChannel>,
+        control: Arc<Control>,
     ) -> Result<Option<Box<dyn EpicCloud>>> {
         let (directory, script) = fixture_directory();
         Ok(Some(Box::new(FakeCloud {
             directory,
             script,
-            channel,
+            control,
         })))
     }
     fn rosetta(helper: &Path) -> std::result::Result<bool, Core> {
@@ -159,7 +152,7 @@ impl Services for FakeEpic {
 struct FakeCloud {
     directory: PathBuf,
     script: Script,
-    channel: Arc<dyn CloudChannel>,
+    control: Arc<Control>,
 }
 impl EpicCloud for FakeCloud {
     fn prepare<'a>(&'a mut self, _: &'a SessionAlive<'a>) -> Operation<'a, Result<()>> {
@@ -167,21 +160,13 @@ impl EpicCloud for FakeCloud {
             record(&self.directory, "cloud.prepare");
             if self.script.hold_cloud {
                 fs::write(self.directory.join("cloud-ready"), b"").unwrap();
-                hold(&self.directory, "release-cloud", || self.channel.check()).await?;
+                let check = || self.control.check().map_err(Error::from);
+                hold(&self.directory, "release-cloud", check).await?;
             }
             if self.script.ask {
-                let channel = self.channel.clone();
-                let choice = tokio::task::spawn_blocking(move || {
-                    channel.question(
-                        CloudPhase::Conflict,
-                        None,
-                        vec![Choice::Local, Choice::Cloud, Choice::Cancel],
-                    )
-                })
-                .await
-                .map_err(|_| Error::Session)??;
+                let choice = self.control.ask(Question::Conflict, None).await?;
                 record(&self.directory, &format!("answered:{choice:?}"));
-                self.channel.show(CloudPhase::Ready, None)?;
+                self.control.show(CloudPhase::Ready, None);
             }
             Ok(())
         })
@@ -196,10 +181,8 @@ impl EpicCloud for FakeCloud {
                 fs::write(self.directory.join("finish-ready"), b"").unwrap();
                 let _ = hold(&self.directory, "release-finish", || Ok::<_, Error>(())).await;
             }
-            // Like the EGS session, Cloud work stops if its channel fails.
-            if self.channel.show(CloudPhase::Syncing, None).is_ok() {
-                record(&self.directory, &format!("cloud.finished:{confirmed}"));
-            }
+            self.control.show(CloudPhase::Syncing, None);
+            record(&self.directory, &format!("cloud.finished:{confirmed}"));
         })
     }
     fn abandoned(&mut self, _: &str, _: bool, _: bool) {

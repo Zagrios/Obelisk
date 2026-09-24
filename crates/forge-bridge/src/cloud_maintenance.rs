@@ -3,7 +3,7 @@
 //! Swift task cancellation, so an attempt has an explicit revisioned status,
 //! answer and cancel.
 use crate::{EpicCloudConfiguration, EpicError, EpicSession, SteamCredentials, SteamError};
-use game_runtime::{cloud_status, epic, protocol::Credentials, steam::cloud};
+use game_runtime::{cloud, cloud_status, epic, protocol::Credentials, steam};
 use std::{
     path::{Path, PathBuf},
     sync::{Arc, Condvar, Mutex},
@@ -92,13 +92,15 @@ pub fn steam_cloud_indicators(
     account_id: u64,
     app_ids: Vec<u32>,
 ) -> Result<Vec<SteamCloudIndicator>, SteamError> {
-    Ok(cloud::indicators(Path::new(&root), account_id, &app_ids)?
-        .into_iter()
-        .map(|(app_id, indicator)| SteamCloudIndicator {
-            app_id,
-            indicator: indicator.into(),
-        })
-        .collect())
+    Ok(
+        steam::cloud::indicators(Path::new(&root), account_id, &app_ids)?
+            .into_iter()
+            .map(|(app_id, indicator)| SteamCloudIndicator {
+                app_id,
+                indicator: indicator.into(),
+            })
+            .collect(),
+    )
 }
 
 /// Reads journals without any lock. Also lists uninstalled games with pending
@@ -230,14 +232,14 @@ impl Progress {
         status.clone()
     }
 
-    fn steam(&self, status: &cloud::Status) {
+    fn publish(&self, status: &cloud::Status) {
         use cloud::Phase;
         let phase = match status.phase {
             Phase::Idle | Phase::Checking | Phase::Ready => CloudMaintenancePhase::Checking,
             Phase::Syncing | Phase::Pending | Phase::Failed => CloudMaintenancePhase::Syncing,
             Phase::Conflict => CloudMaintenancePhase::Conflict,
             Phase::Synced => CloudMaintenancePhase::Synced,
-            Phase::Disabled => CloudMaintenancePhase::Unavailable,
+            Phase::Disabled | Phase::Unsupported => CloudMaintenancePhase::Unavailable,
         };
         let choices = status
             .allowed_choices
@@ -247,30 +249,6 @@ impl Progress {
                 cloud::Choice::Cloud => Some(CloudMaintenanceChoice::Cloud),
                 cloud::Choice::Cancel => Some(CloudMaintenanceChoice::Cancel),
                 cloud::Choice::Retry | cloud::Choice::LaunchAnyway => None,
-            })
-            .collect();
-        self.show(phase, status.id, choices, status.error.clone());
-    }
-
-    fn epic(&self, status: &epic::MaintenanceStatus) {
-        use epic::CloudPhase;
-        let phase = match status.cloud_phase {
-            CloudPhase::Checking | CloudPhase::Ready => CloudMaintenancePhase::Checking,
-            CloudPhase::Syncing | CloudPhase::Pending | CloudPhase::Failed => {
-                CloudMaintenancePhase::Syncing
-            }
-            CloudPhase::Conflict => CloudMaintenancePhase::Conflict,
-            CloudPhase::Synced => CloudMaintenancePhase::Synced,
-            CloudPhase::Disabled | CloudPhase::Unsupported => CloudMaintenancePhase::Unavailable,
-        };
-        let choices = status
-            .allowed_choices
-            .iter()
-            .filter_map(|choice| match choice {
-                epic::Choice::Local => Some(CloudMaintenanceChoice::Local),
-                epic::Choice::Cloud => Some(CloudMaintenanceChoice::Cloud),
-                epic::Choice::Cancel => Some(CloudMaintenanceChoice::Cancel),
-                epic::Choice::Retry | epic::Choice::LaunchAnyway => None,
             })
             .collect();
         self.show(phase, status.decision_id, choices, status.error.clone());
@@ -284,35 +262,17 @@ trait Controls: Send + Sync {
     fn cancel(&self);
 }
 
-struct SteamControls(Arc<cloud::Control>);
-
-impl Controls for SteamControls {
+impl Controls for cloud::Control {
     fn answer(&self, decision_id: u64, choice: CloudMaintenanceChoice) -> bool {
         let choice = match choice {
             CloudMaintenanceChoice::Local => cloud::Choice::Local,
             CloudMaintenanceChoice::Cloud => cloud::Choice::Cloud,
             CloudMaintenanceChoice::Cancel => cloud::Choice::Cancel,
         };
-        self.0.respond(decision_id, choice).is_ok()
+        cloud::Control::answer(self, decision_id, choice).is_ok()
     }
     fn cancel(&self) {
-        self.0.cancel();
-    }
-}
-
-struct EpicControls(Arc<epic::MaintenanceChannel>);
-
-impl Controls for EpicControls {
-    fn answer(&self, decision_id: u64, choice: CloudMaintenanceChoice) -> bool {
-        let choice = match choice {
-            CloudMaintenanceChoice::Local => epic::Choice::Local,
-            CloudMaintenanceChoice::Cloud => epic::Choice::Cloud,
-            CloudMaintenanceChoice::Cancel => epic::Choice::Cancel,
-        };
-        self.0.answer(decision_id, choice).is_ok()
-    }
-    fn cancel(&self) {
-        self.0.cancel();
+        cloud::Control::cancel(self);
     }
 }
 
@@ -321,7 +281,7 @@ impl Controls for EpicControls {
 #[derive(uniffi::Object)]
 pub struct CloudMaintenance {
     progress: Arc<Progress>,
-    controls: Box<dyn Controls>,
+    controls: Arc<dyn Controls>,
 }
 
 #[uniffi::export(async_runtime = "tokio")]
@@ -362,9 +322,7 @@ pub fn start_steam_cloud_maintenance(
 ) -> Arc<CloudMaintenance> {
     let progress = Arc::new(Progress::new());
     let publish = Arc::clone(&progress);
-    let control = Arc::new(cloud::Control::new(credentials.steam_id, move |status| {
-        publish.steam(&status)
-    }));
+    let control = Arc::new(cloud::Control::new(move |status| publish.publish(&status)));
     let credentials = Credentials {
         steam_id: credentials.steam_id,
         account_name: credentials.account_name,
@@ -377,7 +335,7 @@ pub fn start_steam_cloud_maintenance(
     });
     Arc::new(CloudMaintenance {
         progress,
-        controls: Box::new(SteamControls(control)),
+        controls: control,
     })
 }
 
@@ -395,20 +353,20 @@ fn steam_maintenance(
     };
     let root = PathBuf::from(request.root);
     let target = match request.install {
-        Some(install) => cloud::MaintenanceTarget::Installed(cloud::Config {
+        Some(install) => steam::cloud::MaintenanceTarget::Installed(steam::cloud::Config {
             root,
             home: request.home.into(),
             install: install.into(),
             app_id: request.app_id,
         }),
-        None => cloud::MaintenanceTarget::Uninstalled {
+        None => steam::cloud::MaintenanceTarget::Uninstalled {
             root,
             app_id: request.app_id,
         },
     };
-    match cloud::maintain(target, credentials, control, &idle) {
+    match steam::cloud::maintain(target, credentials, control, &idle) {
         Ok(()) => Outcome::Done,
-        Err(cloud::Failure::Cancelled) => Outcome::Cancelled,
+        Err(steam::cloud::Failure::Cancelled) => Outcome::Cancelled,
         Err(failure) => Outcome::Failed(failure.key().into()),
     }
 }
@@ -422,12 +380,10 @@ impl EpicSession {
     ) -> Arc<CloudMaintenance> {
         let progress = Arc::new(Progress::new());
         let publish = Arc::clone(&progress);
-        let channel = Arc::new(epic::MaintenanceChannel::new(move |status| {
-            publish.epic(&status)
-        }));
+        let control = Arc::new(cloud::Control::new(move |status| publish.publish(&status)));
         let (client, worker, finished) = (
             Arc::clone(&self.client),
-            Arc::clone(&channel),
+            Arc::clone(&control),
             Arc::clone(&progress),
         );
         tokio::spawn(async move {
@@ -436,7 +392,7 @@ impl EpicSession {
         });
         Arc::new(CloudMaintenance {
             progress,
-            controls: Box::new(EpicControls(channel)),
+            controls: control,
         })
     }
 }
@@ -444,7 +400,7 @@ impl EpicSession {
 async fn epic_maintenance(
     config: epic::Configuration,
     client: Arc<epic_kit::client::Client>,
-    channel: Arc<epic::MaintenanceChannel>,
+    control: Arc<cloud::Control>,
 ) -> Outcome {
     let (sessions, helper) = (config.session_directory.clone(), config.helper.clone());
     let idle = tokio::task::spawn_blocking(move || epic::Client::idle_guard(&sessions, &helper))
@@ -452,7 +408,7 @@ async fn epic_maintenance(
         .map_err(|_| epic::Error::Session)
         .and_then(|idle| idle);
     let result = match idle {
-        Ok(idle) => epic::maintain(config, client, channel, &idle).await,
+        Ok(idle) => epic::maintain(config, client, control, &idle).await,
         Err(error) => Err(error),
     };
     match result {
@@ -487,7 +443,7 @@ mod tests {
         let recorded = Arc::new(Recorded::default());
         let attempt = CloudMaintenance {
             progress: Arc::new(Progress::new()),
-            controls: Box::new(Arc::clone(&recorded)),
+            controls: Arc::new(Arc::clone(&recorded)),
         };
 
         assert!(attempt.answer(4, CloudMaintenanceChoice::Local));
@@ -515,9 +471,9 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(50));
         assert!(!waiting.is_finished());
 
-        progress.steam(&cloud::Status {
+        progress.publish(&cloud::Status {
             phase: cloud::Phase::Conflict,
-            id: 9,
+            decision_id: 9,
             error: Some("backend.steam.cloud.conflict".into()),
             allowed_choices: vec![
                 cloud::Choice::Local,
@@ -553,11 +509,9 @@ mod tests {
     #[test]
     fn unusable_cloud_stays_the_result_of_a_finished_attempt() {
         let progress = Progress::new();
-        progress.epic(&epic::MaintenanceStatus {
-            cloud_phase: epic::CloudPhase::Unsupported,
-            decision_id: 0,
-            error: None,
-            allowed_choices: Vec::new(),
+        progress.publish(&cloud::Status {
+            phase: cloud::Phase::Unsupported,
+            ..Default::default()
         });
         progress.finish(Outcome::Done);
         assert_eq!(

@@ -4,6 +4,7 @@ use super::{
     fake::{FakeSteamCloud, SLOT},
     *,
 };
+use crate::cloud::Status;
 use std::fs;
 
 pub(crate) const ACCOUNT: u64 = 0x0110_0001_0000_002a;
@@ -37,7 +38,7 @@ pub(crate) fn game() -> Game {
     }
     Game {
         cloud: FakeSteamCloud::new(ACCOUNT, config.app_id),
-        control: Arc::new(Control::new(ACCOUNT, |_| {})),
+        control: Arc::new(Control::new(|_| {})),
         config,
         _temporary: temporary,
     }
@@ -60,7 +61,7 @@ impl Game {
     }
 
     pub fn status(&self) -> Status {
-        self.control.state.lock().unwrap().status.clone()
+        self.control.status()
     }
 
     /// A first launch that finds both sides equal and records the baseline.
@@ -75,13 +76,13 @@ impl Game {
 /// question already shown when this starts is an older one.
 pub(crate) fn answer(control: &Arc<Control>, choice: Choice) -> std::thread::JoinHandle<()> {
     let control = Arc::clone(control);
-    let shown = control.state.lock().unwrap().status.id;
+    let shown = control.status().decision_id;
     std::thread::spawn(move || {
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         loop {
-            let status = control.state.lock().unwrap().status.clone();
-            if status.id > shown && status.allowed_choices.contains(&choice) {
-                control.respond(status.id, choice).unwrap();
+            let status = control.status();
+            if status.decision_id > shown && status.allowed_choices.contains(&choice) {
+                control.answer(status.decision_id, choice).unwrap();
                 return;
             }
             assert!(
@@ -144,7 +145,7 @@ async fn a_launch_revoked_before_spawn_withdraws_its_cloud_authorization() {
     let mut session = game.session();
     session.prepare(&no_other_session).await.unwrap();
     let before = format!("{:?}", session.vault.authorize(ACCOUNT).unwrap());
-    game.control.revoke(ACCOUNT).unwrap();
+    game.control.revoke();
 
     session.aborted();
 

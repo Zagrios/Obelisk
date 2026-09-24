@@ -1,4 +1,5 @@
 //! Safe launcher-side supervision. Native ABI code lives in the separate helper.
+pub mod cloud;
 pub mod cloud_status;
 pub mod epic;
 mod files;
@@ -18,7 +19,6 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use steam::cloud;
 
 /// Every supervisor entry point drives its async work from one blocking thread.
 pub(crate) fn executor() -> std::io::Result<Executor> {
@@ -79,7 +79,7 @@ pub fn sha(path: &std::path::Path) -> std::io::Result<String> {
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("{0}")]
-    Cloud(cloud::Failure),
+    Cloud(steam::cloud::Failure),
     #[error("backend.steam.runtime.sessionBusy")]
     SessionBusy,
     #[error("backend.steam.runtime.cancelled")]

@@ -8,7 +8,6 @@ trait Sample: Provider {
     fn account() -> Self::Account;
     fn other_account() -> Self::Account;
     fn store() -> Self::Store;
-    fn choice() -> Self::Choice;
 }
 impl Sample for Steam {
     fn account() -> u64 {
@@ -23,9 +22,6 @@ impl Sample for Steam {
             host: crate::HostState::Online,
         }
     }
-    fn choice() -> crate::steam::cloud::Choice {
-        crate::steam::cloud::Choice::Local
-    }
 }
 impl Sample for Epic {
     fn account() -> String {
@@ -39,9 +35,6 @@ impl Sample for Epic {
             namespace: "namespace".into(),
             app_name: "app".into(),
         }
-    }
-    fn choice() -> crate::epic::Choice {
-        crate::epic::Choice::Local
     }
 }
 
@@ -115,7 +108,7 @@ impl<P: Sample> Fixture<P> {
             account_id: P::account(),
             store: P::store(),
             phase,
-            cloud: P::Cloud::default(),
+            cloud: Default::default(),
             exit_code: None,
             error: None,
             failure_reason: None,
@@ -358,7 +351,7 @@ fn commands_check_the_account_and_the_supervisor_before_sending<P: Sample>() {
                 id: fixture.record.id.clone(),
                 account_id: P::account(),
                 decision_id: 7,
-                choice: P::choice(),
+                choice: crate::cloud::Choice::Local,
             }
         } else {
             Command::Revoke {

@@ -84,24 +84,6 @@ pub trait Provider: Clone + std::fmt::Debug + PartialEq + Eq + Send + Sync + 'st
         + DeserializeOwned
         + Send
         + Sync;
-    /// The storefront's Cloud progress and pending question.
-    type Cloud: Clone
-        + std::fmt::Debug
-        + Default
-        + PartialEq
-        + Eq
-        + Serialize
-        + DeserializeOwned
-        + Send
-        + Sync;
-    type Choice: Copy
-        + std::fmt::Debug
-        + PartialEq
-        + Eq
-        + Serialize
-        + DeserializeOwned
-        + Send
-        + Sync;
     /// The errors the storefront's callers expect. Core failures map into
     /// it; its display is a localization key.
     type Error: From<Error> + std::fmt::Debug + std::fmt::Display + Send;
@@ -130,7 +112,7 @@ pub struct Record<P: Provider> {
     pub account_id: P::Account,
     pub store: P::Store,
     pub phase: Phase,
-    pub cloud: P::Cloud,
+    pub cloud: crate::cloud::Status,
     pub exit_code: Option<i32>,
     pub error: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -210,7 +192,7 @@ pub(crate) enum Command<P: Provider> {
         id: String,
         account_id: P::Account,
         decision_id: u64,
-        choice: P::Choice,
+        choice: crate::cloud::Choice,
     },
     Revoke {
         id: String,

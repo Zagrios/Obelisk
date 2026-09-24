@@ -10,13 +10,11 @@ pub(crate) use session::Session;
 pub use session::maintain;
 pub use store::{archive, archive_with_rules, indicators, removed};
 
+use crate::cloud::{Choice, Control, Phase, Question, Stop};
 use serde::{Deserialize, Serialize};
 use std::{
     path::PathBuf,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -34,40 +32,6 @@ pub struct Config {
 pub enum MaintenanceTarget {
     Installed(Config),
     Uninstalled { root: PathBuf, app_id: u32 },
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Phase {
-    #[default]
-    Idle,
-    Checking,
-    Conflict,
-    Failed,
-    Disabled,
-    Ready,
-    Syncing,
-    Pending,
-    Synced,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Status {
-    pub phase: Phase,
-    pub id: u64,
-    pub error: Option<String>,
-    /// Older persisted snapshots expose no choices until the supervisor sends
-    /// a current decision. Presentation never derives policy from error text.
-    #[serde(default)]
-    pub allowed_choices: Vec<Choice>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Choice {
-    Retry,
-    Cancel,
-    LaunchAnyway,
-    Local,
-    Cloud,
 }
 
 #[derive(Clone, Copy, Debug, thiserror::Error)]
@@ -113,6 +77,16 @@ impl Failure {
     }
     fn retryable(self) -> bool {
         matches!(self, Self::Network | Self::Changed | Self::Uncertain)
+    }
+    /// The Cloud question this failure asks once its retries are spent.
+    fn question(self) -> Question {
+        if matches!(self, Self::Conflict) {
+            Question::Conflict
+        } else {
+            Question::Failed {
+                launch_anyway: self.skippable(),
+            }
+        }
     }
     fn skippable(self) -> bool {
         matches!(
@@ -175,6 +149,14 @@ impl From<steam_kit::cloud::CloudError> for Failure {
         }
     }
 }
+impl From<Stop> for Failure {
+    fn from(stop: Stop) -> Self {
+        match stop {
+            Stop::Cancelled => Self::Cancelled,
+            Stop::Revoked => Self::Authentication,
+        }
+    }
+}
 impl From<std::io::Error> for Failure {
     fn from(_: std::io::Error) -> Self {
         Self::Storage
@@ -195,166 +177,6 @@ impl From<Failure> for crate::Error {
     }
 }
 
-struct DecisionState {
-    status: Status,
-    answer: Option<Choice>,
-}
-pub struct Control {
-    account_id: u64,
-    /// Decision IDs and question deadlines, shared with a supervisor's
-    /// Rosetta requirement when one runs this sync.
-    questions: Arc<crate::supervisor::session::Questions>,
-    revoked: AtomicBool,
-    cancelled: AtomicBool,
-    state: Mutex<DecisionState>,
-    changed: tokio::sync::Notify,
-    stop: tokio::sync::Notify,
-    publish: Box<dyn Fn(Status) + Send + Sync>,
-}
-impl Control {
-    /// Cloud maintenance in Forge, where the UI waits for any answer.
-    pub fn new(account_id: u64, publish: impl Fn(Status) + Send + Sync + 'static) -> Self {
-        Self::with_questions(
-            account_id,
-            Arc::new(crate::supervisor::session::Questions::in_app()),
-            publish,
-        )
-    }
-    pub(crate) fn with_questions(
-        account_id: u64,
-        questions: Arc<crate::supervisor::session::Questions>,
-        publish: impl Fn(Status) + Send + Sync + 'static,
-    ) -> Self {
-        Self {
-            account_id,
-            questions,
-            revoked: AtomicBool::new(false),
-            cancelled: AtomicBool::new(false),
-            state: Mutex::new(DecisionState {
-                status: Status::default(),
-                answer: None,
-            }),
-            changed: tokio::sync::Notify::new(),
-            stop: tokio::sync::Notify::new(),
-            publish: Box::new(publish),
-        }
-    }
-    pub fn respond(&self, id: u64, choice: Choice) -> Result<(), crate::Error> {
-        let mut state = self.state.lock().unwrap();
-        if state.status.id != id
-            || state.answer.is_some()
-            || !state.status.allowed_choices.contains(&choice)
-        {
-            return Err(crate::Error::InvalidSession);
-        }
-        state.answer = Some(choice);
-        self.changed.notify_waiters();
-        Ok(())
-    }
-    pub fn revoke(&self, account_id: u64) -> Result<(), crate::Error> {
-        if self.account_id != account_id {
-            return Err(crate::Error::InvalidSession);
-        }
-        self.revoked.store(true, Ordering::Release);
-        self.stop.notify_waiters();
-        self.changed.notify_waiters();
-        Ok(())
-    }
-    pub fn cancel(&self) {
-        self.cancelled.store(true, Ordering::Release);
-        self.stop.notify_waiters();
-        self.changed.notify_waiters();
-    }
-    pub(crate) fn revoked(&self) -> bool {
-        self.revoked.load(Ordering::Acquire)
-    }
-    pub(crate) fn check(&self) -> Result<(), Failure> {
-        if self.cancelled.load(Ordering::Acquire) {
-            Err(Failure::Cancelled)
-        } else if self.revoked.load(Ordering::Acquire) {
-            Err(Failure::Authentication)
-        } else {
-            Ok(())
-        }
-    }
-    pub(crate) fn status(&self, phase: Phase, error: Option<Failure>) {
-        let status = {
-            let mut state = self.state.lock().unwrap();
-            state.status = Status {
-                phase,
-                id: self.questions.next(),
-                error: error.map(|e| e.key().into()),
-                allowed_choices: match phase {
-                    Phase::Conflict => vec![Choice::Local, Choice::Cloud, Choice::Cancel],
-                    Phase::Failed => {
-                        let mut choices = vec![Choice::Retry, Choice::Cancel];
-                        if error.is_some_and(Failure::skippable) {
-                            choices.push(Choice::LaunchAnyway);
-                        }
-                        choices
-                    }
-                    _ => Vec::new(),
-                },
-            };
-            state.answer = None;
-            state.status.clone()
-        };
-        (self.publish)(status);
-    }
-    pub(crate) async fn ask(&self, failure: Failure) -> Result<Choice, Failure> {
-        self.status(
-            if matches!(failure, Failure::Conflict) {
-                Phase::Conflict
-            } else {
-                Phase::Failed
-            },
-            Some(failure),
-        );
-        // Abandoned after its deadline, or once nobody observes the session.
-        let published = std::time::Instant::now();
-        loop {
-            let changed = self.changed.notified();
-            tokio::pin!(changed);
-            changed.as_mut().enable();
-            self.check()?;
-            if let Some(choice) = self.state.lock().unwrap().answer.take() {
-                return if choice == Choice::Cancel {
-                    Err(Failure::Cancelled)
-                } else {
-                    Ok(choice)
-                };
-            }
-            if self.questions.abandoned(published) {
-                return Err(Failure::Cancelled);
-            }
-            let _ = tokio::time::timeout(Duration::from_secs(1), changed).await;
-        }
-    }
-    async fn guarded<T>(
-        &self,
-        duration: Duration,
-        future: impl std::future::Future<Output = Result<T, Failure>>,
-    ) -> Result<T, Failure> {
-        let stop = self.stop.notified();
-        tokio::pin!(stop);
-        stop.as_mut().enable();
-        self.check()?;
-        tokio::select! {
-            biased;
-            _ = &mut stop => { self.check()?; Err(Failure::Cancelled) },
-            result = tokio::time::timeout(duration, future) => result.map_err(|_| Failure::Network)?,
-        }
-    }
-    async fn wait(&self, duration: Duration) -> Result<(), Failure> {
-        let changed = self.changed.notified();
-        tokio::pin!(changed);
-        changed.as_mut().enable();
-        self.check()?;
-        let _ = tokio::time::timeout(duration, changed).await;
-        self.check()
-    }
-}
-
 fn now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -372,93 +194,41 @@ fn scope(config: &Config, account: u64) -> cloud_vault::Scope {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
-    fn only_published_choices_are_accepted_without_reissuing_the_decision() {
+    fn a_launch_goes_on_without_sync_only_when_local_saves_stay_safe() {
+        assert_eq!(Failure::Conflict.question(), Question::Conflict);
         for failure in [
             Failure::Network,
-            Failure::Authentication,
             Failure::Preferences,
             Failure::Unsupported,
-            Failure::Conflict,
+            Failure::Uncertain,
+            Failure::Quota,
+            Failure::Changed,
+        ] {
+            assert_eq!(
+                failure.question(),
+                Question::Failed {
+                    launch_anyway: true
+                }
+            );
+        }
+        for failure in [
+            Failure::Authentication,
             Failure::Storage,
             Failure::Ownership,
             Failure::Recovery,
-            Failure::Uncertain,
             Failure::Cancelled,
-            Failure::Changed,
             Failure::Busy,
-            Failure::Quota,
             Failure::SharedSaves,
             Failure::RulesChanged,
         ] {
-            let control = Control::new(42, |_| {});
-            let phase = if matches!(failure, Failure::Conflict) {
-                Phase::Conflict
-            } else {
-                Phase::Failed
-            };
-            control.status(phase, Some(failure));
-            let status = control.state.lock().unwrap().status.clone();
             assert_eq!(
-                status.allowed_choices.contains(&Choice::LaunchAnyway),
-                failure.skippable()
-            );
-            for choice in [
-                Choice::Retry,
-                Choice::Local,
-                Choice::Cloud,
-                Choice::LaunchAnyway,
-                Choice::Cancel,
-            ] {
-                if !status.allowed_choices.contains(&choice) {
-                    assert!(control.respond(status.id, choice).is_err());
-                    assert_eq!(control.state.lock().unwrap().status, status);
+                failure.question(),
+                Question::Failed {
+                    launch_anyway: false
                 }
-            }
-            assert!(control.respond(status.id, Choice::Cancel).is_ok());
+            );
         }
-        let control = Control::new(42, |_| {});
-        control.status(Phase::Checking, None);
-        assert!(control.respond(1, Choice::Retry).is_err());
-    }
-
-    #[test]
-    fn prompt_choices_are_bound_to_revision_and_account() {
-        let control = Control::new(42, |_| {});
-        control.status(Phase::Conflict, Some(Failure::Conflict));
-        assert!(control.respond(0, Choice::Local).is_err());
-        assert!(control.respond(1, Choice::LaunchAnyway).is_err());
-        assert!(control.respond(1, Choice::Local).is_ok());
-        assert!(control.respond(1, Choice::Cloud).is_err());
-        assert!(control.revoke(43).is_err());
-        assert!(control.check().is_ok());
-        control.revoke(42).unwrap();
-        assert!(matches!(control.check(), Err(Failure::Authentication)));
-    }
-    #[tokio::test]
-    async fn a_pending_choice_keeps_the_supervisors_executor_running() {
-        let (published, mut requests) = tokio::sync::mpsc::unbounded_channel();
-        let control = Control::new(42, move |status| {
-            published.send(status).unwrap();
-        });
-        let (choice, ()) = tokio::join!(control.ask(Failure::Conflict), async {
-            let status = requests.recv().await.unwrap();
-            tokio::task::yield_now().await;
-            control.respond(status.id, Choice::Local).unwrap();
-        });
-        assert_eq!(choice.unwrap(), Choice::Local);
-    }
-
-    #[tokio::test]
-    async fn signout_wakes_pending_decision_and_detachment_does_not_revoke() {
-        let control = Arc::new(Control::new(42, |_| {}));
-        let worker = control.clone();
-        let task = tokio::spawn(async move { worker.ask(Failure::Conflict).await });
-        control.revoke(42).unwrap();
-        assert!(matches!(task.await.unwrap(), Err(Failure::Authentication)));
-        let control = Arc::new(Control::new(42, |_| {}));
-        let observer = control.clone();
-        drop(observer);
-        assert!(control.check().is_ok());
     }
 }

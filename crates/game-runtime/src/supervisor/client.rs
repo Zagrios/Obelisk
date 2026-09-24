@@ -285,7 +285,7 @@ impl<P: Provider> Client<P> {
         &self,
         account_id: &P::Account,
         decision_id: u64,
-        choice: P::Choice,
+        choice: crate::cloud::Choice,
     ) -> Result<(), P::Error> {
         let command = Command::<P>::CloudChoice {
             id: self.id.clone(),

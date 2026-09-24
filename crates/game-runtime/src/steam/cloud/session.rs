@@ -86,6 +86,17 @@ impl<R: CloudRemote> Session<R> {
             problem: None,
         })
     }
+    fn status(&self, phase: Phase, failure: Option<Failure>) {
+        self.control
+            .show(phase, failure.map(|failure| failure.key().into()));
+    }
+    /// Asks the question `failure` warrants once its retries are spent.
+    async fn ask(&self, failure: Failure) -> Result<Choice, Failure> {
+        Ok(self
+            .control
+            .ask(failure.question(), Some(failure.key().into()))
+            .await?)
+    }
     fn mark(&self, change: impl FnOnce(&mut cloud_status::Record)) {
         let scope = scope(&self.config, self.credentials.steam_id).into();
         // Display state only: a failed write must not fail the sync itself.
@@ -130,8 +141,7 @@ impl<R: CloudRemote> Session<R> {
         self.problem = None;
         let result = self.prepare_inner(alive).await;
         if matches!(result, Err(crate::Error::Cloud(Failure::Authentication))) {
-            self.control
-                .status(Phase::Failed, Some(Failure::Authentication));
+            self.status(Phase::Failed, Some(Failure::Authentication));
         }
         self.record_outcome(syncs, false);
         result
@@ -162,7 +172,7 @@ impl<R: CloudRemote> Session<R> {
                         self.problem = Some((ProblemKind::Failed, last));
                         return Err(last);
                     }
-                    let answer = match self.control.ask(last).await {
+                    let answer = match self.ask(last).await {
                         Ok(answer) => answer,
                         Err(error) => {
                             let kind = if conflict {
@@ -186,7 +196,7 @@ impl<R: CloudRemote> Session<R> {
                             // Offline launch still checks account ownership and
                             // preserves any captured work for the next sync.
                             self.capture_without_sync()?;
-                            self.control.status(Phase::Pending, Some(last));
+                            self.status(Phase::Pending, Some(last));
                             return Ok(());
                         }
                         Choice::Cancel => return Err(Failure::Cancelled),
@@ -196,11 +206,9 @@ impl<R: CloudRemote> Session<R> {
                 }
                 Retry::Attempt { remaining } => remaining,
             };
-            self.control.status(Phase::Checking, None);
+            self.status(Phase::Checking, None);
             let control = self.control.clone();
-            let result = control
-                .guarded(remaining, self.preflight(choice.take(), force))
-                .await;
+            let result = guarded(&control, remaining, self.preflight(choice.take(), force)).await;
             match result {
                 Ok(()) => return Ok(()),
                 Err(failure @ (Failure::Cancelled | Failure::Authentication)) => {
@@ -252,7 +260,7 @@ impl<R: CloudRemote> Session<R> {
         let Some(metadata) = cm.cloud_metadata().await? else {
             self.context = None;
             self.mark(cloud_status::unavailable(UnavailableReason::NoCloud));
-            self.control.status(Phase::Disabled, None);
+            self.status(Phase::Disabled, None);
             return Ok(());
         };
         if metadata
@@ -300,7 +308,7 @@ impl<R: CloudRemote> Session<R> {
             if !retrying {
                 self.capture_without_sync()?;
             }
-            self.control.status(Phase::Disabled, None);
+            self.status(Phase::Disabled, None);
             return Ok(());
         }
         self.recover_previous(&mut cm).await?;
@@ -326,7 +334,7 @@ impl<R: CloudRemote> Session<R> {
         }
         self.collect_garbage();
         if !force {
-            self.control.status(Phase::Ready, None);
+            self.status(Phase::Ready, None);
         }
         Ok(())
     }
@@ -481,7 +489,7 @@ impl<R: CloudRemote> Session<R> {
         context.save()
     }
     pub fn started(&mut self) -> Result<(), crate::Error> {
-        self.control.check()?;
+        self.control.check().map_err(Failure::from)?;
         if let Some(context) = &mut self.context {
             // A disabled/offline launch is allowed after reinstall. Keep the
             // removal fence until a fresh comparison authorizes synchronization.
@@ -539,7 +547,7 @@ impl<R: CloudRemote> Session<R> {
         // Preflight needs the installation. The exit save is sent as captured.
         self.recover_exit_snapshot()?;
         if !self.has_pending_work() {
-            self.control.status(Phase::Synced, None);
+            self.status(Phase::Synced, None);
             return Ok(());
         }
         self.finalize().await
@@ -577,14 +585,14 @@ impl<R: CloudRemote> Session<R> {
             context.save()
         })();
         if let Err(error) = capture {
-            self.control.status(Phase::Pending, Some(error));
+            self.status(Phase::Pending, Some(error));
             return;
         }
         if self.context.is_none() {
             return;
         }
         if !confirmed {
-            self.control.status(Phase::Pending, None);
+            self.status(Phase::Pending, None);
             return;
         }
         if let Err(error) = self.finalize().await {
@@ -593,7 +601,7 @@ impl<R: CloudRemote> Session<R> {
                 Some((ProblemKind::Conflict, _)) => Failure::Conflict,
                 _ => error,
             };
-            self.control.status(Phase::Pending, Some(reason));
+            self.status(Phase::Pending, Some(reason));
         }
     }
     /// Sends the captured exit save, asking live on a conflict. Returns the
@@ -609,7 +617,7 @@ impl<R: CloudRemote> Session<R> {
                 Retry::Defer if matches!(last, Failure::Conflict) => {
                     // Ask now, as at launch. An unanswered conflict leaves the
                     // exit save pending until the next launch or maintenance.
-                    match self.control.ask(last).await {
+                    match self.ask(last).await {
                         Ok(answer) => {
                             self.mark(cloud_status::answered);
                             choice = Some(answer);
@@ -625,17 +633,15 @@ impl<R: CloudRemote> Session<R> {
                 }
                 Retry::Defer => break,
                 Retry::Wait(wait) => {
-                    if let Err(error) = self.control.wait(wait).await {
+                    if let Err(error) = self.control.wait(wait).await.map_err(Failure::from) {
                         last = error;
                         break;
                     }
                 }
                 Retry::Attempt { remaining } => {
-                    self.control.status(Phase::Syncing, None);
+                    self.status(Phase::Syncing, None);
                     let control = self.control.clone();
-                    match control
-                        .guarded(remaining, self.upload(choice, approved.as_ref()))
-                        .await
+                    match guarded(&control, remaining, self.upload(choice, approved.as_ref())).await
                     {
                         Ok(()) => {
                             return Ok(());
@@ -648,7 +654,7 @@ impl<R: CloudRemote> Session<R> {
                 }
             }
         }
-        if self.control.revoked.load(Ordering::Acquire) {
+        if self.control.revoked() {
             let _ = self.vault.revoke();
         }
         self.collect_garbage();
@@ -678,7 +684,7 @@ impl<R: CloudRemote> Session<R> {
             context.needs_work = false;
             context.desired = None;
             context.save()?;
-            self.control.status(Phase::Disabled, None);
+            self.status(Phase::Disabled, None);
             return Ok(());
         }
         self.recover_previous(&mut cm).await?;
@@ -722,7 +728,7 @@ impl<R: CloudRemote> Session<R> {
                     return Err(Failure::Conflict);
                 }
                 self.apply(&remote, false)?;
-                self.control.status(Phase::Synced, None);
+                self.status(Phase::Synced, None);
                 return Ok(());
             }
             Decision::KeepLocal => {}
@@ -840,7 +846,7 @@ impl<R: CloudRemote> Session<R> {
         context.transaction = None;
         context.save()?;
         self.collect_garbage();
-        self.control.status(Phase::Synced, None);
+        self.status(Phase::Synced, None);
         Ok(())
     }
 
@@ -871,6 +877,18 @@ impl<R: CloudRemote> Session<R> {
             eprintln!("Steam Cloud cache cleanup deferred: {error}");
         }
     }
+}
+
+/// Runs one attempt until its budget runs out, it is cancelled or the account
+/// is revoked. An attempt out of time is a network failure.
+async fn guarded<T>(
+    control: &Control,
+    duration: Duration,
+    future: impl std::future::Future<Output = Result<T, Failure>>,
+) -> Result<T, Failure> {
+    tokio::time::timeout(duration, control.interruptible(future))
+        .await
+        .map_err(|_| Failure::Network)??
 }
 
 // A retry can recompare after a lost receipt or failed best-effort close, while
@@ -974,7 +992,7 @@ mod removal_tests {
                 refresh_token: "unused".into(),
             },
             uuid::Uuid::new_v4().to_string(),
-            Arc::new(Control::new(ACCOUNT, |_| {})),
+            Arc::new(Control::new(|_| {})),
         )
         .unwrap();
         session.context = Some(Context::new(&config, ACCOUNT, metadata));
@@ -1015,7 +1033,7 @@ mod removal_tests {
                 refresh_token: "unused".into(),
             },
             uuid::Uuid::new_v4().to_string(),
-            Arc::new(Control::new(ACCOUNT, |_| {})),
+            Arc::new(Control::new(|_| {})),
         )
         .unwrap();
         let bindings: Bindings = [
@@ -1101,7 +1119,7 @@ mod removal_tests {
         for phase in [Phase::Disabled, Phase::Pending] {
             let (_temporary, mut session, before) = installed_fixture();
             fs::remove_file(session.config.install.join("slot.sav")).unwrap();
-            session.control.status(phase, None);
+            session.control.show(phase, None);
 
             session.capture_without_sync().unwrap();
             session.started().unwrap();
@@ -1130,13 +1148,13 @@ mod removal_tests {
     #[tokio::test]
     async fn preparation_authentication_failure_is_not_reported_as_cancellation() {
         let (_temporary, mut session, _) = fixture();
-        session.control.revoke(ACCOUNT).unwrap();
+        session.control.revoke();
 
         assert!(matches!(
             session.prepare(&no_other_session).await,
             Err(crate::Error::Cloud(Failure::Authentication))
         ));
-        let status = session.control.state.lock().unwrap().status.clone();
+        let status = session.control.status();
         assert_eq!(status.phase, Phase::Failed);
         assert_eq!(status.error.as_deref(), Some(Failure::Authentication.key()));
     }
@@ -1260,10 +1278,7 @@ mod removal_tests {
         assert!(saved.desired.is_none());
         assert!(saved.transaction.is_none());
         assert_ne!(saved.fingerprint(), old_fingerprint);
-        assert_eq!(
-            session.control.state.lock().unwrap().status.phase,
-            Phase::Synced
-        );
+        assert_eq!(session.control.status().phase, Phase::Synced);
     }
 
     #[test]
