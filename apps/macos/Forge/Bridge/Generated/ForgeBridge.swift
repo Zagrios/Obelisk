@@ -2121,7 +2121,16 @@ public protocol SteamNativeLaunchProtocol: AnyObject, Sendable {
     
     func cancel() 
     
-    func startGame(configuration: SteamNativeConfiguration, target: SteamSupervisedTarget, sessionDirectory: String) async throws  -> GameSession
+    /**
+     * Resolves the game inside its installation. A failure here is definite:
+     * no supervisor exists yet.
+     */
+    func prepare(plan: SteamLaunchPlan, locations: ForgeLocations) async throws 
+    
+    /**
+     * Hands the prepared game to its supervisor.
+     */
+    func startGame() async throws  -> GameSession
     
 }
 open class SteamNativeLaunch: SteamNativeLaunchProtocol, @unchecked Sendable {
@@ -2194,12 +2203,35 @@ open func cancel()  {try! rustCall() {
 }
 }
     
-open func startGame(configuration: SteamNativeConfiguration, target: SteamSupervisedTarget, sessionDirectory: String)async throws  -> GameSession  {
+    /**
+     * Resolves the game inside its installation. A failure here is definite:
+     * no supervisor exists yet.
+     */
+open func prepare(plan: SteamLaunchPlan, locations: ForgeLocations)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_forge_bridge_fn_method_steamnativelaunch_prepare(
+                        self.uniffiCloneHandle(),FfiConverterTypeSteamLaunchPlan_lower(plan),FfiConverterTypeForgeLocations_lower(locations)
+                )
+            },
+            pollFunc: ffi_forge_bridge_rust_future_poll_void,
+            completeFunc: ffi_forge_bridge_rust_future_complete_void,
+            freeFunc: ffi_forge_bridge_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeSteamError_lift
+        )
+}
+    
+    /**
+     * Hands the prepared game to its supervisor.
+     */
+open func startGame()async throws  -> GameSession  {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
                 uniffi_forge_bridge_fn_method_steamnativelaunch_start_game(
-                        self.uniffiCloneHandle(),FfiConverterTypeSteamNativeConfiguration_lower(configuration),FfiConverterTypeSteamSupervisedTarget_lower(target),FfiConverterString.lower(sessionDirectory)
+                        self.uniffiCloneHandle()
                 )
             },
             pollFunc: ffi_forge_bridge_rust_future_poll_u64,
@@ -5168,88 +5200,6 @@ public func FfiConverterTypeSteamLaunchPlan_lower(_ value: SteamLaunchPlan) -> R
 }
 
 
-public struct SteamNativeConfiguration: Equatable, Hashable {
-    public var appId: UInt32
-    public var helpers: String
-    public var package: String
-    public var cache: String
-    public var diagnostics: String
-    public var steamApi: String
-    public var home: String
-    public var cloudDirectory: String
-    public var installDirectory: String
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(appId: UInt32, helpers: String, package: String, cache: String, diagnostics: String, steamApi: String, home: String, cloudDirectory: String, installDirectory: String) {
-        self.appId = appId
-        self.helpers = helpers
-        self.package = package
-        self.cache = cache
-        self.diagnostics = diagnostics
-        self.steamApi = steamApi
-        self.home = home
-        self.cloudDirectory = cloudDirectory
-        self.installDirectory = installDirectory
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension SteamNativeConfiguration: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeSteamNativeConfiguration: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SteamNativeConfiguration {
-        return
-            try SteamNativeConfiguration(
-                appId: FfiConverterUInt32.read(from: &buf), 
-                helpers: FfiConverterString.read(from: &buf), 
-                package: FfiConverterString.read(from: &buf), 
-                cache: FfiConverterString.read(from: &buf), 
-                diagnostics: FfiConverterString.read(from: &buf), 
-                steamApi: FfiConverterString.read(from: &buf), 
-                home: FfiConverterString.read(from: &buf), 
-                cloudDirectory: FfiConverterString.read(from: &buf), 
-                installDirectory: FfiConverterString.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: SteamNativeConfiguration, into buf: inout [UInt8]) {
-        FfiConverterUInt32.write(value.appId, into: &buf)
-        FfiConverterString.write(value.helpers, into: &buf)
-        FfiConverterString.write(value.package, into: &buf)
-        FfiConverterString.write(value.cache, into: &buf)
-        FfiConverterString.write(value.diagnostics, into: &buf)
-        FfiConverterString.write(value.steamApi, into: &buf)
-        FfiConverterString.write(value.home, into: &buf)
-        FfiConverterString.write(value.cloudDirectory, into: &buf)
-        FfiConverterString.write(value.installDirectory, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeSteamNativeConfiguration_lift(_ buf: RustBuffer) throws -> SteamNativeConfiguration {
-    return try FfiConverterTypeSteamNativeConfiguration.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeSteamNativeConfiguration_lower(_ value: SteamNativeConfiguration) -> RustBuffer {
-    return FfiConverterTypeSteamNativeConfiguration.lower(value)
-}
-
-
 public struct SteamNews: Equatable, Hashable {
     public var id: String
     public var title: String
@@ -5371,68 +5321,6 @@ public func FfiConverterTypeSteamProfile_lift(_ buf: RustBuffer) throws -> Steam
 #endif
 public func FfiConverterTypeSteamProfile_lower(_ value: SteamProfile) -> RustBuffer {
     return FfiConverterTypeSteamProfile.lower(value)
-}
-
-
-public struct SteamSupervisedTarget: Equatable, Hashable {
-    public var executable: String
-    public var arguments: [String]
-    public var workingDirectory: String
-    public var environment: [String: String]
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(executable: String, arguments: [String], workingDirectory: String, environment: [String: String]) {
-        self.executable = executable
-        self.arguments = arguments
-        self.workingDirectory = workingDirectory
-        self.environment = environment
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension SteamSupervisedTarget: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeSteamSupervisedTarget: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SteamSupervisedTarget {
-        return
-            try SteamSupervisedTarget(
-                executable: FfiConverterString.read(from: &buf), 
-                arguments: FfiConverterSequenceString.read(from: &buf), 
-                workingDirectory: FfiConverterString.read(from: &buf), 
-                environment: FfiConverterDictionaryStringString.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: SteamSupervisedTarget, into buf: inout [UInt8]) {
-        FfiConverterString.write(value.executable, into: &buf)
-        FfiConverterSequenceString.write(value.arguments, into: &buf)
-        FfiConverterString.write(value.workingDirectory, into: &buf)
-        FfiConverterDictionaryStringString.write(value.environment, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeSteamSupervisedTarget_lift(_ buf: RustBuffer) throws -> SteamSupervisedTarget {
-    return try FfiConverterTypeSteamSupervisedTarget.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeSteamSupervisedTarget_lower(_ value: SteamSupervisedTarget) -> RustBuffer {
-    return FfiConverterTypeSteamSupervisedTarget.lower(value)
 }
 
 
@@ -8251,32 +8139,6 @@ fileprivate struct FfiConverterSequenceTypeCloudChoice: FfiConverterRustBuffer {
         return seq
     }
 }
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-fileprivate struct FfiConverterDictionaryStringString: FfiConverterRustBuffer {
-    public static func write(_ value: [String: String], into buf: inout [UInt8]) {
-        let len = Int32(value.count)
-        writeInt(&buf, len)
-        for (key, value) in value {
-            FfiConverterString.write(key, into: &buf)
-            FfiConverterString.write(value, into: &buf)
-        }
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [String: String] {
-        let len: Int32 = try readInt(&buf)
-        var dict = [String: String]()
-        dict.reserveCapacity(Int(len))
-        for _ in 0..<len {
-            let key = try FfiConverterString.read(from: &buf)
-            let value = try FfiConverterString.read(from: &buf)
-            dict[key] = value
-        }
-        return dict
-    }
-}
 private let UNIFFI_RUST_FUTURE_POLL_READY: Int8 = 0
 private let UNIFFI_RUST_FUTURE_POLL_WAKE: Int8 = 1
 
@@ -8768,7 +8630,10 @@ private let initializationResult: InitializationResult = {
     if (uniffi_forge_bridge_checksum_method_steamnativelaunch_cancel() != 28509) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_forge_bridge_checksum_method_steamnativelaunch_start_game() != 16729) {
+    if (uniffi_forge_bridge_checksum_method_steamnativelaunch_prepare() != 38782) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_forge_bridge_checksum_method_steamnativelaunch_start_game() != 61822) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_forge_bridge_checksum_constructor_library_new() != 16986) {

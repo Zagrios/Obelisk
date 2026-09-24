@@ -3,6 +3,7 @@ pub mod cloud;
 pub mod cloud_status;
 pub mod epic;
 mod files;
+mod native;
 pub mod package;
 #[cfg(feature = "packaging")]
 pub mod packaging;
@@ -104,6 +105,12 @@ pub enum Error {
     IncompatibleArchitecture,
     #[error("backend.steam.runtime.rosettaUnavailable")]
     RosettaUnavailable,
+    #[error("backend.runtime.invalidApplication")]
+    InvalidApplication,
+    #[error("backend.runtime.notExecutable")]
+    NotExecutable,
+    #[error("backend.steam.runtime.apiMissing")]
+    ApiMissing,
 }
 impl From<std::io::Error> for Error {
     fn from(_: std::io::Error) -> Self {

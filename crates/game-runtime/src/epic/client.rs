@@ -15,6 +15,7 @@ pub fn start(
         id: uuid::Uuid::new_v4().to_string(),
         account_id,
         exchange_code,
+        environment: crate::native::environment(&config.home),
     };
     let id = request.id.clone();
     let account_id = request.account_id.clone();

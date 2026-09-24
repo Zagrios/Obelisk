@@ -65,6 +65,26 @@ impl supervisor::Provider for Steam {
     }
 }
 
+/// Resolves a Steam launch in Forge's process: the game's executable inside
+/// its installation, the Steam API library it loads, and its environment.
+pub fn target(
+    install: &Path,
+    target: &forge_core::launch::LaunchTarget,
+    home: &Path,
+) -> Result<(Target, PathBuf), Error> {
+    let steam_api = launch::steam_api(target)?;
+    let (executable, _) = crate::native::executable(install, target)?;
+    Ok((
+        Target {
+            executable,
+            arguments: target.arguments.clone(),
+            working_directory: target.working_directory.clone().into(),
+            environment: crate::native::environment(home),
+        },
+        steam_api,
+    ))
+}
+
 pub fn start(
     helper: &Path,
     credentials: &Credentials,

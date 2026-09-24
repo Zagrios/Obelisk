@@ -142,6 +142,17 @@ pub struct LaunchTarget {
     pub is_application_bundle: bool,
 }
 
+impl From<LaunchTarget> for forge_core::launch::LaunchTarget {
+    fn from(target: LaunchTarget) -> Self {
+        Self {
+            executable: target.executable,
+            arguments: target.arguments,
+            working_directory: target.working_directory,
+            is_application_bundle: target.is_application_bundle,
+        }
+    }
+}
+
 impl From<forge_core::launch::LaunchTarget> for LaunchTarget {
     fn from(target: forge_core::launch::LaunchTarget) -> Self {
         Self {

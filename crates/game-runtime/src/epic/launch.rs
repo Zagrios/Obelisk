@@ -14,7 +14,6 @@ use std::{
     io::{Read, Write},
     os::unix::fs::PermissionsExt,
     path::Path,
-    process::Command as Process,
 };
 
 /// The Epic services a launch uses. Tests replace them.
@@ -188,7 +187,8 @@ impl<S: Services> lifecycle::Launch for Launch<S> {
         let plan = self.api()?.launch_plan(&self.request.config).await?;
         session.cloud().check()?;
         // A fresh plan, after Rosetta was installed, drops the old token.
-        let (target, architecture, ownership) = native_target(&plan, &self.request.config)?;
+        let (target, architecture, ownership) =
+            native_target(&plan, &self.request.config, &self.request.environment)?;
         self.activity = plan.activity;
         self.ownership = ownership;
         Ok((target, Some(architecture)))
@@ -280,45 +280,9 @@ fn helpers(config: &Configuration) -> Result<PathBuf> {
 pub(super) fn native_target(
     plan: &LaunchPlan,
     config: &Configuration,
+    environment: &std::collections::HashMap<String, String>,
 ) -> Result<(Target, Architecture, Option<tempfile::TempDir>)> {
-    let root = config.install.canonicalize()?;
-    let mut executable = Path::new(&plan.target.executable).canonicalize()?;
-    if plan.target.is_application_bundle {
-        let output = Process::new("/usr/bin/plutil")
-            .args(["-extract", "CFBundleExecutable", "raw", "-o", "-"])
-            .arg(executable.join("Contents/Info.plist"))
-            .env_clear()
-            .output()?;
-        let name = std::str::from_utf8(&output.stdout)
-            .map_err(|_| Error::Unsupported)?
-            .trim();
-        if !output.status.success()
-            || name.is_empty()
-            || name.len() > 255
-            || name.contains('/')
-            || name == "."
-            || name == ".."
-        {
-            return Err(Error::Unsupported);
-        }
-        executable = executable
-            .join("Contents/MacOS")
-            .join(name)
-            .canonicalize()?;
-    }
-    if !executable.starts_with(&root) || !executable.is_file() {
-        return Err(Error::Unsupported);
-    }
-    // The installer may omit execute permission for a Mach-O. Match the shared
-    // native launcher: repair only the selected executable after verification.
-    let architecture = Architecture::preferred(&executable)?;
-    let metadata = std::fs::metadata(&executable)?;
-    if metadata.permissions().mode() & 0o100 == 0 {
-        std::fs::set_permissions(
-            &executable,
-            std::fs::Permissions::from_mode(metadata.permissions().mode() | 0o100),
-        )?;
-    }
+    let (executable, architecture) = crate::native::executable(&config.install, &plan.target)?;
     let mut arguments = plan.target.arguments.clone();
     let ownership = if let Some(bytes) = &plan.ownership_token {
         let directory = tempfile::Builder::new()
@@ -335,23 +299,12 @@ pub(super) fn native_target(
     } else {
         None
     };
-    let environment = [
-        ("HOME".into(), config.home.to_string_lossy().into_owned()),
-        ("PATH".into(), "/usr/bin:/bin:/usr/sbin:/sbin".into()),
-        (
-            "TMPDIR".into(),
-            std::env::temp_dir().to_string_lossy().into_owned(),
-        ),
-        ("LANG".into(), "en_US.UTF-8".into()),
-    ]
-    .into_iter()
-    .collect();
     Ok((
         Target {
             executable,
             arguments,
             working_directory: plan.target.working_directory.clone().into(),
-            environment,
+            environment: environment.clone(),
         },
         architecture,
         ownership,

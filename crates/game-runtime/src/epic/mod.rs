@@ -75,7 +75,9 @@ impl From<crate::Error> for Error {
     fn from(error: crate::Error) -> Self {
         match error {
             crate::Error::RosettaUnavailable => Self::RosettaUnavailable,
-            crate::Error::IncompatibleArchitecture => Self::Unsupported,
+            crate::Error::IncompatibleArchitecture
+            | crate::Error::InvalidApplication
+            | crate::Error::NotExecutable => Self::Unsupported,
             _ => Self::Session,
         }
     }
@@ -192,4 +194,7 @@ struct Request {
     id: String,
     account_id: String,
     exchange_code: String,
+    /// Built in Forge's process: a supervisor starts without any environment.
+    #[serde(default)]
+    environment: std::collections::HashMap<String, String>,
 }

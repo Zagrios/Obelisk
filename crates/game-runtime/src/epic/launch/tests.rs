@@ -7,7 +7,7 @@ use crate::supervisor::session::tests::{
     HELD, Harness, Script, begin_opens_the_start_gate_once_and_only_for_its_account,
     fixture_directory, hold, inspect, launch, lifecycle_suite, record, script, write_helper,
 };
-use std::fs;
+use std::{collections::HashMap, fs};
 
 const ACCOUNT: &str = "0123456789abcdef0123456789abcdef";
 
@@ -51,6 +51,7 @@ impl Harness for EpicHarness {
                 id: id.into(),
                 account_id: ACCOUNT.into(),
                 exchange_code: "fixture-exchange-code".into(),
+                environment: crate::native::environment(directory),
             },
         )
     }
@@ -248,7 +249,7 @@ fn an_epic_target_checks_the_full_macho_before_repairing_its_permission() {
     fs::write(&executable, b"\xcf\xfa\xed\xfe").unwrap();
     fs::set_permissions(&executable, fs::Permissions::from_mode(0o600)).unwrap();
     assert!(matches!(
-        native_target(&plan, &config),
+        native_target(&plan, &config, &HashMap::new()),
         Err(Error::Unsupported)
     ));
     assert_eq!(
@@ -257,7 +258,8 @@ fn an_epic_target_checks_the_full_macho_before_repairing_its_permission() {
     );
     for (cpu, expected) in [(INTEL, Architecture::Intel), (ARM64, Architecture::Arm64)] {
         fs::write(&executable, thin(cpu, true)).unwrap();
-        let (target, architecture, ownership) = native_target(&plan, &config).unwrap();
+        let (target, architecture, ownership) =
+            native_target(&plan, &config, &HashMap::new()).unwrap();
         assert_eq!(architecture, expected);
         assert_eq!(target.executable, executable.canonicalize().unwrap());
         assert!(ownership.is_none());
@@ -270,7 +272,7 @@ fn an_epic_target_checks_the_full_macho_before_repairing_its_permission() {
     let outside = launch_plan(&directory, &directory);
     fs::write(directory.join("game"), thin(ARM64, true)).unwrap();
     assert!(matches!(
-        native_target(&outside, &config),
+        native_target(&outside, &config, &HashMap::new()),
         Err(Error::Unsupported)
     ));
 }
@@ -284,7 +286,7 @@ fn an_ownership_token_lives_as_long_as_its_prepared_game() {
     fs::write(config.install.join("game"), thin(ARM64, true)).unwrap();
     let mut plan = launch_plan(&config.install, &directory);
     plan.ownership_token = Some(b"ownership".to_vec());
-    let (target, _, ownership) = native_target(&plan, &config).unwrap();
+    let (target, _, ownership) = native_target(&plan, &config, &HashMap::new()).unwrap();
     let token = PathBuf::from(target.arguments[0].strip_prefix("-epicovt=").unwrap());
     assert_eq!(fs::read(&token).unwrap(), b"ownership");
     let host = Host {

@@ -253,3 +253,57 @@ fn the_steam_journal_holds_no_credentials() {
     let record = fs::read_to_string(run.sessions.join(format!("{}.v2.json", finished.id))).unwrap();
     assert!(!record.contains("fixture-token") && !record.contains("refresh_token"));
 }
+
+fn launch_target(executable: &Path, bundle: bool) -> forge_core::launch::LaunchTarget {
+    forge_core::launch::LaunchTarget {
+        executable: executable.to_string_lossy().into_owned(),
+        arguments: vec![],
+        working_directory: String::new(),
+        is_application_bundle: bundle,
+    }
+}
+
+#[test]
+fn the_steam_api_library_is_found_inside_a_bundle_or_beside_its_executable() {
+    let root = tempfile::tempdir().unwrap();
+    let root = root.path().canonicalize().unwrap();
+    let bundle = root.join("Game.app");
+    let library = bundle.join("Contents/Frameworks/libsteam_api.dylib");
+    fs::create_dir_all(library.parent().unwrap()).unwrap();
+    fs::write(&library, b"library").unwrap();
+    assert_eq!(steam_api(&launch_target(&bundle, true)).unwrap(), library);
+
+    let game = root.join("standalone/game");
+    fs::create_dir_all(game.parent().unwrap()).unwrap();
+    fs::write(&game, b"game").unwrap();
+    fs::write(root.join("standalone/libsteam_api.dylib"), b"library").unwrap();
+    assert_eq!(
+        steam_api(&launch_target(&game, false)).unwrap(),
+        root.join("standalone/libsteam_api.dylib")
+    );
+}
+
+#[test]
+fn the_steam_api_search_never_follows_links_or_hidden_folders() {
+    let root = tempfile::tempdir().unwrap();
+    let root = root.path().canonicalize().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    fs::write(outside.path().join("libsteam_api.dylib"), b"library").unwrap();
+    let bundle = root.join("Game.app");
+    fs::create_dir_all(bundle.join("Contents/.hidden")).unwrap();
+    fs::write(
+        bundle.join("Contents/.hidden/libsteam_api.dylib"),
+        b"library",
+    )
+    .unwrap();
+    std::os::unix::fs::symlink(outside.path(), bundle.join("Contents/Linked")).unwrap();
+    std::os::unix::fs::symlink(
+        outside.path().join("libsteam_api.dylib"),
+        bundle.join("Contents/libsteam_api.dylib"),
+    )
+    .unwrap();
+    assert!(matches!(
+        steam_api(&launch_target(&bundle, true)),
+        Err(Error::ApiMissing)
+    ));
+}

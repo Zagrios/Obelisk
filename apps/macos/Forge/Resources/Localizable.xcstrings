@@ -4642,40 +4642,6 @@
         }
       }
     },
-    "model.launch.invalidApplication": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The game’s macOS application does not contain a valid executable."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "L’application macOS du jeu ne contient pas d’exécutable valide."
-          }
-        }
-      }
-    },
-    "model.launch.notExecutable": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The game’s launch file is not executable. Verify its files again."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Le fichier de lancement du jeu n’est pas exécutable. Relancez la vérification des fichiers."
-          }
-        }
-      }
-    },
     "model.launch.windowsRuntimeUnavailable": {
       "extractionState": "manual",
       "localizations": {
@@ -9992,6 +9958,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "Impossible de créer le dossier de téléchargement : %@"
+          }
+        }
+      }
+    },
+    "backend.runtime.invalidApplication": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The game’s macOS application does not contain a valid executable."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L’application macOS du jeu ne contient pas d’exécutable valide."
+          }
+        }
+      }
+    },
+    "backend.runtime.notExecutable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The game’s launch file is not executable. Verify its files again."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le fichier de lancement du jeu n’est pas exécutable. Relancez la vérification des fichiers."
           }
         }
       }

@@ -1,7 +1,10 @@
 //! A single-use native launch receives the session already loaded by Forge.
 //! It never queries Keychain, and cancellation crosses UniFFI explicitly.
-use crate::{GameSession, SteamCredentials, SteamError};
-use std::sync::Arc;
+use crate::{ForgeLocations, GameSession, SteamCredentials, SteamError, SteamLaunchPlan};
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
 impl From<game_runtime::Error> for SteamError {
     fn from(error: game_runtime::Error) -> Self {
@@ -14,19 +17,7 @@ impl From<game_runtime::Error> for SteamError {
 #[derive(uniffi::Object)]
 pub struct SteamNativeLaunch {
     launch: Arc<game_runtime::Launch>,
-}
-
-#[derive(uniffi::Record)]
-pub struct SteamNativeConfiguration {
-    pub app_id: u32,
-    pub helpers: String,
-    pub package: String,
-    pub cache: String,
-    pub diagnostics: String,
-    pub steam_api: String,
-    pub home: String,
-    pub cloud_directory: String,
-    pub install_directory: String,
+    prepared: Mutex<Option<game_runtime::steam::Request>>,
 }
 
 #[uniffi::export(async_runtime = "tokio")]
@@ -41,38 +32,65 @@ impl SteamNativeLaunch {
                     refresh_token: credentials.refresh_token,
                 },
             )),
+            prepared: Mutex::new(None),
         })
     }
     pub fn cancel(&self) {
         self.launch.cancel();
     }
-    pub async fn start_game(
+    /// Resolves the game inside its installation. A failure here is definite:
+    /// no supervisor exists yet.
+    pub async fn prepare(
         &self,
-        configuration: SteamNativeConfiguration,
-        target: SteamSupervisedTarget,
-        session_directory: String,
-    ) -> Result<Arc<GameSession>, SteamError> {
+        plan: SteamLaunchPlan,
+        locations: ForgeLocations,
+    ) -> Result<(), SteamError> {
+        let request = tokio::task::spawn_blocking(move || {
+            let install = PathBuf::from(&plan.install_directory);
+            let home = PathBuf::from(&locations.home);
+            let (target, steam_api) =
+                game_runtime::steam::target(&install, &plan.target.into(), &home)?;
+            Ok::<_, game_runtime::Error>(game_runtime::steam::Request {
+                root: locations.steam_sessions.into(),
+                id: String::new(),
+                config: game_runtime::Config {
+                    app_id: plan.app_id,
+                    cloud_save_roots: vec![install.clone()],
+                    helpers: locations.helpers.into(),
+                    package: locations.steam_runtime_package.into(),
+                    cache: locations.steam_runtime_cache.into(),
+                    diagnostics: locations.steam_diagnostics.into(),
+                    steam_api,
+                    home: home.clone(),
+                },
+                cloud: Some(game_runtime::steam::cloud::Config {
+                    root: locations.cloud_archive.into(),
+                    home,
+                    install,
+                    app_id: plan.app_id,
+                }),
+                target,
+            })
+        })
+        .await
+        .map_err(|_| game_runtime::Error::StartFailed)??;
+        *self
+            .prepared
+            .lock()
+            .map_err(|_| game_runtime::Error::StartFailed)? = Some(request);
+        Ok(())
+    }
+    /// Hands the prepared game to its supervisor.
+    pub async fn start_game(&self) -> Result<Arc<GameSession>, SteamError> {
+        let request = self
+            .prepared
+            .lock()
+            .map_err(|_| game_runtime::Error::StartFailed)?
+            .take()
+            .ok_or(game_runtime::Error::InvalidSession)?;
         let launch = self.launch.clone();
         tokio::task::spawn_blocking(move || {
-            let cloud = game_runtime::steam::cloud::Config {
-                root: configuration.cloud_directory.clone().into(),
-                home: configuration.home.clone().into(),
-                install: configuration.install_directory.clone().into(),
-                app_id: configuration.app_id,
-            };
-            let client = launch.start_supervised(game_runtime::steam::Request {
-                root: session_directory.into(),
-                id: String::new(),
-                config: configuration.into(),
-                cloud: Some(cloud),
-                target: game_runtime::supervisor::Target {
-                    executable: target.executable.into(),
-                    arguments: target.arguments,
-                    working_directory: target.working_directory.into(),
-                    environment: target.environment,
-                },
-            })?;
-            Ok(GameSession::steam(client))
+            Ok(GameSession::steam(launch.start_supervised(request)?))
         })
         .await
         .map_err(|_| game_runtime::Error::StartFailed)?
@@ -96,29 +114,6 @@ impl From<game_runtime::HostState> for SteamHostState {
             game_runtime::HostState::Stopped => Self::Stopped,
         }
     }
-}
-
-impl From<SteamNativeConfiguration> for game_runtime::Config {
-    fn from(c: SteamNativeConfiguration) -> Self {
-        Self {
-            app_id: c.app_id,
-            cloud_save_roots: vec![c.install_directory.into()],
-            helpers: c.helpers.into(),
-            package: c.package.into(),
-            cache: c.cache.into(),
-            diagnostics: c.diagnostics.into(),
-            steam_api: c.steam_api.into(),
-            home: c.home.into(),
-        }
-    }
-}
-
-#[derive(uniffi::Record)]
-pub struct SteamSupervisedTarget {
-    pub executable: String,
-    pub arguments: Vec<String>,
-    pub working_directory: String,
-    pub environment: std::collections::HashMap<String, String>,
 }
 
 #[derive(uniffi::Record)]

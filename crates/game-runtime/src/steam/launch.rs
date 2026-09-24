@@ -265,6 +265,53 @@ impl<M: Machine> session::Launch for Launch<M> {
     }
 }
 
+/// Games ship the Steam API library beside their executable or inside their
+/// bundle. Links are never followed, and the search stays bounded.
+pub(crate) fn steam_api(target: &forge_core::launch::LaunchTarget) -> Result<PathBuf, Error> {
+    const LIBRARY: &str = "libsteam_api.dylib";
+    const MAX_ENTRIES: usize = 20_000;
+    let executable = Path::new(&target.executable)
+        .canonicalize()
+        .map_err(|_| Error::ApiMissing)?;
+    let directory = if target.is_application_bundle {
+        executable
+    } else {
+        executable.parent().ok_or(Error::ApiMissing)?.to_owned()
+    };
+    let mut pending = vec![directory.clone()];
+    let mut inspected = 0;
+    while let Some(folder) = pending.pop() {
+        let mut entries: Vec<_> = std::fs::read_dir(&folder)
+            .map_err(|_| Error::ApiMissing)?
+            .filter_map(std::result::Result::ok)
+            .collect();
+        entries.sort_by_key(std::fs::DirEntry::file_name);
+        for entry in entries {
+            inspected += 1;
+            if inspected > MAX_ENTRIES {
+                return Err(Error::ApiMissing);
+            }
+            let name = entry.file_name();
+            if name.to_string_lossy().starts_with('.') {
+                continue;
+            }
+            let Ok(kind) = entry.file_type() else {
+                continue;
+            };
+            if kind.is_dir() {
+                pending.push(entry.path());
+            } else if kind.is_file()
+                && name == LIBRARY
+                && let Ok(library) = entry.path().canonicalize()
+                && library.starts_with(&directory)
+            {
+                return Ok(library);
+            }
+        }
+    }
+    Err(Error::ApiMissing)
+}
+
 #[cfg(test)]
 pub(crate) mod tests;
 
