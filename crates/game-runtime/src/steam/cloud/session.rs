@@ -4,7 +4,7 @@ use crate::{
     protocol::Credentials,
     supervisor::client::SessionAlive,
 };
-use steam_cloud::{Decision, Manifest, Preferences, RemoteView, Retry, RetryBudget, Vault};
+use cloud_vault::{Decision, Manifest, Preferences, RemoteView, Retry, RetryBudget, Vault};
 use steam_kit::{
     cloud::{CloudListing, CloudPreferencesCache, CloudUpload, UploadTransaction},
     cm::SteamConnection,
@@ -930,8 +930,8 @@ pub(crate) async fn maintain_with<R: CloudRemote>(
 #[cfg(test)]
 mod removal_tests {
     use super::*;
+    use cloud_vault::{Bindings, SelectedFile};
     use std::fs;
-    use steam_cloud::{Bindings, SelectedFile};
     use steam_kit::cloud::CloudMetadata;
 
     const ACCOUNT: u64 = 0x0110_0001_0000_002a;

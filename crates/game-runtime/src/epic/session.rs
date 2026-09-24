@@ -1,15 +1,15 @@
 use super::*;
 use crate::cloud_status::{self, ProblemKind, UnavailableReason};
 use crate::supervisor::client::SessionAlive;
+use cloud_vault::{
+    Bindings, Decision, Manifest, Preferences, RemoteView, Retry, RetryBudget, Vault,
+};
 use epic_kit::{
     EpicError,
     client::Client as EpicClient,
     cloud::{CloudGame, CloudRules, ResolvedCloudRules, Snapshot as CloudSnapshot},
 };
 use std::{collections::BTreeMap, path::Path};
-use steam_cloud::{
-    Bindings, Decision, Manifest, Preferences, RemoteView, Retry, RetryBudget, Vault,
-};
 mod remote;
 mod store;
 pub(crate) use remote::CloudRemote;
@@ -34,7 +34,7 @@ pub(super) struct Session<R: CloudRemote> {
 
 /// Display state only: a failed write must not fail the sync itself.
 fn mark(config: &Configuration, account: &str, change: impl FnOnce(&mut cloud_status::Record)) {
-    let scope = steam_cloud::StoreScope::from(config.scope(account));
+    let scope = cloud_vault::StoreScope::from(config.scope(account));
     if let Err(error) = cloud_status::update(&config.root, &scope, change) {
         eprintln!("Epic Cloud status not recorded: {error}");
     }
@@ -222,7 +222,7 @@ impl<R: CloudRemote> Session<R> {
             // Saves unchanged since the last sync are compared, not queued: a
             // failed check must not report them as waiting to be sent.
             let scope = self.context.config.scope(&self.context.account_id);
-            let journal = steam_cloud::peek(&self.context.config.root, scope)?;
+            let journal = cloud_vault::peek(&self.context.config.root, scope)?;
             if !had_work && journal.baseline && !journal.local_changes {
                 self.context.pending = None;
                 self.context.save()?;
@@ -388,8 +388,8 @@ impl<R: CloudRemote> Session<R> {
                 .parent()
                 .ok_or(Error::Storage)?
                 .join(format!("epic-upload-{}.json", pending.id));
-            if !steam_cloud::journal::regular(&path)? {
-                steam_cloud::journal::write(&path, &pending)?;
+            if !cloud_vault::journal::regular(&path)? {
+                cloud_vault::journal::write(&path, &pending)?;
             }
             self.vault.recompare_pending(
                 &pending.id,
@@ -455,7 +455,7 @@ impl<R: CloudRemote> Session<R> {
                     self.vault.confirm_equal(&remote.files, &remote)?;
                 } else {
                     if !launching && self.vault.capture(&bindings)? != local {
-                        return Err(steam_cloud::Error::Stale.into());
+                        return Err(cloud_vault::Error::Stale.into());
                     }
                     self.vault.apply_download(
                         &bindings,
@@ -654,13 +654,13 @@ fn retryable(error: &Error) -> bool {
                     | EpicError::CloudConflict
                     | EpicError::Http(408 | 429 | 500..=599)
             )
-            | Error::Vault(steam_cloud::Error::Stale)
+            | Error::Vault(cloud_vault::Error::Stale)
     )
 }
 
 pub(crate) fn pending(root: &Path, account: &str) -> Result<Vec<Configuration>> {
     store::safe(root)?;
-    let directory = steam_cloud::epic_account_directory(root, account)?;
+    let directory = cloud_vault::epic_account_directory(root, account)?;
     store::safe(&directory)?;
     if !directory.exists() {
         return Ok(Vec::new());
@@ -673,7 +673,7 @@ pub(crate) fn pending(root: &Path, account: &str) -> Result<Vec<Configuration>> 
         }
         let path = entry.path().join("epic-context.json");
         store::safe(&path)?;
-        let Some(context): Option<Context> = steam_cloud::journal::read(&path)? else {
+        let Some(context): Option<Context> = cloud_vault::journal::read(&path)? else {
             continue;
         };
         context.validate(&context.config, account)?;
@@ -682,7 +682,7 @@ pub(crate) fn pending(root: &Path, account: &str) -> Result<Vec<Configuration>> 
         }
         // Vault work outlives the context marker: an uncertain upload or an
         // interrupted replacement still needs this game's next sync.
-        let vault = steam_cloud::peek(root, context.config.scope(account))?;
+        let vault = cloud_vault::peek(root, context.config.scope(account))?;
         if context.pending.is_some() || vault.pending.is_some() || vault.applying {
             configs.push(context.config);
         }
@@ -735,16 +735,16 @@ fn indicator(
     app_name: &str,
 ) -> Result<(cloud_status::Indicator, Option<Configuration>)> {
     store::safe(root)?;
-    let scope = steam_cloud::StoreScope::from(steam_cloud::EpicScope {
+    let scope = cloud_vault::StoreScope::from(cloud_vault::EpicScope {
         account_id: account.into(),
         namespace: namespace.into(),
         app_name: app_name.into(),
     });
-    let vault = steam_cloud::peek(root, scope.clone())?;
+    let vault = cloud_vault::peek(root, scope.clone())?;
     // An uninstalled game has neither its installation nor a session to
     // validate against: check only that the context names this game.
     let path = scope.directory(root)?.join("epic-context.json");
-    let context: Option<Context> = steam_cloud::journal::read(&path)?;
+    let context: Option<Context> = cloud_vault::journal::read(&path)?;
     if let Some(context) = &context
         && (context.account_id != account
             || context.config.namespace != namespace

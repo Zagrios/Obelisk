@@ -43,15 +43,15 @@ pub enum Error {
     #[error("{0}")]
     Epic(#[from] epic_kit::EpicError),
     #[error("backend.epic.cloud.storage")]
-    Vault(steam_cloud::Error),
+    Vault(cloud_vault::Error),
     #[error("backend.epic.cloud.storage")]
     Io(#[from] std::io::Error),
 }
-impl From<steam_cloud::Error> for Error {
-    fn from(error: steam_cloud::Error) -> Self {
+impl From<cloud_vault::Error> for Error {
+    fn from(error: cloud_vault::Error) -> Self {
         match error {
-            steam_cloud::Error::Busy => Self::Busy,
-            steam_cloud::Error::OtherStoreBusy => Self::SharedSaves,
+            cloud_vault::Error::Busy => Self::Busy,
+            cloud_vault::Error::OtherStoreBusy => Self::SharedSaves,
             error => Self::Vault(error),
         }
     }
@@ -95,15 +95,15 @@ pub struct Configuration {
     pub language: String,
 }
 impl Configuration {
-    fn scope(&self, account: &str) -> steam_cloud::EpicScope {
-        steam_cloud::EpicScope {
+    fn scope(&self, account: &str) -> cloud_vault::EpicScope {
+        cloud_vault::EpicScope {
             account_id: account.into(),
             namespace: self.namespace.clone(),
             app_name: self.app_name.clone(),
         }
     }
     fn validate(&self, account: &str) -> Result<()> {
-        steam_cloud::StoreScope::from(self.scope(account)).validate()?;
+        cloud_vault::StoreScope::from(self.scope(account)).validate()?;
         if [
             &self.root,
             &self.home,

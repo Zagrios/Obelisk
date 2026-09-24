@@ -1,9 +1,9 @@
 use super::paths::Paths;
 use super::*;
 use crate::cloud_status;
+use cloud_vault::{Bindings, Manifest, RemoteView, SelectedFile, Vault};
 use serde::de::DeserializeOwned;
 use std::{fs, path::Path};
-use steam_cloud::{Bindings, Manifest, RemoteView, SelectedFile, Vault};
 use steam_kit::cloud::{CloudListing, CloudMetadata, MacCloudPaths};
 
 #[cfg(test)]
@@ -63,13 +63,13 @@ pub(super) fn safe(path: &Path) -> Result<(), Failure> {
 }
 pub(super) fn read<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, Failure> {
     safe(path)?;
-    Ok(steam_cloud::journal::read(path)?)
+    Ok(cloud_vault::journal::read(path)?)
 }
 pub(super) fn write(path: &Path, value: &impl Serialize) -> Result<(), Failure> {
     safe(path)?;
     let parent = path.parent().ok_or(Failure::Storage)?;
     crate::files::private_directory(parent).map_err(|_| Failure::Storage)?;
-    Ok(steam_cloud::journal::write(path, value)?)
+    Ok(cloud_vault::journal::write(path, value)?)
 }
 impl Context {
     /// A context for a store that has not yet observed its remote view.
@@ -350,7 +350,7 @@ pub(super) fn pending(root: &Path, account: u64) -> Result<Vec<u32>, Failure> {
             }
             // Vault work outlives the context flag: an uncertain upload or an
             // interrupted replacement still needs this game's next sync.
-            let vault = steam_cloud::peek(root, scope(&context.config, account))?;
+            let vault = cloud_vault::peek(root, scope(&context.config, account))?;
             Ok(context.needs_work || vault.pending.is_some() || vault.applying)
         })();
         if result.unwrap_or(true) {
@@ -382,12 +382,12 @@ pub fn indicators(
 }
 
 fn indicator(root: &Path, account: u64, app_id: u32) -> Result<cloud_status::Indicator, Failure> {
-    let scope = steam_cloud::StoreScope::from(steam_cloud::Scope {
+    let scope = cloud_vault::StoreScope::from(cloud_vault::Scope {
         steam_id: account,
         app_id,
         cloud_app_id: app_id,
     });
-    let vault = steam_cloud::peek(root, scope.clone())?;
+    let vault = cloud_vault::peek(root, scope.clone())?;
     let context = match Context::load_app(root, account, app_id) {
         Ok(context) => Some(context),
         // No context: the game has no Steam Cloud or was never checked.
@@ -409,7 +409,7 @@ fn indicator(root: &Path, account: u64, app_id: u32) -> Result<cloud_status::Ind
 #[cfg(test)]
 mod removal_tests {
     use super::*;
-    use steam_cloud::Preferences;
+    use cloud_vault::Preferences;
 
     const ACCOUNT: u64 = 0x0110_0001_0000_002a;
     const NAME: &str = "%GameInstall%saves/slot.sav";
@@ -537,7 +537,7 @@ mod removal_tests {
         };
         let epic_game = Vault::open(
             &config.root,
-            steam_cloud::EpicScope {
+            cloud_vault::EpicScope {
                 account_id: "0123456789abcdef0123456789abcdef".into(),
                 namespace: "namespace".into(),
                 app_name: "game".into(),
@@ -548,7 +548,7 @@ mod removal_tests {
         archive(&config, ACCOUNT).unwrap();
         let other_steam_game = Vault::open(
             &config.root,
-            steam_cloud::Scope {
+            cloud_vault::Scope {
                 steam_id: ACCOUNT,
                 app_id: 7,
                 cloud_app_id: 7,
@@ -574,7 +574,7 @@ mod removal_tests {
     #[test]
     fn cloud_failures_name_the_storefront_that_holds_the_saves() {
         assert!(matches!(
-            Failure::from(steam_cloud::Error::OtherStoreBusy),
+            Failure::from(cloud_vault::Error::OtherStoreBusy),
             Failure::SharedSaves
         ));
         assert_eq!(Failure::SharedSaves.key(), "backend.cloud.sharedSavesInUse");

@@ -282,19 +282,19 @@ impl Transport for Fake {
 #[tokio::test]
 async fn upload_readback_can_confirm_the_vault_without_downloading_twice() {
     let (root, mut job, mut server) = fixture();
-    let scope = steam_cloud::Scope {
+    let scope = cloud_vault::Scope {
         steam_id: job.steam_id(),
         app_id: 42,
         cloud_app_id: 42,
     };
-    let mut vault = steam_cloud::Vault::open(&root.path().join("vault"), scope).unwrap();
-    vault.set_preferences(steam_cloud::Preferences {
+    let mut vault = cloud_vault::Vault::open(&root.path().join("vault"), scope).unwrap();
+    vault.set_preferences(cloud_vault::Preferences {
         account_enabled: Some(true),
         game_enabled: Some(true),
     });
-    let before = steam_cloud::RemoteView {
+    let before = cloud_vault::RemoteView {
         revision: "2".into(),
-        files: steam_cloud::Manifest(
+        files: cloud_vault::Manifest(
             server
                 .bodies
                 .iter()
@@ -303,7 +303,7 @@ async fn upload_readback_can_confirm_the_vault_without_downloading_twice() {
         ),
     };
     vault.confirm_equal(&before.files, &before).unwrap();
-    let desired = steam_cloud::Manifest(BTreeMap::from([
+    let desired = cloud_vault::Manifest(BTreeMap::from([
         ("keep".into(), vault.stage(b"same", 7).unwrap()),
         ("new".into(), vault.stage(b"new-data", 7).unwrap()),
     ]));
@@ -312,7 +312,7 @@ async fn upload_readback_can_confirm_the_vault_without_downloading_twice() {
         .queue_upload(&desired, &before, "fixture", auth)
         .unwrap();
     let permit = vault.begin_upload(&id, auth, &before).unwrap();
-    let mut readback = steam_cloud::Manifest::default();
+    let mut readback = cloud_vault::Manifest::default();
     let listing = execute_verified(&mut server, &mut job, &|| true, |file, bytes| {
         assert!(
             readback
@@ -327,7 +327,7 @@ async fn upload_readback_can_confirm_the_vault_without_downloading_twice() {
     })
     .await
     .unwrap();
-    let readback = steam_cloud::RemoteView {
+    let readback = cloud_vault::RemoteView {
         revision: listing.change_number.to_string(),
         files: readback,
     };

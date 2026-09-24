@@ -206,7 +206,7 @@ async fn a_failed_exit_upload_keeps_the_exit_save_pending() {
 }
 
 fn record(game: &Game) -> crate::cloud_status::Record {
-    let scope = steam_cloud::StoreScope::from(scope(&game.config, ACCOUNT));
+    let scope = cloud_vault::StoreScope::from(scope(&game.config, ACCOUNT));
     crate::cloud_status::read(&game.config.root, &scope).unwrap()
 }
 

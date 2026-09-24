@@ -1,5 +1,5 @@
 [package]
-name = "steam-cloud"
+name = "cloud-vault"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

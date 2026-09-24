@@ -184,6 +184,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "cloud-vault"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
 name = "cmake"
 version = "0.1.58"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -527,6 +539,7 @@ dependencies = [
 name = "game-runtime"
 version = "0.1.0"
 dependencies = [
+ "cloud-vault",
  "epic-kit",
  "flate2",
  "forge-core",
@@ -534,7 +547,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "steam-cloud",
  "steam-kit",
  "tempfile",
  "thiserror",
@@ -1735,18 +1747,6 @@ name = "stable_deref_trait"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
-
-[[package]]
-name = "steam-cloud"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "thiserror",
- "uuid",
-]
 
 [[package]]
 name = "steam-kit"

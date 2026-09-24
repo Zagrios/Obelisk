@@ -372,7 +372,7 @@ fn removal_needs_only_the_epic_storefront_lock() {
     fs::remove_dir_all(&config.install).unwrap();
     assert!(matches!(removed(&config, ACCOUNT), Err(Error::Busy)));
     drop(vault);
-    let steam = steam_cloud::Scope {
+    let steam = cloud_vault::Scope {
         steam_id: 0x0110_0001_0000_0001,
         app_id: 10,
         cloud_app_id: 10,
@@ -391,11 +391,11 @@ fn removal_needs_only_the_epic_storefront_lock() {
 
 #[test]
 fn archive_errors_name_the_storefront_that_holds_the_saves() {
-    assert!(matches!(Error::from(steam_cloud::Error::Busy), Error::Busy));
-    let shared = Error::from(steam_cloud::Error::OtherStoreBusy);
+    assert!(matches!(Error::from(cloud_vault::Error::Busy), Error::Busy));
+    let shared = Error::from(cloud_vault::Error::OtherStoreBusy);
     assert_eq!(shared.to_string(), "backend.cloud.sharedSavesInUse");
     assert_eq!(
-        Error::from(steam_cloud::Error::Stale).to_string(),
+        Error::from(cloud_vault::Error::Stale).to_string(),
         "backend.epic.cloud.storage"
     );
 }

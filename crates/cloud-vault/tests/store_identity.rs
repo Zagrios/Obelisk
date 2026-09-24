@@ -1,5 +1,5 @@
+use cloud_vault::*;
 use std::{collections::BTreeSet, fs, path::Path};
-use steam_cloud::*;
 
 const ACCOUNT_A: &str = "0123456789abcdef0123456789abcdef";
 const ACCOUNT_B: &str = "abcdef0123456789abcdef0123456789";

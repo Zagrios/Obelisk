@@ -1,9 +1,9 @@
+use cloud_vault::*;
 use std::{
     collections::BTreeMap,
     fs,
     time::{Duration, Instant},
 };
-use steam_cloud::*;
 
 fn scope(account: u32, app: u32, cloud: u32) -> Scope {
     Scope {

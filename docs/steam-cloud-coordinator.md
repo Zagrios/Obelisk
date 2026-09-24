@@ -1,6 +1,6 @@
 # Rust Cloud coordinator
 
-September 20, 2026. `steam-cloud` implements local storage and synchronization policy. `game-runtime::steam::cloud` connects that policy to the authenticated CM adapter, production launcher, detached supervisor and Swift interface for supported macOS AutoCloud rules and ordinary SDK RemoteStorage files. Mixed configurations route prefixed AutoCloud names and plain SDK names independently. SDK caches live beside the archive under `<archive>-sdk/<SteamID64>/<AppID>` and are exposed to the native host only after prelaunch reconciliation. See [compatibility and validation limits](steam-cloud-compatibility-2026-09-20.md).
+September 20, 2026. `cloud-vault` implements local storage and synchronization policy. `game-runtime::steam::cloud` connects that policy to the authenticated CM adapter, production launcher, detached supervisor and Swift interface for supported macOS AutoCloud rules and ordinary SDK RemoteStorage files. Mixed configurations route prefixed AutoCloud names and plain SDK names independently. SDK caches live beside the archive under `<archive>-sdk/<SteamID64>/<AppID>` and are exposed to the native host only after prelaunch reconciliation. See [compatibility and validation limits](steam-cloud-compatibility-2026-09-20.md).
 
 `steam-kit::cm::AppInfo` retains the complete UFS tree in `cloud`, including rules, root overrides, unknown fields and duplicate child keys. The metadata resolver selects macOS files without game-specific paths. Earlier [download/restoration](steam-cloud-authenticated-validation.md) and [upload/readback](steam-cloud-authenticated-upload.md) validations are now complemented by a [real detached launch/exit cycle](steam-cloud-lifecycle.md).
 
@@ -73,6 +73,6 @@ The crate tests use only temporary directories and synthetic manifests. They cov
 
 These isolated tests establish deterministic policy and local transaction recovery. Separate authenticated tests establish the CM transfer and the real Silksong lifecycle described above. They do not establish compatibility with every game's metadata, SDK/Dynamic Cloud or durability across a physical power loss.
 
-Run the focused tests with `cargo test --locked -p steam-cloud`. The repository's `scripts/test.sh` also includes this crate through its workspace checks.
+Run the focused tests with `cargo test --locked -p cloud-vault`. The repository's `scripts/test.sh` also includes this crate through its workspace checks.
 
 The earlier standalone coordinator validation is retained in [its observation report](evidence/steam-cloud-runtime-2026-09-19/coordinator-observations.json). Current production lifecycle evidence and validation scope are recorded in [the lifecycle report](steam-cloud-lifecycle.md).

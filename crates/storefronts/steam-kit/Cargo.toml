@@ -29,7 +29,7 @@ tempfile.workspace = true
 zip = { version = "=8.2.0", default-features = false, features = ["deflate-flate2"] }
 
 [dev-dependencies]
-steam-cloud.workspace = true
+cloud-vault.workspace = true
 
 [lints]
 workspace = true

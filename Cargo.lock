@@ -337,6 +337,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
 
 [[package]]
+name = "cloud-vault"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
 name = "cmake"
 version = "0.1.58"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -688,6 +700,7 @@ dependencies = [
 name = "game-runtime"
 version = "0.1.0"
 dependencies = [
+ "cloud-vault",
  "epic-kit",
  "flate2",
  "forge-core",
@@ -696,7 +709,6 @@ dependencies = [
  "serde_json",
  "sha1 0.11.0",
  "sha2",
- "steam-cloud",
  "steam-kit",
  "tempfile",
  "thiserror",
@@ -2004,18 +2016,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
-name = "steam-cloud"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "thiserror",
- "uuid",
-]
-
-[[package]]
 name = "steam-kit"
 version = "0.1.0"
 dependencies = [
@@ -2023,6 +2023,7 @@ dependencies = [
  "base64 0.23.1",
  "bytes",
  "cbc",
+ "cloud-vault",
  "crc32fast",
  "flate2",
  "forge-core",
@@ -2035,7 +2036,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha1 0.11.0",
- "steam-cloud",
  "tempfile",
  "thiserror",
  "tokio",

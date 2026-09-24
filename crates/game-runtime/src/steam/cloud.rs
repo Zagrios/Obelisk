@@ -126,9 +126,9 @@ impl Failure {
         )
     }
 }
-impl From<steam_cloud::Error> for Failure {
-    fn from(e: steam_cloud::Error) -> Self {
-        use steam_cloud::Error;
+impl From<cloud_vault::Error> for Failure {
+    fn from(e: cloud_vault::Error) -> Self {
+        use cloud_vault::Error;
         match e {
             Error::Busy => Self::Busy,
             Error::OtherStoreBusy => Self::SharedSaves,
@@ -361,8 +361,8 @@ fn now() -> u64 {
         .unwrap_or_default()
         .as_secs()
 }
-fn scope(config: &Config, account: u64) -> steam_cloud::Scope {
-    steam_cloud::Scope {
+fn scope(config: &Config, account: u64) -> cloud_vault::Scope {
+    cloud_vault::Scope {
         steam_id: account,
         app_id: config.app_id,
         cloud_app_id: config.app_id,

@@ -1,9 +1,9 @@
 //! Per-scope Cloud markers that the indicator reads without any lock. Both
 //! storefront adapters write them beside the vault state they describe, while
 //! they hold that storefront's vault. A marker is display state only.
+use cloud_vault::StoreScope;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use steam_cloud::StoreScope;
 
 const FILE: &str = "cloud-status.json";
 
@@ -56,13 +56,13 @@ pub enum ProblemKind {
     Conflict,
 }
 
-fn path(root: &Path, scope: &StoreScope) -> steam_cloud::Result<PathBuf> {
+fn path(root: &Path, scope: &StoreScope) -> cloud_vault::Result<PathBuf> {
     Ok(scope.directory(root)?.join(FILE))
 }
 
 /// A missing file reads as an empty record.
-pub fn read(root: &Path, scope: &StoreScope) -> steam_cloud::Result<Record> {
-    Ok(steam_cloud::journal::read(&path(root, scope)?)?.unwrap_or_default())
+pub fn read(root: &Path, scope: &StoreScope) -> cloud_vault::Result<Record> {
+    Ok(cloud_vault::journal::read(&path(root, scope)?)?.unwrap_or_default())
 }
 
 /// The caller holds this scope's vault, which serializes writers.
@@ -70,7 +70,7 @@ pub(crate) fn update(
     root: &Path,
     scope: &StoreScope,
     change: impl FnOnce(&mut Record),
-) -> steam_cloud::Result<()> {
+) -> cloud_vault::Result<()> {
     let mut record = read(root, scope)?;
     let before = record.clone();
     record.scope = Some(scope.clone());
@@ -78,7 +78,7 @@ pub(crate) fn update(
     if record == before {
         return Ok(());
     }
-    steam_cloud::journal::write(&path(root, scope)?, &record)
+    cloud_vault::journal::write(&path(root, scope)?, &record)
 }
 
 pub(crate) fn unavailable(reason: UnavailableReason) -> impl FnOnce(&mut Record) {
@@ -163,13 +163,13 @@ pub(crate) struct Journal {
 /// transient and does not concern this one.
 pub(crate) fn indicator(
     scope: &StoreScope,
-    vault: &steam_cloud::Summary,
+    vault: &cloud_vault::Summary,
     journal: &Journal,
     record: &Record,
 ) -> Indicator {
     let problem = record.problem.as_ref().map(|problem| problem.kind);
     let uncertain =
-        vault.pending == Some(steam_cloud::UploadState::MayHaveCommitted) || journal.uncertain;
+        vault.pending == Some(cloud_vault::UploadState::MayHaveCommitted) || journal.uncertain;
     let pending = journal.pending || vault.pending.is_some();
     let state = if vault.applying || journal.applying || vault.switching.as_ref() == Some(scope) {
         SavedState::RecoveryNeeded
@@ -209,10 +209,10 @@ fn now() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use steam_cloud::{Summary, UploadState};
+    use cloud_vault::{Summary, UploadState};
 
     fn scope(app_id: u32) -> StoreScope {
-        steam_cloud::Scope {
+        cloud_vault::Scope {
             steam_id: 0x0110_0001_0000_0001,
             app_id,
             cloud_app_id: app_id,

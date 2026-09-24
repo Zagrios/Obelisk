@@ -66,7 +66,7 @@ Add a safe Rust `steam-cloud` module, preferably a crate shared by the superviso
 
 | Responsibility | Owner |
 | --- | --- |
-| Synchronization decisions, baseline comparison, conflicts, retry policy, history and restoration | `steam-cloud`, Rust |
+| Synchronization decisions, baseline comparison, conflicts, retry policy, history and restoration | `cloud-vault`, Rust |
 | Process lifetime, exclusive admission, post-exit work, detached recovery and platform events | `game-runtime`, Rust |
 | Steam metadata and CM/HTTP wire operations | `steam-kit`, Rust, under coordinator control |
 | Real Steamworks interfaces, required Valve cache operations and callbacks | `steam-native`, Rust adapter calling the pinned Valve binary |

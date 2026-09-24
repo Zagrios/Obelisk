@@ -27,7 +27,7 @@ fn lock_file(root: &Path, name: &str) -> Result<File, Error> {
 /// another thread spawns shares it.
 pub(crate) fn lock(root: &Path, name: &str) -> Result<File, Error> {
     let file = lock_file(root, name)?;
-    steam_cloud::lock::try_lock(&file).map_err(|_| Error::Busy)?;
+    cloud_vault::lock::try_lock(&file).map_err(|_| Error::Busy)?;
     Ok(file)
 }
 

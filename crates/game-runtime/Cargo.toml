@@ -20,7 +20,7 @@ flate2.workspace = true
 reqwest.workspace = true
 tokio = { workspace = true, features = ["process", "io-util"] }
 steam-kit.workspace = true
-steam-cloud.workspace = true
+cloud-vault.workspace = true
 epic-kit.workspace = true
 forge-core.workspace = true
 

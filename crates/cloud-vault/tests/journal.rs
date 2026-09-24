@@ -4,7 +4,7 @@ use std::{
     os::unix::fs::{PermissionsExt, symlink},
 };
 
-use steam_cloud::{Error, journal};
+use cloud_vault::{Error, journal};
 
 #[test]
 fn journal_reads_reject_every_group_or_other_permission() {

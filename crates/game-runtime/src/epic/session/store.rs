@@ -1,6 +1,6 @@
 use super::*;
+use cloud_vault::{Bindings, SelectedFile, StoreScope, journal};
 use std::{collections::BTreeSet, fs, os::unix::fs::MetadataExt, path::Path};
-use steam_cloud::{Bindings, SelectedFile, StoreScope, journal};
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

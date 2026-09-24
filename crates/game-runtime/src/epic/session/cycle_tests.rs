@@ -195,7 +195,7 @@ async fn a_failed_exit_upload_keeps_the_exit_save_pending() {
 }
 
 fn record(game: &Game) -> crate::cloud_status::Record {
-    let scope = steam_cloud::StoreScope::from(game.config.scope(ACCOUNT));
+    let scope = cloud_vault::StoreScope::from(game.config.scope(ACCOUNT));
     crate::cloud_status::read(&game.config.root, &scope).unwrap()
 }
 
@@ -317,7 +317,7 @@ async fn uninstall_archive_needs_only_the_epic_storefront_lock() {
     game.synced(b"progress").await;
     let steam_game = Vault::open(
         &game.config.root,
-        steam_cloud::Scope {
+        cloud_vault::Scope {
             steam_id: 0x0110_0001_0000_0001,
             app_id: 10,
             cloud_app_id: 10,
@@ -337,7 +337,7 @@ async fn uninstall_archive_needs_only_the_epic_storefront_lock() {
     );
     let other_epic_game = Vault::open(
         &game.config.root,
-        steam_cloud::EpicScope {
+        cloud_vault::EpicScope {
             account_id: ACCOUNT.into(),
             namespace: "namespace".into(),
             app_name: "other-game".into(),

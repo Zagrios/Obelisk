@@ -1,5 +1,5 @@
 use super::*;
-use steam_cloud::FileVersion;
+use cloud_vault::FileVersion;
 use steam_kit::cloud::{CloudError, CloudFile, CloudMetadata, CloudPreferences};
 
 /// Remote file reads, the part of a connection that builds a verified view.
