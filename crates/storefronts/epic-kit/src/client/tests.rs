@@ -1646,7 +1646,7 @@ async fn launch_discards_exchange_code_when_user_disconnects_during_http() {
 async fn launch_cannot_read_installation_while_download_holds_its_lock() {
     let temporary = tempfile::tempdir().unwrap();
     launch_installation(temporary.path());
-    let _download_lock = download::lock_installation(temporary.path()).unwrap();
+    let _download_lock = forge_core::installation::lock(temporary.path()).unwrap();
     let mock = Mock::new(Vec::new());
     let result = mock
         .client(false)

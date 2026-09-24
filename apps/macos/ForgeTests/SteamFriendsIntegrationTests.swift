@@ -374,7 +374,7 @@ final class FriendsBridgeTestSession: SteamSessionProtocol, @unchecked Sendable 
     func profile() async throws -> SteamProfile { SteamProfile(displayName: nil, avatarUrl: nil) }
     func details(appId: UInt32, language: String) async throws -> SteamGameDetails { throw FriendsTestFailure.unexpected }
     func download(appId: UInt32, platform: String, language: String, directory: String) async throws -> SteamInstallation { throw FriendsTestFailure.unexpected }
-    func downloadProgress() -> SteamTransfer? { nil }
+    func downloadProgress() -> GameTransfer? { nil }
     func cancelDownload() {}
     func launchPlan(appId: UInt32, platform: String, directory: String) async throws -> SteamLaunchPlan { throw FriendsTestFailure.unexpected }
 }

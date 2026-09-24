@@ -12,8 +12,8 @@ struct SteamGameDetailView: View {
         model.platform == "macos" ? model.details?.macosBytes ?? 0 : model.details?.windowsBytes ?? 0
     }
 
-    private var gameTransfer: SteamTransfer? {
-        model.transfer.flatMap { $0.appId == game.appId ? $0 : nil }
+    private var gameTransfer: GameTransfer? {
+        model.transfer.flatMap { $0.game == String(game.appId) ? $0 : nil }
     }
 
     var body: some View {

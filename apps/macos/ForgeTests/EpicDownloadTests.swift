@@ -395,15 +395,11 @@ final class EpicDownloadTests: XCTestCase {
         XCTAssertTrue(missing.installations.isEmpty)
     }
 
-    func testEpicTransfersReuseSteamFormattingAndClampProgress() {
-        let epic = EpicTransfer(appName: "one", state: .verifying, completedBytes: 120, totalBytes: 100,
-                                networkBytes: 0, contentBytes: 0, currentFile: "Content/game.pak", message: "")
-        let steam = SteamTransfer(appId: 1, state: .verifying, completedBytes: 120, totalBytes: 100,
-                                  networkBytes: 0, contentBytes: 0, currentFile: "Content/game.pak", message: "")
-        XCTAssertEqual(epic.progressSummary, steam.progressSummary)
-        XCTAssertEqual(epic.buttonTitle, steam.buttonTitle)
-        XCTAssertEqual(epic.progressFraction, 1)
-        XCTAssertEqual(epic.downloadedGameDataText, L10n.string("ui.transfer.no_downloaded_data"))
+    func testTransferProgressIsClamped() {
+        let transfer = GameTransfer(game: "one", state: .verifying, completedBytes: 120, totalBytes: 100,
+                                    networkBytes: 0, contentBytes: 0, currentFile: "Content/game.pak", message: "")
+        XCTAssertEqual(transfer.progressFraction, 1)
+        XCTAssertEqual(transfer.downloadedGameDataText, L10n.string("ui.transfer.no_downloaded_data"))
     }
 
     func testInstalledPrimaryActionAlwaysVerifiesThenAuthorizesAndLaunchesWithoutDuplicates() async throws {
@@ -853,7 +849,7 @@ private actor EpicDownloadSession: EpicSessionProtocol {
     func download(namespace: String, catalogItemId: String, appName: String, platform: String, directory: String) async throws -> EpicInstallation {
         events.append("download")
         downloads.append(EpicDownloadRequest(namespace: namespace, catalogItemId: catalogItemId, appName: appName, platform: platform, directory: directory))
-        progress.set(EpicTransfer(appName: appName, state: .downloading, completedBytes: 40, totalBytes: 100,
+        progress.set(GameTransfer(game: appName, state: .downloading, completedBytes: 40, totalBytes: 100,
                                  networkBytes: 20, contentBytes: 40, currentFile: "Content/game.pak", message: ""))
         defer { returnedDownloads += 1 }
         if shouldHoldDownload {
@@ -914,7 +910,7 @@ private actor EpicDownloadSession: EpicSessionProtocol {
         launchContinuation = nil
     }
     private func recordBegin() { events.append("begin") }
-    nonisolated func downloadProgress() -> EpicTransfer? { progress.snapshot }
+    nonisolated func downloadProgress() -> GameTransfer? { progress.snapshot }
     nonisolated func cancelDownload() { progress.cancel() }
     func disconnect() {}
     func holdNextDownload() { shouldHoldDownload = true }
@@ -937,11 +933,11 @@ private actor EpicDownloadSession: EpicSessionProtocol {
 
 private final class EpicDownloadProgress: @unchecked Sendable {
     private let lock = NSLock()
-    private var value: EpicTransfer?
+    private var value: GameTransfer?
     private var cancelled = 0
-    var snapshot: EpicTransfer? { lock.withLock { value } }
+    var snapshot: GameTransfer? { lock.withLock { value } }
     var cancelCount: Int { lock.withLock { cancelled } }
-    func set(_ transfer: EpicTransfer) { lock.withLock { value = transfer } }
+    func set(_ transfer: GameTransfer) { lock.withLock { value = transfer } }
     func finish(_ state: TransferState) { lock.withLock { value?.state = state } }
     func cancel() { lock.withLock { cancelled += 1; value?.state = .cancelled } }
 }

@@ -44,7 +44,7 @@ final class EpicModel {
     private(set) var isLoadingGames = false
     private(set) var isSigningOut = false
     private(set) var canRetryRestore = false
-    private(set) var transfer: EpicTransfer?
+    private(set) var transfer: GameTransfer?
     private(set) var transferLibraryID: String?
     private(set) var isDownloading = false
     private(set) var isLaunching = false
@@ -624,7 +624,7 @@ final class EpicModel {
         let current = generation
         lastDownload = (game, platform, destination)
         transferLibraryID = game.libraryID
-        transfer = EpicTransfer(appName: game.appName, state: .preparing, completedBytes: 0, totalBytes: 0,
+        transfer = GameTransfer(game: game.appName, state: .preparing, completedBytes: 0, totalBytes: 0,
                                 networkBytes: 0, contentBytes: 0, currentFile: "", message: "")
         isDownloading = true
         isLaunching = launchAfterDownload
@@ -734,7 +734,7 @@ final class EpicModel {
                 finishedProgress = true
                 progressTask?.cancel()
                 progressTask = nil
-                if startedDownload, let snapshot = session.downloadProgress(), snapshot.appName == game.appName, snapshot.state == terminalState {
+                if startedDownload, let snapshot = session.downloadProgress(), snapshot.game == game.appName, snapshot.state == terminalState {
                     transfer = snapshot
                 } else {
                     transfer?.message = ""
@@ -749,7 +749,7 @@ final class EpicModel {
                 try requireCurrentDownload(generation: current)
                 progressTask = Task {
                     while current == generation && !Task.isCancelled {
-                        if let snapshot = session.downloadProgress(), snapshot.appName == game.appName,
+                        if let snapshot = session.downloadProgress(), snapshot.game == game.appName,
                            snapshot.state == .preparing || snapshot.state == .verifying || snapshot.state == .downloading {
                             if snapshot != transfer { transfer = snapshot }
                         }

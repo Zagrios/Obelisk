@@ -218,7 +218,7 @@ private final class FilterSteamSession: SteamSessionProtocol, Sendable {
     func profile() async throws -> SteamProfile { SteamProfile(displayName: nil, avatarUrl: nil) }
     func details(appId: UInt32, language: String) async throws -> SteamGameDetails { throw FilterFixtureFailure.unexpectedOperation }
     func download(appId: UInt32, platform: String, language: String, directory: String) async throws -> SteamInstallation { throw FilterFixtureFailure.unexpectedOperation }
-    func downloadProgress() -> SteamTransfer? { nil }
+    func downloadProgress() -> GameTransfer? { nil }
     func cancelDownload() {}
     func launchPlan(appId: UInt32, platform: String, directory: String) async throws -> SteamLaunchPlan { throw FilterFixtureFailure.unexpectedOperation }
 }

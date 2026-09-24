@@ -4,7 +4,7 @@ struct EpicGameDetailView: View {
     @Bindable var model: EpicModel
     let game: EpicGame
 
-    private var gameTransfer: EpicTransfer? {
+    private var gameTransfer: GameTransfer? {
         model.transferLibraryID == game.libraryID ? model.transfer : nil
     }
 

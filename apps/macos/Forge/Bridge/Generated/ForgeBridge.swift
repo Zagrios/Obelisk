@@ -774,7 +774,7 @@ public protocol EpicSessionProtocol: AnyObject, Sendable {
     
     func download(namespace: String, catalogItemId: String, appName: String, platform: String, directory: String) async throws  -> EpicInstallation
     
-    func downloadProgress()  -> EpicTransfer?
+    func downloadProgress()  -> GameTransfer?
     
     func gameDetails(namespace: String, catalogItemId: String, appName: String, platform: String) async throws  -> EpicGameDetails
     
@@ -976,8 +976,8 @@ open func download(namespace: String, catalogItemId: String, appName: String, pl
         )
 }
     
-open func downloadProgress() -> EpicTransfer?  {
-    return try!  FfiConverterOptionTypeEpicTransfer.lift(try! rustCall() {
+open func downloadProgress() -> GameTransfer?  {
+    return try!  FfiConverterOptionTypeGameTransfer.lift(try! rustCall() {
         uniffiCallStatus in
     uniffi_forge_bridge_fn_method_epicsession_download_progress(
             self.uniffiCloneHandle(),uniffiCallStatus
@@ -2291,7 +2291,7 @@ public protocol SteamSessionProtocol: AnyObject, Sendable {
     
     func download(appId: UInt32, platform: String, language: String, directory: String) async throws  -> SteamInstallation
     
-    func downloadProgress()  -> SteamTransfer?
+    func downloadProgress()  -> GameTransfer?
     
     func games() async throws  -> [SteamGame]
     
@@ -2558,8 +2558,8 @@ open func download(appId: UInt32, platform: String, language: String, directory:
         )
 }
     
-open func downloadProgress() -> SteamTransfer?  {
-    return try!  FfiConverterOptionTypeSteamTransfer.lift(try! rustCall() {
+open func downloadProgress() -> GameTransfer?  {
+    return try!  FfiConverterOptionTypeGameTransfer.lift(try! rustCall() {
         uniffiCallStatus in
     uniffi_forge_bridge_fn_method_steamsession_download_progress(
             self.uniffiCloneHandle(),uniffiCallStatus
@@ -3738,84 +3738,6 @@ public func FfiConverterTypeEpicLaunchPlan_lower(_ value: EpicLaunchPlan) -> Rus
 }
 
 
-public struct EpicTransfer: Equatable, Hashable {
-    public var appName: String
-    public var state: TransferState
-    public var completedBytes: UInt64
-    public var totalBytes: UInt64
-    public var networkBytes: UInt64
-    public var contentBytes: UInt64
-    public var currentFile: String
-    public var message: String
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(appName: String, state: TransferState, completedBytes: UInt64, totalBytes: UInt64, networkBytes: UInt64, contentBytes: UInt64, currentFile: String, message: String) {
-        self.appName = appName
-        self.state = state
-        self.completedBytes = completedBytes
-        self.totalBytes = totalBytes
-        self.networkBytes = networkBytes
-        self.contentBytes = contentBytes
-        self.currentFile = currentFile
-        self.message = message
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension EpicTransfer: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeEpicTransfer: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EpicTransfer {
-        return
-            try EpicTransfer(
-                appName: FfiConverterString.read(from: &buf), 
-                state: FfiConverterTypeTransferState.read(from: &buf), 
-                completedBytes: FfiConverterUInt64.read(from: &buf), 
-                totalBytes: FfiConverterUInt64.read(from: &buf), 
-                networkBytes: FfiConverterUInt64.read(from: &buf), 
-                contentBytes: FfiConverterUInt64.read(from: &buf), 
-                currentFile: FfiConverterString.read(from: &buf), 
-                message: FfiConverterString.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: EpicTransfer, into buf: inout [UInt8]) {
-        FfiConverterString.write(value.appName, into: &buf)
-        FfiConverterTypeTransferState.write(value.state, into: &buf)
-        FfiConverterUInt64.write(value.completedBytes, into: &buf)
-        FfiConverterUInt64.write(value.totalBytes, into: &buf)
-        FfiConverterUInt64.write(value.networkBytes, into: &buf)
-        FfiConverterUInt64.write(value.contentBytes, into: &buf)
-        FfiConverterString.write(value.currentFile, into: &buf)
-        FfiConverterString.write(value.message, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeEpicTransfer_lift(_ buf: RustBuffer) throws -> EpicTransfer {
-    return try FfiConverterTypeEpicTransfer.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeEpicTransfer_lower(_ value: EpicTransfer) -> RustBuffer {
-    return FfiConverterTypeEpicTransfer.lower(value)
-}
-
-
 public struct Game: Equatable, Hashable {
     public var id: String
     public var title: String
@@ -3993,6 +3915,93 @@ public func FfiConverterTypeGameSnapshot_lift(_ buf: RustBuffer) throws -> GameS
 #endif
 public func FfiConverterTypeGameSnapshot_lower(_ value: GameSnapshot) -> RustBuffer {
     return FfiConverterTypeGameSnapshot.lower(value)
+}
+
+
+/**
+ * One installation Transfer's progress, the same record for every storefront.
+ */
+public struct GameTransfer: Equatable, Hashable {
+    /**
+     * The storefront's own identity for the game: Steam's app ID, Epic's app name.
+     */
+    public var game: String
+    public var state: TransferState
+    public var completedBytes: UInt64
+    public var totalBytes: UInt64
+    public var networkBytes: UInt64
+    public var contentBytes: UInt64
+    public var currentFile: String
+    public var message: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The storefront's own identity for the game: Steam's app ID, Epic's app name.
+         */game: String, state: TransferState, completedBytes: UInt64, totalBytes: UInt64, networkBytes: UInt64, contentBytes: UInt64, currentFile: String, message: String) {
+        self.game = game
+        self.state = state
+        self.completedBytes = completedBytes
+        self.totalBytes = totalBytes
+        self.networkBytes = networkBytes
+        self.contentBytes = contentBytes
+        self.currentFile = currentFile
+        self.message = message
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension GameTransfer: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGameTransfer: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GameTransfer {
+        return
+            try GameTransfer(
+                game: FfiConverterString.read(from: &buf), 
+                state: FfiConverterTypeTransferState.read(from: &buf), 
+                completedBytes: FfiConverterUInt64.read(from: &buf), 
+                totalBytes: FfiConverterUInt64.read(from: &buf), 
+                networkBytes: FfiConverterUInt64.read(from: &buf), 
+                contentBytes: FfiConverterUInt64.read(from: &buf), 
+                currentFile: FfiConverterString.read(from: &buf), 
+                message: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GameTransfer, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.game, into: &buf)
+        FfiConverterTypeTransferState.write(value.state, into: &buf)
+        FfiConverterUInt64.write(value.completedBytes, into: &buf)
+        FfiConverterUInt64.write(value.totalBytes, into: &buf)
+        FfiConverterUInt64.write(value.networkBytes, into: &buf)
+        FfiConverterUInt64.write(value.contentBytes, into: &buf)
+        FfiConverterString.write(value.currentFile, into: &buf)
+        FfiConverterString.write(value.message, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGameTransfer_lift(_ buf: RustBuffer) throws -> GameTransfer {
+    return try FfiConverterTypeGameTransfer.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGameTransfer_lower(_ value: GameTransfer) -> RustBuffer {
+    return FfiConverterTypeGameTransfer.lower(value)
 }
 
 
@@ -5320,84 +5329,6 @@ public func FfiConverterTypeSteamSupervisedTarget_lift(_ buf: RustBuffer) throws
 #endif
 public func FfiConverterTypeSteamSupervisedTarget_lower(_ value: SteamSupervisedTarget) -> RustBuffer {
     return FfiConverterTypeSteamSupervisedTarget.lower(value)
-}
-
-
-public struct SteamTransfer: Equatable, Hashable {
-    public var appId: UInt32
-    public var state: TransferState
-    public var completedBytes: UInt64
-    public var totalBytes: UInt64
-    public var networkBytes: UInt64
-    public var contentBytes: UInt64
-    public var currentFile: String
-    public var message: String
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(appId: UInt32, state: TransferState, completedBytes: UInt64, totalBytes: UInt64, networkBytes: UInt64, contentBytes: UInt64, currentFile: String, message: String) {
-        self.appId = appId
-        self.state = state
-        self.completedBytes = completedBytes
-        self.totalBytes = totalBytes
-        self.networkBytes = networkBytes
-        self.contentBytes = contentBytes
-        self.currentFile = currentFile
-        self.message = message
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension SteamTransfer: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeSteamTransfer: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SteamTransfer {
-        return
-            try SteamTransfer(
-                appId: FfiConverterUInt32.read(from: &buf), 
-                state: FfiConverterTypeTransferState.read(from: &buf), 
-                completedBytes: FfiConverterUInt64.read(from: &buf), 
-                totalBytes: FfiConverterUInt64.read(from: &buf), 
-                networkBytes: FfiConverterUInt64.read(from: &buf), 
-                contentBytes: FfiConverterUInt64.read(from: &buf), 
-                currentFile: FfiConverterString.read(from: &buf), 
-                message: FfiConverterString.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: SteamTransfer, into buf: inout [UInt8]) {
-        FfiConverterUInt32.write(value.appId, into: &buf)
-        FfiConverterTypeTransferState.write(value.state, into: &buf)
-        FfiConverterUInt64.write(value.completedBytes, into: &buf)
-        FfiConverterUInt64.write(value.totalBytes, into: &buf)
-        FfiConverterUInt64.write(value.networkBytes, into: &buf)
-        FfiConverterUInt64.write(value.contentBytes, into: &buf)
-        FfiConverterString.write(value.currentFile, into: &buf)
-        FfiConverterString.write(value.message, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeSteamTransfer_lift(_ buf: RustBuffer) throws -> SteamTransfer {
-    return try FfiConverterTypeSteamTransfer.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeSteamTransfer_lower(_ value: SteamTransfer) -> RustBuffer {
-    return FfiConverterTypeSteamTransfer.lower(value)
 }
 
 
@@ -7588,8 +7519,8 @@ fileprivate struct FfiConverterOptionTypeEpicFriendActivity: FfiConverterRustBuf
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterOptionTypeEpicTransfer: FfiConverterRustBuffer {
-    typealias SwiftType = EpicTransfer?
+fileprivate struct FfiConverterOptionTypeGameTransfer: FfiConverterRustBuffer {
+    typealias SwiftType = GameTransfer?
 
     public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
         guard let value = value else {
@@ -7597,13 +7528,13 @@ fileprivate struct FfiConverterOptionTypeEpicTransfer: FfiConverterRustBuffer {
             return
         }
         writeInt(&buf, Int8(1))
-        FfiConverterTypeEpicTransfer.write(value, into: &buf)
+        FfiConverterTypeGameTransfer.write(value, into: &buf)
     }
 
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
-        case 1: return try FfiConverterTypeEpicTransfer.read(from: &buf)
+        case 1: return try FfiConverterTypeGameTransfer.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -7676,30 +7607,6 @@ fileprivate struct FfiConverterOptionTypeSteamFriendGame: FfiConverterRustBuffer
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeSteamFriendGame.read(from: &buf)
-        default: throw UniffiInternalError.unexpectedOptionalTag
-        }
-    }
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-fileprivate struct FfiConverterOptionTypeSteamTransfer: FfiConverterRustBuffer {
-    typealias SwiftType = SteamTransfer?
-
-    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
-        guard let value = value else {
-            writeInt(&buf, Int8(0))
-            return
-        }
-        writeInt(&buf, Int8(1))
-        FfiConverterTypeSteamTransfer.write(value, into: &buf)
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
-        switch try readInt(&buf) as Int8 {
-        case 0: return nil
-        case 1: return try FfiConverterTypeSteamTransfer.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -8503,7 +8410,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_forge_bridge_checksum_method_epicsession_download() != 4517) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_forge_bridge_checksum_method_epicsession_download_progress() != 20725) {
+    if (uniffi_forge_bridge_checksum_method_epicsession_download_progress() != 22344) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_forge_bridge_checksum_method_epicsession_game_details() != 30003) {
@@ -8602,7 +8509,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_forge_bridge_checksum_method_steamsession_download() != 49992) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_forge_bridge_checksum_method_steamsession_download_progress() != 1477) {
+    if (uniffi_forge_bridge_checksum_method_steamsession_download_progress() != 34296) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_forge_bridge_checksum_method_steamsession_games() != 2712) {

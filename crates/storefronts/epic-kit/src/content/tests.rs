@@ -738,16 +738,7 @@ async fn abandoned_account_transfer_keeps_disk_admission_until_worker_exits() {
     use crate::client::{TransferProgress, TransferState};
     use forge_core::transfer::Transfers;
     fn initial() -> TransferProgress {
-        TransferProgress {
-            app_name: "test-game".into(),
-            state: TransferState::Preparing,
-            completed_bytes: 0,
-            total_bytes: 0,
-            network_bytes: 0,
-            content_bytes: 0,
-            current_file: String::new(),
-            message: String::new(),
-        }
+        TransferProgress::new("test-game")
     }
     let (manifest, responses, expected) = fixture();
     let manifest = Arc::new(manifest);

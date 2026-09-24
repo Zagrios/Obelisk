@@ -95,7 +95,7 @@ final class SteamModel {
             ? "macos" : "windows"
     }
     private(set) var language: String
-    private(set) var transfer: SteamTransfer?
+    private(set) var transfer: GameTransfer?
     private(set) var isDownloading = false
     private(set) var isLaunching = false
     private(set) var isUninstalling = false
@@ -1107,7 +1107,7 @@ final class SteamModel {
                 if lastDownload?.game.appId == receipt.appId && lastDownload?.platform == receipt.platform {
                     lastDownload = nil
                 }
-                if transfer?.appId == receipt.appId { transfer = nil }
+                if transfer?.game == String(receipt.appId) { transfer = nil }
             } catch {
                 guard current == generation && !(error is CancellationError) else { return }
                 installations = InstallationReceipts.retainingExistingDirectories(installations)

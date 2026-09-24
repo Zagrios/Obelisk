@@ -871,16 +871,7 @@ async fn abandoned_account_transfer_keeps_disk_admission_until_worker_exits() {
     use crate::client::{ClientError, TransferProgress, TransferState};
     use forge_core::transfer::Transfers;
     fn initial() -> TransferProgress {
-        TransferProgress {
-            app_id: 42,
-            state: TransferState::Preparing,
-            completed_bytes: 0,
-            total_bytes: 0,
-            network_bytes: 0,
-            content_bytes: 0,
-            current_file: String::new(),
-            message: String::new(),
-        }
+        TransferProgress::new("42")
     }
     let directory = tempfile::tempdir().unwrap();
     let bytes = b"new complete game";

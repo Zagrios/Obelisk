@@ -290,23 +290,6 @@
         }
       }
     },
-    "backend.epic.download_complete": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Download complete"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Téléchargement terminé"
-          }
-        }
-      }
-    },
     "backend.epic.download_in_progress": {
       "extractionState": "manual",
       "localizations": {
@@ -320,23 +303,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Un téléchargement Epic est déjà en cours"
-          }
-        }
-      }
-    },
-    "backend.epic.files_up_to_date": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "All game files are up to date"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tous les fichiers du jeu sont à jour"
           }
         }
       }
@@ -783,23 +749,6 @@
         }
       }
     },
-    "backend.epic.preparing": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Preparing the Epic download"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Préparation du téléchargement Epic"
-          }
-        }
-      }
-    },
     "backend.epic.rate_limited": {
       "extractionState": "manual",
       "localizations": {
@@ -1174,23 +1123,6 @@
         }
       }
     },
-    "backend.steam.client.downloadComplete": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Download complete and files verified."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Téléchargement terminé et fichiers vérifiés."
-          }
-        }
-      }
-    },
     "backend.steam.client.downloadInProgress": {
       "extractionState": "manual",
       "localizations": {
@@ -1221,23 +1153,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Téléchargement arrêté. Les données vérifiées seront réutilisées à la reprise."
-          }
-        }
-      }
-    },
-    "backend.steam.client.filesUpToDate": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Files verified and up to date."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Fichiers vérifiés et à jour."
           }
         }
       }
@@ -1442,40 +1357,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Aucun manifeste public téléchargeable pour ce jeu."
-          }
-        }
-      }
-    },
-    "backend.steam.client.preparingDepots": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Preparing depots…"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Préparation des dépôts…"
-          }
-        }
-      }
-    },
-    "backend.steam.client.receiptFailed": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Unable to prepare the installation receipt."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Impossible de préparer le reçu d’installation."
           }
         }
       }
@@ -10077,6 +9958,74 @@
           "stringUnit": {
             "state": "translated",
             "value": "Les sauvegardes de ce Mac et d’Epic Cloud ont toutes deux changé. Choisissez la copie à conserver."
+          }
+        }
+      }
+    },
+    "backend.transfer.preparing": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparing the download…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Préparation du téléchargement…"
+          }
+        }
+      }
+    },
+    "backend.transfer.upToDate": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Files verified and up to date."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fichiers vérifiés et à jour."
+          }
+        }
+      }
+    },
+    "backend.transfer.complete": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download complete and files verified."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Téléchargement terminé et fichiers vérifiés."
+          }
+        }
+      }
+    },
+    "backend.transfer.stopped": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download stopped. Verified data will be reused when you resume."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Téléchargement arrêté. Les données vérifiées seront réutilisées à la reprise."
           }
         }
       }

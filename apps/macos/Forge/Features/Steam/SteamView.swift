@@ -130,7 +130,7 @@ struct SteamView: View {
 }
 
 struct SteamTransferView: View {
-    let transfer: any StorefrontTransfer
+    let transfer: GameTransfer
     let isDownloading: Bool
     let cancel: () -> Void
 
@@ -179,19 +179,7 @@ struct SteamTransferView: View {
 }
 
 /// Both stores use the same progress text, accessibility and transfer controls.
-protocol StorefrontTransfer {
-    var state: TransferState { get }
-    var completedBytes: UInt64 { get }
-    var totalBytes: UInt64 { get }
-    var contentBytes: UInt64 { get }
-    var currentFile: String { get }
-    var message: String { get }
-}
-
-extension SteamTransfer: StorefrontTransfer {}
-extension EpicTransfer: StorefrontTransfer {}
-
-extension StorefrontTransfer {
+extension GameTransfer {
     var activityTitle: String {
         switch state {
         case .preparing: L10n.string("ui.transfer.checking_updates")

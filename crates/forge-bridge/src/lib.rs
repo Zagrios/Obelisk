@@ -102,6 +102,35 @@ impl From<forge_core::transfer::TransferState> for TransferState {
     }
 }
 
+/// One installation Transfer's progress, the same record for every storefront.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct GameTransfer {
+    /// The storefront's own identity for the game: Steam's app ID, Epic's app name.
+    pub game: String,
+    pub state: TransferState,
+    pub completed_bytes: u64,
+    pub total_bytes: u64,
+    pub network_bytes: u64,
+    pub content_bytes: u64,
+    pub current_file: String,
+    pub message: String,
+}
+
+impl From<forge_core::installation::TransferProgress> for GameTransfer {
+    fn from(progress: forge_core::installation::TransferProgress) -> Self {
+        Self {
+            game: progress.game,
+            state: progress.state.into(),
+            completed_bytes: progress.completed_bytes,
+            total_bytes: progress.total_bytes,
+            network_bytes: progress.network_bytes,
+            content_bytes: progress.content_bytes,
+            current_file: progress.current_file,
+            message: progress.message,
+        }
+    }
+}
+
 /// Validated executable, arguments and working directory resolved by a storefront kit.
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct LaunchTarget {

@@ -8,10 +8,9 @@ use std::{
 };
 
 use forge_core::{
-    install::{self, InstallError, LOCK_FILE, RECEIPT_FILE},
+    installation::{self, Destination, InstallFailure, InstalledFiles, TransferError},
     transfer::{
-        Cancelled, DownloadProgress, DownloadSummary, TransferBusy, TransferContext,
-        TransferStatus, Transfers,
+        Cancelled, DownloadProgress, DownloadSummary, TransferBusy, TransferContext, Transfers,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -26,10 +25,7 @@ use crate::{
 };
 mod cloud;
 
-pub use forge_core::transfer::TransferState;
-
-/// Receipts are small JSON documents; anything larger is not one of ours.
-const MAX_RECEIPT_BYTES: usize = 1024 * 1024;
+pub use forge_core::{installation::TransferProgress, transfer::TransferState};
 
 /// Opening a game and then downloading it should not pay two PICS token and
 /// product round trips; publisher metadata rarely changes within a minute.
@@ -113,18 +109,6 @@ pub struct GameDetails {
     pub macos_bytes: u64,
 }
 
-#[derive(Clone, Debug)]
-pub struct TransferProgress {
-    pub app_id: u32,
-    pub state: TransferState,
-    pub completed_bytes: u64,
-    pub total_bytes: u64,
-    pub network_bytes: u64,
-    pub content_bytes: u64,
-    pub current_file: String,
-    pub message: String,
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Installation {
     pub app_id: u32,
@@ -163,7 +147,6 @@ struct PreparedInstall {
 /// per-depot engine progress can be presented as one transfer.
 #[derive(Clone, Copy)]
 struct ProgressBase {
-    app_id: u32,
     completed: u64,
     total_estimate: u64,
     network: u64,
@@ -500,10 +483,11 @@ impl Client {
         if !directory.is_absolute() || !directory.is_dir() {
             return Err(ClientError("backend.steam.launch.directoryMissing".into()));
         }
-        let receipt = install::read_file_bounded(&directory.join(RECEIPT_FILE), MAX_RECEIPT_BYTES)
-            .ok()
-            .flatten()
-            .and_then(|bytes| serde_json::from_slice::<Installation>(&bytes).ok())
+        // No Transfer of this installation can start until the plan returns.
+        let installed = installation::open::<Installation>(directory)?;
+        let receipt = installed
+            .receipt
+            .as_ref()
             .filter(|receipt| receipt.app_id == app_id && receipt.platform == platform)
             .ok_or_else(|| ClientError("backend.steam.client.incompleteInstallation".into()))?;
         let mut cm = self.cm.lock().await;
@@ -524,35 +508,6 @@ impl Client {
         language: &str,
         parent: &Path,
     ) -> Result<Installation, ClientError> {
-        self.downloads
-            .run(
-                TransferProgress {
-                    app_id,
-                    state: TransferState::Preparing,
-                    completed_bytes: 0,
-                    total_bytes: 0,
-                    network_bytes: 0,
-                    content_bytes: 0,
-                    current_file: String::new(),
-                    message: "backend.steam.client.preparingDepots".into(),
-                },
-                |transfer| async move {
-                    self.download_inner(app_id, platform, language, parent, &transfer)
-                        .await
-                },
-            )
-            .await
-    }
-
-    async fn download_inner(
-        &self,
-        app_id: u32,
-        platform: &str,
-        language: &str,
-        parent: &Path,
-        transfer: &TransferContext<TransferProgress>,
-    ) -> Result<Installation, ClientError> {
-        let cancel = transfer.cancel_token();
         if !matches!(platform, "windows" | "macos") || !crate::language::is_supported(language) {
             return Err(ClientError(
                 "backend.steam.client.unsupportedPlatformOrLanguage".into(),
@@ -560,23 +515,46 @@ impl Client {
         }
         // The chosen folder is the only caller-controlled path. App IDs and depot
         // manifest validation determine every path beneath it.
-        if !parent.is_absolute() || !parent.is_dir() {
-            return Err(ClientError(
-                "backend.steam.client.chooseExistingFolder".into(),
-            ));
-        }
-        let parent = parent.canonicalize().map_err(storage_error)?;
-        let destination = parent.join(format!("steam-{app_id}-{platform}"));
-        reject_symlink(&destination)?;
-        let prepared = self
-            .prepare_depots(app_id, platform, language, cancel)
-            .await?;
-        cancel.check()?;
-        // Hold this lock across every depot and the final receipt, including waits
-        // for refreshed request codes. Other sessions/processes must not interleave.
-        let _installation_lock = lock_installation(&destination)?;
+        let directory = format!("steam-{app_id}-{platform}");
+        installation::install(
+            &self.downloads,
+            app_id.to_string(),
+            Destination {
+                parent,
+                directory: &directory,
+            },
+            |_, cancel| async move {
+                self.prepare_depots(app_id, platform, language, &cancel)
+                    .await
+            },
+            |prepared, destination, transfer| async move {
+                self.install_depots(
+                    app_id,
+                    platform,
+                    language,
+                    prepared,
+                    &destination,
+                    &transfer,
+                )
+                .await
+            },
+        )
+        .await
+    }
+
+    /// Installs every prepared depot under the installation lock, including
+    /// waits for refreshed request codes.
+    async fn install_depots(
+        &self,
+        app_id: u32,
+        platform: &str,
+        language: &str,
+        prepared: PreparedInstall,
+        destination: &Path,
+        transfer: &TransferContext<TransferProgress>,
+    ) -> Result<InstalledFiles<Installation>, ClientError> {
+        let cancel = transfer.cancel_token();
         let mut base = ProgressBase {
-            app_id,
             completed: 0,
             total_estimate: prepared
                 .depots
@@ -595,7 +573,7 @@ impl Client {
                     &content,
                     depot,
                     &prepared.servers,
-                    &destination,
+                    destination,
                     transfer,
                     base,
                 )
@@ -610,30 +588,20 @@ impl Client {
                 manifest_id: depot.manifest_id,
             });
         }
-        cancel.check()?;
-        let installation = Installation {
-            app_id,
-            name: prepared.name,
-            directory: destination.to_string_lossy().into_owned(),
-            platform: platform.into(),
-            language: language.into(),
-            total_bytes: base.completed,
-            manifests,
-        };
-        save_installation(&destination, &installation)?;
-        transfer.update(|progress| {
-            *progress = TransferProgress {
+        Ok(InstalledFiles {
+            receipt: Installation {
                 app_id,
-                state: TransferState::Downloading,
-                completed_bytes: base.completed,
+                name: prepared.name,
+                directory: destination.to_string_lossy().into_owned(),
+                platform: platform.into(),
+                language: language.into(),
                 total_bytes: base.completed,
-                network_bytes: base.network,
-                content_bytes: base.content_bytes,
-                current_file: String::new(),
-                message: String::new(),
-            }
-        });
-        Ok(installation)
+                manifests,
+            },
+            total_bytes: base.completed,
+            network_bytes: base.network,
+            content_bytes: base.content_bytes,
+        })
     }
 
     /// Resolves ownership, depot selection, manifest IDs, depot keys and CDN
@@ -750,20 +718,17 @@ impl Client {
                     .unwrap_or_else(PoisonError::into_inner)
                     .observe(progress.network_bytes, progress.content_bytes);
                 transfer.update(|status| {
-                    *status = TransferProgress {
-                        app_id: base.app_id,
-                        state: progress.phase.into(),
-                        completed_bytes: base.completed
-                            + progress
-                                .verification_bytes
-                                .unwrap_or(progress.completed_bytes),
-                        total_bytes: base.total_estimate.saturating_sub(size)
-                            + progress.total_bytes,
-                        network_bytes: base.network + bytes.network,
-                        content_bytes: base.content_bytes + bytes.content,
-                        current_file: progress.current_file,
-                        message: depot_label.clone(),
-                    }
+                    status.state = progress.phase.into();
+                    status.completed_bytes = base.completed
+                        + progress
+                            .verification_bytes
+                            .unwrap_or(progress.completed_bytes);
+                    status.total_bytes =
+                        base.total_estimate.saturating_sub(size) + progress.total_bytes;
+                    status.network_bytes = base.network + bytes.network;
+                    status.content_bytes = base.content_bytes + bytes.content;
+                    status.current_file = progress.current_file;
+                    status.message.clone_from(&depot_label);
                 });
             })
         };
@@ -913,52 +878,6 @@ async fn attempt_depot(
         .await
 }
 
-fn lock_installation(destination: &Path) -> Result<std::fs::File, ClientError> {
-    reject_symlink(destination)?;
-    std::fs::create_dir_all(destination).map_err(storage_error)?;
-    reject_symlink(destination)?;
-    let lock_path = destination.join(LOCK_FILE);
-    install::reject_link_or_special_file(&lock_path).map_err(|error| match error {
-        InstallError::UnsafePath(_) => {
-            ClientError("backend.steam.client.invalidInstallationLock".into())
-        }
-        InstallError::Io(error) => storage_error(error),
-        InstallError::Cancelled => client_error(error),
-    })?;
-    install::try_lock_file(&lock_path)
-        .map_err(storage_error)?
-        .ok_or_else(|| ClientError("backend.steam.client.installationLocked".into()))
-}
-
-fn reject_symlink(path: &Path) -> Result<(), ClientError> {
-    match path.symlink_metadata() {
-        Ok(meta) if meta.file_type().is_symlink() => Err(ClientError(
-            "backend.steam.client.installationDirectorySymlink".into(),
-        )),
-        Ok(meta) if !meta.is_dir() => Err(ClientError(
-            "backend.steam.client.installationDirectoryIsFile".into(),
-        )),
-        Ok(_) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(storage_error(error)),
-    }
-}
-
-fn save_installation(destination: &Path, installation: &Installation) -> Result<(), ClientError> {
-    let state = destination.join(RECEIPT_FILE);
-    if state
-        .symlink_metadata()
-        .is_ok_and(|meta| meta.file_type().is_symlink())
-    {
-        return Err(ClientError(
-            "backend.steam.client.installationFileSymlink".into(),
-        ));
-    }
-    let bytes = serde_json::to_vec_pretty(installation)
-        .map_err(|_| ClientError("backend.steam.client.receiptFailed".into()))?;
-    forge_core::write_atomic(&state, &bytes).map_err(storage_error)
-}
-
 /// Lower layers keep typed errors; the client passes message keys to the host.
 impl From<Cancelled> for ClientError {
     fn from(_: Cancelled) -> Self {
@@ -969,28 +888,40 @@ impl From<Cancelled> for ClientError {
 fn client_error(error: impl std::fmt::Display) -> ClientError {
     ClientError(error.to_string())
 }
-fn storage_error(_: std::io::Error) -> ClientError {
-    ClientError("backend.steam.client.storageFailed".into())
-}
 impl From<TransferBusy> for ClientError {
     fn from(_: TransferBusy) -> Self {
         ClientError("backend.steam.client.downloadInProgress".into())
     }
 }
 
-impl TransferStatus for TransferProgress {
-    fn finish(&mut self, state: TransferState, error: Option<String>) {
-        self.state = state;
-        self.message = error.unwrap_or_else(|| {
-            match state {
-                TransferState::Complete if self.content_bytes == 0 => {
-                    "backend.steam.client.filesUpToDate"
+impl From<InstallFailure> for ClientError {
+    fn from(failure: InstallFailure) -> Self {
+        ClientError(
+            match failure {
+                InstallFailure::ParentMissing => "backend.steam.client.chooseExistingFolder",
+                InstallFailure::UnsafeDirectory(_) => {
+                    "backend.steam.client.unsupportedPlatformOrLanguage"
                 }
-                TransferState::Complete => "backend.steam.client.downloadComplete",
-                _ => "backend.steam.client.downloadStopped",
+                InstallFailure::DestinationIsLink(_) => {
+                    "backend.steam.client.installationDirectorySymlink"
+                }
+                InstallFailure::DestinationIsFile(_) => {
+                    "backend.steam.client.installationDirectoryIsFile"
+                }
+                InstallFailure::UnsafeLock(_) => "backend.steam.client.invalidInstallationLock",
+                InstallFailure::Locked => "backend.steam.client.installationLocked",
+                InstallFailure::UnsafeReceipt(_) => "backend.steam.client.installationFileSymlink",
+                InstallFailure::Io(_) => "backend.steam.client.storageFailed",
             }
-            .into()
-        });
+            .into(),
+        )
+    }
+}
+
+impl TransferError for ClientError {
+    fn is_cancellation(&self) -> bool {
+        self.0 == "backend.steam.client.downloadStopped"
+            || self.0 == "backend.steam.content.cancelled"
     }
 }
 
@@ -1264,54 +1195,5 @@ mod tests {
         assert_eq!(content_authorizing_app(&app, &shared), 99);
         app.free_to_download = true;
         assert_eq!(content_authorizing_app(&app, &shared), 1);
-    }
-    #[test]
-    fn installation_lock_prevents_another_session_and_releases_on_drop() {
-        let parent = tempfile::tempdir().unwrap();
-        let destination = parent.path().join("game");
-        let first = lock_installation(&destination).unwrap();
-        assert!(lock_installation(&destination).is_err());
-        // Holding the lock does not prevent the installer itself from recording success.
-        assert!(destination.join(".forge-install.lock").is_file());
-        drop(first);
-        assert!(lock_installation(&destination).is_ok());
-    }
-    #[cfg(unix)]
-    #[test]
-    fn installation_lock_rejects_symlinks_and_hardlinks() {
-        let parent = tempfile::tempdir().unwrap();
-        let target = parent.path().join("outside");
-        std::fs::write(&target, "unchanged").unwrap();
-        let symlink_root = parent.path().join("symlink");
-        std::fs::create_dir(&symlink_root).unwrap();
-        std::os::unix::fs::symlink(&target, symlink_root.join(".forge-install.lock")).unwrap();
-        assert!(lock_installation(&symlink_root).is_err());
-        let hardlink_root = parent.path().join("hardlink");
-        std::fs::create_dir(&hardlink_root).unwrap();
-        std::fs::hard_link(&target, hardlink_root.join(".forge-install.lock")).unwrap();
-        assert!(lock_installation(&hardlink_root).is_err());
-        assert_eq!(std::fs::read_to_string(&target).unwrap(), "unchanged");
-    }
-    #[test]
-    fn only_successful_download_receipt_is_written_atomically() {
-        let root = tempfile::tempdir().unwrap();
-        let install = Installation {
-            app_id: 10,
-            name: "Test".into(),
-            directory: root.path().to_string_lossy().into_owned(),
-            platform: "windows".into(),
-            language: "english".into(),
-            total_bytes: 2,
-            manifests: vec![InstalledDepot {
-                depot_id: 11,
-                manifest_id: 12,
-            }],
-        };
-        save_installation(root.path(), &install).unwrap();
-        let loaded: Installation = serde_json::from_slice(
-            &std::fs::read(root.path().join(".forge-install.json")).unwrap(),
-        )
-        .unwrap();
-        assert_eq!(loaded.manifests[0].manifest_id, 12);
     }
 }

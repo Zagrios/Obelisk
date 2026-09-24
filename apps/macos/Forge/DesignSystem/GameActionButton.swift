@@ -3,7 +3,7 @@ import SwiftUI
 struct GameActionButton: View {
     let title: String
     let symbol: String
-    let transfer: (any StorefrontTransfer)?
+    let transfer: GameTransfer?
     let isTransferring: Bool
     let isAvailable: Bool
     let action: () -> Void

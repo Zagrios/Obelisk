@@ -4,7 +4,7 @@ use std::{path::Path, sync::Arc};
 use steam_kit::{auth, client};
 use tokio::sync::Mutex;
 
-use crate::{LaunchTarget, TransferState};
+use crate::{GameTransfer, LaunchTarget};
 
 #[uniffi::export]
 pub fn steam_language(locale: String) -> String {
@@ -257,33 +257,6 @@ pub struct SteamLaunchPlan {
     pub install_directory: String,
     pub target: LaunchTarget,
 }
-#[derive(Clone, Debug, uniffi::Record)]
-pub struct SteamTransfer {
-    pub app_id: u32,
-    pub state: TransferState,
-    pub completed_bytes: u64,
-    pub total_bytes: u64,
-    pub network_bytes: u64,
-    pub content_bytes: u64,
-    pub current_file: String,
-    pub message: String,
-}
-
-impl From<client::TransferProgress> for SteamTransfer {
-    fn from(progress: client::TransferProgress) -> Self {
-        Self {
-            app_id: progress.app_id,
-            state: progress.state.into(),
-            completed_bytes: progress.completed_bytes,
-            total_bytes: progress.total_bytes,
-            network_bytes: progress.network_bytes,
-            content_bytes: progress.content_bytes,
-            current_file: progress.current_file,
-            message: progress.message,
-        }
-    }
-}
-
 #[derive(uniffi::Object)]
 pub struct SteamSession {
     client: client::Client,
@@ -450,7 +423,7 @@ impl SteamSession {
         }
         Ok(())
     }
-    pub fn download_progress(&self) -> Option<SteamTransfer> {
+    pub fn download_progress(&self) -> Option<GameTransfer> {
         self.client.progress().map(Into::into)
     }
     pub fn cancel_download(&self) {
@@ -524,17 +497,15 @@ mod tests {
 
     #[test]
     fn verification_with_metadata_network_bytes_stays_verification_across_bridge() {
-        let mapped = SteamTransfer::from(client::TransferProgress {
-            app_id: 1,
-            state: client::TransferState::Verifying,
-            completed_bytes: 522_734_781,
-            total_bytes: 522_734_781,
-            network_bytes: 253,
-            content_bytes: 0,
-            current_file: "game.exe".into(),
-            message: "Depot 42".into(),
-        });
-        assert!(matches!(mapped.state, TransferState::Verifying));
+        let mut progress = client::TransferProgress::new("1");
+        progress.state = client::TransferState::Verifying;
+        progress.completed_bytes = 522_734_781;
+        progress.total_bytes = 522_734_781;
+        progress.network_bytes = 253;
+        progress.current_file = "game.exe".into();
+        let mapped = GameTransfer::from(progress);
+        assert!(matches!(mapped.state, crate::TransferState::Verifying));
+        assert_eq!(mapped.game, "1");
         assert_eq!(mapped.completed_bytes, 522_734_781);
         assert_eq!(mapped.network_bytes, 253);
         assert_eq!(mapped.content_bytes, 0);

@@ -9,7 +9,7 @@ final class SteamPresentationTests: XCTestCase {
     func testLocalVerificationDoesNotPresentManifestBytesAsDownloadedGameData() {
         // A second pass may receive a small manifest, then validate hundreds of MB
         // already on disk without requesting a single game-content chunk.
-        let transfer = SteamTransfer(appId: 620, state: .verifying, completedBytes: 400_000_000, totalBytes: 522_734_781, networkBytes: 253, contentBytes: 0, currentFile: "Game_Data/resources.assets", message: "")
+        let transfer = GameTransfer(game: "620", state: .verifying, completedBytes: 400_000_000, totalBytes: 522_734_781, networkBytes: 253, contentBytes: 0, currentFile: "Game_Data/resources.assets", message: "")
         XCTAssertEqual(transfer.activityTitle, L10n.string("ui.transfer.verifying_files"))
         XCTAssertEqual(transfer.verifiedProgressText, L10n.string("ui.transfer.verified_files", SteamFormatting.bytes(400_000_000), SteamFormatting.bytes(522_734_781)))
         XCTAssertEqual(transfer.downloadedGameDataText, L10n.string("ui.transfer.no_downloaded_data"))
@@ -17,7 +17,7 @@ final class SteamPresentationTests: XCTestCase {
 
     @MainActor
     func testActualChunkDownloadReportsReceivedGameDataSeparatelyFromVerifiedFiles() {
-        let downloading = SteamTransfer(appId: 620, state: .downloading, completedBytes: 400_000_000, totalBytes: 522_734_781, networkBytes: 12_345 + 253, contentBytes: 12_345, currentFile: "Game_Data/resources.assets", message: "")
+        let downloading = GameTransfer(game: "620", state: .downloading, completedBytes: 400_000_000, totalBytes: 522_734_781, networkBytes: 12_345 + 253, contentBytes: 12_345, currentFile: "Game_Data/resources.assets", message: "")
         XCTAssertEqual(downloading.activityTitle, L10n.string("ui.transfer.downloading"))
         XCTAssertEqual(downloading.downloadedGameDataText, L10n.string("ui.transfer.downloaded_data", SteamFormatting.bytes(12_345)))
         XCTAssertEqual(downloading.verifiedProgressText, L10n.string("ui.transfer.verified_files", SteamFormatting.bytes(400_000_000), SteamFormatting.bytes(522_734_781)))
@@ -32,7 +32,7 @@ final class SteamPresentationTests: XCTestCase {
 
     @MainActor
     func testManifestPreparationAndLocalCompletionDoNotClaimAFileDownload() {
-        var transfer = SteamTransfer(appId: 620, state: .preparing, completedBytes: 0, totalBytes: 0, networkBytes: 253, contentBytes: 0, currentFile: "", message: "")
+        var transfer = GameTransfer(game: "620", state: .preparing, completedBytes: 0, totalBytes: 0, networkBytes: 253, contentBytes: 0, currentFile: "", message: "")
         XCTAssertEqual(transfer.activityTitle, L10n.string("ui.transfer.checking_updates"))
         XCTAssertNil(transfer.downloadedGameDataText)
 
@@ -1475,7 +1475,7 @@ private final class FixtureSteamSession: SteamSessionProtocol, Sendable {
     func download(appId: UInt32, platform: String, language: String, directory: String) async throws -> SteamInstallation {
         try await downloadHandler(DownloadRequest(appId: appId, platform: platform, language: language, directory: directory))
     }
-    func downloadProgress() -> SteamTransfer? { nil }
+    func downloadProgress() -> GameTransfer? { nil }
     func cancelDownload() {}
     func launchPlan(appId: UInt32, platform: String, directory: String) async throws -> SteamLaunchPlan {
         try await launchHandler(appId, platform, directory)

@@ -365,7 +365,7 @@ final class EpicFriendsTestSession: EpicSessionProtocol, @unchecked Sendable {
     }
     func disconnect() async throws { shutdownObservers(); lock.withLock { disconnectCount += 1 } }
     func cancelDownload() { lock.withLock { cancellationCount += 1 } }
-    func downloadProgress() -> EpicTransfer? { nil }
+    func downloadProgress() -> GameTransfer? { nil }
     func download(namespace: String, catalogItemId: String, appName: String, platform: String, directory: String) async throws -> EpicInstallation { throw EpicError.InvalidResponse }
     func gameDetails(namespace: String, catalogItemId: String, appName: String, platform: String) async throws -> EpicGameDetails { throw EpicError.InvalidResponse }
     func launchPlan(namespace: String, catalogItemId: String, appName: String, platform: String, directory: String, language: String) async throws -> EpicLaunchPlan { throw EpicError.InvalidResponse }

@@ -5,6 +5,7 @@
 
 mod atomic_file;
 pub mod install;
+pub mod installation;
 pub mod launch;
 mod library;
 pub mod storefront;

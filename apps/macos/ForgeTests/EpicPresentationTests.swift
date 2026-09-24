@@ -603,7 +603,7 @@ private actor EpicPresentationSession: EpicSessionProtocol {
         throw EpicError.InvalidResponse
     }
     nonisolated func cancelDownload() {}
-    nonisolated func downloadProgress() -> EpicTransfer? { nil }
+    nonisolated func downloadProgress() -> GameTransfer? { nil }
     func download(namespace: String, catalogItemId: String, appName: String, platform: String, directory: String) async throws -> EpicInstallation {
         throw EpicError.InvalidResponse
     }

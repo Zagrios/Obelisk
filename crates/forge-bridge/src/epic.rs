@@ -4,7 +4,7 @@ use std::{path::Path, sync::Arc};
 
 use epic_kit::{auth, client};
 
-use crate::{LaunchTarget, TransferState};
+use crate::{GameTransfer, LaunchTarget};
 
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum EpicError {
@@ -162,33 +162,6 @@ pub struct EpicLaunchPlan {
     pub ownership_token: Option<Vec<u8>>,
 }
 
-#[derive(Clone, Debug, uniffi::Record)]
-pub struct EpicTransfer {
-    pub app_name: String,
-    pub state: TransferState,
-    pub completed_bytes: u64,
-    pub total_bytes: u64,
-    pub network_bytes: u64,
-    pub content_bytes: u64,
-    pub current_file: String,
-    pub message: String,
-}
-
-impl From<client::TransferProgress> for EpicTransfer {
-    fn from(progress: client::TransferProgress) -> Self {
-        Self {
-            app_name: progress.app_name,
-            state: progress.state.into(),
-            completed_bytes: progress.completed_bytes,
-            total_bytes: progress.total_bytes,
-            network_bytes: progress.network_bytes,
-            content_bytes: progress.content_bytes,
-            current_file: progress.current_file,
-            message: progress.message,
-        }
-    }
-}
-
 impl From<client::GameDetails> for EpicGameDetails {
     fn from(details: client::GameDetails) -> Self {
         Self {
@@ -301,7 +274,7 @@ impl EpicSession {
         })
     }
 
-    pub fn download_progress(&self) -> Option<EpicTransfer> {
+    pub fn download_progress(&self) -> Option<GameTransfer> {
         self.client.progress().map(Into::into)
     }
 

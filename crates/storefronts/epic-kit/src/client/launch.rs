@@ -3,19 +3,16 @@
 use std::{collections::BTreeMap, path::Path};
 
 use forge_core::{
-    install::{self, RECEIPT_FILE, checked_file_path},
+    installation::{self, InstallFailure},
     launch::{self, LaunchTarget},
 };
 use serde::Deserialize;
 
-use super::{Client, Installation, download::lock_installation, endpoint, validate_identity};
+use super::{Client, Installation, endpoint, validate_identity};
 use crate::{
     EpicError,
     friends::{Activity, publishable_text},
 };
-
-/// Receipts are small JSON documents; anything larger is not one of ours.
-const MAX_RECEIPT_BYTES: usize = 1024 * 1024;
 
 // Intentionally no Debug: arguments contain a one-use exchange code and the
 // optional ownership token must only be handed to the game being launched.
@@ -83,17 +80,23 @@ impl Client {
         if !directory.is_absolute() || !directory.is_dir() {
             return Err(launch_error("directoryMissing"));
         }
-        let _installation_lock = lock_installation(directory)?;
-        let root = directory
-            .canonicalize()
-            .map_err(|_| launch_error("directoryUnreadable"))?;
-        let receipt = read_installation(&root)?;
+        // No Transfer of this installation can start until the plan returns.
+        let installed =
+            installation::open::<Installation>(directory).map_err(|failure| match failure {
+                InstallFailure::Io(_) => launch_error("directoryUnreadable"),
+                failure => failure.into(),
+            })?;
+        let root = &installed.root;
+        let receipt = installed
+            .receipt
+            .as_ref()
+            .ok_or_else(|| launch_error("incompleteInstallation"))?;
         if receipt.namespace != namespace
             || receipt.catalog_item_id != catalog_item_id
             || receipt.app_name != app_name
             || receipt.platform != platform
             || receipt.account_id != credentials.account_id
-            || Path::new(&receipt.directory).canonicalize().ok().as_ref() != Some(&root)
+            || Path::new(&receipt.directory).canonicalize().ok().as_ref() != Some(root)
         {
             return Err(launch_error("incompleteInstallation"));
         }
@@ -106,7 +109,7 @@ impl Client {
             .unwrap_or("");
         let mut target = launch::resolve(
             native_platform,
-            &root,
+            root,
             &executable,
             &receipt.launch_command,
             working_directory,
@@ -140,7 +143,7 @@ impl Client {
             format!("-epiclocale={}", epic_locale(language)),
             format!("-epicsandboxid={namespace}"),
         ]);
-        if let Some(deployment) = receipt.deployment_id {
+        if let Some(deployment) = &receipt.deployment_id {
             if deployment.is_empty() || deployment.len() > 1024 || deployment.contains('\0') {
                 return Err(EpicError::Protocol);
             }
@@ -235,13 +238,6 @@ impl Client {
             activity,
         })
     }
-}
-
-fn read_installation(root: &Path) -> Result<Installation, EpicError> {
-    let path = checked_file_path(root, Path::new(RECEIPT_FILE))?;
-    let bytes = install::read_file_bounded(&path, MAX_RECEIPT_BYTES)?
-        .ok_or_else(|| launch_error("incompleteInstallation"))?;
-    serde_json::from_slice(&bytes).map_err(|_| launch_error("incompleteInstallation"))
 }
 
 fn launch_error(suffix: &str) -> EpicError {
