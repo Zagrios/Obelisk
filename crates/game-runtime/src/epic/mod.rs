@@ -34,7 +34,7 @@ pub enum Error {
     /// The other storefront's copy of this game uses the same save paths.
     #[error("backend.cloud.sharedSavesInUse")]
     SharedSaves,
-    #[error("backend.steam.runtime.rosettaUnavailable")]
+    #[error("backend.runtime.rosettaUnavailable")]
     RosettaUnavailable,
     #[error("{0}")]
     Epic(#[from] epic_kit::EpicError),

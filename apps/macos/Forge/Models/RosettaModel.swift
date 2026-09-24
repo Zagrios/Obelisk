@@ -17,7 +17,7 @@ protocol RosettaSessions: AnyObject {
 
 extension RosettaSessions {
     /// The Rust runtime reports this key for both storefronts.
-    nonisolated static var rosettaUnavailableKey: String { "backend.steam.runtime.rosettaUnavailable" }
+    nonisolated static var rosettaUnavailableKey: String { "backend.runtime.rosettaUnavailable" }
 }
 
 /// One supervisor-owned Rosetta requirement, identified by its session,

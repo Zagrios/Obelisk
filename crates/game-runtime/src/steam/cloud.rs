@@ -8,7 +8,7 @@ pub(crate) fn safe_storage_path(path: &std::path::Path) -> Result<(), crate::Err
 }
 pub use session::maintain;
 pub(crate) use session::{Session, open};
-pub use store::{archive, archive_with_rules, indicators, removed};
+pub use store::{archive_with_rules, indicators, removed};
 
 use crate::cloud::{Control, Stop};
 use serde::{Deserialize, Serialize};

@@ -306,9 +306,10 @@ fn archive_context(vault: &mut Vault, context: &mut Context) -> Result<(), Failu
     context.save()
 }
 
-/// Preserve install-contained saves before removal. The archive itself lives
-/// outside the installation; uninstall never deletes it or remote Cloud files.
-pub fn archive(config: &Config, account: u64) -> Result<(), Failure> {
+/// Preserve install-contained saves before removal, with the rules of the
+/// last Game session. Uninstall uses the storefront's current rules instead.
+#[cfg(test)]
+pub(crate) fn archive(config: &Config, account: u64) -> Result<(), Failure> {
     let Some(mut context) = Context::load(config, account)? else {
         return Ok(());
     };

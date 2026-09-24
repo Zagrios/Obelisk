@@ -144,18 +144,6 @@ impl From<game_runtime::steam::cloud::Failure> for SteamError {
 }
 
 #[uniffi::export(async_runtime = "tokio")]
-pub async fn steam_cloud_archive(
-    config: SteamCloudConfiguration,
-    account_id: u64,
-) -> Result<(), SteamError> {
-    tokio::task::spawn_blocking(move || {
-        game_runtime::steam::cloud::archive(&config.into(), account_id).map_err(Into::into)
-    })
-    .await
-    .map_err(|_| game_runtime::Error::StartFailed)?
-}
-
-#[uniffi::export(async_runtime = "tokio")]
 pub async fn steam_cloud_removed(
     config: SteamCloudConfiguration,
     account_id: u64,

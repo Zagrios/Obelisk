@@ -103,7 +103,7 @@ pub enum Error {
     Storage,
     #[error("backend.steam.runtime.incompatibleArchitecture")]
     IncompatibleArchitecture,
-    #[error("backend.steam.runtime.rosettaUnavailable")]
+    #[error("backend.runtime.rosettaUnavailable")]
     RosettaUnavailable,
     #[error("backend.runtime.invalidApplication")]
     InvalidApplication,

@@ -9317,23 +9317,6 @@
         }
       }
     },
-    "backend.steam.runtime.rosettaUnavailable": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rosetta is required to launch this game. Try installing it again."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rosetta est requis pour lancer ce jeu. Réessayez son installation."
-          }
-        }
-      }
-    },
     "backend.steam.runtime.incompatibleArchitecture": {
       "extractionState": "manual",
       "localizations": {
@@ -9992,6 +9975,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Le fichier de lancement du jeu n’est pas exécutable. Relancez la vérification des fichiers."
+          }
+        }
+      }
+    },
+    "backend.runtime.rosettaUnavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rosetta is required to launch this game. Try installing it again."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rosetta est requis pour lancer ce jeu. Réessayez son installation."
           }
         }
       }

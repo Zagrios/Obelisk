@@ -8358,20 +8358,6 @@ public func recoverSteamGameSession(sessionDirectory: String, helper: String)asy
             errorHandler: FfiConverterTypeSteamError_lift
         )
 }
-public func steamCloudArchive(config: SteamCloudConfiguration, accountId: UInt64)async throws   {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_forge_bridge_fn_func_steam_cloud_archive(FfiConverterTypeSteamCloudConfiguration_lower(config),FfiConverterUInt64.lower(accountId)
-                )
-            },
-            pollFunc: ffi_forge_bridge_rust_future_poll_void,
-            completeFunc: ffi_forge_bridge_rust_future_complete_void,
-            freeFunc: ffi_forge_bridge_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeSteamError_lift
-        )
-}
 public func steamCloudRemoved(config: SteamCloudConfiguration, accountId: UInt64)async throws   {
     return
         try  await uniffiRustCallAsync(
@@ -8445,9 +8431,6 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_forge_bridge_checksum_func_recover_steam_game_session() != 12670) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_forge_bridge_checksum_func_steam_cloud_archive() != 14842) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_forge_bridge_checksum_func_steam_cloud_removed() != 4510) {

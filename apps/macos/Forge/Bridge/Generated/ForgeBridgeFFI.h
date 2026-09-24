@@ -763,11 +763,6 @@ uint64_t uniffi_forge_bridge_fn_func_steam_news(uint32_t app_id
 uint64_t uniffi_forge_bridge_fn_func_recover_steam_game_session(RustBuffer session_directory, RustBuffer helper
 );
 #endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_FORGE_BRIDGE_FN_FUNC_STEAM_CLOUD_ARCHIVE
-#define UNIFFI_FFIDEF_UNIFFI_FORGE_BRIDGE_FN_FUNC_STEAM_CLOUD_ARCHIVE
-uint64_t uniffi_forge_bridge_fn_func_steam_cloud_archive(RustBuffer config, uint64_t account_id
-);
-#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_FORGE_BRIDGE_FN_FUNC_STEAM_CLOUD_REMOVED
 #define UNIFFI_FFIDEF_UNIFFI_FORGE_BRIDGE_FN_FUNC_STEAM_CLOUD_REMOVED
 uint64_t uniffi_forge_bridge_fn_func_steam_cloud_removed(RustBuffer config, uint64_t account_id
@@ -1120,12 +1115,6 @@ uint16_t uniffi_forge_bridge_checksum_func_steam_news(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_FORGE_BRIDGE_CHECKSUM_FUNC_RECOVER_STEAM_GAME_SESSION
 #define UNIFFI_FFIDEF_UNIFFI_FORGE_BRIDGE_CHECKSUM_FUNC_RECOVER_STEAM_GAME_SESSION
 uint16_t uniffi_forge_bridge_checksum_func_recover_steam_game_session(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_FORGE_BRIDGE_CHECKSUM_FUNC_STEAM_CLOUD_ARCHIVE
-#define UNIFFI_FFIDEF_UNIFFI_FORGE_BRIDGE_CHECKSUM_FUNC_STEAM_CLOUD_ARCHIVE
-uint16_t uniffi_forge_bridge_checksum_func_steam_cloud_archive(void
     
 );
 #endif
