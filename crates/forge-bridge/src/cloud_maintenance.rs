@@ -2,7 +2,9 @@
 //! player-requested sync of a game, run inside Forge. UniFFI does not forward
 //! Swift task cancellation, so an attempt has an explicit revisioned status,
 //! answer and cancel.
-use crate::{EpicCloudConfiguration, EpicError, EpicSession, SteamCredentials, SteamError};
+use crate::{
+    CloudChoice, EpicCloudConfiguration, EpicError, EpicSession, SteamCredentials, SteamError,
+};
 use game_runtime::{cloud, cloud_status, epic, protocol::Credentials, steam};
 use std::{
     path::{Path, PathBuf},
@@ -137,20 +139,13 @@ pub enum CloudMaintenancePhase {
     Cancelled,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
-pub enum CloudMaintenanceChoice {
-    Local,
-    Cloud,
-    Cancel,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct CloudMaintenanceStatus {
     pub revision: u64,
     pub phase: CloudMaintenancePhase,
     /// Binds an answer to the question this status shows.
     pub decision_id: u64,
-    pub allowed_choices: Vec<CloudMaintenanceChoice>,
+    pub allowed_choices: Vec<CloudChoice>,
     pub error: Option<String>,
     pub finished: bool,
 }
@@ -196,7 +191,7 @@ impl Progress {
         &self,
         phase: CloudMaintenancePhase,
         decision_id: u64,
-        allowed_choices: Vec<CloudMaintenanceChoice>,
+        allowed_choices: Vec<CloudChoice>,
         error: Option<String>,
     ) {
         self.update(|status| {
@@ -241,15 +236,14 @@ impl Progress {
             Phase::Synced => CloudMaintenancePhase::Synced,
             Phase::Disabled | Phase::Unsupported => CloudMaintenancePhase::Unavailable,
         };
+        // Maintenance asks only about conflicts: Retry and Launch anyway
+        // belong to a launch.
         let choices = status
             .allowed_choices
             .iter()
-            .filter_map(|choice| match choice {
-                cloud::Choice::Local => Some(CloudMaintenanceChoice::Local),
-                cloud::Choice::Cloud => Some(CloudMaintenanceChoice::Cloud),
-                cloud::Choice::Cancel => Some(CloudMaintenanceChoice::Cancel),
-                cloud::Choice::Retry | cloud::Choice::LaunchAnyway => None,
-            })
+            .copied()
+            .filter(|choice| !matches!(choice, cloud::Choice::Retry | cloud::Choice::LaunchAnyway))
+            .map(Into::into)
             .collect();
         self.show(phase, status.decision_id, choices, status.error.clone());
     }
@@ -258,18 +252,13 @@ impl Progress {
 /// What an attempt forwards to its running sync.
 trait Controls: Send + Sync {
     /// False when the answer no longer fits the question shown.
-    fn answer(&self, decision_id: u64, choice: CloudMaintenanceChoice) -> bool;
+    fn answer(&self, decision_id: u64, choice: CloudChoice) -> bool;
     fn cancel(&self);
 }
 
 impl Controls for cloud::Control {
-    fn answer(&self, decision_id: u64, choice: CloudMaintenanceChoice) -> bool {
-        let choice = match choice {
-            CloudMaintenanceChoice::Local => cloud::Choice::Local,
-            CloudMaintenanceChoice::Cloud => cloud::Choice::Cloud,
-            CloudMaintenanceChoice::Cancel => cloud::Choice::Cancel,
-        };
-        cloud::Control::answer(self, decision_id, choice).is_ok()
+    fn answer(&self, decision_id: u64, choice: CloudChoice) -> bool {
+        cloud::Control::answer(self, decision_id, choice.into()).is_ok()
     }
     fn cancel(&self) {
         cloud::Control::cancel(self);
@@ -294,7 +283,7 @@ impl CloudMaintenance {
         }
     }
 
-    pub fn answer(&self, decision_id: u64, choice: CloudMaintenanceChoice) -> bool {
+    pub fn answer(&self, decision_id: u64, choice: CloudChoice) -> bool {
         self.controls.answer(decision_id, choice)
     }
 
@@ -424,12 +413,12 @@ mod tests {
 
     #[derive(Default)]
     struct Recorded {
-        answers: Mutex<Vec<(u64, CloudMaintenanceChoice)>>,
+        answers: Mutex<Vec<(u64, CloudChoice)>>,
         cancelled: Mutex<bool>,
     }
 
     impl Controls for Arc<Recorded> {
-        fn answer(&self, decision_id: u64, choice: CloudMaintenanceChoice) -> bool {
+        fn answer(&self, decision_id: u64, choice: CloudChoice) -> bool {
             self.answers.lock().unwrap().push((decision_id, choice));
             decision_id == 4
         }
@@ -446,16 +435,13 @@ mod tests {
             controls: Arc::new(Arc::clone(&recorded)),
         };
 
-        assert!(attempt.answer(4, CloudMaintenanceChoice::Local));
-        assert!(!attempt.answer(3, CloudMaintenanceChoice::Cloud));
+        assert!(attempt.answer(4, CloudChoice::Local));
+        assert!(!attempt.answer(3, CloudChoice::Cloud));
         attempt.cancel();
 
         assert_eq!(
             *recorded.answers.lock().unwrap(),
-            [
-                (4, CloudMaintenanceChoice::Local),
-                (3, CloudMaintenanceChoice::Cloud)
-            ]
+            [(4, CloudChoice::Local), (3, CloudChoice::Cloud)]
         );
         assert!(*recorded.cancelled.lock().unwrap());
     }
@@ -487,11 +473,7 @@ mod tests {
         assert_eq!(conflict.decision_id, 9);
         assert_eq!(
             conflict.allowed_choices,
-            [
-                CloudMaintenanceChoice::Local,
-                CloudMaintenanceChoice::Cloud,
-                CloudMaintenanceChoice::Cancel
-            ]
+            [CloudChoice::Local, CloudChoice::Cloud, CloudChoice::Cancel]
         );
         progress.finish(Outcome::Failed("backend.steam.cloud.network".into()));
         let finished = progress.wait(Some(conflict.revision));

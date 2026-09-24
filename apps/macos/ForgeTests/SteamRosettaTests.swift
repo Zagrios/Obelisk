@@ -139,10 +139,10 @@ final class SteamRosettaTests: XCTestCase {
     @MainActor
     func testOnlyCurrentAccountsPublishedRequirementPresentsPrompt() async throws {
         let game = RecoveredGameFixture(phase: .preparing, cloudPhase: .checking)
-        let sessions = SteamGameSessions(startSession: { _, _ in game })
+        let sessions = SteamGameSessions()
         let model = SteamRosettaModel(sessions: sessions, install: { XCTFail("No installation without a requirement") })
         model.connect(accountId: 99)
-        let task = try XCTUnwrap(sessions.launch(appId: 42, prepare: { gameLaunch() }))
+        let task = try XCTUnwrap(sessions.launch(game: 42, account: 42, prepare: { game }))
         try await eventually { sessions.active?.cloud.phase == .checking }
         XCTAssertNil(model.prompt)
         model.install()
@@ -153,7 +153,7 @@ final class SteamRosettaTests: XCTestCase {
         model.connect(accountId: 42)
         XCTAssertEqual(model.prompt?.decisionId, 17)
         XCTAssertFalse(model.isInstalling)
-        try await sessions.revokeCloud(accountId: 42)
+        sessions.signedOut(account: 42)
         XCTAssertNil(model.prompt)
         await game.finish()
         await task.value
@@ -169,7 +169,10 @@ final class SteamRosettaTests: XCTestCase {
         try await eventually { await installation.requests == 1 }
         XCTAssertTrue(fixture.model.isInstalling)
         XCTAssertTrue(fixture.sessions.protects(42))
-        XCTAssertNil(fixture.sessions.launch(appId: 570, prepare: { XCTFail("Already reserved"); return gameLaunch(570) }))
+        XCTAssertNil(fixture.sessions.launch(game: 570, account: 42, prepare: {
+            XCTFail("Already reserved")
+            return RecoveredGameFixture(appID: 570)
+        }))
         let before = await fixture.game.rosettaResumes
         XCTAssertTrue(before.isEmpty)
         await fixture.game.failRosettaResume(false)
@@ -305,7 +308,7 @@ final class SteamRosettaTests: XCTestCase {
     func testSessionRejectsStaleRosettaIdentityAccountAndDecisionBeforeBridgeCall() async throws {
         let fixture = try await fixture(install: {})
         let prompt = try XCTUnwrap(fixture.model.prompt)
-        for obsolete in [SteamGameSessions.RosettaPrompt(id: UUID(), accountId: 42, decisionId: 17),
+        for obsolete in [SteamGameSessions.RosettaPrompt(id: UUID().uuidString, accountId: 42, decisionId: 17),
                          .init(id: prompt.id, accountId: 99, decisionId: 17),
                          .init(id: prompt.id, accountId: 42, decisionId: 16)] {
             do {
@@ -327,11 +330,7 @@ final class SteamRosettaTests: XCTestCase {
         let second = RecoveredGameFixture(phase: .preparing, cloudPhase: .ready)
         await first.requireRosetta(decisionId: 17)
         await second.requireRosetta(decisionId: 17)
-        var launches = 0
-        let sessions = SteamGameSessions(startSession: { _, _ in
-            launches += 1
-            return launches == 1 ? first : second
-        })
+        let sessions = SteamGameSessions()
         let oldInstallation = GameSessionGate<Void>()
         let newInstallation = GameSessionGate<Void>()
         var installations = 0
@@ -344,15 +343,15 @@ final class SteamRosettaTests: XCTestCase {
             } else { try await newInstallation.wait() }
         })
         model.connect(accountId: 42)
-        let oldTask = try XCTUnwrap(sessions.launch(appId: 42, prepare: { gameLaunch() }))
+        let oldTask = try XCTUnwrap(sessions.launch(game: 42, account: 42, prepare: { first }))
         try await eventually { model.prompt != nil }
         model.install()
         try await eventually { await oldInstallation.requests == 1 }
         model.cancel()
         await first.finish()
         await oldTask.value
-        let newTask = try XCTUnwrap(sessions.launch(appId: 42, prepare: { gameLaunch() }))
-        try await eventually { model.prompt?.id.uuidString.lowercased() == second.sessionID.lowercased() }
+        let newTask = try XCTUnwrap(sessions.launch(game: 42, account: 42, prepare: { second }))
+        try await eventually { model.prompt?.id == second.sessionID }
         model.install()
         try await eventually { await newInstallation.requests == 1 }
         await oldInstallation.resolve(())
@@ -433,12 +432,12 @@ final class SteamRosettaTests: XCTestCase {
                          now: @escaping @MainActor () -> ContinuousClock.Instant = { .now }) async throws -> Fixture {
         let game = RecoveredGameFixture(phase: .preparing, cloudPhase: .ready)
         await game.requireRosetta(decisionId: 17)
-        let sessions = SteamGameSessions(startSession: { _, _ in game })
+        let sessions = SteamGameSessions()
         let model = SteamRosettaModel(sessions: sessions, install: install,
                                      readinessAttempts: readinessAttempts, readinessDelay: readinessDelay,
                                      readinessTimeout: readinessTimeout, now: now)
         model.connect(accountId: 42)
-        let task = try XCTUnwrap(sessions.launch(appId: 42, prepare: { gameLaunch() }))
+        let task = try XCTUnwrap(sessions.launch(game: 42, account: 42, prepare: { game }))
         try await eventually { model.prompt != nil }
         return Fixture(game: game, sessions: sessions, model: model, task: task)
     }
@@ -456,12 +455,4 @@ final class SteamRosettaTests: XCTestCase {
         }
     }
 
-    @MainActor
-    private func eventually(_ predicate: @MainActor () async -> Bool) async throws {
-        let deadline = ContinuousClock.now + .seconds(3)
-        while !(await predicate()) && ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
-        let satisfied = await predicate()
-        XCTAssertTrue(satisfied)
-        if !satisfied { throw CocoaError(.coderInvalidValue) }
-    }
 }

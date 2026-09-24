@@ -68,8 +68,8 @@ struct RootView: View {
         case .steamCloud:
             let cloud = model.steam.cloud
             SteamCloudPromptView(
-                title: model.steam.cloudTitle(for: cloud.promptAppId),
-                message: L10n.string(cloud.promptMessage),
+                title: model.steam.cloudTitle(for: cloud.promptGame),
+                message: cloud.promptMessage,
                 busy: cloud.promptWorking,
                 onCancel: { cloud.respond(.cancel) },
                 onChooseLocal: { cloud.respond(.local) },
@@ -80,7 +80,7 @@ struct RootView: View {
         case .epicCloud:
             let cloud = model.epic.cloud
             SteamCloudPromptView(
-                title: model.epic.cloudTitle(for: cloud.promptLibraryID),
+                title: model.epic.cloudTitle(for: cloud.promptGame),
                 message: cloud.promptMessage,
                 busy: cloud.promptWorking,
                 onCancel: { cloud.respond(.cancel) },

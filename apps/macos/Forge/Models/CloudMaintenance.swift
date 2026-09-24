@@ -15,26 +15,6 @@ struct CloudMaintenanceState<Game: Equatable>: Equatable {
     var isSyncing: Bool { conflict == nil }
 }
 
-extension CloudMaintenanceChoice {
-    init?(_ choice: SteamCloudChoice) {
-        switch choice {
-        case .local: self = .local
-        case .cloud: self = .cloud
-        case .cancel: self = .cancel
-        case .retry, .launchAnyway: return nil
-        }
-    }
-
-    init?(_ choice: EpicCloudChoice) {
-        switch choice {
-        case .local: self = .local
-        case .cloud: self = .cloud
-        case .cancel: self = .cancel
-        case .retry, .launchAnyway: return nil
-        }
-    }
-}
-
 /// Follows an attempt's revisioned status until it finishes, or until
 /// `update` reports that the model no longer presents it.
 @MainActor

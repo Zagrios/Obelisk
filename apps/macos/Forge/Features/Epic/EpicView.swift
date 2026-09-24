@@ -10,7 +10,7 @@ struct EpicView: View {
                 if model.isConnected {
                     if model.cloud.failurePresented {
                         SteamCloudFailureView(
-                            title: model.cloudTitle(for: model.cloud.prompt?.libraryID),
+                            title: model.cloudTitle(for: model.cloud.promptGame),
                             message: model.cloud.promptMessage,
                             busy: model.cloud.promptWorking,
                             canLaunchAnyway: model.cloud.canLaunchAnyway,

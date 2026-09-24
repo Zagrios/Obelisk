@@ -24,7 +24,7 @@ final class EpicCloudTests: XCTestCase {
         await model.start()
         model.open(owned)
         let game = EpicCloudGameFixture(phase: .preparing, cloudPhase: .checking)
-        let task = try XCTUnwrap(sessions.launch(libraryID: owned.libraryID, accountId: "account", prepare: { game }))
+        let task = try XCTUnwrap(sessions.launch(game: owned.libraryID, account: "account", prepare: { game }))
         try await eventually { model.isSynchronizingSaves }
         XCTAssertEqual(model.primaryActionTitle, L10n.string("ui.cloud.sync_short"))
         let view = EpicView(model: model)
@@ -97,8 +97,8 @@ final class EpicCloudTests: XCTestCase {
             await game.update(error: message, failureReason: .cancelled)
             let sessions = EpicGameSessions(recoverSession: { nil })
             var failure: Error?
-            let task = try XCTUnwrap(sessions.launch(libraryID: "sandbox:game", accountId: "account",
-                prepare: { game }, onCompletion: { failure = $0 }))
+            let task = try XCTUnwrap(sessions.launch(game: "sandbox:game", account: "account", prepare: { game },
+                onCompletion: { failure = $0 }))
             await task.value
             XCTAssertTrue(failure is CancellationError, "Cancellation was presented as a service failure: \(message ?? "nil")")
             XCTAssertFalse(sessions.isBusy)
@@ -111,8 +111,8 @@ final class EpicCloudTests: XCTestCase {
             await game.update(error: message, failureReason: .failed)
             let sessions = EpicGameSessions(recoverSession: { nil })
             var failure: Error?
-            let task = try XCTUnwrap(sessions.launch(libraryID: "sandbox:game", accountId: "account",
-                prepare: { game }, onCompletion: { failure = $0 }))
+            let task = try XCTUnwrap(sessions.launch(game: "sandbox:game", account: "account", prepare: { game },
+                onCompletion: { failure = $0 }))
             await task.value
             guard let failure, case let EpicError.Service(actual) = failure else {
                 XCTFail("A genuine failure must remain visible")
@@ -148,14 +148,14 @@ final class EpicCloudTests: XCTestCase {
         let gate = EpicCloudPreparationGate()
         let sessions = EpicGameSessions(recoverSession: { nil })
         let cloud = makeCloud(sessions)
-        cloud.connect(accountId: "account")
-        let task = try XCTUnwrap(sessions.launch(libraryID: "sandbox:game", accountId: "account", prepare: {
+        cloud.connect(account: "account")
+        let task = try XCTUnwrap(sessions.launch(game: "sandbox:game", account: "account", prepare: {
             await gate.wait()
             return game
         }))
         XCTAssertTrue(sessions.protects("sandbox:game"))
         XCTAssertFalse(cloud.isSynchronizing(for: "sandbox:game"), "Verification precedes the supervisor's first Cloud snapshot")
-        XCTAssertNil(sessions.launch(libraryID: "sandbox:other", accountId: "account", prepare: { game }))
+        XCTAssertNil(sessions.launch(game: "sandbox:other", account: "account", prepare: { game }))
         try await eventually { await gate.waiting }
         task.cancel()
         await gate.release()
@@ -171,22 +171,22 @@ final class EpicCloudTests: XCTestCase {
         await game.update(phase: .finished, cloudPhase: .synced)
         await task.value
         XCTAssertFalse(sessions.isBusy)
-        XCTAssertEqual(sessions.last?.cloudPhase, .synced)
+        XCTAssertEqual(sessions.last?.cloud.phase, .synced)
     }
 
     func testObservationLossKeepsInstallationReserved() async throws {
         let game = EpicCloudGameFixture(phase: .running, cloudPhase: .ready)
         let sessions = EpicGameSessions(recoverSession: { nil })
-        let task = try XCTUnwrap(sessions.launch(libraryID: "sandbox:game", accountId: "account", prepare: { game }))
+        let task = try XCTUnwrap(sessions.launch(game: "sandbox:game", account: "account", prepare: { game }))
         try await eventually { await game.waitingForSnapshot }
         await game.loseConnection()
         try await eventually { sessions.active?.reconnecting == true }
         XCTAssertTrue(sessions.protects("sandbox:game"))
-        XCTAssertNotNil(sessions.recoveryError)
+        XCTAssertNil(sessions.recoveryError, "Losing the control socket is only uncertainty")
         await game.update(phase: .finished, cloudPhase: .pending)
         await task.value
         XCTAssertFalse(sessions.isBusy)
-        XCTAssertEqual(sessions.last?.cloudPhase, .pending)
+        XCTAssertEqual(sessions.last?.cloud.phase, .pending)
     }
 
     func testSignOutBeforeClientArrivalPreventsAdmission() async throws {
@@ -194,8 +194,8 @@ final class EpicCloudTests: XCTestCase {
         let gate = EpicCloudPreparationGate()
         let sessions = EpicGameSessions(recoverSession: { nil })
         let cloud = makeCloud(sessions)
-        cloud.connect(accountId: "account")
-        let task = try XCTUnwrap(sessions.launch(libraryID: "sandbox:game", accountId: "account", prepare: {
+        cloud.connect(account: "account")
+        let task = try XCTUnwrap(sessions.launch(game: "sandbox:game", account: "account", prepare: {
             await gate.wait()
             return game
         }))
@@ -213,11 +213,10 @@ final class EpicCloudTests: XCTestCase {
     func testFailedRevocationDoesNotPreventObservingActualExit() async throws {
         let game = EpicCloudGameFixture(phase: .running, cloudPhase: .ready)
         let sessions = EpicGameSessions(recoverSession: { nil })
-        let task = try XCTUnwrap(sessions.launch(libraryID: "sandbox:game", accountId: "account", prepare: { game }))
+        let task = try XCTUnwrap(sessions.launch(game: "sandbox:game", account: "account", prepare: { game }))
         try await eventually { await game.waitingForSnapshot }
         await game.rejectRevocation()
-        do { try await sessions.revokeCloud(accountId: "account"); XCTFail("The fixture must lose its control socket") }
-        catch {}
+        sessions.signedOut(account: "account")
         await game.update(phase: .finalizing, cloudPhase: .pending)
         try await eventually { sessions.active?.reconnecting == true }
         XCTAssertTrue(sessions.isBusy)
@@ -229,31 +228,29 @@ final class EpicCloudTests: XCTestCase {
     func testChoicesAreBoundToAccountSessionAndDecisionIncludingFinalization() async throws {
         let game = EpicCloudGameFixture(phase: .preparing, cloudPhase: .conflict)
         let sessions = EpicGameSessions(recoverSession: { nil })
-        let task = try XCTUnwrap(sessions.launch(libraryID: "sandbox:game", accountId: "account", prepare: { game }))
-        try await eventually { sessions.active?.decisionId == 1 }
+        let task = try XCTUnwrap(sessions.launch(game: "sandbox:game", account: "account", prepare: { game }))
+        try await eventually { sessions.active?.cloud.decisionId == 1 }
         let old = try XCTUnwrap(sessions.active)
         await game.update(phase: .finalizing, cloudPhase: .conflict, decisionId: 2)
-        try await eventually { sessions.active?.decisionId == 2 }
+        try await eventually { sessions.active?.cloud.decisionId == 2 }
         do {
-            try await sessions.choose(.local, expected: old, accountId: "account")
+            try await sessions.choose(.local, expected: old)
             XCTFail("A stale decision must not overwrite newer saves")
         } catch {}
         let current = try XCTUnwrap(sessions.active)
-        do {
-            try await sessions.choose(.cloud, expected: current, accountId: "other-account")
-            XCTFail("Another account must not resolve this conflict")
-        } catch {}
-        try await sessions.choose(.cloud, expected: current, accountId: "account")
+        let other = makeCloud(sessions)
+        other.connect(account: "other-account")
+        XCTAssertNil(other.prompt, "Another account must not resolve this conflict")
+        try await sessions.choose(.cloud, expected: current)
         let choices = await game.choices
         XCTAssertEqual(choices, [.init(accountId: "account", decisionId: 2, choice: .cloud)])
-        try await sessions.revokeCloud(accountId: "account")
+        sessions.signedOut(account: "account")
         do {
-            try await sessions.choose(.local, expected: current, accountId: "account")
+            try await sessions.choose(.local, expected: current)
             XCTFail("Sign-out must immediately prevent Cloud decisions")
         } catch {}
         XCTAssertTrue(sessions.isBusy)
-        let revocations = await game.revocations
-        XCTAssertEqual(revocations, ["account"])
+        try await eventually { await game.revocations == ["account"] }
         await game.update(phase: .finished, cloudPhase: .pending)
         await task.value
     }
@@ -262,9 +259,9 @@ final class EpicCloudTests: XCTestCase {
         let game = EpicCloudGameFixture(phase: .preparing, cloudPhase: .checking)
         let sessions = EpicGameSessions(recoverSession: { nil })
         let cloud = makeCloud(sessions)
-        cloud.connect(accountId: "account")
-        let task = try XCTUnwrap(sessions.launch(libraryID: "sandbox:game", accountId: "account", prepare: { game }))
-        try await eventually { sessions.active?.decisionId == 1 }
+        cloud.connect(account: "account")
+        let task = try XCTUnwrap(sessions.launch(game: "sandbox:game", account: "account", prepare: { game }))
+        try await eventually { sessions.active?.cloud.decisionId == 1 }
         XCTAssertTrue(cloud.isSynchronizing(for: "sandbox:game"))
         XCTAssertTrue(cloud.canCancelSynchronization(for: "sandbox:game"))
         XCTAssertFalse(cloud.promptPresented)
@@ -280,7 +277,7 @@ final class EpicCloudTests: XCTestCase {
         cloud.signedOut()
         XCTAssertFalse(cloud.promptPresented)
         XCTAssertTrue(sessions.isBusy)
-        cloud.connect(accountId: "other-account")
+        cloud.connect(account: "other-account")
         XCTAssertFalse(cloud.promptPresented)
         XCTAssertFalse(cloud.isSynchronizing(for: "sandbox:game"))
         await game.update(phase: .finished, cloudPhase: .synced)
@@ -291,8 +288,8 @@ final class EpicCloudTests: XCTestCase {
         let game = EpicCloudGameFixture(phase: .running, cloudPhase: .unsupported)
         let sessions = EpicGameSessions(recoverSession: { nil })
         let cloud = makeCloud(sessions)
-        cloud.connect(accountId: "account")
-        let task = try XCTUnwrap(sessions.launch(libraryID: "sandbox:game", accountId: "account", prepare: { game }))
+        cloud.connect(account: "account")
+        let task = try XCTUnwrap(sessions.launch(game: "sandbox:game", account: "account", prepare: { game }))
         try await eventually { sessions.active?.phase == .running }
         XCTAssertFalse(cloud.isSynchronizing(for: "sandbox:game"))
         XCTAssertTrue(sessions.protects("sandbox:game"))
@@ -314,7 +311,7 @@ final class EpicCloudTests: XCTestCase {
         model.open(owned)
         XCTAssertTrue(model.primaryActionAvailable)
         let game = EpicCloudGameFixture(phase: .running, cloudPhase: .ready)
-        let task = try XCTUnwrap(sessions.launch(libraryID: owned.libraryID, accountId: "account", prepare: { game }))
+        let task = try XCTUnwrap(sessions.launch(game: owned.libraryID, account: "account", prepare: { game }))
         try await eventually { sessions.active?.phase == .running }
         XCTAssertEqual(model.primaryActionTitle, L10n.string("model.steam.running"))
         XCTAssertFalse(model.primaryActionAvailable)
@@ -332,9 +329,9 @@ final class EpicCloudTests: XCTestCase {
         let sessions = EpicGameSessions(recoverSession: { nil })
         let services = CloudServicesFixture()
         let cloud = EpicCloudModel(root: "/fixture-cloud", sessionDirectory: "/fixture-sessions", sessions: sessions,
-                                   services: services.epic(CloudIndicator(state: .pending, gameSession: false, syncedAt: nil,
-                                                                          pendingUpload: true, installationRemoved: false)))
-        cloud.connect(accountId: "account") { services.startEpicMaintenance($0) }
+                                   indicators: services.epic(CloudIndicator(state: .pending, gameSession: false, syncedAt: nil,
+                                                                            pendingUpload: true, installationRemoved: false)).indicators)
+        cloud.connect(account: "account") { services.startEpicMaintenance($0) }
         let configuration = EpicCloudConfiguration(root: "/fixture-cloud", home: "/fixture-home", install: "/fixture-game",
             sessionDirectory: "/fixture-sessions", helper: "/fixture-helper", namespace: "sandbox", catalogItemId: "catalog",
             appName: "game", platform: "Mac", language: "fr")
@@ -346,13 +343,13 @@ final class EpicCloudTests: XCTestCase {
         let attempt = try XCTUnwrap(services.epicMaintenance.last?.attempt)
         attempt.publish(.conflict, decisionId: 3, choices: [.local, .cloud, .cancel])
         try await eventually { cloud.promptPresented }
-        XCTAssertEqual(cloud.promptLibraryID, "sandbox:game")
+        XCTAssertEqual(cloud.promptGame, "sandbox:game")
         cloud.respond(.cloud)
         XCTAssertEqual(attempt.answers.map(\.1), [.cloud])
         attempt.finish(.failed, error: "backend.cloud.sharedSavesInUse")
         try await eventually { !cloud.isMaintaining }
         XCTAssertFalse(cloud.failurePresented, "Only a launch check shows a banner")
-        try await eventually { cloud.indicator(for: "sandbox:game")?.indicator.state == .pending }
+        try await eventually { cloud.indicator(for: "sandbox:game")?.state == .pending }
 
         cloud.startMaintenance(configuration)
         try await eventually { services.epicMaintenance.count == 2 }
@@ -377,7 +374,8 @@ final class EpicCloudTests: XCTestCase {
                               gameSessions: sessions,
                               cloudServices: services.epic(CloudIndicator(state: .pending, gameSession: false, syncedAt: nil,
                                                                           pendingUpload: true, installationRemoved: true),
-                                                           configuration: saved))
+                                                           configuration: saved),
+                              maintainCloud: { services.startEpicMaintenance($1) })
         await model.start()
         model.open(owned)
         try await eventually { model.cloudIndicator != nil }
@@ -387,8 +385,11 @@ final class EpicCloudTests: XCTestCase {
         model.syncCloud()
 
         XCTAssertTrue(model.cloud.isMaintaining)
-        XCTAssertFalse(model.canModifyInstallations, "Maintenance holds the Reservation")
+        XCTAssertFalse(model.canModifyInstallation(of: owned.libraryID), "Maintenance holds the Reservation")
         XCTAssertFalse(model.canSyncCloud)
+        try await eventually { services.epicMaintenance.count == 1 }
+        XCTAssertEqual(services.epicMaintenance.last?.configuration.install, "/removed-game")
+        XCTAssertNotEqual(services.epicMaintenance.last?.configuration.root, "/old-cloud", "This Forge's paths replace saved ones")
         model.signOut()
         XCTAssertFalse(model.cloud.isMaintaining)
     }
@@ -408,7 +409,7 @@ final class EpicCloudTests: XCTestCase {
         app.selection = .steam
         let game = EpicCloudGameFixture(phase: .finalizing, cloudPhase: .conflict)
 
-        let task = try XCTUnwrap(sessions.launch(libraryID: owned.libraryID, accountId: "account", prepare: { game }))
+        let task = try XCTUnwrap(sessions.launch(game: owned.libraryID, account: "account", prepare: { game }))
 
         try await eventually { app.presentedPrompt == .epicCloud }
         await game.update(phase: .finished, cloudPhase: .pending)
@@ -425,7 +426,7 @@ final class EpicCloudTests: XCTestCase {
         let model = EpicRosettaModel(sessions: sessions, install: { installations += 1 },
             readinessAttempts: 4, readinessDelay: { try await Task.sleep(for: .milliseconds(5)) })
         model.connect(accountId: "account")
-        let task = try XCTUnwrap(sessions.launch(libraryID: "sandbox:game", accountId: "account", prepare: { game }))
+        let task = try XCTUnwrap(sessions.launch(game: "sandbox:game", account: "account", prepare: { game }))
         try await eventually { model.prompt != nil }
         model.install()
         try await eventually { model.prompt == nil }
@@ -442,7 +443,7 @@ final class EpicCloudTests: XCTestCase {
         let game = EpicCloudGameFixture(phase: .preparing, cloudPhase: .ready)
         await game.requireRosetta(decisionId: 17)
         let sessions = EpicGameSessions(recoverSession: { nil })
-        let task = try XCTUnwrap(sessions.launch(libraryID: "sandbox:game", accountId: "account", prepare: { game }))
+        let task = try XCTUnwrap(sessions.launch(game: "sandbox:game", account: "account", prepare: { game }))
         try await eventually { sessions.rosettaPrompt(accountId: "account") != nil }
         let request = try XCTUnwrap(sessions.rosettaPrompt(accountId: "account"))
         for obsolete in [EpicGameSessions.RosettaPrompt(id: "old-session", accountId: "account", decisionId: 17),
@@ -468,7 +469,7 @@ final class EpicCloudTests: XCTestCase {
         let sessions = EpicGameSessions(recoverSession: { nil })
         let model = EpicRosettaModel(sessions: sessions, install: { XCTFail("Cancellation must not install") })
         model.connect(accountId: "account")
-        let task = try XCTUnwrap(sessions.launch(libraryID: "sandbox:game", accountId: "account", prepare: { game }))
+        let task = try XCTUnwrap(sessions.launch(game: "sandbox:game", account: "account", prepare: { game }))
         try await eventually { model.prompt != nil }
         model.cancel()
         try await eventually { game.signals.cancellations == 1 }
@@ -487,7 +488,7 @@ final class EpicCloudTests: XCTestCase {
         let gate = EpicCloudPreparationGate()
         let model = EpicRosettaModel(sessions: sessions, install: {}, readinessDelay: { await gate.wait() })
         model.connect(accountId: "account")
-        let task = try XCTUnwrap(sessions.launch(libraryID: "sandbox:game", accountId: "account", prepare: { game }))
+        let task = try XCTUnwrap(sessions.launch(game: "sandbox:game", account: "account", prepare: { game }))
         try await eventually { model.prompt != nil }
         model.install()
         try await eventually { await gate.waiting }
@@ -512,7 +513,7 @@ final class EpicCloudTests: XCTestCase {
         let model = EpicModel(directory: directory, keychain: EpicMemoryStore(credentials), restore: { _ in account },
                               gameSessions: sessions)
         await model.start()
-        let task = try XCTUnwrap(sessions.launch(libraryID: "sandbox:game", accountId: "account", prepare: { game }))
+        let task = try XCTUnwrap(sessions.launch(game: "sandbox:game", account: "account", prepare: { game }))
         try await eventually { model.rosetta.prompt != nil }
         model.signOut()
         XCTAssertNil(model.rosetta.prompt)
@@ -523,18 +524,10 @@ final class EpicCloudTests: XCTestCase {
     }
 
     private func makeCloud(_ sessions: EpicGameSessions) -> EpicCloudModel {
-        EpicCloudModel(root: "/fixture-cloud", sessionDirectory: "/fixture-sessions", sessions: sessions)
+        EpicCloudModel(root: "/fixture-cloud", sessionDirectory: "/fixture-sessions", sessions: sessions,
+                       indicators: { _, _, _ in [] })
     }
 
-    private func eventually(file: StaticString = #filePath, line: UInt = #line,
-                            _ condition: @MainActor () async -> Bool) async throws {
-        for _ in 0..<400 {
-            if await condition() { return }
-            try await Task.sleep(for: .milliseconds(5))
-        }
-        XCTFail("Timed out waiting for Epic Cloud state", file: file, line: line)
-        throw CocoaError(.coderInvalidValue)
-    }
 }
 
 private actor EpicCloudPreparationGate {
@@ -547,11 +540,11 @@ private actor EpicCloudPreparationGate {
     func release() { continuation?.resume(); continuation = nil }
 }
 
-private actor EpicCloudGameFixture: EpicGameSessionProtocol {
+private actor EpicCloudGameFixture: GameSessionProtocol {
     struct Choice: Equatable {
         let accountId: String
         let decisionId: UInt64
-        let choice: EpicCloudChoice
+        let choice: CloudChoice
     }
     nonisolated let signals = EpicCloudSignals()
     private(set) var choices: [Choice] = []
@@ -561,23 +554,26 @@ private actor EpicCloudGameFixture: EpicGameSessionProtocol {
     private(set) var rosettaResumes: [UInt64] = []
     private var unavailableAttempts = 0
     private var rejectsRevocation = false
-    private var current: EpicGameSnapshot
-    private var waiting: CheckedContinuation<EpicGameSnapshot, Error>?
+    private var current: GameSnapshot
+    private var waiting: CheckedContinuation<GameSnapshot, Error>?
     var waitingForSnapshot: Bool { waiting != nil }
 
-    init(phase: EpicGamePhase, cloudPhase: EpicCloudPhase) {
-        current = EpicGameSnapshot(id: UUID().uuidString, accountId: "account", namespace: "sandbox", appName: "game",
-            phase: phase, cloudPhase: cloudPhase, decisionId: 1, allowedChoices: [.local, .cloud, .cancel],
-            error: nil, failureReason: nil, exitCode: nil, revision: 1, reconnecting: false, rosetta: nil)
+    init(phase: GamePhase, cloudPhase: CloudPhase) {
+        current = GameSnapshot(id: UUID().uuidString, phase: phase, finished: [.finished, .failed].contains(phase),
+            failureReason: nil, exitCode: nil, error: nil, revision: 1, reconnecting: false, rosetta: nil,
+            cloud: CloudStatus(phase: cloudPhase, decisionId: 1, error: nil, allowedChoices: [.local, .cloud, .cancel]),
+            store: .epic(accountId: "account", namespace: "sandbox", appName: "game"))
     }
     nonisolated func cancelPreparation() { signals.cancel() }
     func begin() async throws { beginnings += 1 }
     func rejectRevocation() { rejectsRevocation = true }
-    func revokeCloud(accountId: String) async throws {
-        if rejectsRevocation { throw EpicError.Network }
+    func revoke(account: GameAccount) async throws {
+        if rejectsRevocation { throw GameSessionError.Failure(reason: "backend.epic.cloud.session") }
+        guard case let .epic(accountId) = account else { throw GameSessionError.Failure(reason: "wrong store") }
         revocations.append(accountId)
     }
-    func choose(accountId: String, decisionId: UInt64, choice: EpicCloudChoice) async throws {
+    func choose(account: GameAccount, decisionId: UInt64, choice: CloudChoice) async throws {
+        guard case let .epic(accountId) = account else { throw GameSessionError.Failure(reason: "wrong store") }
         choices.append(Choice(accountId: accountId, decisionId: decisionId, choice: choice))
     }
     func requireRosetta(decisionId: UInt64) {
@@ -585,36 +581,37 @@ private actor EpicCloudGameFixture: EpicGameSessionProtocol {
         update()
     }
     func failNextRosettaResumes(_ attempts: Int) { unavailableAttempts = attempts }
-    func resumeAfterRosetta(accountId: String, decisionId: UInt64) async throws {
+    func resumeAfterRosetta(account: GameAccount, decisionId: UInt64) async throws {
         rosettaChecks += 1
         if unavailableAttempts > 0 {
             unavailableAttempts -= 1
-            throw EpicError.Service(message: EpicGameSessions.rosettaUnavailableKey)
+            throw GameSessionError.Failure(reason: EpicGameSessions.rosettaUnavailableKey)
         }
-        guard current.accountId == accountId, current.rosetta?.decisionId == decisionId else {
-            throw EpicError.Service(message: "backend.epic.cloud.invalidSession")
+        guard account == .epic(accountId: "account"), current.rosetta?.decisionId == decisionId else {
+            throw GameSessionError.Failure(reason: "backend.epic.cloud.invalidSession")
         }
         rosettaResumes.append(decisionId)
     }
-    func snapshot(afterRevision: UInt64?) async throws -> EpicGameSnapshot {
-        if afterRevision != current.revision { return current }
+    func snapshot(after: UInt64?) async throws -> GameSnapshot {
+        if after != current.revision { return current }
         return try await withCheckedThrowingContinuation { waiting = $0 }
     }
-    func update(phase: EpicGamePhase? = nil, cloudPhase: EpicCloudPhase? = nil,
-                decisionId: UInt64? = nil, allowedChoices: [EpicCloudChoice]? = nil, error: String? = nil,
-                failureReason: EpicGameFailureReason? = nil) {
+    func update(phase: GamePhase? = nil, cloudPhase: CloudPhase? = nil,
+                decisionId: UInt64? = nil, allowedChoices: [CloudChoice]? = nil, error: String? = nil,
+                failureReason: GameFailureReason? = nil) {
         if let phase { current.phase = phase }
-        if let cloudPhase { current.cloudPhase = cloudPhase }
-        if let decisionId { current.decisionId = decisionId }
-        if let allowedChoices { current.allowedChoices = allowedChoices }
+        if let cloudPhase { current.cloud.phase = cloudPhase }
+        if let decisionId { current.cloud.decisionId = decisionId }
+        if let allowedChoices { current.cloud.allowedChoices = allowedChoices }
         current.error = error
         current.failureReason = failureReason
+        current.finished = [.finished, .failed].contains(current.phase)
         current.revision += 1
         waiting?.resume(returning: current)
         waiting = nil
     }
     func loseConnection() {
-        waiting?.resume(throwing: EpicError.Network)
+        waiting?.resume(throwing: GameSessionError.Failure(reason: "backend.epic.cloud.session"))
         waiting = nil
     }
 }

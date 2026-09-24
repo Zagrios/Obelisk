@@ -30,6 +30,8 @@ final class EpicModel {
     }
 
     let gameSessions: EpicGameSessions
+    @ObservationIgnored private let launchGame: @MainActor (any EpicSessionProtocol, EpicCloudConfiguration) async throws -> any GameSessionProtocol
+    @ObservationIgnored private let maintainCloud: @MainActor (any EpicSessionProtocol, EpicCloudConfiguration) async -> any CloudMaintenanceProtocol
     let cloud: EpicCloudModel
     let rosetta: EpicRosettaModel
 
@@ -101,7 +103,13 @@ final class EpicModel {
         restore: @escaping @Sendable (EpicCredentials) async throws -> any EpicSessionProtocol = { try await EpicSession.restore(credentials: $0) },
         language: String = Locale.preferredLanguages.first ?? "en",
         gameSessions: EpicGameSessions = .shared,
-        cloudServices: EpicCloudServices = .live
+        cloudServices: EpicCloudServices = .live,
+        launchGame: @escaping @MainActor (any EpicSessionProtocol, EpicCloudConfiguration) async throws -> any GameSessionProtocol = {
+            try await $0.launchGame(configuration: $1)
+        },
+        maintainCloud: @escaping @MainActor (any EpicSessionProtocol, EpicCloudConfiguration) async -> any CloudMaintenanceProtocol = {
+            await $0.maintainCloud(configuration: $1)
+        }
     ) {
         self.directory = directory
         self.rememberedSession = EpicRememberedSession(store: keychain)
@@ -110,10 +118,12 @@ final class EpicModel {
         self.restoreSession = restore
         self.launchLanguage = language
         self.gameSessions = gameSessions
+        self.launchGame = launchGame
+        self.maintainCloud = maintainCloud
         self.rosetta = EpicRosettaModel(sessions: gameSessions)
         self.cloud = EpicCloudModel(root: SteamGameLauncher.cloudDirectory(in: directory),
-                                    sessionDirectory: EpicGameSessions.sessionDirectory(in: directory),
-                                    sessions: gameSessions, services: cloudServices)
+                                    sessionDirectory: EpicGames.sessionDirectory(in: directory),
+                                    sessions: gameSessions, indicators: cloudServices.indicators)
         wakeObserver = SystemWakeObservation { [weak self] in
             Task { @MainActor [weak self] in self?.retryFriends() }
         }
@@ -129,7 +139,8 @@ final class EpicModel {
     var activeTransferLibraryID: String? { isDownloading ? transferLibraryID : nil }
 
     var canResumeDownload: Bool {
-        canModifyInstallations && lastDownload != nil && lastDownload?.game.libraryID == selectedGame?.libraryID
+        canModifyInstallation(of: lastDownload?.game.libraryID) && lastDownload != nil
+            && lastDownload?.game.libraryID == selectedGame?.libraryID
     }
 
     var selectedInstallation: EpicInstallReceipt? {
@@ -138,25 +149,29 @@ final class EpicModel {
     }
 
     var canUninstallSelectedGame: Bool {
-        isConnected && selectedInstallation != nil && canModifyInstallations
+        isConnected && selectedInstallation != nil && canModifyInstallation(of: selectedGame?.libraryID)
     }
 
     var primaryActionAvailable: Bool {
         guard isConnected, let selectedGame else { return false }
-        return canModifyInstallations && (selectedGame.macos || selectedGame.windows)
+        return canModifyInstallation(of: selectedGame.libraryID)
+            && !(selectedInstallation != nil && gameSessions.isBusy)
+            && (selectedGame.macos || selectedGame.windows)
     }
 
-    /// Cloud maintenance holds the game's Reservation; its idle guard also
-    /// excludes every other Epic launch, so the whole storefront waits.
-    var canModifyInstallations: Bool {
-        !isDownloading && !isLaunching && !isUninstalling && !gameSessions.isBusy && !cloud.isMaintaining
+    /// Every installation-mutating entry point asks this, so a new one cannot
+    /// silently gain permission to touch a running game's files. Cloud
+    /// maintenance holds the game's Reservation; its idle guard also excludes
+    /// every other Epic launch, so the whole storefront waits.
+    func canModifyInstallation(of libraryID: String?) -> Bool {
+        !isDownloading && !isLaunching && !isUninstalling && !cloud.isMaintaining && !gameSessions.protects(libraryID)
     }
 
     /// The selected game's Cloud indicator, or nil when it is hidden.
     var cloudIndicator: CloudIndicatorPresentation? {
         guard let game = selectedGame, isConnected else { return nil }
-        let playing = gameSessions.active.map { $0.libraryID == game.libraryID && $0.accountId == accountID } ?? false
-        return CloudIndicatorPresentation.make(saved: cloud.indicator(for: game.libraryID)?.indicator,
+        let playing = gameSessions.active.map { $0.game == game.libraryID && $0.account == accountID } ?? false
+        return CloudIndicatorPresentation.make(saved: cloud.indicator(for: game.libraryID),
                                                isSyncing: isSynchronizingSaves, isPlaying: playing,
                                                isInstalled: selectedInstallation != nil)
     }
@@ -199,8 +214,8 @@ final class EpicModel {
     }
 
     private var selectedGameSession: EpicGameSessions.Session? {
-        guard let active = gameSessions.active, active.accountId == accountID,
-              active.libraryID == selectedGame?.libraryID else { return nil }
+        guard let active = gameSessions.active, active.account == accountID,
+              active.game == selectedGame?.libraryID else { return nil }
         return active
     }
 
@@ -386,8 +401,9 @@ final class EpicModel {
             await rememberedSession.activate(connected, accountID: credentials.accountId)
             guard current == generation else { return }
             rosetta.connect(accountId: credentials.accountId)
-            cloud.connect(accountId: credentials.accountId) { configuration in
-                await connected.maintainCloud(configuration: configuration)
+            let maintainCloud = maintainCloud
+            cloud.connect(account: credentials.accountId) { configuration in
+                await maintainCloud(connected, configuration)
             }
 
             await reloadGames(connected, generation: current)
@@ -597,7 +613,8 @@ final class EpicModel {
     }
 
     private func download(_ game: EpicGame, platform: String, directory destination: URL, launchAfterDownload: Bool = false) {
-        guard let session, let accountID, canModifyInstallations else { return }
+        guard let session, let accountID, canModifyInstallation(of: game.libraryID),
+              !(launchAfterDownload && gameSessions.isBusy) else { return }
         do {
             try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
         } catch {
@@ -622,7 +639,7 @@ final class EpicModel {
         if launchAfterDownload {
             // The shared session store outlives this model: a strong capture
             // here would pin the whole library graph for the game's lifetime.
-            downloadTask = gameSessions.launch(libraryID: game.libraryID, accountId: accountID, prepare: { [weak self] in
+            downloadTask = gameSessions.launch(game: game.libraryID, account: accountID, prepare: { [weak self] in
                 guard let self else { throw CancellationError() }
                 let receipt = try await self.performDownload(game, platform: platform, directory: destination, session: session, generation: current)
                 try self.requireCurrentDownload(generation: current)
@@ -633,7 +650,8 @@ final class EpicModel {
                 return try await self.supervise(on: session, accountId: accountID, generation: current, preparing: false) { [weak self] in
                     guard let self else { throw CancellationError() }
                     try self.requireCurrentDownload(generation: current)
-                    return try await session.launchGame(configuration: configuration)
+                    do { return try await self.launchGame(session, configuration) }
+                    catch { throw GameHandoffFailure(cause: error) }
                 }
             }, onRunning: { [weak self] in
                 guard let self, current == self.generation else { return }
@@ -688,7 +706,7 @@ final class EpicModel {
 
     private func supervise(on session: any EpicSessionProtocol, accountId: String, generation current: Int,
                            preparing: Bool = true,
-                           create: @MainActor () async throws -> EpicGameSession) async throws -> EpicGameSession {
+                           create: @MainActor () async throws -> any GameSessionProtocol) async throws -> any GameSessionProtocol {
         let handoff = EpicGameHandoff()
         do {
             return try await withTaskCancellationHandler {
@@ -775,7 +793,7 @@ final class EpicModel {
     }
 
     func uninstall(_ receipt: EpicInstallReceipt) {
-        guard isConnected, let session, let removalAccount = accountID, canModifyInstallations,
+        guard isConnected, let session, let removalAccount = accountID, canModifyInstallation(of: receipt.libraryID),
               installations.contains(receipt), let file = receiptsURL,
               let game = games.first(where: { $0.libraryID == receipt.libraryID }) else { return }
         let current = generation
@@ -867,4 +885,38 @@ final class EpicModel {
 extension EpicGame {
     var preferredPlatform: String { macos ? "Mac" : "Windows" }
     var libraryID: String { epicLibraryID(namespace: namespace, appName: appName) }
+}
+
+/// Forwards cancellation as soon as UniFFI returns a session, even while the
+/// remembered account is still waiting for its ordered Keychain write.
+final class EpicGameHandoff: @unchecked Sendable {
+    private let lock = NSLock()
+    private var client: (any GameSessionProtocol)?
+    private var cancelled = false
+    private var cancellationSent = false
+
+    func receive(_ client: any GameSessionProtocol) {
+        let shouldCancel = lock.withLock {
+            self.client = client
+            guard cancelled, !cancellationSent else { return false }
+            cancellationSent = true
+            return true
+        }
+        if shouldCancel { Task.detached { client.cancelPreparation() } }
+    }
+
+    func cancel() {
+        let target = lock.withLock { () -> (any GameSessionProtocol)? in
+            cancelled = true
+            guard let client, !cancellationSent else { return nil }
+            cancellationSent = true
+            return client
+        }
+        if let target { Task.detached { target.cancelPreparation() } }
+    }
+
+    func revoke(accountId: String) async throws {
+        guard let target = lock.withLock({ client }) else { return }
+        try await Task.detached { try await target.revoke(account: .epic(accountId: accountId)) }.value
+    }
 }

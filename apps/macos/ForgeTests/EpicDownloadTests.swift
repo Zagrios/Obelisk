@@ -717,7 +717,8 @@ final class EpicDownloadTests: XCTestCase {
         let store = EpicMemoryStore(credential)
         let session = EpicDownloadSession(credentials: credential, game: owned, store: store)
         let model = EpicModel(directory: directory, keychain: store, restore: { _ in session }, language: "fr-FR",
-                              gameSessions: EpicGameSessions(recoverSession: { nil }))
+                              gameSessions: EpicGameSessions(recoverSession: { nil }),
+                              launchGame: { _, configuration in try await session.startGame(configuration: configuration) })
         await model.start()
         model.open(owned)
         try await eventually { !model.isLoadingGameDetails }
@@ -882,7 +883,7 @@ private actor EpicDownloadSession: EpicSessionProtocol {
     func launchPlan(namespace: String, catalogItemId: String, appName: String, platform: String, directory: String, language: String) async throws -> EpicLaunchPlan {
         throw CocoaError(.featureUnsupported)
     }
-    func launchGame(configuration: EpicCloudConfiguration) async throws -> EpicGameSession {
+    func startGame(configuration: EpicCloudConfiguration) async throws -> any GameSessionProtocol {
         events.append("launchGame")
         launchRequests.append(configuration)
         if shouldHoldLaunch {
@@ -947,38 +948,32 @@ private final class EpicDownloadProgress: @unchecked Sendable {
 
 private enum EpicDownloadTestFailure: Error { case timeout }
 
-/// The handle-free subclass stays entirely in Swift. Every game-session operation
-/// is overridden so the production handoff and observer can use it safely.
-private final class EpicDownloadGameSession: EpicGameSession, @unchecked Sendable {
+/// A Game session fake behind the production session interface.
+private final class EpicDownloadGameSession: GameSessionProtocol, @unchecked Sendable {
     private let state: EpicDownloadGameState
 
-    init(state: EpicDownloadGameState) {
-        self.state = state
-        super.init(noHandle: NoHandle())
-    }
-    required init(unsafeFromHandle handle: UInt64) {
-        fatalError("Test game sessions must never cross the Rust FFI boundary")
-    }
-    override func begin() async throws { await state.begin() }
-    override func cancelPreparation() { Task { await state.cancelPreparation() } }
-    override func choose(accountId: String, decisionId: UInt64, choice: EpicCloudChoice) async throws {
+    init(state: EpicDownloadGameState) { self.state = state }
+    func begin() async throws { await state.begin() }
+    func cancelPreparation() { Task { await state.cancelPreparation() } }
+    func choose(account: GameAccount, decisionId: UInt64, choice: CloudChoice) async throws {
         await state.choose(choice)
     }
-    override func resumeAfterRosetta(accountId: String, decisionId: UInt64) async throws {
-        throw EpicError.Service(message: "backend.epic.cloud.invalidSession")
+    func resumeAfterRosetta(account: GameAccount, decisionId: UInt64) async throws {
+        throw GameSessionError.Failure(reason: "backend.epic.cloud.invalidSession")
     }
-    override func revokeCloud(accountId: String) async throws { await state.revokeCloud(accountId: accountId) }
-    override func snapshot(afterRevision: UInt64?) async throws -> EpicGameSnapshot {
-        await state.snapshot(afterRevision: afterRevision)
+    func revoke(account: GameAccount) async throws {
+        guard case let .epic(accountId) = account else { return }
+        await state.revoke(accountId: accountId)
     }
+    func snapshot(after: UInt64?) async throws -> GameSnapshot { await state.snapshot(after: after) }
 }
 
 private actor EpicDownloadGameState {
     private let store: EpicMemoryStore
     private let holdRunning: Bool
     private let onBegin: @Sendable () async -> Void
-    private var current: EpicGameSnapshot
-    private var waiting: CheckedContinuation<EpicGameSnapshot, Never>?
+    private var current: GameSnapshot
+    private var waiting: CheckedContinuation<GameSnapshot, Never>?
     private(set) var beginnings = 0
     private(set) var cancellations = 0
     private(set) var revocations: [String] = []
@@ -989,10 +984,10 @@ private actor EpicDownloadGameState {
         self.store = store
         self.holdRunning = holdRunning
         self.onBegin = onBegin
-        current = EpicGameSnapshot(id: UUID().uuidString, accountId: accountId,
-            namespace: configuration.namespace, appName: configuration.appName, phase: .preparing,
-            cloudPhase: .checking, decisionId: 0, allowedChoices: [], error: nil, failureReason: nil, exitCode: nil,
-            revision: 1, reconnecting: false, rosetta: nil)
+        current = GameSnapshot(id: UUID().uuidString, phase: .preparing, finished: false, failureReason: nil,
+            exitCode: nil, error: nil, revision: 1, reconnecting: false, rosetta: nil,
+            cloud: CloudStatus(phase: .checking, decisionId: 0, error: nil, allowedChoices: []),
+            store: .epic(accountId: accountId, namespace: configuration.namespace, appName: configuration.appName))
     }
     func begin() async {
         beginnings += 1
@@ -1000,7 +995,7 @@ private actor EpicDownloadGameState {
         await onBegin()
         guard cancellations == 0 else { return }
         current.phase = holdRunning ? .running : .finished
-        current.cloudPhase = .ready
+        current.cloud.phase = .ready
         publish()
     }
     func cancelPreparation() {
@@ -1009,12 +1004,12 @@ private actor EpicDownloadGameState {
         current.error = "backend.epic.cloud.cancelled"
         publish()
     }
-    func revokeCloud(accountId: String) { revocations.append(accountId) }
-    func choose(_ choice: EpicCloudChoice) {
+    func revoke(accountId: String) { revocations.append(accountId) }
+    func choose(_ choice: CloudChoice) {
         if choice == .cancel { cancelPreparation() }
     }
-    func snapshot(afterRevision: UInt64?) async -> EpicGameSnapshot {
-        if afterRevision != current.revision { return current }
+    func snapshot(after: UInt64?) async -> GameSnapshot {
+        if after != current.revision { return current }
         return await withCheckedContinuation { waiting = $0 }
     }
     func finish() {
@@ -1022,6 +1017,7 @@ private actor EpicDownloadGameState {
         publish()
     }
     private func publish() {
+        current.finished = [.finished, .failed].contains(current.phase)
         current.revision += 1
         waiting?.resume(returning: current)
         waiting = nil

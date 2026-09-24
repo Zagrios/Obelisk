@@ -2,7 +2,7 @@ import Foundation
 
 @MainActor
 enum SteamGameLauncher {
-    static func start(_ plan: SteamLaunchPlan, credentials: SteamCredentials) async throws -> any SteamGameSessionProtocol {
+    static func start(_ plan: SteamLaunchPlan, credentials: SteamCredentials) async throws -> any GameSessionProtocol {
         guard plan.platform == "macos" else { throw GameLaunchFailure.windowsRuntimeUnavailable }
         let target = plan.target
         let api = try await Task.detached(priority: .userInitiated) {
@@ -33,7 +33,7 @@ enum SteamGameLauncher {
         } catch {
             // The supervisor may have accepted the game before its reply was lost.
             // The session owner must resolve this before releasing its reservation.
-            throw SteamGameHandoffFailure(cause: error)
+            throw GameHandoffFailure(cause: error)
         }
     }
 
@@ -268,14 +268,9 @@ private struct LaunchedGameProcess: Sendable {
     let exit: GameProcessExit
 }
 
-/// A failed native handoff is ambiguous until durable recovery completes.
-struct SteamGameHandoffFailure: Error {
-    let cause: any Error
-}
-
 // Used only by disposable-process launch fixtures.
 enum SteamGameEvent: Sendable {
-    case phase(SteamGamePhase)
+    case phase(GamePhase)
 }
 
 typealias SteamGameEventHandler = @MainActor @Sendable (SteamGameEvent) -> Void

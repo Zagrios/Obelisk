@@ -17,6 +17,8 @@ mod epic_friends;
 pub use epic_friends::*;
 mod cloud_maintenance;
 pub use cloud_maintenance::*;
+mod game_session;
+pub use game_session::*;
 
 uniffi::setup_scaffolding!();
 

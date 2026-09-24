@@ -1,6 +1,6 @@
 //! Presentation of the Rust-owned Epic supervisor and Cloud decisions.
-use crate::{EpicError, EpicSession, RosettaRequest};
-use game_runtime::{cloud, epic};
+use crate::{EpicError, EpicSession, GameSession};
+use game_runtime::epic;
 use std::{path::Path, sync::Arc};
 
 impl From<epic::Error> for EpicError {
@@ -56,133 +56,6 @@ impl From<epic::Configuration> for EpicCloudConfiguration {
         }
     }
 }
-macro_rules! bridge_enum {
-    ($name:ident, $source:ident, $($variant:ident),+ $(,)?) => {
-        #[derive(Clone, Copy, Debug, uniffi::Enum)]
-        pub enum $name { $($variant),+ }
-        impl From<epic::$source> for $name {
-            fn from(value: epic::$source) -> Self { match value { $(epic::$source::$variant => Self::$variant),+ } }
-        }
-        impl From<$name> for epic::$source {
-            fn from(value: $name) -> Self { match value { $($name::$variant => Self::$variant),+ } }
-        }
-    };
-}
-bridge_enum!(
-    EpicGamePhase,
-    Phase,
-    Preparing,
-    Running,
-    Finalizing,
-    Finished,
-    Failed
-);
-bridge_enum!(EpicGameFailureReason, FailureReason, Cancelled, Failed);
-#[derive(Clone, Copy, Debug, uniffi::Enum)]
-pub enum EpicCloudPhase {
-    Checking,
-    Ready,
-    Syncing,
-    Synced,
-    Conflict,
-    Pending,
-    Disabled,
-    Unsupported,
-    Failed,
-}
-impl From<cloud::Phase> for EpicCloudPhase {
-    fn from(phase: cloud::Phase) -> Self {
-        match phase {
-            // Nothing published yet: the launch check is about to start.
-            cloud::Phase::Idle | cloud::Phase::Checking => Self::Checking,
-            cloud::Phase::Ready => Self::Ready,
-            cloud::Phase::Syncing => Self::Syncing,
-            cloud::Phase::Synced => Self::Synced,
-            cloud::Phase::Conflict => Self::Conflict,
-            cloud::Phase::Pending => Self::Pending,
-            cloud::Phase::Disabled => Self::Disabled,
-            cloud::Phase::Unsupported => Self::Unsupported,
-            cloud::Phase::Failed => Self::Failed,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, uniffi::Enum)]
-pub enum EpicCloudChoice {
-    Local,
-    Cloud,
-    Retry,
-    Cancel,
-    LaunchAnyway,
-}
-impl From<cloud::Choice> for EpicCloudChoice {
-    fn from(choice: cloud::Choice) -> Self {
-        match choice {
-            cloud::Choice::Local => Self::Local,
-            cloud::Choice::Cloud => Self::Cloud,
-            cloud::Choice::Retry => Self::Retry,
-            cloud::Choice::Cancel => Self::Cancel,
-            cloud::Choice::LaunchAnyway => Self::LaunchAnyway,
-        }
-    }
-}
-impl From<EpicCloudChoice> for cloud::Choice {
-    fn from(choice: EpicCloudChoice) -> Self {
-        match choice {
-            EpicCloudChoice::Local => Self::Local,
-            EpicCloudChoice::Cloud => Self::Cloud,
-            EpicCloudChoice::Retry => Self::Retry,
-            EpicCloudChoice::Cancel => Self::Cancel,
-            EpicCloudChoice::LaunchAnyway => Self::LaunchAnyway,
-        }
-    }
-}
-
-#[derive(Clone, Debug, uniffi::Record)]
-pub struct EpicGameSnapshot {
-    pub id: String,
-    pub account_id: String,
-    pub namespace: String,
-    pub app_name: String,
-    pub phase: EpicGamePhase,
-    pub cloud_phase: EpicCloudPhase,
-    pub decision_id: u64,
-    pub allowed_choices: Vec<EpicCloudChoice>,
-    pub error: Option<String>,
-    pub failure_reason: Option<EpicGameFailureReason>,
-    pub exit_code: Option<i32>,
-    pub revision: u64,
-    pub reconnecting: bool,
-    pub rosetta: Option<RosettaRequest>,
-}
-impl From<epic::Snapshot> for EpicGameSnapshot {
-    fn from(s: epic::Snapshot) -> Self {
-        let failure_reason = s.failure_reason().map(Into::into);
-        Self {
-            id: s.id,
-            account_id: s.account_id,
-            namespace: s.store.namespace,
-            app_name: s.store.app_name,
-            phase: s.phase.into(),
-            cloud_phase: s.cloud.phase.into(),
-            decision_id: s.cloud.decision_id,
-            allowed_choices: s
-                .cloud
-                .allowed_choices
-                .into_iter()
-                .map(Into::into)
-                .collect(),
-            // The Cloud question's message, unless the session itself failed.
-            error: s.error.or(s.cloud.error),
-            failure_reason,
-            exit_code: s.exit_code,
-            revision: s.revision,
-            reconnecting: s.reconnecting,
-            rosetta: s.rosetta.map(Into::into),
-        }
-    }
-}
-
 /// Every Epic supervisor call parks on IPC, so it runs off the async runtime.
 /// A lost join is indistinguishable from a lost helper: both are `Session`.
 async fn blocking<T: Send + 'static>(
@@ -194,47 +67,9 @@ async fn blocking<T: Send + 'static>(
         .map_err(Into::into)
 }
 
-#[derive(uniffi::Object)]
-pub struct EpicGameSession {
-    client: Arc<epic::Client>,
-}
-#[uniffi::export(async_runtime = "tokio")]
-impl EpicGameSession {
-    pub async fn begin(self: Arc<Self>) -> Result<(), EpicError> {
-        blocking(move || self.client.begin()).await
-    }
-    pub async fn snapshot(
-        self: Arc<Self>,
-        after_revision: Option<u64>,
-    ) -> Result<EpicGameSnapshot, EpicError> {
-        blocking(move || self.client.snapshot(after_revision).map(Into::into)).await
-    }
-    pub fn cancel_preparation(&self) {
-        self.client.cancel();
-    }
-    pub async fn choose(
-        self: Arc<Self>,
-        account_id: String,
-        decision_id: u64,
-        choice: EpicCloudChoice,
-    ) -> Result<(), EpicError> {
-        blocking(move || self.client.choose(&account_id, decision_id, choice.into())).await
-    }
-    pub async fn resume_after_rosetta(
-        self: Arc<Self>,
-        account_id: String,
-        decision_id: u64,
-    ) -> Result<(), EpicError> {
-        blocking(move || self.client.resume_after_rosetta(&account_id, decision_id)).await
-    }
-    pub async fn revoke_cloud(self: Arc<Self>, account_id: String) -> Result<(), EpicError> {
-        blocking(move || self.client.revoke(&account_id)).await
-    }
-}
-
 struct Admission {
     cancel: forge_core::transfer::CancelToken,
-    client: Arc<std::sync::Mutex<Option<Arc<epic::Client>>>>,
+    client: Arc<std::sync::Mutex<Option<Arc<GameSession>>>>,
     armed: bool,
 }
 impl Drop for Admission {
@@ -242,7 +77,7 @@ impl Drop for Admission {
         if self.armed {
             self.cancel.cancel();
             if let Some(client) = &*self.client.lock().unwrap() {
-                client.cancel();
+                client.cancel_preparation();
             }
         }
     }
@@ -252,7 +87,7 @@ impl EpicSession {
     pub async fn launch_game(
         &self,
         configuration: EpicCloudConfiguration,
-    ) -> Result<Arc<EpicGameSession>, EpicError> {
+    ) -> Result<Arc<GameSession>, EpicError> {
         let cancel = forge_core::transfer::CancelToken::new();
         let client_slot = Arc::new(std::sync::Mutex::new(None));
         let mut admission = Admission {
@@ -265,24 +100,24 @@ impl EpicSession {
         if self.client.credentials().await?.account_id != account {
             return Err(EpicError::Unauthorized);
         }
-        let client = tokio::task::spawn_blocking(move || {
-            let client = Arc::new(epic::start(
+        let session = tokio::task::spawn_blocking(move || {
+            let session = GameSession::epic(epic::start(
                 configuration.into(),
                 account,
                 exchange,
                 cancel.clone(),
             )?);
-            *client_slot.lock().unwrap() = Some(Arc::clone(&client));
+            *client_slot.lock().unwrap() = Some(Arc::clone(&session));
             if cancel.is_cancelled() {
-                client.cancel();
+                session.cancel_preparation();
             }
-            Ok::<_, epic::Error>(client)
+            Ok::<_, epic::Error>(session)
         })
         .await
         .map_err(|_| epic::Error::Session)??;
         // Completion transfers cancellation to the observer's explicit controls.
         admission.armed = false;
-        Ok(Arc::new(EpicGameSession { client }))
+        Ok(session)
     }
     pub async fn archive_cloud(
         &self,
@@ -298,16 +133,11 @@ impl EpicSession {
 pub async fn recover_epic_game_session(
     session_directory: String,
     helper: String,
-) -> Result<Option<Arc<EpicGameSession>>, EpicError> {
+) -> Result<Option<Arc<GameSession>>, EpicError> {
     blocking(move || {
         Ok(
-            epic::Client::recover(Path::new(&session_directory), Path::new(&helper))?.map(
-                |client| {
-                    Arc::new(EpicGameSession {
-                        client: Arc::new(client),
-                    })
-                },
-            ),
+            epic::Client::recover(Path::new(&session_directory), Path::new(&helper))?
+                .map(GameSession::epic),
         )
     })
     .await
@@ -349,7 +179,7 @@ mod tests {
         })
     }
 
-    fn bridge_snapshot(value: Value) -> EpicGameSnapshot {
+    fn bridge_snapshot(value: Value) -> crate::GameSnapshot {
         let snapshot: epic::Snapshot = serde_json::from_value(value).unwrap();
         snapshot.into()
     }
@@ -379,10 +209,10 @@ mod tests {
         value["failure_reason"] = json!("Cancelled");
 
         let snapshot = bridge_snapshot(value);
-        assert!(matches!(snapshot.phase, EpicGamePhase::Failed));
+        assert!(matches!(snapshot.phase, crate::GamePhase::Failed));
         assert!(matches!(
             snapshot.failure_reason,
-            Some(EpicGameFailureReason::Cancelled)
+            Some(crate::GameFailureReason::Cancelled)
         ));
         assert_eq!(snapshot.error.as_deref(), Some(message));
     }
@@ -396,7 +226,7 @@ mod tests {
             let snapshot = bridge_snapshot(value);
             assert!(matches!(
                 snapshot.failure_reason,
-                Some(EpicGameFailureReason::Failed)
+                Some(crate::GameFailureReason::Failed)
             ));
             assert_eq!(snapshot.error.as_deref(), Some(message));
         }
@@ -410,7 +240,7 @@ mod tests {
             let snapshot = bridge_snapshot(value);
             assert!(matches!(
                 snapshot.failure_reason,
-                Some(EpicGameFailureReason::Cancelled)
+                Some(crate::GameFailureReason::Cancelled)
             ));
             assert_eq!(snapshot.error.as_deref(), Some(message));
         }
@@ -418,7 +248,7 @@ mod tests {
         let snapshot = bridge_snapshot(failed_snapshot("backend.epic.unauthorized"));
         assert!(matches!(
             snapshot.failure_reason,
-            Some(EpicGameFailureReason::Failed)
+            Some(crate::GameFailureReason::Failed)
         ));
         assert_eq!(snapshot.error.as_deref(), Some("backend.epic.unauthorized"));
     }

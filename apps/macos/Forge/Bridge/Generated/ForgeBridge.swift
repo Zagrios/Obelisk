@@ -607,7 +607,7 @@ fileprivate struct FfiConverterData: FfiConverterRustBuffer {
  */
 public protocol CloudMaintenanceProtocol: AnyObject, Sendable {
     
-    func answer(decisionId: UInt64, choice: CloudMaintenanceChoice)  -> Bool
+    func answer(decisionId: UInt64, choice: CloudChoice)  -> Bool
     
     func cancel() 
     
@@ -671,13 +671,13 @@ open class CloudMaintenance: CloudMaintenanceProtocol, @unchecked Sendable {
     
 
     
-open func answer(decisionId: UInt64, choice: CloudMaintenanceChoice) -> Bool  {
+open func answer(decisionId: UInt64, choice: CloudChoice) -> Bool  {
     return try!  FfiConverterBool.lift(try! rustCall() {
         uniffiCallStatus in
     uniffi_forge_bridge_fn_method_cloudmaintenance_answer(
             self.uniffiCloneHandle(),
         FfiConverterUInt64.lower(decisionId),
-        FfiConverterTypeCloudMaintenanceChoice_lower(choice),uniffiCallStatus
+        FfiConverterTypeCloudChoice_lower(choice),uniffiCallStatus
     )
 })
 }
@@ -757,212 +757,6 @@ public func FfiConverterTypeCloudMaintenance_lower(_ value: CloudMaintenance) ->
 
 
 
-public protocol EpicGameSessionProtocol: AnyObject, Sendable {
-    
-    func begin() async throws 
-    
-    func cancelPreparation() 
-    
-    func choose(accountId: String, decisionId: UInt64, choice: EpicCloudChoice) async throws 
-    
-    func resumeAfterRosetta(accountId: String, decisionId: UInt64) async throws 
-    
-    func revokeCloud(accountId: String) async throws 
-    
-    func snapshot(afterRevision: UInt64?) async throws  -> EpicGameSnapshot
-    
-}
-open class EpicGameSession: EpicGameSessionProtocol, @unchecked Sendable {
-    fileprivate let handle: UInt64
-
-    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    public struct NoHandle {
-        public init() {}
-    }
-
-    // TODO: We'd like this to be `private` but for Swifty reasons,
-    // we can't implement `FfiConverter` without making this `required` and we can't
-    // make it `required` without making it `public`.
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    required public init(unsafeFromHandle handle: UInt64) {
-        self.handle = handle
-    }
-
-    // This constructor can be used to instantiate a fake object.
-    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
-    //
-    // - Warning:
-    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    public init(noHandle: NoHandle) {
-        self.handle = 0
-    }
-
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    public func uniffiCloneHandle() -> UInt64 {
-        return try! rustCall { uniffi_forge_bridge_fn_clone_epicgamesession(self.handle, $0) }
-    }
-    // No primary constructor declared for this class.
-
-    deinit {
-        if handle == 0 {
-            // Mock objects have handle=0 don't try to free them
-            return
-        }
-
-        try! rustCall { uniffi_forge_bridge_fn_free_epicgamesession(handle, $0) }
-    }
-
-    
-
-    
-open func begin()async throws   {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_forge_bridge_fn_method_epicgamesession_begin(
-                        self.uniffiCloneHandle()
-                )
-            },
-            pollFunc: ffi_forge_bridge_rust_future_poll_void,
-            completeFunc: ffi_forge_bridge_rust_future_complete_void,
-            freeFunc: ffi_forge_bridge_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeEpicError_lift
-        )
-}
-    
-open func cancelPreparation()  {try! rustCall() {
-        uniffiCallStatus in
-    uniffi_forge_bridge_fn_method_epicgamesession_cancel_preparation(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-}
-}
-    
-open func choose(accountId: String, decisionId: UInt64, choice: EpicCloudChoice)async throws   {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_forge_bridge_fn_method_epicgamesession_choose(
-                        self.uniffiCloneHandle(),FfiConverterString.lower(accountId),FfiConverterUInt64.lower(decisionId),FfiConverterTypeEpicCloudChoice_lower(choice)
-                )
-            },
-            pollFunc: ffi_forge_bridge_rust_future_poll_void,
-            completeFunc: ffi_forge_bridge_rust_future_complete_void,
-            freeFunc: ffi_forge_bridge_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeEpicError_lift
-        )
-}
-    
-open func resumeAfterRosetta(accountId: String, decisionId: UInt64)async throws   {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_forge_bridge_fn_method_epicgamesession_resume_after_rosetta(
-                        self.uniffiCloneHandle(),FfiConverterString.lower(accountId),FfiConverterUInt64.lower(decisionId)
-                )
-            },
-            pollFunc: ffi_forge_bridge_rust_future_poll_void,
-            completeFunc: ffi_forge_bridge_rust_future_complete_void,
-            freeFunc: ffi_forge_bridge_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeEpicError_lift
-        )
-}
-    
-open func revokeCloud(accountId: String)async throws   {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_forge_bridge_fn_method_epicgamesession_revoke_cloud(
-                        self.uniffiCloneHandle(),FfiConverterString.lower(accountId)
-                )
-            },
-            pollFunc: ffi_forge_bridge_rust_future_poll_void,
-            completeFunc: ffi_forge_bridge_rust_future_complete_void,
-            freeFunc: ffi_forge_bridge_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeEpicError_lift
-        )
-}
-    
-open func snapshot(afterRevision: UInt64?)async throws  -> EpicGameSnapshot  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_forge_bridge_fn_method_epicgamesession_snapshot(
-                        self.uniffiCloneHandle(),FfiConverterOptionUInt64.lower(afterRevision)
-                )
-            },
-            pollFunc: ffi_forge_bridge_rust_future_poll_rust_buffer,
-            completeFunc: ffi_forge_bridge_rust_future_complete_rust_buffer,
-            freeFunc: ffi_forge_bridge_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypeEpicGameSnapshot_lift,
-            errorHandler: FfiConverterTypeEpicError_lift
-        )
-}
-    
-
-    
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeEpicGameSession: FfiConverter {
-    typealias FfiType = UInt64
-    typealias SwiftType = EpicGameSession
-
-    public static func lift(_ handle: UInt64) throws -> EpicGameSession {
-        return EpicGameSession(unsafeFromHandle: handle)
-    }
-
-    public static func lower(_ value: EpicGameSession) -> UInt64 {
-        return value.uniffiCloneHandle()
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EpicGameSession {
-        let handle: UInt64 = try readInt(&buf)
-        return try lift(handle)
-    }
-
-    public static func write(_ value: EpicGameSession, into buf: inout [UInt8]) {
-        writeInt(&buf, lower(value))
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeEpicGameSession_lift(_ handle: UInt64) throws -> EpicGameSession {
-    return try FfiConverterTypeEpicGameSession.lift(handle)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeEpicGameSession_lower(_ value: EpicGameSession) -> UInt64 {
-    return FfiConverterTypeEpicGameSession.lower(value)
-}
-
-
-
-
-
-
 public protocol EpicSessionProtocol: AnyObject, Sendable {
     
     /**
@@ -1004,7 +798,7 @@ public protocol EpicSessionProtocol: AnyObject, Sendable {
     
     func archiveCloud(configuration: EpicCloudConfiguration) async throws 
     
-    func launchGame(configuration: EpicCloudConfiguration) async throws  -> EpicGameSession
+    func launchGame(configuration: EpicCloudConfiguration) async throws  -> GameSession
     
 }
 open class EpicSession: EpicSessionProtocol, @unchecked Sendable {
@@ -1355,7 +1149,7 @@ open func archiveCloud(configuration: EpicCloudConfiguration)async throws   {
         )
 }
     
-open func launchGame(configuration: EpicCloudConfiguration)async throws  -> EpicGameSession  {
+open func launchGame(configuration: EpicCloudConfiguration)async throws  -> GameSession  {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
@@ -1366,7 +1160,7 @@ open func launchGame(configuration: EpicCloudConfiguration)async throws  -> Epic
             pollFunc: ffi_forge_bridge_rust_future_poll_u64,
             completeFunc: ffi_forge_bridge_rust_future_complete_u64,
             freeFunc: ffi_forge_bridge_rust_future_free_u64,
-            liftFunc: FfiConverterTypeEpicGameSession_lift,
+            liftFunc: FfiConverterTypeGameSession_lift,
             errorHandler: FfiConverterTypeEpicError_lift
         )
 }
@@ -1414,6 +1208,244 @@ public func FfiConverterTypeEpicSession_lift(_ handle: UInt64) throws -> EpicSes
 #endif
 public func FfiConverterTypeEpicSession_lower(_ value: EpicSession) -> UInt64 {
     return FfiConverterTypeEpicSession.lower(value)
+}
+
+
+
+
+
+
+/**
+ * One Game session's supervisor, for either storefront.
+ */
+public protocol GameSessionProtocol: AnyObject, Sendable {
+    
+    /**
+     * Opens the start gate of a supervisor that waits for its UI. Only Epic
+     * launches wait; a Steam session has nothing to begin.
+     */
+    func begin() async throws 
+    
+    /**
+     * Cancels preparation. After spawn the game keeps running.
+     */
+    func cancelPreparation() 
+    
+    func choose(account: GameAccount, decisionId: UInt64, choice: CloudChoice) async throws 
+    
+    func resumeAfterRosetta(account: GameAccount, decisionId: UInt64) async throws 
+    
+    /**
+     * Account revocation: network work stops, the game keeps running.
+     */
+    func revoke(account: GameAccount) async throws 
+    
+    /**
+     * Waits for a revision newer than `after`, or returns at once.
+     */
+    func snapshot(after: UInt64?) async throws  -> GameSnapshot
+    
+}
+/**
+ * One Game session's supervisor, for either storefront.
+ */
+open class GameSession: GameSessionProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_forge_bridge_fn_clone_gamesession(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_forge_bridge_fn_free_gamesession(handle, $0) }
+    }
+
+    
+
+    
+    /**
+     * Opens the start gate of a supervisor that waits for its UI. Only Epic
+     * launches wait; a Steam session has nothing to begin.
+     */
+open func begin()async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_forge_bridge_fn_method_gamesession_begin(
+                        self.uniffiCloneHandle()
+                )
+            },
+            pollFunc: ffi_forge_bridge_rust_future_poll_void,
+            completeFunc: ffi_forge_bridge_rust_future_complete_void,
+            freeFunc: ffi_forge_bridge_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeGameSessionError_lift
+        )
+}
+    
+    /**
+     * Cancels preparation. After spawn the game keeps running.
+     */
+open func cancelPreparation()  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_forge_bridge_fn_method_gamesession_cancel_preparation(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+}
+}
+    
+open func choose(account: GameAccount, decisionId: UInt64, choice: CloudChoice)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_forge_bridge_fn_method_gamesession_choose(
+                        self.uniffiCloneHandle(),FfiConverterTypeGameAccount_lower(account),FfiConverterUInt64.lower(decisionId),FfiConverterTypeCloudChoice_lower(choice)
+                )
+            },
+            pollFunc: ffi_forge_bridge_rust_future_poll_void,
+            completeFunc: ffi_forge_bridge_rust_future_complete_void,
+            freeFunc: ffi_forge_bridge_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeGameSessionError_lift
+        )
+}
+    
+open func resumeAfterRosetta(account: GameAccount, decisionId: UInt64)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_forge_bridge_fn_method_gamesession_resume_after_rosetta(
+                        self.uniffiCloneHandle(),FfiConverterTypeGameAccount_lower(account),FfiConverterUInt64.lower(decisionId)
+                )
+            },
+            pollFunc: ffi_forge_bridge_rust_future_poll_void,
+            completeFunc: ffi_forge_bridge_rust_future_complete_void,
+            freeFunc: ffi_forge_bridge_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeGameSessionError_lift
+        )
+}
+    
+    /**
+     * Account revocation: network work stops, the game keeps running.
+     */
+open func revoke(account: GameAccount)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_forge_bridge_fn_method_gamesession_revoke(
+                        self.uniffiCloneHandle(),FfiConverterTypeGameAccount_lower(account)
+                )
+            },
+            pollFunc: ffi_forge_bridge_rust_future_poll_void,
+            completeFunc: ffi_forge_bridge_rust_future_complete_void,
+            freeFunc: ffi_forge_bridge_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeGameSessionError_lift
+        )
+}
+    
+    /**
+     * Waits for a revision newer than `after`, or returns at once.
+     */
+open func snapshot(after: UInt64?)async throws  -> GameSnapshot  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_forge_bridge_fn_method_gamesession_snapshot(
+                        self.uniffiCloneHandle(),FfiConverterOptionUInt64.lower(after)
+                )
+            },
+            pollFunc: ffi_forge_bridge_rust_future_poll_rust_buffer,
+            completeFunc: ffi_forge_bridge_rust_future_complete_rust_buffer,
+            freeFunc: ffi_forge_bridge_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeGameSnapshot_lift,
+            errorHandler: FfiConverterTypeGameSessionError_lift
+        )
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGameSession: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = GameSession
+
+    public static func lift(_ handle: UInt64) throws -> GameSession {
+        return GameSession(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: GameSession) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GameSession {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: GameSession, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGameSession_lift(_ handle: UInt64) throws -> GameSession {
+    return try FfiConverterTypeGameSession.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGameSession_lower(_ value: GameSession) -> UInt64 {
+    return FfiConverterTypeGameSession.lower(value)
 }
 
 
@@ -1894,194 +1926,6 @@ public func FfiConverterTypeSteamFriendsFixture_lower(_ value: SteamFriendsFixtu
 
 
 
-public protocol SteamGameSessionProtocol: AnyObject, Sendable {
-    
-    func cancelPreparation() 
-    
-    func chooseCloud(accountId: UInt64, decisionId: UInt64, choice: SteamCloudChoice) async throws 
-    
-    func resumeAfterRosetta(accountId: UInt64, decisionId: UInt64) async throws 
-    
-    func revokeCloud(accountId: UInt64) async throws 
-    
-    func snapshot(after: UInt64?) async throws  -> SteamGameSnapshot
-    
-}
-open class SteamGameSession: SteamGameSessionProtocol, @unchecked Sendable {
-    fileprivate let handle: UInt64
-
-    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    public struct NoHandle {
-        public init() {}
-    }
-
-    // TODO: We'd like this to be `private` but for Swifty reasons,
-    // we can't implement `FfiConverter` without making this `required` and we can't
-    // make it `required` without making it `public`.
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    required public init(unsafeFromHandle handle: UInt64) {
-        self.handle = handle
-    }
-
-    // This constructor can be used to instantiate a fake object.
-    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
-    //
-    // - Warning:
-    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    public init(noHandle: NoHandle) {
-        self.handle = 0
-    }
-
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    public func uniffiCloneHandle() -> UInt64 {
-        return try! rustCall { uniffi_forge_bridge_fn_clone_steamgamesession(self.handle, $0) }
-    }
-    // No primary constructor declared for this class.
-
-    deinit {
-        if handle == 0 {
-            // Mock objects have handle=0 don't try to free them
-            return
-        }
-
-        try! rustCall { uniffi_forge_bridge_fn_free_steamgamesession(handle, $0) }
-    }
-
-    
-
-    
-open func cancelPreparation()  {try! rustCall() {
-        uniffiCallStatus in
-    uniffi_forge_bridge_fn_method_steamgamesession_cancel_preparation(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-}
-}
-    
-open func chooseCloud(accountId: UInt64, decisionId: UInt64, choice: SteamCloudChoice)async throws   {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_forge_bridge_fn_method_steamgamesession_choose_cloud(
-                        self.uniffiCloneHandle(),FfiConverterUInt64.lower(accountId),FfiConverterUInt64.lower(decisionId),FfiConverterTypeSteamCloudChoice_lower(choice)
-                )
-            },
-            pollFunc: ffi_forge_bridge_rust_future_poll_void,
-            completeFunc: ffi_forge_bridge_rust_future_complete_void,
-            freeFunc: ffi_forge_bridge_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeSteamError_lift
-        )
-}
-    
-open func resumeAfterRosetta(accountId: UInt64, decisionId: UInt64)async throws   {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_forge_bridge_fn_method_steamgamesession_resume_after_rosetta(
-                        self.uniffiCloneHandle(),FfiConverterUInt64.lower(accountId),FfiConverterUInt64.lower(decisionId)
-                )
-            },
-            pollFunc: ffi_forge_bridge_rust_future_poll_void,
-            completeFunc: ffi_forge_bridge_rust_future_complete_void,
-            freeFunc: ffi_forge_bridge_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeSteamError_lift
-        )
-}
-    
-open func revokeCloud(accountId: UInt64)async throws   {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_forge_bridge_fn_method_steamgamesession_revoke_cloud(
-                        self.uniffiCloneHandle(),FfiConverterUInt64.lower(accountId)
-                )
-            },
-            pollFunc: ffi_forge_bridge_rust_future_poll_void,
-            completeFunc: ffi_forge_bridge_rust_future_complete_void,
-            freeFunc: ffi_forge_bridge_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeSteamError_lift
-        )
-}
-    
-open func snapshot(after: UInt64?)async throws  -> SteamGameSnapshot  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_forge_bridge_fn_method_steamgamesession_snapshot(
-                        self.uniffiCloneHandle(),FfiConverterOptionUInt64.lower(after)
-                )
-            },
-            pollFunc: ffi_forge_bridge_rust_future_poll_rust_buffer,
-            completeFunc: ffi_forge_bridge_rust_future_complete_rust_buffer,
-            freeFunc: ffi_forge_bridge_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypeSteamGameSnapshot_lift,
-            errorHandler: FfiConverterTypeSteamError_lift
-        )
-}
-    
-
-    
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeSteamGameSession: FfiConverter {
-    typealias FfiType = UInt64
-    typealias SwiftType = SteamGameSession
-
-    public static func lift(_ handle: UInt64) throws -> SteamGameSession {
-        return SteamGameSession(unsafeFromHandle: handle)
-    }
-
-    public static func lower(_ value: SteamGameSession) -> UInt64 {
-        return value.uniffiCloneHandle()
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SteamGameSession {
-        let handle: UInt64 = try readInt(&buf)
-        return try lift(handle)
-    }
-
-    public static func write(_ value: SteamGameSession, into buf: inout [UInt8]) {
-        writeInt(&buf, lower(value))
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeSteamGameSession_lift(_ handle: UInt64) throws -> SteamGameSession {
-    return try FfiConverterTypeSteamGameSession.lift(handle)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeSteamGameSession_lower(_ value: SteamGameSession) -> UInt64 {
-    return FfiConverterTypeSteamGameSession.lower(value)
-}
-
-
-
-
-
-
 public protocol SteamLoginProtocol: AnyObject, Sendable {
     
     func challenge() async  -> SteamChallenge
@@ -2277,7 +2121,7 @@ public protocol SteamNativeLaunchProtocol: AnyObject, Sendable {
     
     func cancel() 
     
-    func startGame(configuration: SteamNativeConfiguration, target: SteamSupervisedTarget, sessionDirectory: String) async throws  -> SteamGameSession
+    func startGame(configuration: SteamNativeConfiguration, target: SteamSupervisedTarget, sessionDirectory: String) async throws  -> GameSession
     
 }
 open class SteamNativeLaunch: SteamNativeLaunchProtocol, @unchecked Sendable {
@@ -2350,7 +2194,7 @@ open func cancel()  {try! rustCall() {
 }
 }
     
-open func startGame(configuration: SteamNativeConfiguration, target: SteamSupervisedTarget, sessionDirectory: String)async throws  -> SteamGameSession  {
+open func startGame(configuration: SteamNativeConfiguration, target: SteamSupervisedTarget, sessionDirectory: String)async throws  -> GameSession  {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
@@ -2361,7 +2205,7 @@ open func startGame(configuration: SteamNativeConfiguration, target: SteamSuperv
             pollFunc: ffi_forge_bridge_rust_future_poll_u64,
             completeFunc: ffi_forge_bridge_rust_future_complete_u64,
             freeFunc: ffi_forge_bridge_rust_future_free_u64,
-            liftFunc: FfiConverterTypeSteamGameSession_lift,
+            liftFunc: FfiConverterTypeGameSession_lift,
             errorHandler: FfiConverterTypeSteamError_lift
         )
 }
@@ -2952,7 +2796,7 @@ public struct CloudMaintenanceStatus: Equatable, Hashable {
      * Binds an answer to the question this status shows.
      */
     public var decisionId: UInt64
-    public var allowedChoices: [CloudMaintenanceChoice]
+    public var allowedChoices: [CloudChoice]
     public var error: String?
     public var finished: Bool
 
@@ -2961,7 +2805,7 @@ public struct CloudMaintenanceStatus: Equatable, Hashable {
     public init(revision: UInt64, phase: CloudMaintenancePhase, 
         /**
          * Binds an answer to the question this status shows.
-         */decisionId: UInt64, allowedChoices: [CloudMaintenanceChoice], error: String?, finished: Bool) {
+         */decisionId: UInt64, allowedChoices: [CloudChoice], error: String?, finished: Bool) {
         self.revision = revision
         self.phase = phase
         self.decisionId = decisionId
@@ -2989,7 +2833,7 @@ public struct FfiConverterTypeCloudMaintenanceStatus: FfiConverterRustBuffer {
                 revision: FfiConverterUInt64.read(from: &buf), 
                 phase: FfiConverterTypeCloudMaintenancePhase.read(from: &buf), 
                 decisionId: FfiConverterUInt64.read(from: &buf), 
-                allowedChoices: FfiConverterSequenceTypeCloudMaintenanceChoice.read(from: &buf), 
+                allowedChoices: FfiConverterSequenceTypeCloudChoice.read(from: &buf), 
                 error: FfiConverterOptionString.read(from: &buf), 
                 finished: FfiConverterBool.read(from: &buf)
         )
@@ -2999,7 +2843,7 @@ public struct FfiConverterTypeCloudMaintenanceStatus: FfiConverterRustBuffer {
         FfiConverterUInt64.write(value.revision, into: &buf)
         FfiConverterTypeCloudMaintenancePhase.write(value.phase, into: &buf)
         FfiConverterUInt64.write(value.decisionId, into: &buf)
-        FfiConverterSequenceTypeCloudMaintenanceChoice.write(value.allowedChoices, into: &buf)
+        FfiConverterSequenceTypeCloudChoice.write(value.allowedChoices, into: &buf)
         FfiConverterOptionString.write(value.error, into: &buf)
         FfiConverterBool.write(value.finished, into: &buf)
     }
@@ -3018,6 +2862,89 @@ public func FfiConverterTypeCloudMaintenanceStatus_lift(_ buf: RustBuffer) throw
 #endif
 public func FfiConverterTypeCloudMaintenanceStatus_lower(_ value: CloudMaintenanceStatus) -> RustBuffer {
     return FfiConverterTypeCloudMaintenanceStatus.lower(value)
+}
+
+
+/**
+ * A Cloud sync's progress and the Cloud question it waits on, if any.
+ */
+public struct CloudStatus: Equatable, Hashable {
+    public var phase: CloudPhase
+    /**
+     * Binds an answer to the question this status shows.
+     */
+    public var decisionId: UInt64
+    /**
+     * Localization key of the failure the status reports.
+     */
+    public var error: String?
+    /**
+     * Empty unless a question waits.
+     */
+    public var allowedChoices: [CloudChoice]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(phase: CloudPhase, 
+        /**
+         * Binds an answer to the question this status shows.
+         */decisionId: UInt64, 
+        /**
+         * Localization key of the failure the status reports.
+         */error: String?, 
+        /**
+         * Empty unless a question waits.
+         */allowedChoices: [CloudChoice]) {
+        self.phase = phase
+        self.decisionId = decisionId
+        self.error = error
+        self.allowedChoices = allowedChoices
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CloudStatus: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCloudStatus: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CloudStatus {
+        return
+            try CloudStatus(
+                phase: FfiConverterTypeCloudPhase.read(from: &buf), 
+                decisionId: FfiConverterUInt64.read(from: &buf), 
+                error: FfiConverterOptionString.read(from: &buf), 
+                allowedChoices: FfiConverterSequenceTypeCloudChoice.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CloudStatus, into buf: inout [UInt8]) {
+        FfiConverterTypeCloudPhase.write(value.phase, into: &buf)
+        FfiConverterUInt64.write(value.decisionId, into: &buf)
+        FfiConverterOptionString.write(value.error, into: &buf)
+        FfiConverterSequenceTypeCloudChoice.write(value.allowedChoices, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudStatus_lift(_ buf: RustBuffer) throws -> CloudStatus {
+    return try FfiConverterTypeCloudStatus.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudStatus_lower(_ value: CloudStatus) -> RustBuffer {
+    return FfiConverterTypeCloudStatus.lower(value)
 }
 
 
@@ -3687,108 +3614,6 @@ public func FfiConverterTypeEpicGameDetails_lower(_ value: EpicGameDetails) -> R
 }
 
 
-public struct EpicGameSnapshot: Equatable, Hashable {
-    public var id: String
-    public var accountId: String
-    public var namespace: String
-    public var appName: String
-    public var phase: EpicGamePhase
-    public var cloudPhase: EpicCloudPhase
-    public var decisionId: UInt64
-    public var allowedChoices: [EpicCloudChoice]
-    public var error: String?
-    public var failureReason: EpicGameFailureReason?
-    public var exitCode: Int32?
-    public var revision: UInt64
-    public var reconnecting: Bool
-    public var rosetta: RosettaRequest?
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(id: String, accountId: String, namespace: String, appName: String, phase: EpicGamePhase, cloudPhase: EpicCloudPhase, decisionId: UInt64, allowedChoices: [EpicCloudChoice], error: String?, failureReason: EpicGameFailureReason?, exitCode: Int32?, revision: UInt64, reconnecting: Bool, rosetta: RosettaRequest?) {
-        self.id = id
-        self.accountId = accountId
-        self.namespace = namespace
-        self.appName = appName
-        self.phase = phase
-        self.cloudPhase = cloudPhase
-        self.decisionId = decisionId
-        self.allowedChoices = allowedChoices
-        self.error = error
-        self.failureReason = failureReason
-        self.exitCode = exitCode
-        self.revision = revision
-        self.reconnecting = reconnecting
-        self.rosetta = rosetta
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension EpicGameSnapshot: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeEpicGameSnapshot: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EpicGameSnapshot {
-        return
-            try EpicGameSnapshot(
-                id: FfiConverterString.read(from: &buf), 
-                accountId: FfiConverterString.read(from: &buf), 
-                namespace: FfiConverterString.read(from: &buf), 
-                appName: FfiConverterString.read(from: &buf), 
-                phase: FfiConverterTypeEpicGamePhase.read(from: &buf), 
-                cloudPhase: FfiConverterTypeEpicCloudPhase.read(from: &buf), 
-                decisionId: FfiConverterUInt64.read(from: &buf), 
-                allowedChoices: FfiConverterSequenceTypeEpicCloudChoice.read(from: &buf), 
-                error: FfiConverterOptionString.read(from: &buf), 
-                failureReason: FfiConverterOptionTypeEpicGameFailureReason.read(from: &buf), 
-                exitCode: FfiConverterOptionInt32.read(from: &buf), 
-                revision: FfiConverterUInt64.read(from: &buf), 
-                reconnecting: FfiConverterBool.read(from: &buf), 
-                rosetta: FfiConverterOptionTypeRosettaRequest.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: EpicGameSnapshot, into buf: inout [UInt8]) {
-        FfiConverterString.write(value.id, into: &buf)
-        FfiConverterString.write(value.accountId, into: &buf)
-        FfiConverterString.write(value.namespace, into: &buf)
-        FfiConverterString.write(value.appName, into: &buf)
-        FfiConverterTypeEpicGamePhase.write(value.phase, into: &buf)
-        FfiConverterTypeEpicCloudPhase.write(value.cloudPhase, into: &buf)
-        FfiConverterUInt64.write(value.decisionId, into: &buf)
-        FfiConverterSequenceTypeEpicCloudChoice.write(value.allowedChoices, into: &buf)
-        FfiConverterOptionString.write(value.error, into: &buf)
-        FfiConverterOptionTypeEpicGameFailureReason.write(value.failureReason, into: &buf)
-        FfiConverterOptionInt32.write(value.exitCode, into: &buf)
-        FfiConverterUInt64.write(value.revision, into: &buf)
-        FfiConverterBool.write(value.reconnecting, into: &buf)
-        FfiConverterOptionTypeRosettaRequest.write(value.rosetta, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeEpicGameSnapshot_lift(_ buf: RustBuffer) throws -> EpicGameSnapshot {
-    return try FfiConverterTypeEpicGameSnapshot.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeEpicGameSnapshot_lower(_ value: EpicGameSnapshot) -> RustBuffer {
-    return FfiConverterTypeEpicGameSnapshot.lower(value)
-}
-
-
 public struct EpicInstallation: Equatable, Hashable {
     public var appName: String
     public var directory: String
@@ -4058,6 +3883,116 @@ public func FfiConverterTypeGame_lift(_ buf: RustBuffer) throws -> Game {
 #endif
 public func FfiConverterTypeGame_lower(_ value: Game) -> RustBuffer {
     return FfiConverterTypeGame.lower(value)
+}
+
+
+public struct GameSnapshot: Equatable, Hashable {
+    public var id: String
+    public var phase: GamePhase
+    /**
+     * The phase is final and the session owns no game or starting process:
+     * only then is the Reservation released.
+     */
+    public var finished: Bool
+    public var failureReason: GameFailureReason?
+    public var exitCode: Int32?
+    /**
+     * Localization key of the session's own failure.
+     */
+    public var error: String?
+    public var revision: UInt64
+    /**
+     * The control connection was lost; the game may still run.
+     */
+    public var reconnecting: Bool
+    public var rosetta: RosettaRequest?
+    public var cloud: CloudStatus
+    public var store: GameStore
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, phase: GamePhase, 
+        /**
+         * The phase is final and the session owns no game or starting process:
+         * only then is the Reservation released.
+         */finished: Bool, failureReason: GameFailureReason?, exitCode: Int32?, 
+        /**
+         * Localization key of the session's own failure.
+         */error: String?, revision: UInt64, 
+        /**
+         * The control connection was lost; the game may still run.
+         */reconnecting: Bool, rosetta: RosettaRequest?, cloud: CloudStatus, store: GameStore) {
+        self.id = id
+        self.phase = phase
+        self.finished = finished
+        self.failureReason = failureReason
+        self.exitCode = exitCode
+        self.error = error
+        self.revision = revision
+        self.reconnecting = reconnecting
+        self.rosetta = rosetta
+        self.cloud = cloud
+        self.store = store
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension GameSnapshot: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGameSnapshot: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GameSnapshot {
+        return
+            try GameSnapshot(
+                id: FfiConverterString.read(from: &buf), 
+                phase: FfiConverterTypeGamePhase.read(from: &buf), 
+                finished: FfiConverterBool.read(from: &buf), 
+                failureReason: FfiConverterOptionTypeGameFailureReason.read(from: &buf), 
+                exitCode: FfiConverterOptionInt32.read(from: &buf), 
+                error: FfiConverterOptionString.read(from: &buf), 
+                revision: FfiConverterUInt64.read(from: &buf), 
+                reconnecting: FfiConverterBool.read(from: &buf), 
+                rosetta: FfiConverterOptionTypeRosettaRequest.read(from: &buf), 
+                cloud: FfiConverterTypeCloudStatus.read(from: &buf), 
+                store: FfiConverterTypeGameStore.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GameSnapshot, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterTypeGamePhase.write(value.phase, into: &buf)
+        FfiConverterBool.write(value.finished, into: &buf)
+        FfiConverterOptionTypeGameFailureReason.write(value.failureReason, into: &buf)
+        FfiConverterOptionInt32.write(value.exitCode, into: &buf)
+        FfiConverterOptionString.write(value.error, into: &buf)
+        FfiConverterUInt64.write(value.revision, into: &buf)
+        FfiConverterBool.write(value.reconnecting, into: &buf)
+        FfiConverterOptionTypeRosettaRequest.write(value.rosetta, into: &buf)
+        FfiConverterTypeCloudStatus.write(value.cloud, into: &buf)
+        FfiConverterTypeGameStore.write(value.store, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGameSnapshot_lift(_ buf: RustBuffer) throws -> GameSnapshot {
+    return try FfiConverterTypeGameSnapshot.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGameSnapshot_lower(_ value: GameSnapshot) -> RustBuffer {
+    return FfiConverterTypeGameSnapshot.lower(value)
 }
 
 
@@ -4934,118 +4869,6 @@ public func FfiConverterTypeSteamGamePlatforms_lower(_ value: SteamGamePlatforms
 }
 
 
-public struct SteamGameSnapshot: Equatable, Hashable {
-    public var id: String
-    public var appId: UInt32
-    public var accountId: UInt64
-    public var phase: SteamGamePhase
-    public var cloudPhase: SteamCloudPhase
-    public var cloudDecisionId: UInt64
-    public var cloudError: String?
-    public var cloudAllowedChoices: [SteamCloudChoice]
-    public var connection: SteamSupervisorConnection
-    public var host: SteamHostState
-    public var exitCode: Int32?
-    public var error: String?
-    public var revision: UInt64
-    public var rosetta: RosettaRequest?
-    /**
-     * Defaulted so that records built before it existed still compile.
-     */
-    public var failureReason: SteamGameFailureReason?
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(id: String, appId: UInt32, accountId: UInt64, phase: SteamGamePhase, cloudPhase: SteamCloudPhase, cloudDecisionId: UInt64, cloudError: String?, cloudAllowedChoices: [SteamCloudChoice], connection: SteamSupervisorConnection, host: SteamHostState, exitCode: Int32?, error: String?, revision: UInt64, rosetta: RosettaRequest?, 
-        /**
-         * Defaulted so that records built before it existed still compile.
-         */failureReason: SteamGameFailureReason? = nil) {
-        self.id = id
-        self.appId = appId
-        self.accountId = accountId
-        self.phase = phase
-        self.cloudPhase = cloudPhase
-        self.cloudDecisionId = cloudDecisionId
-        self.cloudError = cloudError
-        self.cloudAllowedChoices = cloudAllowedChoices
-        self.connection = connection
-        self.host = host
-        self.exitCode = exitCode
-        self.error = error
-        self.revision = revision
-        self.rosetta = rosetta
-        self.failureReason = failureReason
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension SteamGameSnapshot: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeSteamGameSnapshot: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SteamGameSnapshot {
-        return
-            try SteamGameSnapshot(
-                id: FfiConverterString.read(from: &buf), 
-                appId: FfiConverterUInt32.read(from: &buf), 
-                accountId: FfiConverterUInt64.read(from: &buf), 
-                phase: FfiConverterTypeSteamGamePhase.read(from: &buf), 
-                cloudPhase: FfiConverterTypeSteamCloudPhase.read(from: &buf), 
-                cloudDecisionId: FfiConverterUInt64.read(from: &buf), 
-                cloudError: FfiConverterOptionString.read(from: &buf), 
-                cloudAllowedChoices: FfiConverterSequenceTypeSteamCloudChoice.read(from: &buf), 
-                connection: FfiConverterTypeSteamSupervisorConnection.read(from: &buf), 
-                host: FfiConverterTypeSteamHostState.read(from: &buf), 
-                exitCode: FfiConverterOptionInt32.read(from: &buf), 
-                error: FfiConverterOptionString.read(from: &buf), 
-                revision: FfiConverterUInt64.read(from: &buf), 
-                rosetta: FfiConverterOptionTypeRosettaRequest.read(from: &buf), 
-                failureReason: FfiConverterOptionTypeSteamGameFailureReason.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: SteamGameSnapshot, into buf: inout [UInt8]) {
-        FfiConverterString.write(value.id, into: &buf)
-        FfiConverterUInt32.write(value.appId, into: &buf)
-        FfiConverterUInt64.write(value.accountId, into: &buf)
-        FfiConverterTypeSteamGamePhase.write(value.phase, into: &buf)
-        FfiConverterTypeSteamCloudPhase.write(value.cloudPhase, into: &buf)
-        FfiConverterUInt64.write(value.cloudDecisionId, into: &buf)
-        FfiConverterOptionString.write(value.cloudError, into: &buf)
-        FfiConverterSequenceTypeSteamCloudChoice.write(value.cloudAllowedChoices, into: &buf)
-        FfiConverterTypeSteamSupervisorConnection.write(value.connection, into: &buf)
-        FfiConverterTypeSteamHostState.write(value.host, into: &buf)
-        FfiConverterOptionInt32.write(value.exitCode, into: &buf)
-        FfiConverterOptionString.write(value.error, into: &buf)
-        FfiConverterUInt64.write(value.revision, into: &buf)
-        FfiConverterOptionTypeRosettaRequest.write(value.rosetta, into: &buf)
-        FfiConverterOptionTypeSteamGameFailureReason.write(value.failureReason, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeSteamGameSnapshot_lift(_ buf: RustBuffer) throws -> SteamGameSnapshot {
-    return try FfiConverterTypeSteamGameSnapshot.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeSteamGameSnapshot_lower(_ value: SteamGameSnapshot) -> RustBuffer {
-    return FfiConverterTypeSteamGameSnapshot.lower(value)
-}
-
-
 public struct SteamGuardMethod: Equatable, Hashable {
     public var kind: SteamGuardKind
     public var message: String
@@ -5637,11 +5460,13 @@ public func FfiConverterTypeStorefrontInfo_lower(_ value: StorefrontInfo) -> Rus
 
 
 
-public enum CloudMaintenanceChoice: Equatable, Hashable {
+public enum CloudChoice: Equatable, Hashable {
     
+    case retry
+    case cancel
+    case launchAnyway
     case local
     case cloud
-    case cancel
 
 
 
@@ -5650,43 +5475,55 @@ public enum CloudMaintenanceChoice: Equatable, Hashable {
 }
 
 #if compiler(>=6)
-extension CloudMaintenanceChoice: Sendable {}
+extension CloudChoice: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypeCloudMaintenanceChoice: FfiConverterRustBuffer {
-    typealias SwiftType = CloudMaintenanceChoice
+public struct FfiConverterTypeCloudChoice: FfiConverterRustBuffer {
+    typealias SwiftType = CloudChoice
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CloudMaintenanceChoice {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CloudChoice {
         let variant: Int32 = try readInt(&buf)
         switch variant {
         
-        case 1: return .local
+        case 1: return .retry
         
-        case 2: return .cloud
+        case 2: return .cancel
         
-        case 3: return .cancel
+        case 3: return .launchAnyway
+        
+        case 4: return .local
+        
+        case 5: return .cloud
         
         default: throw UniffiInternalError.unexpectedEnumCase
         }
     }
 
-    public static func write(_ value: CloudMaintenanceChoice, into buf: inout [UInt8]) {
+    public static func write(_ value: CloudChoice, into buf: inout [UInt8]) {
         switch value {
         
         
-        case .local:
+        case .retry:
             writeInt(&buf, Int32(1))
         
         
-        case .cloud:
+        case .cancel:
             writeInt(&buf, Int32(2))
         
         
-        case .cancel:
+        case .launchAnyway:
             writeInt(&buf, Int32(3))
+        
+        
+        case .local:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .cloud:
+            writeInt(&buf, Int32(5))
         
         }
     }
@@ -5696,15 +5533,15 @@ public struct FfiConverterTypeCloudMaintenanceChoice: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeCloudMaintenanceChoice_lift(_ buf: RustBuffer) throws -> CloudMaintenanceChoice {
-    return try FfiConverterTypeCloudMaintenanceChoice.lift(buf)
+public func FfiConverterTypeCloudChoice_lift(_ buf: RustBuffer) throws -> CloudChoice {
+    return try FfiConverterTypeCloudChoice.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeCloudMaintenanceChoice_lower(_ value: CloudMaintenanceChoice) -> RustBuffer {
-    return FfiConverterTypeCloudMaintenanceChoice.lower(value)
+public func FfiConverterTypeCloudChoice_lower(_ value: CloudChoice) -> RustBuffer {
+    return FfiConverterTypeCloudChoice.lower(value)
 }
 
 
@@ -5806,6 +5643,128 @@ public func FfiConverterTypeCloudMaintenancePhase_lift(_ buf: RustBuffer) throws
 #endif
 public func FfiConverterTypeCloudMaintenancePhase_lower(_ value: CloudMaintenancePhase) -> RustBuffer {
     return FfiConverterTypeCloudMaintenancePhase.lower(value)
+}
+
+
+
+
+public enum CloudPhase: Equatable, Hashable {
+    
+    case idle
+    case checking
+    case ready
+    case syncing
+    case synced
+    case conflict
+    case pending
+    case disabled
+    case unsupported
+    case failed
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension CloudPhase: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCloudPhase: FfiConverterRustBuffer {
+    typealias SwiftType = CloudPhase
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CloudPhase {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .idle
+        
+        case 2: return .checking
+        
+        case 3: return .ready
+        
+        case 4: return .syncing
+        
+        case 5: return .synced
+        
+        case 6: return .conflict
+        
+        case 7: return .pending
+        
+        case 8: return .disabled
+        
+        case 9: return .unsupported
+        
+        case 10: return .failed
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CloudPhase, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .idle:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .checking:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .ready:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .syncing:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .synced:
+            writeInt(&buf, Int32(5))
+        
+        
+        case .conflict:
+            writeInt(&buf, Int32(6))
+        
+        
+        case .pending:
+            writeInt(&buf, Int32(7))
+        
+        
+        case .disabled:
+            writeInt(&buf, Int32(8))
+        
+        
+        case .unsupported:
+            writeInt(&buf, Int32(9))
+        
+        
+        case .failed:
+            writeInt(&buf, Int32(10))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudPhase_lift(_ buf: RustBuffer) throws -> CloudPhase {
+    return try FfiConverterTypeCloudPhase.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudPhase_lower(_ value: CloudPhase) -> RustBuffer {
+    return FfiConverterTypeCloudPhase.lower(value)
 }
 
 
@@ -6028,208 +5987,6 @@ public func FfiConverterTypeCoreError_lift(_ buf: RustBuffer) throws -> CoreErro
 public func FfiConverterTypeCoreError_lower(_ value: CoreError) -> RustBuffer {
     return FfiConverterTypeCoreError.lower(value)
 }
-
-
-
-public enum EpicCloudChoice: Equatable, Hashable {
-    
-    case local
-    case cloud
-    case retry
-    case cancel
-    case launchAnyway
-
-
-
-
-
-}
-
-#if compiler(>=6)
-extension EpicCloudChoice: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeEpicCloudChoice: FfiConverterRustBuffer {
-    typealias SwiftType = EpicCloudChoice
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EpicCloudChoice {
-        let variant: Int32 = try readInt(&buf)
-        switch variant {
-        
-        case 1: return .local
-        
-        case 2: return .cloud
-        
-        case 3: return .retry
-        
-        case 4: return .cancel
-        
-        case 5: return .launchAnyway
-        
-        default: throw UniffiInternalError.unexpectedEnumCase
-        }
-    }
-
-    public static func write(_ value: EpicCloudChoice, into buf: inout [UInt8]) {
-        switch value {
-        
-        
-        case .local:
-            writeInt(&buf, Int32(1))
-        
-        
-        case .cloud:
-            writeInt(&buf, Int32(2))
-        
-        
-        case .retry:
-            writeInt(&buf, Int32(3))
-        
-        
-        case .cancel:
-            writeInt(&buf, Int32(4))
-        
-        
-        case .launchAnyway:
-            writeInt(&buf, Int32(5))
-        
-        }
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeEpicCloudChoice_lift(_ buf: RustBuffer) throws -> EpicCloudChoice {
-    return try FfiConverterTypeEpicCloudChoice.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeEpicCloudChoice_lower(_ value: EpicCloudChoice) -> RustBuffer {
-    return FfiConverterTypeEpicCloudChoice.lower(value)
-}
-
-
-
-
-public enum EpicCloudPhase: Equatable, Hashable {
-    
-    case checking
-    case ready
-    case syncing
-    case synced
-    case conflict
-    case pending
-    case disabled
-    case unsupported
-    case failed
-
-
-
-
-
-}
-
-#if compiler(>=6)
-extension EpicCloudPhase: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeEpicCloudPhase: FfiConverterRustBuffer {
-    typealias SwiftType = EpicCloudPhase
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EpicCloudPhase {
-        let variant: Int32 = try readInt(&buf)
-        switch variant {
-        
-        case 1: return .checking
-        
-        case 2: return .ready
-        
-        case 3: return .syncing
-        
-        case 4: return .synced
-        
-        case 5: return .conflict
-        
-        case 6: return .pending
-        
-        case 7: return .disabled
-        
-        case 8: return .unsupported
-        
-        case 9: return .failed
-        
-        default: throw UniffiInternalError.unexpectedEnumCase
-        }
-    }
-
-    public static func write(_ value: EpicCloudPhase, into buf: inout [UInt8]) {
-        switch value {
-        
-        
-        case .checking:
-            writeInt(&buf, Int32(1))
-        
-        
-        case .ready:
-            writeInt(&buf, Int32(2))
-        
-        
-        case .syncing:
-            writeInt(&buf, Int32(3))
-        
-        
-        case .synced:
-            writeInt(&buf, Int32(4))
-        
-        
-        case .conflict:
-            writeInt(&buf, Int32(5))
-        
-        
-        case .pending:
-            writeInt(&buf, Int32(6))
-        
-        
-        case .disabled:
-            writeInt(&buf, Int32(7))
-        
-        
-        case .unsupported:
-            writeInt(&buf, Int32(8))
-        
-        
-        case .failed:
-            writeInt(&buf, Int32(9))
-        
-        }
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeEpicCloudPhase_lift(_ buf: RustBuffer) throws -> EpicCloudPhase {
-    return try FfiConverterTypeEpicCloudPhase.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeEpicCloudPhase_lower(_ value: EpicCloudPhase) -> RustBuffer {
-    return FfiConverterTypeEpicCloudPhase.lower(value)
-}
-
 
 
 public 
@@ -6533,8 +6290,86 @@ public func FfiConverterTypeEpicFriendsConnection_lower(_ value: EpicFriendsConn
 
 
 
+/**
+ * The account an answer or a revocation names.
+ */
 
-public enum EpicGameFailureReason: Equatable, Hashable {
+public enum GameAccount: Equatable, Hashable {
+    
+    case steam(steamId: UInt64
+    )
+    case epic(accountId: String
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension GameAccount: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGameAccount: FfiConverterRustBuffer {
+    typealias SwiftType = GameAccount
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GameAccount {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .steam(steamId: try FfiConverterUInt64.read(from: &buf)
+        )
+        
+        case 2: return .epic(accountId: try FfiConverterString.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: GameAccount, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .steam(steamId):
+            writeInt(&buf, Int32(1))
+            FfiConverterUInt64.write(steamId, into: &buf)
+            
+        
+        case let .epic(accountId):
+            writeInt(&buf, Int32(2))
+            FfiConverterString.write(accountId, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGameAccount_lift(_ buf: RustBuffer) throws -> GameAccount {
+    return try FfiConverterTypeGameAccount.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGameAccount_lower(_ value: GameAccount) -> RustBuffer {
+    return FfiConverterTypeGameAccount.lower(value)
+}
+
+
+
+/**
+ * Why a finished session failed. Swift ends a cancellation silently.
+ */
+
+public enum GameFailureReason: Equatable, Hashable {
     
     case cancelled
     case failed
@@ -6546,16 +6381,16 @@ public enum EpicGameFailureReason: Equatable, Hashable {
 }
 
 #if compiler(>=6)
-extension EpicGameFailureReason: Sendable {}
+extension GameFailureReason: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypeEpicGameFailureReason: FfiConverterRustBuffer {
-    typealias SwiftType = EpicGameFailureReason
+public struct FfiConverterTypeGameFailureReason: FfiConverterRustBuffer {
+    typealias SwiftType = GameFailureReason
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EpicGameFailureReason {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GameFailureReason {
         let variant: Int32 = try readInt(&buf)
         switch variant {
         
@@ -6567,7 +6402,7 @@ public struct FfiConverterTypeEpicGameFailureReason: FfiConverterRustBuffer {
         }
     }
 
-    public static func write(_ value: EpicGameFailureReason, into buf: inout [UInt8]) {
+    public static func write(_ value: GameFailureReason, into buf: inout [UInt8]) {
         switch value {
         
         
@@ -6586,102 +6421,15 @@ public struct FfiConverterTypeEpicGameFailureReason: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeEpicGameFailureReason_lift(_ buf: RustBuffer) throws -> EpicGameFailureReason {
-    return try FfiConverterTypeEpicGameFailureReason.lift(buf)
+public func FfiConverterTypeGameFailureReason_lift(_ buf: RustBuffer) throws -> GameFailureReason {
+    return try FfiConverterTypeGameFailureReason.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeEpicGameFailureReason_lower(_ value: EpicGameFailureReason) -> RustBuffer {
-    return FfiConverterTypeEpicGameFailureReason.lower(value)
-}
-
-
-
-
-public enum EpicGamePhase: Equatable, Hashable {
-    
-    case preparing
-    case running
-    case finalizing
-    case finished
-    case failed
-
-
-
-
-
-}
-
-#if compiler(>=6)
-extension EpicGamePhase: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeEpicGamePhase: FfiConverterRustBuffer {
-    typealias SwiftType = EpicGamePhase
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EpicGamePhase {
-        let variant: Int32 = try readInt(&buf)
-        switch variant {
-        
-        case 1: return .preparing
-        
-        case 2: return .running
-        
-        case 3: return .finalizing
-        
-        case 4: return .finished
-        
-        case 5: return .failed
-        
-        default: throw UniffiInternalError.unexpectedEnumCase
-        }
-    }
-
-    public static func write(_ value: EpicGamePhase, into buf: inout [UInt8]) {
-        switch value {
-        
-        
-        case .preparing:
-            writeInt(&buf, Int32(1))
-        
-        
-        case .running:
-            writeInt(&buf, Int32(2))
-        
-        
-        case .finalizing:
-            writeInt(&buf, Int32(3))
-        
-        
-        case .finished:
-            writeInt(&buf, Int32(4))
-        
-        
-        case .failed:
-            writeInt(&buf, Int32(5))
-        
-        }
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeEpicGamePhase_lift(_ buf: RustBuffer) throws -> EpicGamePhase {
-    return try FfiConverterTypeEpicGamePhase.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeEpicGamePhase_lower(_ value: EpicGamePhase) -> RustBuffer {
-    return FfiConverterTypeEpicGamePhase.lower(value)
+public func FfiConverterTypeGameFailureReason_lower(_ value: GameFailureReason) -> RustBuffer {
+    return FfiConverterTypeGameFailureReason.lower(value)
 }
 
 
@@ -6753,104 +6501,13 @@ public func FfiConverterTypeGameKind_lower(_ value: GameKind) -> RustBuffer {
 
 
 
-public enum SteamCloudChoice: Equatable, Hashable {
+public enum GamePhase: Equatable, Hashable {
     
-    case retry
-    case cancel
-    case launchAnyway
-    case local
-    case cloud
-
-
-
-
-
-}
-
-#if compiler(>=6)
-extension SteamCloudChoice: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeSteamCloudChoice: FfiConverterRustBuffer {
-    typealias SwiftType = SteamCloudChoice
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SteamCloudChoice {
-        let variant: Int32 = try readInt(&buf)
-        switch variant {
-        
-        case 1: return .retry
-        
-        case 2: return .cancel
-        
-        case 3: return .launchAnyway
-        
-        case 4: return .local
-        
-        case 5: return .cloud
-        
-        default: throw UniffiInternalError.unexpectedEnumCase
-        }
-    }
-
-    public static func write(_ value: SteamCloudChoice, into buf: inout [UInt8]) {
-        switch value {
-        
-        
-        case .retry:
-            writeInt(&buf, Int32(1))
-        
-        
-        case .cancel:
-            writeInt(&buf, Int32(2))
-        
-        
-        case .launchAnyway:
-            writeInt(&buf, Int32(3))
-        
-        
-        case .local:
-            writeInt(&buf, Int32(4))
-        
-        
-        case .cloud:
-            writeInt(&buf, Int32(5))
-        
-        }
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeSteamCloudChoice_lift(_ buf: RustBuffer) throws -> SteamCloudChoice {
-    return try FfiConverterTypeSteamCloudChoice.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeSteamCloudChoice_lower(_ value: SteamCloudChoice) -> RustBuffer {
-    return FfiConverterTypeSteamCloudChoice.lower(value)
-}
-
-
-
-
-public enum SteamCloudPhase: Equatable, Hashable {
-    
-    case idle
-    case checking
-    case conflict
+    case preparing
+    case running
+    case finalizing
+    case finished
     case failed
-    case disabled
-    case ready
-    case syncing
-    case pending
-    case synced
 
 
 
@@ -6859,79 +6516,55 @@ public enum SteamCloudPhase: Equatable, Hashable {
 }
 
 #if compiler(>=6)
-extension SteamCloudPhase: Sendable {}
+extension GamePhase: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypeSteamCloudPhase: FfiConverterRustBuffer {
-    typealias SwiftType = SteamCloudPhase
+public struct FfiConverterTypeGamePhase: FfiConverterRustBuffer {
+    typealias SwiftType = GamePhase
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SteamCloudPhase {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GamePhase {
         let variant: Int32 = try readInt(&buf)
         switch variant {
         
-        case 1: return .idle
+        case 1: return .preparing
         
-        case 2: return .checking
+        case 2: return .running
         
-        case 3: return .conflict
+        case 3: return .finalizing
         
-        case 4: return .failed
+        case 4: return .finished
         
-        case 5: return .disabled
-        
-        case 6: return .ready
-        
-        case 7: return .syncing
-        
-        case 8: return .pending
-        
-        case 9: return .synced
+        case 5: return .failed
         
         default: throw UniffiInternalError.unexpectedEnumCase
         }
     }
 
-    public static func write(_ value: SteamCloudPhase, into buf: inout [UInt8]) {
+    public static func write(_ value: GamePhase, into buf: inout [UInt8]) {
         switch value {
         
         
-        case .idle:
+        case .preparing:
             writeInt(&buf, Int32(1))
         
         
-        case .checking:
+        case .running:
             writeInt(&buf, Int32(2))
         
         
-        case .conflict:
+        case .finalizing:
             writeInt(&buf, Int32(3))
+        
+        
+        case .finished:
+            writeInt(&buf, Int32(4))
         
         
         case .failed:
-            writeInt(&buf, Int32(4))
-        
-        
-        case .disabled:
             writeInt(&buf, Int32(5))
-        
-        
-        case .ready:
-            writeInt(&buf, Int32(6))
-        
-        
-        case .syncing:
-            writeInt(&buf, Int32(7))
-        
-        
-        case .pending:
-            writeInt(&buf, Int32(8))
-        
-        
-        case .synced:
-            writeInt(&buf, Int32(9))
         
         }
     }
@@ -6941,15 +6574,175 @@ public struct FfiConverterTypeSteamCloudPhase: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeSteamCloudPhase_lift(_ buf: RustBuffer) throws -> SteamCloudPhase {
-    return try FfiConverterTypeSteamCloudPhase.lift(buf)
+public func FfiConverterTypeGamePhase_lift(_ buf: RustBuffer) throws -> GamePhase {
+    return try FfiConverterTypeGamePhase.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeSteamCloudPhase_lower(_ value: SteamCloudPhase) -> RustBuffer {
-    return FfiConverterTypeSteamCloudPhase.lower(value)
+public func FfiConverterTypeGamePhase_lower(_ value: GamePhase) -> RustBuffer {
+    return FfiConverterTypeGamePhase.lower(value)
+}
+
+
+
+/**
+ * A refused or failed session call, as a localization key.
+ */
+public 
+enum GameSessionError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+
+    
+    
+    case Failure(reason: String
+    )
+
+    
+
+    
+
+    
+    public var errorDescription: String? {
+        String(reflecting: self)
+    }
+    
+}
+
+#if compiler(>=6)
+extension GameSessionError: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGameSessionError: FfiConverterRustBuffer {
+    typealias SwiftType = GameSessionError
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GameSessionError {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        
+
+        
+        case 1: return .Failure(
+            reason: try FfiConverterString.read(from: &buf)
+            )
+
+         default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: GameSessionError, into buf: inout [UInt8]) {
+        switch value {
+
+        
+
+        
+        
+        case let .Failure(reason):
+            writeInt(&buf, Int32(1))
+            FfiConverterString.write(reason, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGameSessionError_lift(_ buf: RustBuffer) throws -> GameSessionError {
+    return try FfiConverterTypeGameSessionError.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGameSessionError_lower(_ value: GameSessionError) -> RustBuffer {
+    return FfiConverterTypeGameSessionError.lower(value)
+}
+
+
+/**
+ * What the storefront's supervisor records about the game.
+ */
+
+public enum GameStore: Equatable, Hashable {
+    
+    case steam(appId: UInt32, accountId: UInt64, 
+        /**
+         * The native host that owns the game's Steam session.
+         */host: SteamHostState
+    )
+    case epic(accountId: String, namespace: String, appName: String
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension GameStore: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGameStore: FfiConverterRustBuffer {
+    typealias SwiftType = GameStore
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GameStore {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .steam(appId: try FfiConverterUInt32.read(from: &buf), accountId: try FfiConverterUInt64.read(from: &buf), host: try FfiConverterTypeSteamHostState.read(from: &buf)
+        )
+        
+        case 2: return .epic(accountId: try FfiConverterString.read(from: &buf), namespace: try FfiConverterString.read(from: &buf), appName: try FfiConverterString.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: GameStore, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .steam(appId,accountId,host):
+            writeInt(&buf, Int32(1))
+            FfiConverterUInt32.write(appId, into: &buf)
+            FfiConverterUInt64.write(accountId, into: &buf)
+            FfiConverterTypeSteamHostState.write(host, into: &buf)
+            
+        
+        case let .epic(accountId,namespace,appName):
+            writeInt(&buf, Int32(2))
+            FfiConverterString.write(accountId, into: &buf)
+            FfiConverterString.write(namespace, into: &buf)
+            FfiConverterString.write(appName, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGameStore_lift(_ buf: RustBuffer) throws -> GameStore {
+    return try FfiConverterTypeGameStore.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGameStore_lower(_ value: GameStore) -> RustBuffer {
+    return FfiConverterTypeGameStore.lower(value)
 }
 
 
@@ -7243,162 +7036,6 @@ public func FfiConverterTypeSteamFriendsConnection_lower(_ value: SteamFriendsCo
 
 
 
-/**
- * Why a terminal session failed. Swift treats a cancellation as silent.
- */
-
-public enum SteamGameFailureReason: Equatable, Hashable {
-    
-    case cancelled
-    case failed
-
-
-
-
-
-}
-
-#if compiler(>=6)
-extension SteamGameFailureReason: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeSteamGameFailureReason: FfiConverterRustBuffer {
-    typealias SwiftType = SteamGameFailureReason
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SteamGameFailureReason {
-        let variant: Int32 = try readInt(&buf)
-        switch variant {
-        
-        case 1: return .cancelled
-        
-        case 2: return .failed
-        
-        default: throw UniffiInternalError.unexpectedEnumCase
-        }
-    }
-
-    public static func write(_ value: SteamGameFailureReason, into buf: inout [UInt8]) {
-        switch value {
-        
-        
-        case .cancelled:
-            writeInt(&buf, Int32(1))
-        
-        
-        case .failed:
-            writeInt(&buf, Int32(2))
-        
-        }
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeSteamGameFailureReason_lift(_ buf: RustBuffer) throws -> SteamGameFailureReason {
-    return try FfiConverterTypeSteamGameFailureReason.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeSteamGameFailureReason_lower(_ value: SteamGameFailureReason) -> RustBuffer {
-    return FfiConverterTypeSteamGameFailureReason.lower(value)
-}
-
-
-
-
-public enum SteamGamePhase: Equatable, Hashable {
-    
-    case preparing
-    case running
-    case finalizing
-    case finished
-    case failed
-
-
-
-
-
-}
-
-#if compiler(>=6)
-extension SteamGamePhase: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeSteamGamePhase: FfiConverterRustBuffer {
-    typealias SwiftType = SteamGamePhase
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SteamGamePhase {
-        let variant: Int32 = try readInt(&buf)
-        switch variant {
-        
-        case 1: return .preparing
-        
-        case 2: return .running
-        
-        case 3: return .finalizing
-        
-        case 4: return .finished
-        
-        case 5: return .failed
-        
-        default: throw UniffiInternalError.unexpectedEnumCase
-        }
-    }
-
-    public static func write(_ value: SteamGamePhase, into buf: inout [UInt8]) {
-        switch value {
-        
-        
-        case .preparing:
-            writeInt(&buf, Int32(1))
-        
-        
-        case .running:
-            writeInt(&buf, Int32(2))
-        
-        
-        case .finalizing:
-            writeInt(&buf, Int32(3))
-        
-        
-        case .finished:
-            writeInt(&buf, Int32(4))
-        
-        
-        case .failed:
-            writeInt(&buf, Int32(5))
-        
-        }
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeSteamGamePhase_lift(_ buf: RustBuffer) throws -> SteamGamePhase {
-    return try FfiConverterTypeSteamGamePhase.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeSteamGamePhase_lower(_ value: SteamGamePhase) -> RustBuffer {
-    return FfiConverterTypeSteamGamePhase.lower(value)
-}
-
-
-
 
 public enum SteamGuardKind: Equatable, Hashable {
     
@@ -7576,72 +7213,6 @@ public func FfiConverterTypeSteamHostState_lift(_ buf: RustBuffer) throws -> Ste
 #endif
 public func FfiConverterTypeSteamHostState_lower(_ value: SteamHostState) -> RustBuffer {
     return FfiConverterTypeSteamHostState.lower(value)
-}
-
-
-
-
-public enum SteamSupervisorConnection: Equatable, Hashable {
-    
-    case connected
-    case reconnecting
-
-
-
-
-
-}
-
-#if compiler(>=6)
-extension SteamSupervisorConnection: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeSteamSupervisorConnection: FfiConverterRustBuffer {
-    typealias SwiftType = SteamSupervisorConnection
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SteamSupervisorConnection {
-        let variant: Int32 = try readInt(&buf)
-        switch variant {
-        
-        case 1: return .connected
-        
-        case 2: return .reconnecting
-        
-        default: throw UniffiInternalError.unexpectedEnumCase
-        }
-    }
-
-    public static func write(_ value: SteamSupervisorConnection, into buf: inout [UInt8]) {
-        switch value {
-        
-        
-        case .connected:
-            writeInt(&buf, Int32(1))
-        
-        
-        case .reconnecting:
-            writeInt(&buf, Int32(2))
-        
-        }
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeSteamSupervisorConnection_lift(_ buf: RustBuffer) throws -> SteamSupervisorConnection {
-    return try FfiConverterTypeSteamSupervisorConnection.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeSteamSupervisorConnection_lower(_ value: SteamSupervisorConnection) -> RustBuffer {
-    return FfiConverterTypeSteamSupervisorConnection.lower(value)
 }
 
 
@@ -7945,8 +7516,8 @@ fileprivate struct FfiConverterOptionData: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterOptionTypeEpicGameSession: FfiConverterRustBuffer {
-    typealias SwiftType = EpicGameSession?
+fileprivate struct FfiConverterOptionTypeGameSession: FfiConverterRustBuffer {
+    typealias SwiftType = GameSession?
 
     public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
         guard let value = value else {
@@ -7954,37 +7525,13 @@ fileprivate struct FfiConverterOptionTypeEpicGameSession: FfiConverterRustBuffer
             return
         }
         writeInt(&buf, Int8(1))
-        FfiConverterTypeEpicGameSession.write(value, into: &buf)
+        FfiConverterTypeGameSession.write(value, into: &buf)
     }
 
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
-        case 1: return try FfiConverterTypeEpicGameSession.read(from: &buf)
-        default: throw UniffiInternalError.unexpectedOptionalTag
-        }
-    }
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-fileprivate struct FfiConverterOptionTypeSteamGameSession: FfiConverterRustBuffer {
-    typealias SwiftType = SteamGameSession?
-
-    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
-        guard let value = value else {
-            writeInt(&buf, Int8(0))
-            return
-        }
-        writeInt(&buf, Int8(1))
-        FfiConverterTypeSteamGameSession.write(value, into: &buf)
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
-        switch try readInt(&buf) as Int8 {
-        case 0: return nil
-        case 1: return try FfiConverterTypeSteamGameSession.read(from: &buf)
+        case 1: return try FfiConverterTypeGameSession.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -8161,8 +7708,8 @@ fileprivate struct FfiConverterOptionTypeSteamTransfer: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterOptionTypeEpicGameFailureReason: FfiConverterRustBuffer {
-    typealias SwiftType = EpicGameFailureReason?
+fileprivate struct FfiConverterOptionTypeGameFailureReason: FfiConverterRustBuffer {
+    typealias SwiftType = GameFailureReason?
 
     public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
         guard let value = value else {
@@ -8170,37 +7717,13 @@ fileprivate struct FfiConverterOptionTypeEpicGameFailureReason: FfiConverterRust
             return
         }
         writeInt(&buf, Int8(1))
-        FfiConverterTypeEpicGameFailureReason.write(value, into: &buf)
+        FfiConverterTypeGameFailureReason.write(value, into: &buf)
     }
 
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
-        case 1: return try FfiConverterTypeEpicGameFailureReason.read(from: &buf)
-        default: throw UniffiInternalError.unexpectedOptionalTag
-        }
-    }
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-fileprivate struct FfiConverterOptionTypeSteamGameFailureReason: FfiConverterRustBuffer {
-    typealias SwiftType = SteamGameFailureReason?
-
-    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
-        guard let value = value else {
-            writeInt(&buf, Int8(0))
-            return
-        }
-        writeInt(&buf, Int8(1))
-        FfiConverterTypeSteamGameFailureReason.write(value, into: &buf)
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
-        switch try readInt(&buf) as Int8 {
-        case 0: return nil
-        case 1: return try FfiConverterTypeSteamGameFailureReason.read(from: &buf)
+        case 1: return try FfiConverterTypeGameFailureReason.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -8609,73 +8132,23 @@ fileprivate struct FfiConverterSequenceTypeStorefrontInfo: FfiConverterRustBuffe
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterSequenceTypeCloudMaintenanceChoice: FfiConverterRustBuffer {
-    typealias SwiftType = [CloudMaintenanceChoice]
+fileprivate struct FfiConverterSequenceTypeCloudChoice: FfiConverterRustBuffer {
+    typealias SwiftType = [CloudChoice]
 
-    public static func write(_ value: [CloudMaintenanceChoice], into buf: inout [UInt8]) {
+    public static func write(_ value: [CloudChoice], into buf: inout [UInt8]) {
         let len = Int32(value.count)
         writeInt(&buf, len)
         for item in value {
-            FfiConverterTypeCloudMaintenanceChoice.write(item, into: &buf)
+            FfiConverterTypeCloudChoice.write(item, into: &buf)
         }
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [CloudMaintenanceChoice] {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [CloudChoice] {
         let len: Int32 = try readInt(&buf)
-        var seq = [CloudMaintenanceChoice]()
+        var seq = [CloudChoice]()
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeCloudMaintenanceChoice.read(from: &buf))
-        }
-        return seq
-    }
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-fileprivate struct FfiConverterSequenceTypeEpicCloudChoice: FfiConverterRustBuffer {
-    typealias SwiftType = [EpicCloudChoice]
-
-    public static func write(_ value: [EpicCloudChoice], into buf: inout [UInt8]) {
-        let len = Int32(value.count)
-        writeInt(&buf, len)
-        for item in value {
-            FfiConverterTypeEpicCloudChoice.write(item, into: &buf)
-        }
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [EpicCloudChoice] {
-        let len: Int32 = try readInt(&buf)
-        var seq = [EpicCloudChoice]()
-        seq.reserveCapacity(Int(len))
-        for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeEpicCloudChoice.read(from: &buf))
-        }
-        return seq
-    }
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-fileprivate struct FfiConverterSequenceTypeSteamCloudChoice: FfiConverterRustBuffer {
-    typealias SwiftType = [SteamCloudChoice]
-
-    public static func write(_ value: [SteamCloudChoice], into buf: inout [UInt8]) {
-        let len = Int32(value.count)
-        writeInt(&buf, len)
-        for item in value {
-            FfiConverterTypeSteamCloudChoice.write(item, into: &buf)
-        }
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SteamCloudChoice] {
-        let len: Int32 = try readInt(&buf)
-        var seq = [SteamCloudChoice]()
-        seq.reserveCapacity(Int(len))
-        for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeSteamCloudChoice.read(from: &buf))
+            seq.append(try FfiConverterTypeCloudChoice.read(from: &buf))
         }
         return seq
     }
@@ -8852,7 +8325,7 @@ public func epicCloudRemoved(configuration: EpicCloudConfiguration, accountId: S
             errorHandler: FfiConverterTypeEpicError_lift
         )
 }
-public func recoverEpicGameSession(sessionDirectory: String, helper: String)async throws  -> EpicGameSession?  {
+public func recoverEpicGameSession(sessionDirectory: String, helper: String)async throws  -> GameSession?  {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
@@ -8862,7 +8335,7 @@ public func recoverEpicGameSession(sessionDirectory: String, helper: String)asyn
             pollFunc: ffi_forge_bridge_rust_future_poll_rust_buffer,
             completeFunc: ffi_forge_bridge_rust_future_complete_rust_buffer,
             freeFunc: ffi_forge_bridge_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterOptionTypeEpicGameSession.lift,
+            liftFunc: FfiConverterOptionTypeGameSession.lift,
             errorHandler: FfiConverterTypeEpicError_lift
         )
 }
@@ -8888,7 +8361,7 @@ public func steamNews(appId: UInt32)async throws  -> [SteamNews]  {
             errorHandler: FfiConverterTypeSteamError_lift
         )
 }
-public func recoverSteamGameSession(sessionDirectory: String, helper: String)async throws  -> SteamGameSession?  {
+public func recoverSteamGameSession(sessionDirectory: String, helper: String)async throws  -> GameSession?  {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
@@ -8898,7 +8371,7 @@ public func recoverSteamGameSession(sessionDirectory: String, helper: String)asy
             pollFunc: ffi_forge_bridge_rust_future_poll_rust_buffer,
             completeFunc: ffi_forge_bridge_rust_future_complete_rust_buffer,
             freeFunc: ffi_forge_bridge_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterOptionTypeSteamGameSession.lift,
+            liftFunc: FfiConverterOptionTypeGameSession.lift,
             errorHandler: FfiConverterTypeSteamError_lift
         )
 }
@@ -8973,7 +8446,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_forge_bridge_checksum_func_epic_cloud_removed() != 61810) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_forge_bridge_checksum_func_recover_epic_game_session() != 24462) {
+    if (uniffi_forge_bridge_checksum_func_recover_epic_game_session() != 32212) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_forge_bridge_checksum_func_steam_language() != 4891) {
@@ -8982,7 +8455,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_forge_bridge_checksum_func_steam_news() != 1536) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_forge_bridge_checksum_func_recover_steam_game_session() != 8495) {
+    if (uniffi_forge_bridge_checksum_func_recover_steam_game_session() != 12670) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_forge_bridge_checksum_func_steam_cloud_archive() != 14842) {
@@ -9003,7 +8476,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_forge_bridge_checksum_method_library_remove_game() != 27321) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_forge_bridge_checksum_method_cloudmaintenance_answer() != 2209) {
+    if (uniffi_forge_bridge_checksum_method_cloudmaintenance_answer() != 45710) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_forge_bridge_checksum_method_cloudmaintenance_cancel() != 16732) {
@@ -9066,25 +8539,25 @@ private let initializationResult: InitializationResult = {
     if (uniffi_forge_bridge_checksum_method_epicsession_archive_cloud() != 55694) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_forge_bridge_checksum_method_epicsession_launch_game() != 30557) {
+    if (uniffi_forge_bridge_checksum_method_epicsession_launch_game() != 64358) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_forge_bridge_checksum_method_epicgamesession_begin() != 49131) {
+    if (uniffi_forge_bridge_checksum_method_gamesession_begin() != 24230) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_forge_bridge_checksum_method_epicgamesession_cancel_preparation() != 29322) {
+    if (uniffi_forge_bridge_checksum_method_gamesession_cancel_preparation() != 47987) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_forge_bridge_checksum_method_epicgamesession_choose() != 29977) {
+    if (uniffi_forge_bridge_checksum_method_gamesession_choose() != 29720) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_forge_bridge_checksum_method_epicgamesession_resume_after_rosetta() != 32026) {
+    if (uniffi_forge_bridge_checksum_method_gamesession_resume_after_rosetta() != 48179) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_forge_bridge_checksum_method_epicgamesession_revoke_cloud() != 45100) {
+    if (uniffi_forge_bridge_checksum_method_gamesession_revoke() != 53960) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_forge_bridge_checksum_method_epicgamesession_snapshot() != 27502) {
+    if (uniffi_forge_bridge_checksum_method_gamesession_snapshot() != 21956) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_forge_bridge_checksum_method_steamlogin_challenge() != 28968) {
@@ -9165,25 +8638,10 @@ private let initializationResult: InitializationResult = {
     if (uniffi_forge_bridge_checksum_method_steamfriendsfixture_receive() != 25591) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_forge_bridge_checksum_method_steamgamesession_cancel_preparation() != 38545) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_forge_bridge_checksum_method_steamgamesession_choose_cloud() != 26563) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_forge_bridge_checksum_method_steamgamesession_resume_after_rosetta() != 27347) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_forge_bridge_checksum_method_steamgamesession_revoke_cloud() != 6119) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_forge_bridge_checksum_method_steamgamesession_snapshot() != 61725) {
-        return InitializationResult.apiChecksumMismatch
-    }
     if (uniffi_forge_bridge_checksum_method_steamnativelaunch_cancel() != 28509) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_forge_bridge_checksum_method_steamnativelaunch_start_game() != 29228) {
+    if (uniffi_forge_bridge_checksum_method_steamnativelaunch_start_game() != 16729) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_forge_bridge_checksum_constructor_library_new() != 16986) {

@@ -10,15 +10,11 @@ final class SteamCloudModelTests: XCTestCase {
         let directory = try temporaryDirectory()
         let first = RecoveredGameFixture(accountID: accountID, phase: .preparing, cloudPhase: .conflict, decisionID: 2)
         let second = RecoveredGameFixture(accountID: accountID, phase: .preparing, cloudPhase: .conflict, decisionID: 2)
-        var starts = 0
-        let sessions = SteamGameSessions(startSession: { _, _ in
-            starts += 1
-            return starts == 1 ? first : second
-        })
-        let model = SteamCloudModel(root: directory.path, sessions: sessions)
-        model.connect(credentials())
-        let firstTask = try XCTUnwrap(sessions.launch(appId: 42, prepare: { gameLaunch() }))
-        try await eventually { sessions.cloudPrompt?.cloud.decisionId == 2 }
+        let sessions = SteamGameSessions()
+        let model = model(directory, sessions: sessions)
+        connect(model)
+        let firstTask = try XCTUnwrap(sessions.launch(game: 42, account: accountID, prepare: { first }))
+        try await eventually { model.prompt?.cloud.decisionId == 2 }
         XCTAssertTrue(model.promptPresented)
         model.respond(.cancel)
         try await eventually { !model.promptBusy }
@@ -26,8 +22,8 @@ final class SteamCloudModelTests: XCTestCase {
         await first.finish()
         await firstTask.value
 
-        let secondTask = try XCTUnwrap(sessions.launch(appId: 42, prepare: { gameLaunch() }))
-        try await eventually { sessions.cloudPrompt?.cloud.decisionId == 2 }
+        let secondTask = try XCTUnwrap(sessions.launch(game: 42, account: accountID, prepare: { second }))
+        try await eventually { model.prompt?.cloud.decisionId == 2 }
         XCTAssertTrue(model.promptPresented, "Decision IDs restart in each supervisor session")
         await second.finish()
         await secondTask.value
@@ -38,11 +34,11 @@ final class SteamCloudModelTests: XCTestCase {
     func testSecondLiveChoiceIsIgnoredWhileFirstResponseIsInFlight() async throws {
         let directory = try temporaryDirectory()
         let game = RecoveredGameFixture(accountID: accountID, phase: .preparing, cloudPhase: .conflict, decisionID: 2)
-        let sessions = SteamGameSessions(startSession: { _, _ in game })
-        let model = SteamCloudModel(root: directory.path, sessions: sessions)
-        model.connect(credentials())
-        let task = try XCTUnwrap(sessions.launch(appId: 42, prepare: { gameLaunch() }))
-        try await eventually { sessions.cloudPrompt?.cloud.decisionId == 2 }
+        let sessions = SteamGameSessions()
+        let model = model(directory, sessions: sessions)
+        connect(model)
+        let task = try XCTUnwrap(sessions.launch(game: 42, account: accountID, prepare: { game }))
+        try await eventually { model.prompt?.cloud.decisionId == 2 }
 
         model.respond(.local)
         model.respond(.cancel)
@@ -58,11 +54,10 @@ final class SteamCloudModelTests: XCTestCase {
     @MainActor
     func testConnectingStartsNoCloudWorkAndCreatesNoFiles() throws {
         let directory = try temporaryDirectory()
-        let sessions = SteamGameSessions(recoverExisting: false)
-        let model = SteamCloudModel(root: directory.path, sessions: sessions)
+        let model = model(directory)
         let before = try files(in: directory)
 
-        model.connect(credentials())
+        connect(model)
 
         XCTAssertFalse(model.promptPresented)
         XCTAssertEqual(try files(in: directory), before)
@@ -73,16 +68,15 @@ final class SteamCloudModelTests: XCTestCase {
     func testIndicatorsBelongOnlyToTheirAccount() async throws {
         let directory = try temporaryDirectory()
         let services = CloudServicesFixture()
-        let model = SteamCloudModel(root: directory.path, sessions: SteamGameSessions(recoverExisting: false),
-                                    services: services.steam)
-        model.connect(credentials())
+        let model = model(directory, services: services)
+        connect(model, services)
 
         model.refreshIndicators(for: [42])
 
         try await eventually { model.indicator(for: 42)?.state == .synced }
         XCTAssertEqual(services.steamRequests.last?.accountId, accountID)
         XCTAssertEqual(services.steamRequests.last?.root, directory.path)
-        model.connect(credentials(accountID + 1))
+        connect(model, services, accountID + 1)
         XCTAssertNil(model.indicator(for: 42))
         let reads = services.steamRequests.count
         model.signedOut()
@@ -95,13 +89,13 @@ final class SteamCloudModelTests: XCTestCase {
     func testMaintenanceAsksLiveAndRefreshesTheIndicatorWhenItEnds() async throws {
         let directory = try temporaryDirectory()
         let services = CloudServicesFixture()
-        let model = SteamCloudModel(root: directory.path, sessions: SteamGameSessions(recoverExisting: false),
-                                    services: services.steam)
-        model.connect(credentials())
+        let model = model(directory, services: services)
+        connect(model, services)
 
         model.startMaintenance(appId: 42, install: "/fixture/steam-42-macos")
 
-        XCTAssertTrue(model.isMaintaining)
+        XCTAssertTrue(model.isMaintaining, "The Reservation holds before the attempt exists")
+        try await eventually { services.steamMaintenance.count == 1 }
         XCTAssertEqual(services.steamMaintenance.last?.request.install, "/fixture/steam-42-macos")
         XCTAssertEqual(services.steamMaintenance.last?.request.root, directory.path)
         XCTAssertEqual(services.steamMaintenance.last?.credentials.steamId, accountID)
@@ -110,7 +104,7 @@ final class SteamCloudModelTests: XCTestCase {
         try await eventually { model.isSynchronizing(for: 42) }
         attempt.publish(.conflict, decisionId: 7, choices: [.local, .cloud, .cancel], error: "backend.steam.cloud.conflict")
         try await eventually { model.promptPresented }
-        XCTAssertEqual(model.promptAppId, 42)
+        XCTAssertEqual(model.promptGame, 42)
         XCTAssertEqual(model.promptMessage, "backend.steam.cloud.conflict")
 
         model.respond(.local)
@@ -128,19 +122,19 @@ final class SteamCloudModelTests: XCTestCase {
     func testAFailedMaintenanceShowsNoBannerAndSyncNowStartsTheNextAttempt() async throws {
         let directory = try temporaryDirectory()
         let services = CloudServicesFixture()
-        let model = SteamCloudModel(root: directory.path, sessions: SteamGameSessions(recoverExisting: false),
-                                    services: services.steam)
-        model.connect(credentials())
+        let model = model(directory, services: services)
+        connect(model, services)
         model.startMaintenance(appId: 42, install: nil)
+        try await eventually { services.steamMaintenance.count == 1 }
         let first = try XCTUnwrap(services.steamMaintenance.last?.attempt)
 
         first.finish(.failed, error: "backend.steam.cloud.network")
 
         try await eventually { !model.isMaintaining }
         XCTAssertFalse(model.failurePresented, "Only a launch check shows a banner")
-        XCTAssertEqual(model.promptMessage, "ui.cloud.working")
+        XCTAssertEqual(model.promptMessage, L10n.string("ui.cloud.working"))
         model.startMaintenance(appId: 42, install: nil)
-        XCTAssertEqual(services.steamMaintenance.count, 2, "Sync now is the retry")
+        try await eventually { services.steamMaintenance.count == 2 }
         XCTAssertNil(services.steamMaintenance.last?.request.install)
     }
 
@@ -148,30 +142,30 @@ final class SteamCloudModelTests: XCTestCase {
     func testARejectedMaintenanceAnswerDoesNotOutliveItsAttempt() async throws {
         let directory = try temporaryDirectory()
         let services = CloudServicesFixture()
-        let model = SteamCloudModel(root: directory.path, sessions: SteamGameSessions(recoverExisting: false),
-                                    services: services.steam)
-        model.connect(credentials())
+        let model = model(directory, services: services)
+        connect(model, services)
         model.startMaintenance(appId: 42, install: nil)
+        try await eventually { services.steamMaintenance.count == 1 }
         let attempt = try XCTUnwrap(services.steamMaintenance.last?.attempt)
         attempt.publish(.conflict, decisionId: 4, choices: [.local, .cancel], error: "backend.steam.cloud.conflict")
         try await eventually { model.promptPresented }
 
         model.respond(.cloud)
 
-        XCTAssertEqual(model.promptMessage, "backend.steam.runtime.invalidSession")
+        XCTAssertEqual(model.promptMessage, L10n.message("backend.steam.runtime.invalidSession"))
         attempt.finish(.cancelled)
         try await eventually { !model.isMaintaining }
-        XCTAssertEqual(model.promptMessage, "ui.cloud.working", "A later question starts without the old error")
+        XCTAssertEqual(model.promptMessage, L10n.string("ui.cloud.working"), "A later question starts without the old error")
     }
 
     @MainActor
     func testSigningOutCancelsMaintenanceAndItsQuestion() async throws {
         let directory = try temporaryDirectory()
         let services = CloudServicesFixture()
-        let model = SteamCloudModel(root: directory.path, sessions: SteamGameSessions(recoverExisting: false),
-                                    services: services.steam)
-        model.connect(credentials())
+        let model = model(directory, services: services)
+        connect(model, services)
         model.startMaintenance(appId: 42, install: nil)
+        try await eventually { services.steamMaintenance.count == 1 }
         let attempt = try XCTUnwrap(services.steamMaintenance.last?.attempt)
         attempt.publish(.conflict, decisionId: 2, choices: [.local, .cloud, .cancel])
         try await eventually { model.promptPresented }
@@ -187,15 +181,15 @@ final class SteamCloudModelTests: XCTestCase {
     func testExitConflictIsPresentedLiveAndNeverReopensByItself() async throws {
         let directory = try temporaryDirectory()
         let game = RecoveredGameFixture(accountID: accountID)
-        let sessions = SteamGameSessions(startSession: { _, _ in game })
-        let model = SteamCloudModel(root: directory.path, sessions: sessions)
-        model.connect(credentials())
-        let task = try XCTUnwrap(sessions.launch(appId: 42, prepare: { gameLaunch() }))
+        let sessions = SteamGameSessions()
+        let model = model(directory, sessions: sessions)
+        connect(model)
+        let task = try XCTUnwrap(sessions.launch(game: 42, account: accountID, prepare: { game }))
         try await eventually { sessions.active?.running == true }
         await game.update(phase: .finalizing, cloudPhase: .conflict, cloudError: "backend.steam.cloud.conflict",
                           decisionID: 3, allowedChoices: [.local, .cloud, .cancel])
         try await eventually { model.promptPresented }
-        XCTAssertEqual(model.promptAppId, 42)
+        XCTAssertEqual(model.promptGame, 42)
         XCTAssertFalse(model.promptWorking)
 
         model.respond(.local)
@@ -207,9 +201,25 @@ final class SteamCloudModelTests: XCTestCase {
         await game.finish()
         await task.value
         XCTAssertFalse(model.promptPresented, "An unanswered exit conflict waits for the next launch or maintenance")
-        model.connect(credentials())
+        connect(model)
         XCTAssertFalse(model.promptPresented)
         model.signedOut()
+    }
+
+    @MainActor
+    private func model(_ directory: URL, sessions: SteamGameSessions = SteamGameSessions(),
+                       services: CloudServicesFixture = CloudServicesFixture()) -> SteamCloudModel {
+        SteamCloudModel(root: directory.path, sessionDirectory: directory.appending(path: "Sessions").path,
+                        sessions: sessions, indicators: services.steam.indicators)
+    }
+
+    /// Connects the account as SteamModel does, with its Cloud maintenance.
+    @MainActor
+    private func connect(_ model: SteamCloudModel, _ services: CloudServicesFixture = CloudServicesFixture(),
+                         _ id: UInt64? = nil) {
+        let credentials = credentials(id)
+        let start = services.steam.startMaintenance
+        model.connect(account: credentials.steamId) { start(credentials, $0) }
     }
 
     private func credentials(_ id: UInt64? = nil) -> SteamCredentials {
@@ -233,12 +243,4 @@ final class SteamCloudModelTests: XCTestCase {
         return result
     }
 
-    @MainActor
-    private func eventually(_ predicate: @MainActor () async -> Bool) async throws {
-        let deadline = ContinuousClock.now + .seconds(3)
-        while !(await predicate()) && ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
-        let satisfied = await predicate()
-        XCTAssertTrue(satisfied)
-        if !satisfied { throw SteamError.Failure(reason: "Fixture timed out") }
-    }
 }

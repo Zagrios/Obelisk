@@ -113,6 +113,11 @@ final class SteamModel {
     @ObservationIgnored private let loadNews: @Sendable (UInt32) async throws -> [SteamNews]
     @ObservationIgnored private let beginLogin: @Sendable (SteamLoginStart) async throws -> any SteamLoginProtocol
     let gameSessions: SteamGameSessions
+    @ObservationIgnored private let startGame: @MainActor (SteamLaunchPlan, SteamCredentials) async throws -> any GameSessionProtocol
+    @ObservationIgnored private let startCloudMaintenance: @MainActor @Sendable (SteamCredentials, SteamCloudMaintenanceRequest) -> any CloudMaintenanceProtocol
+    /// A DEBUG Cloud diagnostic fences game admission like a session would.
+    private var cloudProbeReserved = false
+    private var sessionsBusy: Bool { gameSessions.isBusy || cloudProbeReserved }
     let cloud: SteamCloudModel
     let rosetta: SteamRosettaModel
     let libraryPlatforms = SteamLibraryPlatforms()
@@ -167,7 +172,10 @@ final class SteamModel {
             try await Task.sleep(for: .seconds(1 << attempt))
         },
         gameSessions: SteamGameSessions = .shared,
-        cloudServices: SteamCloudServices = .live
+        cloudServices: SteamCloudServices = .live,
+        startGame: @escaping @MainActor (SteamLaunchPlan, SteamCredentials) async throws -> any GameSessionProtocol = {
+            try await SteamGameLauncher.start($0, credentials: $1)
+        }
     ) {
         self.directory = directory
         self.keychain = keychain
@@ -180,8 +188,11 @@ final class SteamModel {
         self.verifyBeforeLaunch = preferences.object(forKey: Self.verifyBeforeLaunchPreferenceKey) == nil
             ? true : preferences.bool(forKey: Self.verifyBeforeLaunchPreferenceKey)
         self.gameSessions = gameSessions
-        self.cloud = SteamCloudModel(root: SteamGameLauncher.cloudDirectory(in: directory), sessions: gameSessions,
-                                     services: cloudServices)
+        self.startGame = startGame
+        self.startCloudMaintenance = cloudServices.startMaintenance
+        self.cloud = SteamCloudModel(root: SteamGameLauncher.cloudDirectory(in: directory),
+                                     sessionDirectory: SteamGameLauncher.sessionDirectory,
+                                     sessions: gameSessions, indicators: cloudServices.indicators)
         self.rosetta = SteamRosettaModel(sessions: gameSessions)
         wakeObserver = SystemWakeObservation { [weak self] in
             Task { @MainActor [weak self] in self?.retryFriends() }
@@ -209,13 +220,14 @@ final class SteamModel {
     /// maintenance holds the game's Reservation; its idle guard also excludes
     /// every other Steam launch, so the whole storefront waits.
     private func canModifyInstallation(of appId: UInt32?) -> Bool {
-        !isDownloading && !isLaunching && !isUninstalling && !cloud.isMaintaining && !gameSessions.protects(appId)
+        !isDownloading && !isLaunching && !isUninstalling && !cloud.isMaintaining && !cloudProbeReserved
+            && !gameSessions.protects(appId)
     }
 
     /// The selected game's Cloud indicator, or nil when it is hidden.
     var cloudIndicator: CloudIndicatorPresentation? {
         guard let game = selectedGame, isConnected else { return nil }
-        let playing = gameSessions.active.map { $0.appId == game.appId && $0.accountId == steamId } ?? false
+        let playing = gameSessions.active.map { $0.game == game.appId && $0.account == steamId } ?? false
         return CloudIndicatorPresentation.make(saved: cloud.indicator(for: game.appId), isSyncing: isSynchronizingSaves,
                                                isPlaying: playing, isInstalled: selectedInstallation != nil)
     }
@@ -223,7 +235,7 @@ final class SteamModel {
     /// One Steam Cloud operation at a time: a game session or maintenance of
     /// any Steam game, or this game's Transfer or uninstall, keeps it closed.
     private func canMaintainCloud(_ appId: UInt32) -> Bool {
-        isConnected && !gameSessions.isBusy && !cloud.isMaintaining && !isLaunching
+        isConnected && !sessionsBusy && !cloud.isMaintaining && !isLaunching
             && activeTransferAppId != appId && !(isUninstalling && uninstallAppId == appId)
     }
 
@@ -264,7 +276,7 @@ final class SteamModel {
 
     /// The active session when it belongs to the game on screen.
     private var selectedGameSession: SteamGameSessions.Session? {
-        guard let active = gameSessions.active, active.appId == selectedGame?.appId else { return nil }
+        guard let active = gameSessions.active, active.game == selectedGame?.appId else { return nil }
         return active
     }
 
@@ -273,10 +285,10 @@ final class SteamModel {
         if let error = gameSessions.recoveryError { return error }
         guard gameSessions.active != nil else { return nil }
         guard let active = selectedGameSession else { return L10n.string("model.steam.otherGameRunning") }
-        if active.connection == .reconnecting { return L10n.string("model.steam.recoveringSession") }
+        if active.reconnecting { return L10n.string("model.steam.recoveringSession") }
         switch active.host {
-        case .disconnected: return L10n.string("model.steam.gameDisconnected")
-        case .lost: return L10n.string("model.steam.gameHostLost")
+        case .disconnected?: return L10n.string("model.steam.gameDisconnected")
+        case .lost?: return L10n.string("model.steam.gameHostLost")
         default: return nil
         }
     }
@@ -306,7 +318,7 @@ final class SteamModel {
     var primaryActionAvailable: Bool {
         guard let selectedGame, let details, details.appId == selectedGame.appId else { return false }
         return !isLoadingDetails && canModifyInstallation(of: selectedGame.appId)
-            && !(selectedInstallation != nil && gameSessions.isBusy)
+            && !(selectedInstallation != nil && sessionsBusy)
             && (details.macos || details.windows)
     }
 
@@ -529,7 +541,8 @@ final class SteamModel {
             isConnecting = false
             isRestoring = false
             loadInstallations()
-            cloud.connect(credentials)
+            let startMaintenance = startCloudMaintenance
+            cloud.connect(account: credentials.steamId) { startMaintenance(credentials, $0) }
             rosetta.connect(accountId: credentials.steamId)
             do {
                 if persist { try await keychain.save(credentials) }
@@ -557,6 +570,13 @@ final class SteamModel {
     }
 
     #if DEBUG
+    /// A Cloud diagnostic needs the storefront idle, and keeps it fenced.
+    private func reserveCloudProbe() -> Bool {
+        guard !sessionsBusy, gameSessions.recoveryError == nil else { return false }
+        cloudProbeReserved = true
+        return true
+    }
+
     /// Opt-in developer probe. It consumes the normal in-memory session and
     /// writes only sanitized results. No credential leaves this process.
     private func runCloudBackupIfRequested(_ connected: any SteamSessionProtocol, generation current: Int) async {
@@ -589,15 +609,15 @@ final class SteamModel {
             case "--steam-cloud-preferences":
                 json = try await native.cloudPreferences(appId: appID)
             case "--steam-cloud-interruption-probe":
-                guard gameSessions.reserveCloudProbe() else { throw CocoaError(.featureUnsupported) }
+                guard reserveCloudProbe() else { throw CocoaError(.featureUnsupported) }
                 json = try await native.cloudInterruptionProbe(appId: appID, directory: directory.path)
                 // Keep game admission fenced while the interrupted diagnostic
                 // awaits a process restart, including after a diagnostic error.
                 let result = try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
-                if result?["status"] as? String == "verified" { gameSessions.finishCloudProbe() }
+                if result?["status"] as? String == "verified" { cloudProbeReserved = false }
             case "--steam-cloud-transfer-probe":
-                guard gameSessions.reserveCloudProbe() else { throw CocoaError(.featureUnsupported) }
-                defer { gameSessions.finishCloudProbe() }
+                guard reserveCloudProbe() else { throw CocoaError(.featureUnsupported) }
+                defer { cloudProbeReserved = false }
                 json = try await native.cloudTransferProbe(appId: appID, directory: directory.path)
             default:
                 json = try await native.cloudBackup(appId: appID, directory: directory.path)
@@ -994,7 +1014,7 @@ final class SteamModel {
     }
 
     private func launchGame(_ game: SteamGame, receipt: SteamInstallReceipt) {
-        guard let session, canModifyInstallation(of: game.appId), !gameSessions.isBusy else { return }
+        guard let session, let steamId, canModifyInstallation(of: game.appId), !sessionsBusy else { return }
         let current = generation
         let mustVerify = verifyBeforeLaunch || receipt.needsVerification == true
         isLaunching = true
@@ -1003,7 +1023,7 @@ final class SteamModel {
         downloadCancellationRequested = false
         errorMessage = nil
         var gameWasRunning = false
-        launchTask = gameSessions.launch(appId: game.appId, prepare: { [self] in
+        launchTask = gameSessions.launch(game: game.appId, account: steamId, prepare: { [self] in
             guard current == generation && !Task.isCancelled && !downloadCancellationRequested else { throw CancellationError() }
             var ready = receipt
             if mustVerify {
@@ -1016,7 +1036,7 @@ final class SteamModel {
             let plan = try await session.launchPlan(appId: game.appId, platform: ready.platform, directory: ready.directory)
             guard current == generation && !Task.isCancelled && !downloadCancellationRequested else { throw CancellationError() }
             guard let credentials = sessionCredentials else { throw SteamError.AuthenticationRequired }
-            return SteamGameSessions.Launch(plan: plan, credentials: credentials)
+            return try await startGame(plan, credentials)
         }, onRunning: { [weak self] in
             gameWasRunning = true
             guard let self, self.generation == current else { return }
