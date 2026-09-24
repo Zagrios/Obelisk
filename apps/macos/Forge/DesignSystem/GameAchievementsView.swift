@@ -2,42 +2,21 @@ import AppKit
 import SwiftUI
 
 struct GameAchievementsButton: View {
-    private static let barWidth: CGFloat = 70
     let model: GameAchievementsModel
     @State private var isHovered = false
 
     var body: some View {
         if model.hasContent {
             Button { model.isPresented = true } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: "trophy")
-                        .font(.system(size: 23, weight: .regular))
-                        .foregroundStyle(.secondary)
-                    VStack(alignment: .leading, spacing: 7) {
-                        Text(L10n.string("ui.game.achievements.title"))
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                        HStack(spacing: 8) {
-                            if model.isLoading {
-                                ProgressView().controlSize(.mini)
-                            } else {
-                                Text(model.countText)
-                                    .font(.system(size: 12, weight: .medium)).monospacedDigit()
-                            }
-                            ZStack(alignment: .leading) {
-                                Capsule().fill(.primary.opacity(0.12))
-                                if let fraction = model.fraction {
-                                    Capsule().fill(.tint).frame(width: Self.barWidth * fraction)
-                                }
-                            }
-                            .frame(width: Self.barWidth, height: 4)
-                            .accessibilityHidden(true)
-                        }
+                GameMetricLabel(caption: L10n.string("ui.game.achievements.title"), isHighlighted: isHovered) {
+                    GameMetricSymbol(name: "trophy")
+                } value: {
+                    if model.isLoading {
+                        ProgressView().controlSize(.mini)
+                    } else {
+                        Text(model.countText).monospacedDigit()
                     }
                 }
-                .padding(.horizontal, 10).padding(.vertical, 8)
-                .background(.primary.opacity(isHovered ? 0.15 : 0.1), in: RoundedRectangle(cornerRadius: 8))
-                .contentShape(RoundedRectangle(cornerRadius: 8))
             }
             .forgeButtonStyle(.plain)
             .onHover { isHovered = $0 }

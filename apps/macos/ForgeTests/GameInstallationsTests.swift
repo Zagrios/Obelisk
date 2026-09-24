@@ -53,6 +53,24 @@ final class GameInstallationsTests: XCTestCase {
         XCTAssertTrue(installations.receipts.isEmpty, "A removed folder leaves no receipt")
     }
 
+    func testAnInstallationLaunchesAndUpdatesBeforeTheStorefrontKnowsWhatItCanInstall() async throws {
+        let fixture = try Fixture(game: game)
+        var updated: SteamDownload?
+        fixture.port.download = { request, _ in
+            updated = request
+            throw CancellationError()
+        }
+        // The storefront would install the Windows build, once it knows it can.
+        let installations = fixture.connect(platform: "windows", installable: false)
+
+        XCTAssertEqual(installations.selectedReceipt?.platform, "macos")
+        XCTAssertEqual(installations.primaryActionTitle, L10n.string("model.game.launch"))
+        XCTAssertTrue(installations.primaryActionAvailable)
+        installations.downloadSelected()
+        try await eventually { updated != nil }
+        XCTAssertEqual(updated?.platform, "macos", "An update keeps the installed build")
+    }
+
     func testAnInterruptedVerificationKeepsTheReceiptMarked() async throws {
         let fixture = try Fixture(game: game)
         fixture.port.verifies = true
@@ -99,11 +117,12 @@ private final class Fixture {
 
     deinit { try? FileManager.default.removeItem(at: root) }
 
-    func connect() -> SteamInstallations {
+    func connect(platform: String = "macos", installable: Bool = true) -> SteamInstallations {
         let game = game
         installations.selection = {
-            InstallationSelection(game: 620, platform: "macos", installable: true, request: { receipt, directory in
-                SteamDownload(game: game, platform: "macos", language: receipt?.language ?? "english", directory: directory)
+            InstallationSelection(game: 620, platform: platform, installable: installable, request: { receipt, directory in
+                SteamDownload(game: game, platform: receipt?.platform ?? platform, language: receipt?.language ?? "english",
+                              directory: directory)
             })
         }
         installations.connect(account: 42, receipts: receiptsFile, port: port.port)

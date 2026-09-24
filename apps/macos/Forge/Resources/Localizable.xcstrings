@@ -5577,23 +5577,6 @@
         }
       }
     },
-    "ui.epic.verification_required": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Installation needs verification"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "L’installation doit être vérifiée"
-          }
-        }
-      }
-    },
     "ui.epic.verify_update": {
       "extractionState": "manual",
       "localizations": {
@@ -6590,6 +6573,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "TAILLE"
+          }
+        }
+      }
+    },
+    "ui.game.metric.space_required": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SPACE REQUIRED"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ESPACE NÉCESSAIRE"
           }
         }
       }

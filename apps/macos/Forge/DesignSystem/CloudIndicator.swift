@@ -75,13 +75,12 @@ enum CloudSyncDate {
     }
 }
 
-/// The header metric beside achievements. Its menu starts Cloud maintenance
-/// of the game, which is also how the player retries a failed one.
+/// The launch bar's Cloud metric. Its menu starts Cloud maintenance of the
+/// game, which is also how the player retries a failed one.
 struct CloudIndicatorButton: View {
     let presentation: CloudIndicatorPresentation
     let canSync: Bool
     let sync: () -> Void
-    var storefront = "steam"
     @State private var isHovered = false
 
     var body: some View {
@@ -89,41 +88,34 @@ struct CloudIndicatorButton: View {
             Button(L10n.string("ui.cloud.sync_now"), systemImage: "arrow.triangle.2.circlepath", action: sync)
                 .disabled(!canSync)
         } label: {
-            HStack(spacing: 10) {
-                icon.frame(width: 28, height: 23)
-                VStack(alignment: .leading, spacing: 7) {
-                    Text(L10n.string("ui.cloud.indicator.caption"))
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.secondary)
+            GameMetricLabel(caption: L10n.string("ui.cloud.indicator.caption"), isHighlighted: isHovered && canSync) {
+                icon
+            } value: {
+                if presentation.tone == .muted {
+                    Text(presentation.value).foregroundStyle(.tertiary)
+                } else {
                     Text(presentation.value)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(presentation.tone == .muted ? .secondary : .primary)
-                        .lineLimit(1)
                 }
             }
-            .padding(.horizontal, 10).padding(.vertical, 8)
-            .background(.primary.opacity(isHovered ? 0.15 : 0.1), in: RoundedRectangle(cornerRadius: 8))
-            .contentShape(RoundedRectangle(cornerRadius: 8))
         }
         .menuStyle(.button)
         .forgeButtonStyle(.plain)
         .menuIndicator(.hidden)
-        .fixedSize()
+        // Horizontally flexible so a narrow launch bar truncates the value.
+        .fixedSize(horizontal: false, vertical: true)
         .disabled(!canSync)
         .onHover { isHovered = $0 }
         .accessibilityLabel(L10n.string("ui.cloud.indicator.caption"))
         .accessibilityValue(presentation.value)
-        .accessibilityIdentifier("\(storefront)-cloud-indicator")
+        .accessibilityIdentifier("game-cloud-indicator")
         .help(L10n.string("ui.cloud.indicator.help"))
     }
 
     @ViewBuilder private var icon: some View {
         if let symbol = presentation.symbol {
-            Image(systemName: symbol)
-                .font(.system(size: 23, weight: .regular))
-                .foregroundStyle(presentation.tone == .warning ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
+            GameMetricSymbol(name: symbol, isWarning: presentation.tone == .warning)
         } else {
-            ProgressView().controlSize(.small)
+            ProgressView().controlSize(.small).frame(width: 26, height: 26)
         }
     }
 }

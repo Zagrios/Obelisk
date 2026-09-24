@@ -12,8 +12,8 @@ final class GameManagementButtonTests: XCTestCase {
         defer { fixture.close() }
         await fixture.prepare()
 
-        XCTAssertEqual(fixture.host.fittingSize.width, 44, accuracy: 0.5)
-        XCTAssertEqual(fixture.host.fittingSize.height, 44, accuracy: 0.5)
+        XCTAssertEqual(fixture.host.fittingSize.width, 36, accuracy: 0.5)
+        XCTAssertEqual(fixture.host.fittingSize.height, 36, accuracy: 0.5)
     }
 
     @MainActor
@@ -45,7 +45,7 @@ final class GameManagementButtonTests: XCTestCase {
         let fixture = ManagementButtonWindow(
             HStack(spacing: 10) {
                 GameActionButton(
-                    title: L10n.string("model.game.launch"), symbol: "play.fill", transfer: nil,
+                    title: L10n.string("model.game.launch"), launches: true, transfer: nil,
                     isTransferring: false, isAvailable: true, action: {}, cancel: {}
                 )
                 GameManagementButton(gameName: "Portal 2", isAvailable: true, uninstall: {}, directory: "/Applications")

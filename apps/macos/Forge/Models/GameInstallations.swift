@@ -21,6 +21,8 @@ protocol InstallationStorefront: CloudStorefront {
     static var gamesDirectory: String { get }
     static var receiptsUnavailable: String { get }
     static var receiptsNotSaved: String { get }
+    /// Shown on a game's page while another game's operation holds the storefront.
+    static var otherGameOperation: String { get }
 }
 
 /// The game on screen, as the storefront model sees it.
@@ -44,6 +46,8 @@ struct InstallationPort<Store: InstallationStorefront> {
     /// Presents a failure; nil clears the last one.
     var report: @MainActor (Error?) -> Void
     var warn: @MainActor (String) -> Void
+    /// The game's last installation left the receipts.
+    var uninstalled: @MainActor (Store.GameID) -> Void = { _ in }
 }
 
 /// One storefront session's Transfer and launch operations. A Transfer keeps
@@ -87,7 +91,14 @@ final class GameInstallations<Store: InstallationStorefront> {
     typealias Receipt = Store.Receipt
     typealias Request = Store.Request
 
-    private(set) var receipts: [Receipt] = []
+    private(set) var receipts: [Receipt] = [] {
+        // Every path that removes a game's last installation reports it here,
+        // so no caller has to remember to. Each change is one assignment, so
+        // replacing a receipt never reads as a removal.
+        didSet {
+            for game in Set(oldValue.map(\.gameID)).subtracting(receipts.map(\.gameID)) { port?.uninstalled(game) }
+        }
+    }
     private(set) var transfer: GameTransfer?
     /// The game the last Transfer progress belongs to.
     private(set) var transferGame: Store.GameID?
@@ -190,14 +201,23 @@ final class GameInstallations<Store: InstallationStorefront> {
         return nil
     }
 
+    /// The last Transfer progress, when it belongs to `game`.
+    func transfer(for game: Store.GameID) -> GameTransfer? {
+        transferGame == game ? transfer : nil
+    }
+
     func receipt(for game: Store.GameID, platform: String) -> Receipt? {
         receipts.first { $0.gameID == game && $0.platform == platform }
     }
 
     // MARK: The game on screen
 
+    /// The installation of the selected platform, else the game's other one: an
+    /// installed build stays on screen whatever the storefront would install now.
     var selectedReceipt: Receipt? {
-        selection().flatMap { receipt(for: $0.game, platform: $0.platform) }
+        selection().flatMap { selection in
+            receipt(for: selection.game, platform: selection.platform) ?? receipts.first { $0.gameID == selection.game }
+        }
     }
 
     /// The active Game session when it is this account's, for the game on screen.
@@ -244,13 +264,15 @@ final class GameInstallations<Store: InstallationStorefront> {
         return L10n.string(canResumeDownload ? "model.game.resume" : "model.game.download")
     }
 
-    var primaryActionSymbol: String {
-        selectedSession != nil || selectedReceipt != nil ? "play.fill" : "arrow.down"
-    }
+    /// Whether the primary action launches the game rather than installing it.
+    var primaryActionLaunches: Bool { selectedSession != nil || selectedReceipt != nil }
 
+    /// An installation launches from its receipt; only a new download waits for
+    /// the storefront to know what it can install.
     var primaryActionAvailable: Bool {
-        guard let selection = selection(), selection.installable, account != nil else { return false }
-        return canModify(selection.game) && !(selectedReceipt != nil && isBusy)
+        guard let selection = selection(), account != nil else { return false }
+        let installed = selectedReceipt != nil
+        return (installed || selection.installable) && canModify(selection.game) && !(installed && isBusy)
     }
 
     /// Launches the installed game, otherwise installs it.
@@ -263,13 +285,16 @@ final class GameInstallations<Store: InstallationStorefront> {
         }
     }
 
-    /// Installs or updates the game on screen, next to its installation if any.
+    /// Installs the game on screen, or updates its installation in place with
+    /// the installed build.
     func downloadSelected() {
-        guard let selection = selection(), selection.installable, canModify(selection.game) else { return }
+        guard let selection = selection(), canModify(selection.game) else { return }
+        let receipt = selectedReceipt
+        guard receipt != nil || selection.installable else { return }
         if canResumeDownload { return resumeDownload() }
-        let destination = selectedReceipt.map(parent(of:))
+        let destination = receipt.map(parent(of:))
             ?? directory.appending(path: Store.gamesDirectory, directoryHint: .isDirectory)
-        download(selection.request(nil, destination))
+        download(selection.request(receipt, destination))
     }
 
     private func parent(of receipt: Receipt) -> URL {
@@ -376,8 +401,7 @@ final class GameInstallations<Store: InstallationStorefront> {
         }, installed: { [self] receipt in
             try requireCurrent(current)
             guard session.progress()?.state != .cancelled else { throw CancellationError() }
-            receipts.removeAll { $0.id == receipt.id }
-            receipts.append(receipt)
+            receipts = receipts.filter { $0.id != receipt.id } + [receipt]
             lastDownload = nil
             saveReceipts()
             installed = receipt
@@ -506,10 +530,15 @@ final class GameInstallations<Store: InstallationStorefront> {
     // MARK: Receipts
 
     private func loadReceipts() {
-        receipts = []
-        guard let receiptsFile else { return }
+        guard let receiptsFile else {
+            receipts = []
+            return
+        }
         do { receipts = try InstallationReceipts.load(Receipt.self, from: receiptsFile) }
-        catch { port?.warn(L10n.string(Store.receiptsUnavailable)) }
+        catch {
+            receipts = []
+            port?.warn(L10n.string(Store.receiptsUnavailable))
+        }
     }
 
     private func saveReceipts() {
@@ -539,6 +568,7 @@ extension SteamGames: InstallationStorefront {
     static let gamesDirectory = "Games/Steam"
     static let receiptsUnavailable = "model.steam.receiptsUnavailable"
     static let receiptsNotSaved = "model.steam.receiptsNotSaved"
+    static let otherGameOperation = "ui.steam.other_game_operation"
 }
 
 struct EpicDownload: GameTransferRequest {
@@ -555,6 +585,7 @@ extension EpicGames: InstallationStorefront {
     static let gamesDirectory = "Games/Epic"
     static let receiptsUnavailable = "model.epic.receiptsUnavailable"
     static let receiptsNotSaved = "model.epic.receiptsNotSaved"
+    static let otherGameOperation = "ui.epic.other_game_operation"
 }
 
 typealias SteamInstallations = GameInstallations<SteamGames>

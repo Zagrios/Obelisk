@@ -68,18 +68,50 @@ final class SteamAchievementsTests: XCTestCase {
         let model = GameAchievementsModel(storeID: "steam", describe: SteamModel.message)
         model.load { (0..<52).map { Self.achievement("\($0)", unlocked: $0 < 13) } }
         try await eventually { !model.isLoading }
+        let cloud = CloudIndicatorButton(
+            presentation: CloudIndicatorPresentation(symbol: "icloud", value: "Synchronisé · il y a 2 h", tone: .normal),
+            canSync: true, sync: {})
+        let installed = GameMetrics(isInstalled: true, size: "1,2 Go", lastPlayed: "Aujourd’hui",
+                                    playtime: "27,2 heures", cloud: cloud, achievements: model)
+        let uninstalled = GameMetrics(isInstalled: false, size: "34,22 Go", lastPlayed: "7 déc. 2024",
+                                      playtime: "6 minutes",
+                                      achievements: GameAchievementsModel(storeID: "steam", describe: SteamModel.message))
         for scheme in [ColorScheme.dark, .light] {
-            for width in [CGFloat(860), CGFloat(620)] {
-                let view = GameDetailHeader(title: "Thronefall", libraryTitle: "Bibliothèque Steam",
-                    playtime: "27,2 heures", lastPlayed: "Aujourd’hui", size: "1,2 Go",
-                    back: {}, additionalMetrics: { GameAchievementsButton(model: model) },
-                    artwork: { LinearGradient(colors: [.orange.opacity(0.6), .brown], startPoint: .topLeading, endPoint: .bottomTrailing) },
-                    action: { Button("Lancer", systemImage: "play.fill") {}.buttonStyle(ForgePrimaryButtonStyle(scale: 1.25)) })
-                    .padding(24).frame(width: width).environment(\.colorScheme, scheme)
-                    .tint(ForgeStyle.accent).background(ForgePalette(colorScheme: scheme).background)
-                try await render(view, to: output.appending(path: "achievements-\(scheme)-\(Int(width)).png"))
+            for width in [CGFloat(1100), CGFloat(860), CGFloat(740), CGFloat(620)] {
+                for (name, metrics) in [("installed", installed), ("uninstalled", uninstalled)] {
+                    let launches = metrics.isInstalled
+                    let view = GameDetailHeader(title: "Thronefall", libraryTitle: "Bibliothèque Steam", metrics: metrics,
+                        back: {},
+                        artwork: { LinearGradient(colors: [.orange.opacity(0.6), .brown], startPoint: .topLeading, endPoint: .bottomTrailing) },
+                        action: {
+                            GameActionButton(title: L10n.string(launches ? "model.game.launch" : "model.game.download"),
+                                             launches: launches, transfer: nil, isTransferring: false, isAvailable: true,
+                                             action: {}, cancel: {})
+                        },
+                        tools: {
+                            if launches {
+                                GameManagementButton(gameName: "Thronefall", isAvailable: true, uninstall: {}, directory: "/Applications")
+                            }
+                        })
+                        .padding(24).frame(width: width).environment(\.colorScheme, scheme)
+                        .tint(ForgeStyle.accent).background(ForgePalette(colorScheme: scheme).background)
+                    try await render(view, to: output.appending(path: "header-\(name)-\(scheme)-\(Int(width)).png"))
+                }
             }
         }
+        let downloading = GameTransfer(game: "620", state: .downloading, completedBytes: 200_000_000,
+                                       totalBytes: 522_734_781, networkBytes: 0, contentBytes: 0, currentFile: "", message: "")
+        let buttons = VStack(alignment: .leading, spacing: 12) {
+            GameActionButton(title: L10n.string("model.game.running"), launches: true, transfer: nil,
+                             isTransferring: false, isAvailable: false, action: {}, cancel: {})
+            GameActionButton(title: L10n.string("model.game.download"), launches: false,
+                             transfer: downloading, isTransferring: true, isAvailable: true, action: {}, cancel: {})
+            GameActionButton(title: L10n.string("ui.cloud.sync_short"), launches: true, transfer: nil,
+                             isTransferring: false, isAvailable: true, action: {}, cancel: {}, isCancellable: true,
+                             isIndeterminate: true)
+        }
+        try await render(buttons.padding(24).foregroundStyle(.white).environment(\.colorScheme, .dark).background(.black),
+                         to: output.appending(path: "header-buttons.png"))
         try await render(GameAchievementsView(model: model, gameName: "Thronefall", retry: {})
             .environment(\.colorScheme, .dark).tint(ForgeStyle.accent)
             .background(ForgePalette(colorScheme: .dark).background), to: output.appending(path: "achievements-panel.png"))

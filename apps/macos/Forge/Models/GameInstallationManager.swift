@@ -1,7 +1,7 @@
 import Foundation
 
 /// A storefront's dedicated installation, recorded per account once every file succeeded.
-protocol InstallReceipt: Codable, Equatable, Sendable, Identifiable {
+protocol InstallReceipt: Codable, Equatable, Sendable, Identifiable where ID == String {
     associatedtype GameID: Hashable & Sendable
     var gameID: GameID { get }
     var platform: String { get }

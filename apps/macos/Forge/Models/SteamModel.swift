@@ -815,16 +815,20 @@ final class SteamModel {
         achievements.load { try await session.achievements(appId: game.appId, language: language).map(GameAchievement.init) }
     }
 
+    /// Remote details tell which builds the account can download, so an
+    /// installed game never waits for them.
     func reloadDetails() {
         guard let game = selectedGame, let session else { return }
         detailsRequestGeneration += 1
         let detailsRequest = detailsRequestGeneration
+        details = nil
+        detailsError = nil
+        isLoadingDetails = false
+        guard installations.selectedReceipt == nil else { return }
         let selection = detailGeneration
         let current = generation
         let requestedLanguage = language
         isLoadingDetails = true
-        details = nil
-        detailsError = nil
         Task {
             do {
                 let loaded = try await session.details(appId: game.appId, language: requestedLanguage)
@@ -885,7 +889,10 @@ final class SteamModel {
                 )
             },
             report: { [weak self] error in self?.errorMessage = error.map(Self.message) },
-            warn: { [weak self] in self?.storageWarning = $0 }
+            warn: { [weak self] in self?.storageWarning = $0 },
+            uninstalled: { [weak self] game in
+                if self?.selectedGame?.appId == game { self?.reloadDetails() }
+            }
         )
     }
 

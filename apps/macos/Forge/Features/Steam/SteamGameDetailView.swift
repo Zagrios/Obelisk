@@ -7,70 +7,23 @@ struct SteamGameDetailView: View {
 
     private var installations: SteamInstallations { model.installations }
 
-    // This view is only shown for `model.selectedGame`, so the receipts agree.
-    private var receipt: SteamInstallReceipt? { installations.selectedReceipt }
-
     private var estimatedBytes: UInt64 {
         model.platform == "macos" ? model.details?.macosBytes ?? 0 : model.details?.windowsBytes ?? 0
     }
 
-    private var gameTransfer: GameTransfer? {
-        installations.transferGame == game.appId ? installations.transfer : nil
-    }
-
     var body: some View {
-        @Bindable var achievements = model.achievements
-        VStack(alignment: .leading, spacing: 23) {
-            GameDetailHeader(
-                title: game.name,
-                libraryTitle: L10n.string("ui.steam.library"),
-                playtime: SteamFormatting.playtime(game.playtimeMinutes),
-                lastPlayed: SteamFormatting.lastPlayed(game.lastPlayed),
-                size: sizeText,
-                back: model.backToLibrary,
-                additionalMetrics: {
-                    GameAchievementsButton(model: achievements)
-                    if let cloud = installations.cloudIndicator {
-                        CloudIndicatorButton(presentation: cloud, canSync: installations.canSyncCloud, sync: model.syncCloud)
-                    }
-                }
-            ) {
-                SteamArtwork(appId: game.appId, portrait: false, iconHash: game.iconHash)
-            } action: {
-                HStack(spacing: 10) {
-                    let cancelsSynchronization = model.cloud.canCancelSynchronization(for: game.appId)
-                    GameActionButton(
-                        title: installations.primaryActionTitle,
-                        symbol: installations.primaryActionSymbol,
-                        transfer: gameTransfer,
-                        isTransferring: installations.activeTransferGame == game.appId,
-                        isAvailable: installations.primaryActionAvailable,
-                        action: installations.primaryAction,
-                        cancel: {
-                            if cancelsSynchronization { model.cloud.respond(.cancel) }
-                            else { installations.cancelDownload() }
-                        },
-                        isCancellable: cancelsSynchronization
-                            || (installations.isLaunching && installations.launchGame == game.appId),
-                        isIndeterminate: installations.isSynchronizingSaves
-                    )
-                    if let receipt {
-                        GameManagementButton(
-                            gameName: game.name,
-                            isAvailable: installations.canUninstallSelectedGame,
-                            uninstall: { installations.uninstall(receipt) },
-                            directory: receipt.directory
-                        )
-                        .id(receipt.id + receipt.directory)
-                    }
-                }
-            }
-
-            if let message = model.gameSessionMessage {
-                Text(message).font(.system(size: 12)).foregroundStyle(.secondary)
-            }
-
-
+        GameDetailPage(
+            model: model,
+            game: game.appId,
+            name: game.name,
+            libraryTitle: L10n.string("ui.steam.library"),
+            size: sizeText,
+            lastPlayed: SteamFormatting.lastPlayed(game.lastPlayed),
+            playtime: SteamFormatting.playtime(game.playtimeMinutes),
+            back: model.backToLibrary
+        ) {
+            SteamArtwork(appId: game.appId, portrait: false, iconHash: game.iconHash)
+        } content: {
             if model.isLoadingDetails {
                 ProgressView(L10n.string("ui.steam.finding_files")).controlSize(.small)
             } else if let error = model.detailsError {
@@ -81,24 +34,15 @@ struct SteamGameDetailView: View {
                 }
             }
 
-            if let transfer = gameTransfer, transfer.state == .failed || transfer.state == .cancelled {
-                Text(transfer.message.isEmpty ? transfer.activityTitle : L10n.message(transfer.message))
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
-            } else if let activeAppId = installations.activeTransferGame ?? installations.launchGame,
-                      activeAppId != game.appId {
-                Text(L10n.string("ui.steam.other_game_operation"))
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
-            }
+            GameOperationStatus(installations: installations, game: game.appId)
 
             newsSection
         }
-        .sheet(isPresented: $achievements.isPresented) {
-            GameAchievementsView(model: achievements, gameName: game.name, retry: model.reloadAchievements)
-        }
     }
 
+    // This view is only shown for `model.selectedGame`, so the receipts agree.
     private var sizeText: String {
-        let bytes = receipt?.totalBytes ?? estimatedBytes
+        let bytes = installations.selectedReceipt?.totalBytes ?? estimatedBytes
         return bytes > 0 ? SteamFormatting.bytes(bytes) : "—"
     }
 

@@ -107,17 +107,15 @@ private struct LegacyPointerCursor: ViewModifier {
 }
 
 struct ForgePrimaryButtonStyle: ButtonStyle {
-    var scale: CGFloat = 1
-
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 13 * scale, weight: .semibold))
+            .font(.system(size: 13, weight: .semibold))
             .foregroundStyle(.white)
-            .padding(.horizontal, 15 * scale)
-            .padding(.vertical, 10 * scale)
+            .padding(.horizontal, 15)
+            .padding(.vertical, 10)
             .background(
                 ForgeStyle.accent.opacity(configuration.isPressed ? 0.75 : 1),
-                in: RoundedRectangle(cornerRadius: 8 * scale)
+                in: RoundedRectangle(cornerRadius: 8)
             )
             .pointerCursor()
     }
