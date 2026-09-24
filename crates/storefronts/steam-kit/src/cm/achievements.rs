@@ -77,7 +77,7 @@ struct Unlock {
 
 impl SteamConnection {
     pub(crate) async fn game_achievements(
-        &mut self,
+        &self,
         app_id: u32,
         language: &str,
     ) -> Result<GameResponse, CmError> {
@@ -91,7 +91,7 @@ impl SteamConnection {
         .await
     }
 
-    pub(crate) async fn user_achievements(&mut self, app_id: u32) -> Result<UserResponse, CmError> {
+    pub(crate) async fn user_achievements(&self, app_id: u32) -> Result<UserResponse, CmError> {
         self.service(
             "Player.GetUserAchievements#1",
             &UserRequest {
@@ -286,22 +286,8 @@ mod tests {
     async fn queries_connected_account_and_propagates_service_denial() {
         use crate::cm::*;
         for denied in [false, true] {
-            let (outgoing, mut commands) = mpsc::channel(8);
-            let (responses, incoming) = mpsc::channel(8);
-            let (_, profile) = watch::channel(ProfileState::default());
-            let connection = SteamConnection {
-                outgoing,
-                incoming,
-                profile,
-                friends: friends::FriendsEventSource::new(42),
-                worker: tokio::spawn(std::future::pending()),
-                steam_id: 42,
-                session_id: 1,
-                cell_id: 0,
-                next_job: 1,
-                logged_on: true,
-                licenses: None,
-            };
+            let (mut connection, mut server) = test_server::connection(42, true).await;
+            connection.session_id = 1;
             let client = crate::client::Client::with_test_connection(connection);
             let query = tokio::spawn(async move { client.achievements(620, "french").await });
             for (index, name) in [
@@ -311,18 +297,7 @@ mod tests {
             .into_iter()
             .enumerate()
             {
-                let Command::Send(bytes) = timeout(Duration::from_secs(1), commands.recv())
-                    .await
-                    .unwrap()
-                    .unwrap()
-                else {
-                    panic!("expected service request")
-                };
-                let mut packets = Vec::new();
-                let mut budget = MAX_PACKET;
-                decode_packets(bytes.into(), 0, &mut budget, &mut packets).unwrap();
-                let packet = packets.remove(0);
-                assert_eq!(packet.kind, SERVICE_REQUEST);
+                let packet = server.request(SERVICE_REQUEST).await;
                 assert_eq!(packet.header.target_name.as_deref(), Some(name));
                 let body = if index == 0 {
                     let request = GameRequest::decode(packet.body.clone()).unwrap();
@@ -347,18 +322,17 @@ mod tests {
                     }
                     .encode_to_vec()
                 };
-                responses
-                    .send(Ok(Packet {
-                        kind: SERVICE_RESPONSE,
-                        header: crate::proto::Header {
+                server
+                    .send(
+                        SERVICE_RESPONSE,
+                        crate::proto::Header {
                             job_target: packet.header.job_source,
                             result: Some(if denied && index == 1 { 15 } else { 1 }),
                             ..Default::default()
                         },
-                        body: body.into(),
-                    }))
-                    .await
-                    .unwrap();
+                        &body,
+                    )
+                    .await;
             }
             let result = query.await.unwrap();
             if denied {

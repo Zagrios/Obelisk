@@ -7,7 +7,7 @@ use tokio::sync::oneshot;
 
 impl SteamConnection {
     pub(crate) async fn cloud_settle_upload_probe(
-        &mut self,
+        &self,
         http: &reqwest::Client,
         transaction: &mut crate::cloud::UploadTransaction,
         trace: &Path,
@@ -41,7 +41,7 @@ impl SteamConnection {
     /// The returned count means bytes consumed by the HTTP client, not bytes
     /// acknowledged by the storage provider. No file commit is sent.
     pub(crate) async fn cloud_interrupt_upload_probe(
-        &mut self,
+        &self,
         http: &reqwest::Client,
         transaction: &mut crate::cloud::UploadTransaction,
         trace: &Path,
@@ -78,7 +78,7 @@ impl SteamConnection {
     }
 
     pub(crate) async fn cloud_upload_probe(
-        &mut self,
+        &self,
         http: &reqwest::Client,
         transaction: &mut crate::cloud::UploadTransaction,
         trace: &Path,

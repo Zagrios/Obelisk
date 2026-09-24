@@ -13,7 +13,7 @@ impl Client {
     #[cfg(debug_assertions)]
     pub async fn cloud_autocloud_metadata(&self) -> Result<String, CloudError> {
         deadline(240, async {
-            let mut cm = self.cm.lock().await;
+            let cm = &self.cm;
             let games = cm.owned_games().await?;
             let mut apps = Vec::new();
             let mut inspected = 0;
@@ -56,7 +56,7 @@ impl Client {
     /// validation. This neither acquires licenses nor starts native sync.
     #[cfg(debug_assertions)]
     pub async fn cloud_sdk_candidates(&self) -> Result<String, CloudError> {
-        let mut cm = self.cm.lock().await;
+        let cm = &self.cm;
         let games = cm.owned_games().await?;
         let mut candidates = Vec::new();
         let mut inspected = 0;
@@ -117,7 +117,7 @@ impl Client {
             if !self.cloud_authorized() {
                 return Err(CloudError::Revoked);
             }
-            let mut cm = self.cm.lock().await;
+            let cm = &self.cm;
             let Some(metadata) = cm.app_info(app_id).await?.cloud else {
                 return Ok(None);
             };
@@ -182,7 +182,7 @@ impl Client {
             }],
             vec![],
         )?;
-        let mut cm = self.cm.lock().await;
+        let cm = &self.cm;
         let authorized = || self.cloud_authorized();
         let uploaded = cm.cloud_upload(&self.http, &mut upload, authorized).await?;
         let mut cleanup = crate::cloud::UploadTransaction::create(
@@ -225,11 +225,7 @@ impl Client {
         app_id: u32,
     ) -> Result<crate::cloud::CloudPreferences, CloudError> {
         deadline(30, async {
-            self.cm
-                .lock()
-                .await
-                .cloud_preferences(&self.http, app_id)
-                .await
+            self.cm.cloud_preferences(&self.http, app_id).await
         })
         .await
     }
@@ -250,7 +246,7 @@ impl Client {
             return Err(CloudError::Storage);
         }
         let directory = directory.canonicalize().map_err(|_| CloudError::Storage)?;
-        let mut cm = self.cm.lock().await;
+        let cm = &self.cm;
         let metadata = cm.app_info(app_id).await?;
         let quota = cm.cloud_quota(app_id).await?;
         let before = cm.cloud_listing(app_id).await?;

@@ -18,55 +18,32 @@ struct WireAddress {
 
 async fn logon_request() -> (SteamConnection, WireLogin) {
     const ACCOUNT: u64 = 0x0110_0001_0000_002a;
-    let (outgoing, mut commands) = mpsc::channel(32);
-    let (responses, incoming) = mpsc::channel(1);
-    let (_, profile) = watch::channel(ProfileState::default());
-    responses
-        .send(Ok(Packet {
-            kind: LOGON_RESPONSE,
-            header: proto::Header {
-                steam_id: Some(ACCOUNT),
-                session_id: Some(42),
-                ..Default::default()
-            },
-            body: proto::LogonResponse {
-                result: Some(1),
-                ..Default::default()
-            }
-            .encode_to_vec()
-            .into(),
-        }))
-        .await
-        .unwrap();
-    let mut connection = SteamConnection {
-        outgoing,
-        incoming,
-        profile,
-        friends: friends::FriendsEventSource::new(0),
-        worker: tokio::spawn(std::future::pending()),
-        steam_id: 0,
-        session_id: 0,
-        cell_id: 0,
-        next_job: 1,
-        logged_on: false,
-        licenses: None,
+    let (mut connection, mut server) = test_server::connection(0, false).await;
+    let steam = async {
+        let logon = server.request(LOGON).await;
+        server
+            .send(
+                LOGON_RESPONSE,
+                proto::Header {
+                    steam_id: Some(ACCOUNT),
+                    session_id: Some(42),
+                    ..Default::default()
+                },
+                &proto::LogonResponse {
+                    result: Some(1),
+                    ..Default::default()
+                }
+                .encode_to_vec(),
+            )
+            .await;
+        WireLogin::decode(&logon.body[..]).unwrap()
     };
-    connection
-        .log_on("fixture", ACCOUNT, "fixture-token")
-        .await
-        .unwrap();
-    assert!(matches!(
-        commands.recv().await,
-        Some(Command::Account(ACCOUNT))
-    ));
-    let Some(Command::Send(bytes)) = commands.recv().await else {
-        panic!("missing logon request")
-    };
-    let mut packets = Vec::new();
-    decode_packets(bytes.into(), 0, &mut { MAX_PACKET }, &mut packets).unwrap();
-    assert_eq!(packets.len(), 1);
-    assert_eq!(packets[0].kind, LOGON);
-    let wire = WireLogin::decode(&packets[0].body[..]).unwrap();
+    let (logged_on, wire) = tokio::join!(
+        connection.log_on("fixture", ACCOUNT, "fixture-token"),
+        steam
+    );
+    logged_on.unwrap();
+    assert_eq!(connection.session_id, 42);
     (connection, wire)
 }
 

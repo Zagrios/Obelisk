@@ -13,7 +13,7 @@ impl SteamConnection {
     /// Read only the account's remote roaming configuration. Never consult a
     /// local Steam installation or change preferences as an ownership shortcut.
     pub async fn cloud_preferences(
-        &mut self,
+        &self,
         http: &reqwest::Client,
         app_id: u32,
     ) -> Result<crate::cloud::CloudPreferences, CloudError> {
@@ -22,7 +22,7 @@ impl SteamConnection {
     }
 
     pub async fn cloud_preferences_cached(
-        &mut self,
+        &self,
         http: &reqwest::Client,
         app_id: u32,
         cache: &mut crate::cloud::CloudPreferencesCache,
@@ -42,7 +42,7 @@ impl SteamConnection {
     /// upload permit and exclude a native synchronizer for this account/store.
     /// The guard is rechecked before every request; UI closure is not revocation.
     pub async fn cloud_upload(
-        &mut self,
+        &self,
         http: &reqwest::Client,
         transaction: &mut UploadTransaction,
         authorized: impl Fn() -> bool,
@@ -59,7 +59,7 @@ impl SteamConnection {
     /// can stage them without downloading the same remote files a second time.
     /// Bytes remain provisional until this returns a complete stable listing.
     pub async fn cloud_upload_verified(
-        &mut self,
+        &self,
         http: &reqwest::Client,
         transaction: &mut UploadTransaction,
         authorized: impl Fn() -> bool,
@@ -77,7 +77,7 @@ impl SteamConnection {
     /// Ambiguous old file requests remain blocked; the caller must read a new
     /// complete remote view after this method returns before reconciliation.
     pub async fn cloud_settle_upload(
-        &mut self,
+        &self,
         http: &reqwest::Client,
         transaction: &mut UploadTransaction,
         authorized: impl Fn() -> bool,
@@ -93,7 +93,7 @@ impl SteamConnection {
     /// Shared admission for journaled upload operations: the session must be
     /// logged on as the transaction's account.
     fn upload_transport<'a, F: Fn() -> bool>(
-        &'a mut self,
+        &'a self,
         http: &'a reqwest::Client,
         transaction: &UploadTransaction,
         authorized: &'a F,
@@ -109,7 +109,7 @@ impl SteamConnection {
         })
     }
 
-    pub async fn cloud_listing(&mut self, app_id: u32) -> Result<CloudListing, CloudError> {
+    pub async fn cloud_listing(&self, app_id: u32) -> Result<CloudListing, CloudError> {
         if app_id == 0 {
             return Err(CloudError::Invalid("app id"));
         }
@@ -125,7 +125,7 @@ impl SteamConnection {
         crate::cloud::listing(self.steam_id, app_id, response)
     }
 
-    pub async fn cloud_quota(&mut self, app_id: u32) -> Result<CloudQuota, CloudError> {
+    pub async fn cloud_quota(&self, app_id: u32) -> Result<CloudQuota, CloudError> {
         if app_id == 0 {
             return Err(CloudError::Invalid("app id"));
         }
@@ -144,7 +144,7 @@ impl SteamConnection {
     }
 
     pub async fn cloud_download(
-        &mut self,
+        &self,
         http: &reqwest::Client,
         app_id: u32,
         file: &CloudFile,
@@ -164,10 +164,10 @@ impl SteamConnection {
         crate::cloud::download(http, app_id, file, response).await
     }
 
-    /// Bounded concurrent HTTP reads on this account's serialized CM session.
+    /// Bounded concurrent HTTP reads on this account's CM session.
     /// The caller owns the listing checks before and after the complete set.
     pub async fn cloud_download_files(
-        &mut self,
+        &self,
         http: &reqwest::Client,
         app_id: u32,
         files: &[CloudFile],
@@ -193,7 +193,7 @@ impl SteamConnection {
 }
 
 struct DownloadPlans<'a> {
-    connection: &'a mut SteamConnection,
+    connection: &'a SteamConnection,
     app_id: u32,
 }
 
@@ -218,7 +218,7 @@ impl crate::cloud::downloads::DownloadPlans for DownloadPlans<'_> {
 }
 
 struct UploadTransport<'a, F> {
-    connection: &'a mut SteamConnection,
+    connection: &'a SteamConnection,
     http: &'a reqwest::Client,
     authorized: &'a F,
 }
@@ -249,17 +249,16 @@ impl<F: Fn() -> bool> crate::cloud::upload::Transport for UploadTransport<'_, F>
             return Err(CloudError::Revoked);
         }
         self.connection.ensure_logged_on()?;
-        let job = self
+        let packet = self
             .connection
-            .send(
+            .request(
                 SERVICE_REQUEST,
                 request,
                 Some("Cloud.ClientCommitFileUpload#1"),
+                SERVICE_RESPONSE,
             )
-            .await?;
-        let packet = self
-            .connection
-            .wait_for(SERVICE_RESPONSE, Some(job))
+            .await?
+            .next()
             .await?;
         commit_response(packet.header.result, &packet.body, request.succeeded)
     }

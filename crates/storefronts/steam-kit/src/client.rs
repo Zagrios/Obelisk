@@ -135,7 +135,7 @@ struct PreparedDepot {
     estimated_bytes: u64,
 }
 
-/// Everything resolved under the CM lock before the installation lock is taken.
+/// Everything resolved over the CM before the installation lock is taken.
 struct PreparedInstall {
     name: String,
     /// Validated HTTPS CDN/SteamCache hosts allowed to serve this app.
@@ -188,7 +188,7 @@ impl DepotTransferBytes {
 
 pub struct Client {
     http: reqwest::Client,
-    cm: AsyncMutex<SteamConnection>,
+    cm: SteamConnection,
     friends: crate::friends::FriendsEventSource,
     connection_abort: tokio::task::AbortHandle,
     cloud_authorized: std::sync::atomic::AtomicBool,
@@ -200,8 +200,8 @@ pub struct Client {
 
 impl Client {
     /// Reads the connected account's achievements without initializing a game SDK.
-    /// Releases the CM lock between the two reads so foreground content can
-    /// proceed; a schema change in that window is already rejected by the join.
+    /// Other requests may run between the two reads; a schema change in that
+    /// window is already rejected by the join.
     pub async fn achievements(
         &self,
         app_id: u32,
@@ -209,15 +209,11 @@ impl Client {
     ) -> Result<Vec<Achievement>, ClientError> {
         let schema = self
             .cm
-            .lock()
-            .await
             .game_achievements(app_id, language)
             .await
             .map_err(client_error)?;
         let user = self
             .cm
-            .lock()
-            .await
             .user_achievements(app_id)
             .await
             .map_err(client_error)?;
@@ -230,7 +226,7 @@ impl Client {
             friends: cm.friends_source(),
             connection_abort: cm.abort_handle(),
             cloud_authorized: std::sync::atomic::AtomicBool::new(true),
-            cm: AsyncMutex::new(cm),
+            cm,
             catalog: AsyncMutex::new(None),
             app_infos: Mutex::new(HashMap::new()),
             downloads: Transfers::default(),
@@ -254,7 +250,7 @@ impl Client {
             friends: cm.friends_source(),
             connection_abort: cm.abort_handle(),
             cloud_authorized: std::sync::atomic::AtomicBool::new(true),
-            cm: AsyncMutex::new(cm),
+            cm,
             catalog: AsyncMutex::new(None),
             app_infos: Mutex::new(HashMap::new()),
             downloads: Transfers::default(),
@@ -304,13 +300,7 @@ impl Client {
     pub async fn profile(&self) -> Result<crate::cm::AccountProfile, ClientError> {
         // Include any wait for a content query in the optional profile's budget.
         tokio::time::timeout(crate::cm::PROFILE_TIMEOUT, async {
-            let request = self
-                .cm
-                .lock()
-                .await
-                .request_profile()
-                .await
-                .map_err(client_error)?;
+            let request = self.cm.request_profile().await.map_err(client_error)?;
             request.receive().await.map_err(client_error)
         })
         .await
@@ -319,13 +309,7 @@ impl Client {
 
     /// Ordered by the CM layer: most recently played first, then name.
     pub async fn games(&self) -> Result<Vec<OwnedGame>, ClientError> {
-        let games = self
-            .cm
-            .lock()
-            .await
-            .owned_games()
-            .await
-            .map_err(client_error)?;
+        let games = self.cm.owned_games().await.map_err(client_error)?;
         // Rendering the library does not require expanding every license through
         // PICS. Refresh license-derived download rights only when next needed.
         *self.catalog.lock().await = None;
@@ -336,10 +320,10 @@ impl Client {
         Ok(games)
     }
 
-    /// Call with the CM lock held. Serves PICS metadata from a short-lived cache.
+    /// Serves PICS metadata from a short-lived cache.
     async fn app_info(
         &self,
-        cm: &mut SteamConnection,
+        cm: &SteamConnection,
         app_id: u32,
     ) -> Result<Arc<AppInfo>, ClientError> {
         if let Some(app) = self.cached_app(app_id) {
@@ -351,8 +335,7 @@ impl Client {
     }
 
     /// PICS metadata for many apps, served from the short-lived cache and
-    /// fetched in bounded batches. The CM lock is released between batches so
-    /// foreground content can proceed. Apps PICS does not return are absent.
+    /// fetched in bounded batches. Apps PICS does not return are absent.
     async fn cached_app_infos(
         &self,
         app_ids: &[u32],
@@ -370,20 +353,7 @@ impl Client {
             if missing.is_empty() {
                 continue;
             }
-            let mut cm = self.cm.lock().await;
-            // Another content query may have populated the cache while we waited.
-            missing.retain(|id| {
-                if let Some(app) = self.cached_app(*id) {
-                    apps.insert(*id, app);
-                    false
-                } else {
-                    true
-                }
-            });
-            if missing.is_empty() {
-                continue;
-            }
-            for app in cm.app_infos(&missing).await.map_err(client_error)? {
+            for app in self.cm.app_infos(&missing).await.map_err(client_error)? {
                 if missing.contains(&app.app_id) {
                     let app = Arc::new(app);
                     self.remember_app(&app);
@@ -410,11 +380,11 @@ impl Client {
             .insert(app.app_id, (Instant::now(), Arc::clone(app)));
     }
 
-    /// Call with the CM lock held: every path acquires CM before catalog.
+    /// One caller expands the licenses; the others wait for its catalog.
     /// Player.GetOwnedGames is presentation data, not proof of depot/DLC rights.
     async fn licensed_content(
         &self,
-        cm: &mut SteamConnection,
+        cm: &SteamConnection,
     ) -> Result<Arc<ContentLicenses>, ClientError> {
         let mut catalog = self.catalog.lock().await;
         if let Some(owned) = catalog.as_ref() {
@@ -452,10 +422,9 @@ impl Client {
     }
 
     pub async fn details(&self, app_id: u32, language: &str) -> Result<GameDetails, ClientError> {
-        let mut cm = self.cm.lock().await;
-        let owned = self.licensed_content(&mut cm).await?;
-        let app = self.app_info(&mut cm, app_id).await?;
-        drop(cm);
+        let cm = &self.cm;
+        let owned = self.licensed_content(cm).await?;
+        let app = self.app_info(cm, app_id).await?;
         let windows = select_depots(&app, &owned, "windows", language);
         let macos = select_depots(&app, &owned, "macos", language);
         Ok(GameDetails {
@@ -490,13 +459,12 @@ impl Client {
             .as_ref()
             .filter(|receipt| receipt.app_id == app_id && receipt.platform == platform)
             .ok_or_else(|| ClientError("backend.steam.client.incompleteInstallation".into()))?;
-        let mut cm = self.cm.lock().await;
-        let owned = self.licensed_content(&mut cm).await?;
+        let cm = &self.cm;
+        let owned = self.licensed_content(cm).await?;
         if !owned.apps.contains(&receipt.app_id) {
             return Err(ClientError("backend.steam.client.gameNotOwned".into()));
         }
         let app = Arc::new(cm.app_info(app_id).await.map_err(client_error)?);
-        drop(cm);
         self.remember_app(&app);
         crate::launch::plan(&app, platform, directory).map_err(client_error)
     }
@@ -605,7 +573,7 @@ impl Client {
     }
 
     /// Resolves ownership, depot selection, manifest IDs, depot keys and CDN
-    /// candidates under the CM lock, before any installation file exists.
+    /// candidates over the CM, before any installation file exists.
     async fn prepare_depots(
         &self,
         app_id: u32,
@@ -613,12 +581,12 @@ impl Client {
         language: &str,
         cancel: &CancelToken,
     ) -> Result<PreparedInstall, ClientError> {
-        let mut cm = self.cm.lock().await;
-        let owned = self.licensed_content(&mut cm).await?;
+        let cm = &self.cm;
+        let owned = self.licensed_content(cm).await?;
         if !owned.apps.contains(&app_id) {
             return Err(ClientError("backend.steam.client.gameNotOwned".into()));
         }
-        let app = self.app_info(&mut cm, app_id).await?;
+        let app = self.app_info(cm, app_id).await?;
         let selected = select_depots(&app, &owned, platform, language);
         if selected.is_empty() {
             return Err(ClientError("backend.steam.client.noCompatibleDepot".into()));
@@ -645,7 +613,7 @@ impl Client {
             let manifest_id = match depot.public_manifest {
                 Some(id) => id,
                 None if manifest_app != app_id => self
-                    .app_info(&mut cm, manifest_app)
+                    .app_info(cm, manifest_app)
                     .await?
                     .depots
                     .iter()
@@ -741,8 +709,6 @@ impl Client {
                 0
             } else {
                 self.cm
-                    .lock()
-                    .await
                     .manifest_request_code(depot.depot_id, depot.authorizing_app, depot.manifest_id)
                     .await
                     .map_err(client_error)?
@@ -762,8 +728,6 @@ impl Client {
                 cancel.check()?;
                 plan.cdn_token = Some(
                     self.cm
-                        .lock()
-                        .await
                         .cdn_auth(depot.authorizing_app, depot.depot_id, &server.host)
                         .await
                         .map_err(client_error)?,

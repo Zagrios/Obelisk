@@ -81,7 +81,7 @@ impl Client {
                         .map_err(|_| CloudError::Storage)?;
                 let before: CloudListing = serde_json::from_value(backup["listing"].clone())
                     .map_err(|_| CloudError::Storage)?;
-                let mut cm = self.cm.lock().await;
+                let cm = &self.cm;
                 let quota = cm.cloud_quota(app_id).await?;
                 if quota
                     .max_bytes
@@ -175,7 +175,7 @@ impl Client {
         {
             return Err(CloudError::Invalid("probe scope"));
         }
-        let mut cm = self.cm.lock().await;
+        let cm = &self.cm;
         let mut interrupted = UploadTransaction::open(&probe.interrupted)?;
         cm.cloud_settle_upload_probe(
             &self.http,

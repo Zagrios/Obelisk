@@ -1,10 +1,15 @@
 //! Authenticated Steam CM content queries over TLS WebSocket.
 //!
-//! One connection serializes queries; its background worker continues heartbeats
+//! Requests on one connection run concurrently: its background worker routes
+//! each response to the request that sent its job, and keeps heartbeats going
 //! while callers download content over HTTP. Dropping it closes that session.
 
 use std::collections::{BTreeSet, HashMap};
 use std::io::Read;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, AtomicU64, Ordering},
+};
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -24,6 +29,8 @@ mod cloud;
 mod login_tests;
 #[cfg(test)]
 mod platforms_tests;
+#[cfg(test)]
+mod test_server;
 
 const PROTOCOL: u32 = 65_581;
 const PROTO_MASK: u32 = 0x8000_0000;
@@ -180,12 +187,95 @@ struct Packet {
 
 enum Command {
     Send(Vec<u8>),
+    /// Sends a request whose responses `route` reaches.
+    Request {
+        bytes: Vec<u8>,
+        route: Route,
+        replies: mpsc::UnboundedSender<Packet>,
+    },
     Account(u64),
     Session {
         steam_id: u64,
         session_id: i32,
         heartbeat_seconds: u64,
     },
+}
+
+/// Which responses reach a request: those answering its job or, for the
+/// logon reply, the next one of a kind.
+#[derive(Clone, Copy)]
+enum Route {
+    Job(u64),
+    Kind(u32),
+}
+
+/// Responses Steam addresses to one request's job.
+const JOB_RESPONSES: [u32; 4] = [
+    SERVICE_RESPONSE,
+    DEPOT_KEY_RESPONSE,
+    PRODUCT_RESPONSE,
+    TOKEN_RESPONSE,
+];
+
+/// Requests waiting for their responses. Each response reaches only its own
+/// request, so requests never queue behind each other; a response to a
+/// request that gave up is dropped.
+#[derive(Default)]
+struct Routes(Vec<(Route, mpsc::UnboundedSender<Packet>)>);
+
+impl Routes {
+    fn wait(&mut self, route: Route, replies: mpsc::UnboundedSender<Packet>) {
+        self.0.retain(|(_, replies)| !replies.is_closed());
+        self.0.push((route, replies));
+    }
+
+    fn deliver(&mut self, packet: Packet) {
+        let waiting = self.0.iter().find(|(route, replies)| {
+            !replies.is_closed()
+                && match *route {
+                    Route::Job(job) => {
+                        JOB_RESPONSES.contains(&packet.kind)
+                            && packet.header.job_target == Some(job)
+                    }
+                    Route::Kind(kind) => packet.kind == kind,
+                }
+        });
+        if let Some((_, replies)) = waiting {
+            let _ = replies.send(packet);
+        }
+    }
+}
+
+/// The responses to one request, each within the query deadline.
+struct Replies {
+    packets: mpsc::UnboundedReceiver<Packet>,
+    kind: u32,
+}
+
+impl Replies {
+    async fn next(&mut self) -> Result<Packet, CmError> {
+        let deadline = Instant::now() + QUERY_TIMEOUT;
+        loop {
+            let packet = timeout_at(deadline, self.packets.recv())
+                .await
+                .map_err(|_| CmError::Timeout)?
+                .ok_or(CmError::Disconnected)?;
+            if packet.kind != self.kind {
+                continue;
+            }
+            if packet
+                .header
+                .transport_error
+                .is_some_and(|error| error != 0 && error != 1)
+            {
+                return Err(CmError::Rejected {
+                    action: "backend.steam.cm.action.requestTransport",
+                    result: packet.header.transport_error.unwrap_or(2),
+                });
+            }
+            return Ok(packet);
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -253,7 +343,7 @@ impl ProfileRequest {
     }
 
     /// Waits without a deadline: `Client::profile` applies `PROFILE_TIMEOUT` to
-    /// the whole request, including any wait for the CM lock.
+    /// the whole request.
     pub(crate) async fn receive(mut self) -> Result<AccountProfile, CmError> {
         loop {
             self.updates
@@ -276,16 +366,17 @@ impl ProfileRequest {
 
 pub struct SteamConnection {
     outgoing: mpsc::Sender<Command>,
-    incoming: mpsc::Receiver<Result<Packet, CmError>>,
+    /// The last license list Steam pushed, as received.
+    licenses: watch::Receiver<Option<Bytes>>,
     profile: watch::Receiver<ProfileState>,
     friends: friends::FriendsEventSource,
     worker: JoinHandle<()>,
     steam_id: u64,
     session_id: i32,
     cell_id: u32,
-    next_job: u64,
-    logged_on: bool,
-    licenses: Option<Vec<proto::License>>,
+    next_job: AtomicU64,
+    /// Cleared by the worker when Steam logs the session off.
+    logged_on: Arc<AtomicBool>,
 }
 
 impl Drop for SteamConnection {
@@ -349,34 +440,7 @@ impl SteamConnection {
             let Ok(Ok((socket, _))) = connected else {
                 continue;
             };
-            let (outgoing, commands) = mpsc::channel(32);
-            let (incoming_tx, incoming) = mpsc::channel(128);
-            let (profile_tx, profile) = watch::channel(ProfileState::default());
-            let friends = friends::FriendsEventSource::new(0);
-            let worker_friends = friends.clone();
-            let worker = tokio::spawn(async move {
-                let result =
-                    connection_worker(socket, commands, &incoming_tx, &profile_tx, &worker_friends)
-                        .await;
-                profile_tx.send_replace(ProfileState::Disconnected);
-                worker_friends.disconnect(false);
-                if let Err(error) = result {
-                    let _ = incoming_tx.try_send(Err(error));
-                }
-            });
-            let mut connection = Self {
-                outgoing,
-                incoming,
-                profile,
-                friends,
-                worker,
-                steam_id: 0,
-                session_id: 0,
-                cell_id: 0,
-                next_job: 1,
-                logged_on: false,
-                licenses: None,
-            };
+            let connection = Self::start(socket, 0, false);
             connection
                 .send(
                     HELLO,
@@ -391,6 +455,44 @@ impl SteamConnection {
         Err(CmError::Disconnected)
     }
 
+    /// Runs the worker on an open socket. Responses reach their requests from here.
+    fn start(socket: Socket, steam_id: u64, logged_on: bool) -> Self {
+        let (outgoing, commands) = mpsc::channel(32);
+        let (licenses_tx, licenses) = watch::channel(None);
+        let (profile_tx, profile) = watch::channel(ProfileState::default());
+        let friends = friends::FriendsEventSource::new(steam_id);
+        let worker_friends = friends.clone();
+        let logged_on = Arc::new(AtomicBool::new(logged_on));
+        let session = Arc::clone(&logged_on);
+        let worker = tokio::spawn(async move {
+            // Ending drops every waiting request, which then reads a disconnection.
+            let _ = connection_worker(
+                socket,
+                commands,
+                &licenses_tx,
+                &profile_tx,
+                &worker_friends,
+                &session,
+            )
+            .await;
+            session.store(false, Ordering::Release);
+            profile_tx.send_replace(ProfileState::Disconnected);
+            worker_friends.disconnect(false);
+        });
+        Self {
+            outgoing,
+            licenses,
+            profile,
+            friends,
+            worker,
+            steam_id,
+            session_id: 0,
+            cell_id: 0,
+            next_job: AtomicU64::new(1),
+            logged_on,
+        }
+    }
+
     /// Uses a Steam client refresh token obtained by the authentication module.
     /// Secrets are sent only to the TLS CM endpoint and never included in errors.
     pub async fn log_on(
@@ -399,7 +501,11 @@ impl SteamConnection {
         steam_id: u64,
         refresh_token: &str,
     ) -> Result<(), CmError> {
-        if self.logged_on || account_name.is_empty() || steam_id == 0 || refresh_token.is_empty() {
+        if self.logged_on.load(Ordering::Acquire)
+            || account_name.is_empty()
+            || steam_id == 0
+            || refresh_token.is_empty()
+        {
             return Err(CmError::Protocol("backend.steam.cm.invalidSession".into()));
         }
         // Steam replaces a same-account login from the same public IP when its
@@ -415,25 +521,28 @@ impl SteamConnection {
             .send(Command::Account(steam_id))
             .await
             .map_err(|_| CmError::Disconnected)?;
-        self.send(
-            LOGON,
-            &proto::Logon {
-                protocol_version: PROTOCOL,
-                deprecated_obfuscated_private_ip: login_id,
-                obfuscated_private_ip: Some(proto::LoginAddress { v4: login_id }),
-                package_version: 1771,
-                language: "english".into(),
-                os_type: (-102_i32) as u32, // EOSType::MacOSUnknown, encoded as uint32.
-                remember_password: true,
-                account_name: account_name.into(),
-                machine_name: "Forge".into(),
-                supports_rate_limit: true,
-                access_token: refresh_token.into(),
-            },
-            None,
-        )
-        .await?;
-        let packet = self.wait_for(LOGON_RESPONSE, None).await?;
+        let mut replies = self
+            .request_route(
+                LOGON,
+                &proto::Logon {
+                    protocol_version: PROTOCOL,
+                    deprecated_obfuscated_private_ip: login_id,
+                    obfuscated_private_ip: Some(proto::LoginAddress { v4: login_id }),
+                    package_version: 1771,
+                    language: "english".into(),
+                    os_type: (-102_i32) as u32, // EOSType::MacOSUnknown, encoded as uint32.
+                    remember_password: true,
+                    account_name: account_name.into(),
+                    machine_name: "Forge".into(),
+                    supports_rate_limit: true,
+                    access_token: refresh_token.into(),
+                },
+                None,
+                |_| Route::Kind(LOGON_RESPONSE),
+                LOGON_RESPONSE,
+            )
+            .await?;
+        let packet = replies.next().await?;
         let response = proto::LogonResponse::decode(&packet.body[..])?;
         check_result(response.result, "backend.steam.cm.action.signIn")?;
         let assigned_id = packet
@@ -450,7 +559,7 @@ impl SteamConnection {
             .session_id
             .ok_or_else(|| CmError::Protocol("backend.steam.cm.missingSessionId".into()))?;
         self.cell_id = response.cell_id;
-        self.logged_on = true;
+        self.logged_on.store(true, Ordering::Release);
         let seconds = if response.out_of_game_heartbeat > 0 {
             response.out_of_game_heartbeat
         } else {
@@ -477,7 +586,7 @@ impl SteamConnection {
 
     /// Requests only the connected account's profile. Persona updates have their
     /// own channel so this optional query never drains content or license replies.
-    pub(crate) async fn request_profile(&mut self) -> Result<ProfileRequest, CmError> {
+    pub(crate) async fn request_profile(&self) -> Result<ProfileRequest, CmError> {
         self.ensure_logged_on()?;
         let request = ProfileRequest::new(self.profile.clone())?;
         self.send(
@@ -493,7 +602,7 @@ impl SteamConnection {
     }
 
     /// Returns the user's own visible game library, including played free games.
-    pub async fn owned_games(&mut self) -> Result<Vec<OwnedGameInfo>, CmError> {
+    pub async fn owned_games(&self) -> Result<Vec<OwnedGameInfo>, CmError> {
         let response: proto::OwnedGamesResponse = self
             .service(
                 "Player.GetOwnedGames#1",
@@ -537,23 +646,27 @@ impl SteamConnection {
 
     /// Resolves licensed packages to app IDs (including DLC) for download checks.
     /// Steam still authorizes every depot key and manifest request individually.
-    pub async fn owned_app_ids(&mut self) -> Result<Vec<u32>, CmError> {
+    pub async fn owned_app_ids(&self) -> Result<Vec<u32>, CmError> {
         Ok(self.content_licenses().await?.apps.into_iter().collect())
     }
 
     /// Preserve both namespaces when expanding active PICS packages.
-    pub async fn content_licenses(&mut self) -> Result<ContentLicenses, CmError> {
+    pub async fn content_licenses(&self) -> Result<ContentLicenses, CmError> {
         self.ensure_logged_on()?;
-        if self.licenses.is_none() {
-            let packet = self.wait_for(LICENSE_LIST, None).await?;
-            self.accept_licenses(&packet)?;
-        }
+        // Steam pushes the license list after logon, and again when it changes.
+        let mut pushed = self.licenses.clone();
+        let body = timeout(QUERY_TIMEOUT, pushed.wait_for(Option::is_some))
+            .await
+            .map_err(|_| CmError::Timeout)?
+            .map_err(|_| CmError::Disconnected)?
+            .clone()
+            .unwrap_or_default();
+        let list = proto::LicenseList::decode(&body[..])?;
+        check_result(list.result, "backend.steam.cm.action.readLicenses")?;
         // Expired, cancelled, pending, or never activated licenses grant no access.
         const INACTIVE: u32 = 0x04 | 0x08 | 0x10 | 0x20 | 0x400 | 0x800 | 0x40000;
-        let packages: Vec<_> = self
+        let packages: Vec<_> = list
             .licenses
-            .as_deref()
-            .unwrap_or_default()
             .iter()
             .filter(|license| license.package_id != 0 && license.flags & INACTIVE == 0)
             .map(|license| proto::ProductId {
@@ -584,7 +697,7 @@ impl SteamConnection {
         Ok(rights)
     }
 
-    pub async fn app_info(&mut self, app_id: u32) -> Result<AppInfo, CmError> {
+    pub async fn app_info(&self, app_id: u32) -> Result<AppInfo, CmError> {
         self.app_infos(&[app_id])
             .await?
             .into_iter()
@@ -593,21 +706,23 @@ impl SteamConnection {
     }
 
     /// Unknown or removed apps are omitted. Malformed metadata fails the request.
-    pub async fn app_infos(&mut self, app_ids: &[u32]) -> Result<Vec<AppInfo>, CmError> {
+    pub async fn app_infos(&self, app_ids: &[u32]) -> Result<Vec<AppInfo>, CmError> {
         self.ensure_logged_on()?;
         let mut apps = Vec::new();
         for batch in app_ids.chunks(PICS_BATCH) {
-            let token_job = self
-                .send(
+            let token_packet = self
+                .request(
                     TOKEN_REQUEST,
                     &proto::AccessTokenRequest {
                         package_ids: Vec::new(),
                         app_ids: batch.to_vec(),
                     },
                     None,
+                    TOKEN_RESPONSE,
                 )
+                .await?
+                .next()
                 .await?;
-            let token_packet = self.wait_for(TOKEN_RESPONSE, Some(token_job)).await?;
             let tokens = proto::AccessTokenResponse::decode(&token_packet.body[..])?;
             let token_map: HashMap<_, _> = tokens
                 .apps
@@ -637,16 +752,18 @@ impl SteamConnection {
         Ok(apps)
     }
 
-    pub async fn depot_key(&mut self, depot_id: u32, app_id: u32) -> Result<Vec<u8>, CmError> {
+    pub async fn depot_key(&self, depot_id: u32, app_id: u32) -> Result<Vec<u8>, CmError> {
         self.ensure_logged_on()?;
-        let job = self
-            .send(
+        let packet = self
+            .request(
                 DEPOT_KEY_REQUEST,
                 &proto::DepotKeyRequest { depot_id, app_id },
                 None,
+                DEPOT_KEY_RESPONSE,
             )
+            .await?
+            .next()
             .await?;
-        let packet = self.wait_for(DEPOT_KEY_RESPONSE, Some(job)).await?;
         let response = proto::DepotKeyResponse::decode(&packet.body[..])?;
         check_result(response.result, "backend.steam.cm.action.depot")?;
         if response.depot_id != depot_id || response.key.len() != 32 {
@@ -657,7 +774,7 @@ impl SteamConnection {
 
     /// Public branch only. Password protected beta branches are not requested.
     pub async fn manifest_request_code(
-        &mut self,
+        &self,
         depot_id: u32,
         app_id: u32,
         manifest_id: u64,
@@ -681,7 +798,7 @@ impl SteamConnection {
         Ok(response.code)
     }
 
-    pub async fn content_servers(&mut self) -> Result<Vec<ContentServer>, CmError> {
+    pub async fn content_servers(&self) -> Result<Vec<ContentServer>, CmError> {
         let mut response: proto::ServerResponse = self
             .service(
                 "ContentServerDirectory.GetServersForSteamPipe#1",
@@ -722,7 +839,7 @@ impl SteamConnection {
     }
 
     pub async fn cdn_auth(
-        &mut self,
+        &self,
         app_id: u32,
         depot_id: u32,
         host: &str,
@@ -744,12 +861,12 @@ impl SteamConnection {
     }
 
     async fn products(
-        &mut self,
+        &self,
         apps: &[proto::ProductId],
         packages: &[proto::ProductId],
     ) -> Result<proto::ProductResponse, CmError> {
-        let job = self
-            .send(
+        let mut replies = self
+            .request(
                 PRODUCT_REQUEST,
                 &proto::ProductRequest {
                     apps: apps.to_vec(),
@@ -757,12 +874,13 @@ impl SteamConnection {
                     metadata_only: false,
                 },
                 None,
+                PRODUCT_RESPONSE,
             )
             .await?;
         let mut combined = proto::ProductResponse::default();
         let mut total_bytes = 0_usize;
         for _ in 0..512 {
-            let packet = self.wait_for(PRODUCT_RESPONSE, Some(job)).await?;
+            let packet = replies.next().await?;
             total_bytes += packet.body.len();
             if total_bytes > MAX_PACKET {
                 return Err(CmError::Protocol(
@@ -784,13 +902,16 @@ impl SteamConnection {
     }
 
     async fn service<R: Message + Default>(
-        &mut self,
+        &self,
         name: &str,
         request: &impl Message,
     ) -> Result<R, CmError> {
         self.ensure_logged_on()?;
-        let job = self.send(SERVICE_REQUEST, request, Some(name)).await?;
-        let packet = self.wait_for(SERVICE_RESPONSE, Some(job)).await?;
+        let packet = self
+            .request(SERVICE_REQUEST, request, Some(name), SERVICE_RESPONSE)
+            .await?
+            .next()
+            .await?;
         check_result(
             packet.header.result,
             "backend.steam.cm.action.contentRequest",
@@ -799,24 +920,24 @@ impl SteamConnection {
     }
 
     fn ensure_logged_on(&self) -> Result<(), CmError> {
-        if self.logged_on {
+        if self.logged_on.load(Ordering::Acquire) {
             Ok(())
         } else {
             Err(CmError::Disconnected)
         }
     }
 
-    async fn send(
-        &mut self,
-        kind: u32,
-        message: &impl Message,
-        name: Option<&str>,
-    ) -> Result<u64, CmError> {
-        let job = self.next_job;
-        self.next_job = self
-            .next_job
-            .checked_add(1)
-            .ok_or_else(|| CmError::Protocol("backend.steam.cm.requestIdsExhausted".into()))?;
+    fn job(&self) -> Result<u64, CmError> {
+        let job = self.next_job.fetch_add(1, Ordering::Relaxed);
+        if job == u64::MAX {
+            return Err(CmError::Protocol(
+                "backend.steam.cm.requestIdsExhausted".into(),
+            ));
+        }
+        Ok(job)
+    }
+
+    fn message(&self, kind: u32, message: &impl Message, name: Option<&str>, job: u64) -> Vec<u8> {
         let header = proto::Header {
             steam_id: Some(self.steam_id),
             session_id: Some(self.session_id),
@@ -824,49 +945,58 @@ impl SteamConnection {
             target_name: name.map(str::to_owned),
             ..Default::default()
         };
+        encode(kind, &header, message)
+    }
+
+    /// Sends a message nobody answers by job.
+    async fn send(
+        &self,
+        kind: u32,
+        message: &impl Message,
+        name: Option<&str>,
+    ) -> Result<u64, CmError> {
+        let job = self.job()?;
         self.outgoing
-            .send(Command::Send(encode(kind, &header, message)))
+            .send(Command::Send(self.message(kind, message, name, job)))
             .await
             .map_err(|_| CmError::Disconnected)?;
         Ok(job)
     }
 
-    async fn wait_for(&mut self, kind: u32, job: Option<u64>) -> Result<Packet, CmError> {
-        let deadline = Instant::now() + QUERY_TIMEOUT;
-        loop {
-            let packet = timeout_at(deadline, self.incoming.recv())
-                .await
-                .map_err(|_| CmError::Timeout)?
-                .ok_or(CmError::Disconnected)??;
-            if packet.kind == LOGGED_OFF {
-                self.logged_on = false;
-                return Err(CmError::Disconnected);
-            }
-            if packet.kind == LICENSE_LIST {
-                self.accept_licenses(&packet)?;
-            }
-            if packet.kind == kind && job.is_none_or(|id| packet.header.job_target == Some(id)) {
-                if packet
-                    .header
-                    .transport_error
-                    .is_some_and(|error| error != 0 && error != 1)
-                {
-                    return Err(CmError::Rejected {
-                        action: "backend.steam.cm.action.requestTransport",
-                        result: packet.header.transport_error.unwrap_or(2),
-                    });
-                }
-                return Ok(packet);
-            }
-            // Calls are serialized; other job IDs belong to a timed-out request.
-        }
+    /// Sends a request; its `reply` responses reach only the returned replies.
+    async fn request(
+        &self,
+        kind: u32,
+        message: &impl Message,
+        name: Option<&str>,
+        reply: u32,
+    ) -> Result<Replies, CmError> {
+        self.request_route(kind, message, name, Route::Job, reply)
+            .await
     }
 
-    fn accept_licenses(&mut self, packet: &Packet) -> Result<(), CmError> {
-        let response = proto::LicenseList::decode(&packet.body[..])?;
-        check_result(response.result, "backend.steam.cm.action.readLicenses")?;
-        self.licenses = Some(response.licenses);
-        Ok(())
+    async fn request_route(
+        &self,
+        kind: u32,
+        message: &impl Message,
+        name: Option<&str>,
+        route: impl FnOnce(u64) -> Route,
+        reply: u32,
+    ) -> Result<Replies, CmError> {
+        let job = self.job()?;
+        let (replies, packets) = mpsc::unbounded_channel();
+        self.outgoing
+            .send(Command::Request {
+                bytes: self.message(kind, message, name, job),
+                route: route(job),
+                replies,
+            })
+            .await
+            .map_err(|_| CmError::Disconnected)?;
+        Ok(Replies {
+            packets,
+            kind: reply,
+        })
     }
 }
 
@@ -918,10 +1048,12 @@ async fn send_message(socket: &mut Socket, message: WsMessage) -> Result<(), CmE
 async fn connection_worker(
     mut socket: Socket,
     mut commands: mpsc::Receiver<Command>,
-    incoming: &mpsc::Sender<Result<Packet, CmError>>,
+    licenses: &watch::Sender<Option<Bytes>>,
     profile: &watch::Sender<ProfileState>,
     friends: &friends::FriendsEventSource,
+    logged_on: &AtomicBool,
 ) -> Result<(), CmError> {
+    let mut routes = Routes::default();
     let mut heartbeat_header = None;
     let mut heartbeat = tokio::time::interval(Duration::from_secs(15));
     heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -934,6 +1066,11 @@ async fn connection_worker(
         tokio::select! {
             command = commands.recv() => match command {
                 Some(Command::Send(bytes)) => {
+                    send_message(&mut socket, WsMessage::Binary(bytes.into())).await?;
+                }
+                Some(Command::Request { bytes, route, replies }) => {
+                    // Waiting before sending, so no response can precede its route.
+                    routes.wait(route, replies);
                     send_message(&mut socket, WsMessage::Binary(bytes.into())).await?;
                 }
                 Some(Command::Account(steam_id)) => friends.set_account(steam_id),
@@ -984,8 +1121,8 @@ async fn connection_worker(
                     for packet in packets {
                         if packet.kind == SERVICE_RESPONSE && packet.header.job_target == Some(FRIENDS_HYDRATION_JOB) {
                             persona_push_in_flight = false;
-                            // This optional reply cannot consume a library or
-                            // download response or fill their incoming channel.
+                            // This optional reply never reaches a library or
+                            // download request.
                             continue;
                         }
                         let hydrate = friends.apply_packet_deferred(packet.kind, &packet.body);
@@ -1005,17 +1142,18 @@ async fn connection_worker(
                             });
                         }
                         if packet.kind == LOGGED_OFF {
+                            logged_on.store(false, Ordering::Release);
                             profile.send_replace(ProfileState::Disconnected);
                             let authentication_required = proto::LoggedOff::decode(&packet.body[..]).ok().and_then(|logged_off| logged_off.result).is_some_and(friends::authentication_required);
                             friends.disconnect(authentication_required);
                             // Close this physical connection before a replacement
-                            // starts; queued content calls retain disconnection.
-                            let _ = incoming.try_send(Ok(packet));
+                            // starts; waiting requests read the disconnection.
                             return Err(CmError::Disconnected);
                         }
-                        if matches!(packet.kind, SERVICE_RESPONSE | LOGON_RESPONSE | LOGGED_OFF | LICENSE_LIST | DEPOT_KEY_RESPONSE | PRODUCT_RESPONSE | TOKEN_RESPONSE) {
-                            incoming.try_send(Ok(packet)).map_err(|_| CmError::Protocol("backend.steam.cm.tooManyPendingResponses".into()))?;
+                        if packet.kind == LICENSE_LIST {
+                            licenses.send_replace(Some(packet.body.clone()));
                         }
+                        routes.deliver(packet);
                     }
                     friends.publish();
                 }
@@ -1059,12 +1197,16 @@ pub(crate) fn avatar_url_from_hash(hash: &[u8]) -> Option<String> {
 }
 
 fn encode(kind: u32, header: &proto::Header, message: &impl Message) -> Vec<u8> {
+    encode_body(kind, header, &message.encode_to_vec())
+}
+
+fn encode_body(kind: u32, header: &proto::Header, body: &[u8]) -> Vec<u8> {
     let header = header.encode_to_vec();
-    let mut bytes = Vec::with_capacity(8 + header.len() + message.encoded_len());
+    let mut bytes = Vec::with_capacity(8 + header.len() + body.len());
     bytes.extend_from_slice(&(kind | PROTO_MASK).to_le_bytes());
     bytes.extend_from_slice(&(header.len() as u32).to_le_bytes());
     bytes.extend_from_slice(&header);
-    bytes.extend_from_slice(&message.encode_to_vec());
+    bytes.extend_from_slice(body);
     bytes
 }
 
@@ -1429,6 +1571,80 @@ mod tests {
         }
     }
 
+    fn depot_reply(depot_id: u32) -> proto::DepotKeyResponse {
+        proto::DepotKeyResponse {
+            result: Some(1),
+            depot_id,
+            key: vec![0; 32],
+        }
+    }
+
+    #[tokio::test]
+    async fn requests_in_flight_each_receive_only_their_own_responses() {
+        let (connection, mut server) = test_server::connection(TEST_STEAM_ID, true).await;
+        let depot = |depot_id| proto::DepotKeyRequest {
+            depot_id,
+            app_id: 620,
+        };
+        let abandoned = connection
+            .request(DEPOT_KEY_REQUEST, &depot(1), None, DEPOT_KEY_RESPONSE)
+            .await
+            .unwrap();
+        let mut waiting = connection
+            .request(DEPOT_KEY_REQUEST, &depot(2), None, DEPOT_KEY_RESPONSE)
+            .await
+            .unwrap();
+        let first = server.request(DEPOT_KEY_REQUEST).await;
+        let second = server.request(DEPOT_KEY_REQUEST).await;
+        // The first request gave up; its late reply must not reach the second.
+        drop(abandoned);
+        server
+            .reply(&first, DEPOT_KEY_RESPONSE, &depot_reply(1))
+            .await;
+        server
+            .reply(&second, DEPOT_KEY_RESPONSE, &depot_reply(2))
+            .await;
+        let reply = waiting.next().await.unwrap();
+        assert_eq!(
+            proto::DepotKeyResponse::decode(&reply.body[..])
+                .unwrap()
+                .depot_id,
+            2
+        );
+        // Both finished requests left the worker nothing to route.
+        assert!(server.quiet().await);
+    }
+
+    #[tokio::test]
+    async fn a_logoff_ends_every_waiting_request() {
+        let (connection, mut server) = test_server::connection(TEST_STEAM_ID, true).await;
+        let mut waiting = connection
+            .request(
+                DEPOT_KEY_REQUEST,
+                &proto::DepotKeyRequest {
+                    depot_id: 1,
+                    app_id: 620,
+                },
+                None,
+                DEPOT_KEY_RESPONSE,
+            )
+            .await
+            .unwrap();
+        server.request(DEPOT_KEY_REQUEST).await;
+        server
+            .send(
+                LOGGED_OFF,
+                proto::Header::default(),
+                &proto::LoggedOff { result: Some(6) }.encode_to_vec(),
+            )
+            .await;
+        assert!(matches!(waiting.next().await, Err(CmError::Disconnected)));
+        assert!(matches!(
+            connection.ensure_logged_on(),
+            Err(CmError::Disconnected)
+        ));
+    }
+
     #[tokio::test]
     async fn social_worker_keeps_library_download_replies_and_coalesces_persona_floods() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1437,35 +1653,8 @@ mod tests {
             let (stream, _) = listener.accept().await.unwrap();
             tokio_tungstenite::accept_async(stream).await.unwrap()
         });
-        let (outgoing, commands) = mpsc::channel(32);
-        let (incoming_tx, incoming) = mpsc::channel(128);
-        let (profile_tx, profile) = watch::channel(ProfileState::default());
-        let friends = friends::FriendsEventSource::new(TEST_STEAM_ID);
-        let worker_friends = friends.clone();
-        let worker = tokio::spawn(async move {
-            connection_worker(
-                client.unwrap().0,
-                commands,
-                &incoming_tx,
-                &profile_tx,
-                &worker_friends,
-            )
-            .await
-            .unwrap();
-        });
-        let mut connection = SteamConnection {
-            outgoing,
-            incoming,
-            profile,
-            friends,
-            worker,
-            steam_id: TEST_STEAM_ID,
-            session_id: 42,
-            cell_id: 0,
-            next_job: 1,
-            logged_on: true,
-            licenses: None,
-        };
+        let mut connection = SteamConnection::start(client.unwrap().0, TEST_STEAM_ID, true);
+        connection.session_id = 42;
         connection
             .outgoing
             .send(Command::Session {
@@ -1476,9 +1665,27 @@ mod tests {
             .await
             .unwrap();
         let request = connection.request_profile().await.unwrap();
-        // Request awaiting does not hold &mut SteamConnection or drain incoming.
-        let content_job = connection
-            .send(SERVICE_REQUEST, &proto::Empty {}, Some("Test.Content#1"))
+        // Waiting requests run concurrently; each reads only its own responses.
+        let content_job = connection.next_job.load(Ordering::Relaxed);
+        let mut content = connection
+            .request(
+                SERVICE_REQUEST,
+                &proto::Empty {},
+                Some("Test.Content#1"),
+                SERVICE_RESPONSE,
+            )
+            .await
+            .unwrap();
+        let mut depot = connection
+            .request(
+                DEPOT_KEY_REQUEST,
+                &proto::DepotKeyRequest {
+                    depot_id: 22,
+                    app_id: 620,
+                },
+                None,
+                DEPOT_KEY_RESPONSE,
+            )
             .await
             .unwrap();
         let server_task = tokio::spawn(async move {
@@ -1632,15 +1839,14 @@ mod tests {
                 "ab".repeat(20)
             ))
         );
-        connection
-            .wait_for(SERVICE_RESPONSE, Some(content_job))
-            .await
-            .unwrap();
-        assert_eq!(connection.licenses.as_ref().unwrap()[0].package_id, 99);
-        let depot = connection
-            .wait_for(DEPOT_KEY_RESPONSE, Some(content_job + 1))
-            .await
-            .unwrap();
+        // The depot reply arrives first; it still reaches only its own request.
+        let depot = depot.next().await.unwrap();
+        content.next().await.unwrap();
+        let licenses = connection.licenses.borrow().clone().unwrap();
+        assert_eq!(
+            proto::LicenseList::decode(&licenses[..]).unwrap().licenses[0].package_id,
+            99
+        );
         assert_eq!(
             proto::DepotKeyResponse::decode(&depot.body[..])
                 .unwrap()
@@ -1670,13 +1876,20 @@ mod tests {
                 tokio_tungstenite::accept_async(stream).await.unwrap()
             });
         let (outgoing, commands) = mpsc::channel(32);
-        let (incoming, _responses) = mpsc::channel(128);
+        let (licenses, _licenses) = watch::channel(None);
         let (profile, _profile_updates) = watch::channel(ProfileState::default());
         let social = friends::FriendsEventSource::new(TEST_STEAM_ID);
         let writer = social.clone();
         let worker = tokio::spawn(async move {
-            let result =
-                connection_worker(client.unwrap().0, commands, &incoming, &profile, &writer).await;
+            let result = connection_worker(
+                client.unwrap().0,
+                commands,
+                &licenses,
+                &profile,
+                &writer,
+                &AtomicBool::new(true),
+            )
+            .await;
             writer.disconnect(false);
             result
         });
@@ -2064,8 +2277,8 @@ mod tests {
             .await
             .unwrap();
         connection.steam_id = (1_u64 << 56) | (10_u64 << 52);
-        connection
-            .send(
+        let packet = connection
+            .request_route(
                 LOGON,
                 &proto::Logon {
                     protocol_version: PROTOCOL,
@@ -2074,16 +2287,20 @@ mod tests {
                     ..Default::default()
                 },
                 None,
+                |_| Route::Kind(LOGON_RESPONSE),
+                LOGON_RESPONSE,
             )
             .await
+            .unwrap()
+            .next()
+            .await
             .unwrap();
-        let packet = connection.wait_for(LOGON_RESPONSE, None).await.unwrap();
         let response = proto::LogonResponse::decode(&packet.body[..]).unwrap();
         check_result(response.result, "the anonymous test sign-in").unwrap();
         connection.steam_id = packet.header.steam_id.unwrap();
         connection.session_id = packet.header.session_id.unwrap();
         connection.cell_id = response.cell_id;
-        connection.logged_on = true;
+        connection.logged_on.store(true, Ordering::Release);
         connection
             .outgoing
             .send(Command::Session {
