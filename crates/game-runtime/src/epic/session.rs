@@ -1,8 +1,11 @@
+//! EGS Cloud as a Cloud sync uses it: the game's Cloud rules, where its saves
+//! live, the complete remote snapshot and its republication.
 use super::*;
-use crate::cloud_status::{self, ProblemKind, UnavailableReason};
+use crate::cloud::sync::{self, Availability, CloudSync, Kind, Storefront, Work};
+use crate::cloud_status::{self, UnavailableReason};
 use crate::supervisor::client::SessionAlive;
 use cloud_vault::{
-    Bindings, Decision, Manifest, Preferences, RemoteView, Retry, RetryBudget, Vault,
+    AccountIdentity, Bindings, Manifest, Preferences, RemoteView, StoreScope, Vault,
 };
 use epic_kit::{
     EpicError,
@@ -13,103 +16,202 @@ use std::{collections::BTreeMap, path::Path};
 mod remote;
 mod store;
 pub(crate) use remote::CloudRemote;
-use store::{Context, Pending};
-#[cfg(test)]
-mod cycle_tests;
+use store::Context;
 #[cfg(test)]
 mod fake;
 #[cfg(test)]
 mod tests;
 
-pub(super) struct Session<R: CloudRemote> {
-    context: Context,
-    vault: Vault,
+/// One Epic game's Cloud sync.
+pub(crate) type Session<R> = CloudSync<Adapter<R>>;
+
+/// Opens the Cloud sync of one Epic game for `account`. It reads nothing
+/// remote until a sync runs.
+pub(crate) fn open<R: CloudRemote>(
+    config: Configuration,
+    account: String,
     api: Arc<R>,
     control: Arc<Control>,
-    shown: Option<(RemoteView, Manifest)>,
-    offline: bool,
-    /// How the current operation ended without a sync, for the status file.
-    problem: Option<(ProblemKind, String)>,
+    session_id: String,
+) -> Result<Session<R>> {
+    config.validate(&account)?;
+    store::safe(&config.root)?;
+    let adapter = Adapter {
+        config,
+        account,
+        api,
+        context: None,
+        snapshot: None,
+    };
+    CloudSync::open(adapter, control, session_id)
 }
 
-/// Display state only: a failed write must not fail the sync itself.
-fn mark(config: &Configuration, account: &str, change: impl FnOnce(&mut cloud_status::Record)) {
-    let scope = cloud_vault::StoreScope::from(config.scope(account));
-    if let Err(error) = cloud_status::update(&config.root, &scope, change) {
-        eprintln!("Epic Cloud status not recorded: {error}");
+/// EGS Cloud for one game and account.
+pub(crate) struct Adapter<R: CloudRemote> {
+    config: Configuration,
+    account: String,
+    api: Arc<R>,
+    context: Option<Context>,
+    /// The complete snapshot the last view verified. An upload republishes
+    /// its files that Forge does not manage.
+    snapshot: Option<CloudSnapshot>,
+}
+
+impl<R: CloudRemote> Adapter<R> {
+    fn context(&self) -> Result<&Context> {
+        self.context.as_ref().ok_or(Error::Recovery)
+    }
+    fn cloud_game(&self) -> CloudGame<'_> {
+        CloudGame {
+            namespace: &self.config.namespace,
+            catalog_item_id: &self.config.catalog_item_id,
+            app_name: &self.config.app_name,
+        }
     }
 }
 
-impl<R: CloudRemote> Session<R> {
-    /// `launching` is a launch check: only it may offer Retry or Launch
-    /// anyway when the Cloud rules cannot be read.
-    pub async fn new(
-        config: Configuration,
-        account: String,
-        api: Arc<R>,
-        control: Arc<Control>,
-        launching: bool,
-    ) -> Result<Option<Self>> {
-        config.validate(&account)?;
-        store::safe(&config.root)?;
-        if api.account_id().await? != account {
+impl sync::Failure for Error {
+    fn kind(&self) -> Kind {
+        match self {
+            Self::Cancelled | Self::Epic(EpicError::Cancelled) => Kind::Cancelled,
+            Self::Epic(EpicError::Unauthorized) => Kind::Denied,
+            Self::Epic(EpicError::CloudConflict) => Kind::Conflict,
+            Self::Failed
+            | Self::Epic(EpicError::Network | EpicError::Http(408 | 429 | 500..=599))
+            | Self::Vault(cloud_vault::Error::Stale) => Kind::Transient,
+            Self::Unsupported | Self::Epic(EpicError::UnsupportedContent) => Kind::Unavailable,
+            _ => Kind::Blocking,
+        }
+    }
+    fn key(&self) -> String {
+        self.to_string()
+    }
+    fn timed_out() -> Self {
+        Self::Failed
+    }
+    fn conflict() -> Self {
+        Self::Epic(EpicError::CloudConflict)
+    }
+    fn recovery() -> Self {
+        Self::Recovery
+    }
+    fn unsupported() -> Self {
+        Self::Unsupported
+    }
+}
+
+impl<R: CloudRemote> Storefront for Adapter<R> {
+    type Failure = Error;
+    type Link = ();
+
+    fn root(&self) -> &Path {
+        &self.config.root
+    }
+    fn scope(&self) -> StoreScope {
+        self.config.scope(&self.account).into()
+    }
+    fn account(&self) -> AccountIdentity {
+        self.account.as_str().into()
+    }
+    fn load(&mut self) -> Result<()> {
+        self.context = Context::load(&self.config, &self.account)?;
+        Ok(())
+    }
+    fn work(&self) -> Option<Work> {
+        self.context.as_ref().map(Context::work)
+    }
+    fn save(&mut self, work: Work) -> Result<()> {
+        let context = self.context.as_mut().ok_or(Error::Recovery)?;
+        context.pending = work.pending;
+        context.installation_removed = work.installation_removed;
+        context.save()
+    }
+    fn installation_absent(&self) -> Result<bool> {
+        store::absent(&self.config)
+    }
+    fn bindings(
+        &mut self,
+        vault: &Vault,
+        remote: Option<&Manifest>,
+        create: bool,
+    ) -> Result<Bindings> {
+        store::bindings(self.context()?, vault, remote, create)
+    }
+    /// Without saved rules, nothing tells where the saves live.
+    fn offline(&self) -> bool {
+        self.context.is_some()
+    }
+    fn retained(&mut self) -> Option<Vec<Manifest>> {
+        self.snapshot = None;
+        // A failed save can leave newer values in memory than on disk.
+        let saved = match Context::load(&self.config, &self.account) {
+            Ok(saved) => saved,
+            Err(error) => {
+                eprintln!("Epic Cloud context unreadable: {error}");
+                return None;
+            }
+        };
+        Some(
+            saved
+                .iter()
+                .chain(self.context.iter())
+                .filter_map(|context| context.pending.as_ref())
+                .flat_map(|pending| match pending {
+                    sync::Pending::Applying {
+                        desired, remote, ..
+                    } => vec![desired.clone(), remote.files.clone()],
+                    pending => pending.files().cloned().into_iter().collect(),
+                })
+                .collect(),
+        )
+    }
+
+    async fn connect(&mut self, _: &Arc<Control>) -> Result<()> {
+        // The authenticated session, never a remembered account.
+        if self.api.account_id().await? != self.account {
             return Err(Error::Session);
         }
-        control.check()?;
-        let mut vault = Vault::open(&config.root, config.scope(&account))?;
-        let saved = Context::load(&config, &account)?;
-        let (rules, offline) =
-            match configuration_rules(&config, saved.as_ref(), api.as_ref(), &control, launching)
-                .await
-            {
-                Ok(rules) => rules,
-                Err(error) => {
-                    if !has_pending_work(&vault, saved.as_ref()) {
-                        mark(
-                            &config,
-                            &account,
-                            cloud_status::problem(ProblemKind::Failed, &error.to_string()),
-                        );
-                    }
-                    return Err(error);
-                }
-            };
-        control.check()?;
-        let unsupported = || {
-            mark(
-                &config,
-                &account,
-                cloud_status::unavailable(UnavailableReason::Unsupported),
+        Ok(())
+    }
+    async fn rules(&mut self, _: &mut (), vault: &mut Vault, _: bool) -> Result<Availability> {
+        let rules = self
+            .api
+            .cloud_configuration(
+                &self.config.namespace,
+                &self.config.catalog_item_id,
+                &self.config.app_name,
+                &self.config.platform,
             )
-        };
+            .await?;
         let Some(rules) = rules else {
-            unsupported();
-            if has_saved_state(&vault, saved.as_ref()) {
-                return Err(Error::Unsupported);
-            }
-            control.show(CloudPhase::Unsupported, None);
-            return Ok(None);
+            return Ok(Availability::Unavailable(UnavailableReason::Unsupported));
         };
-        if !supports_rules(&config, &account, &rules, &vault, saved.as_ref())? {
-            unsupported();
-            control.show(CloudPhase::Unsupported, None);
-            return Ok(None);
+        if !supports_rules(
+            &self.config,
+            &self.account,
+            &rules,
+            vault,
+            self.context.as_ref(),
+        )? {
+            return Ok(Availability::Unavailable(UnavailableReason::Unsupported));
         }
-        mark(&config, &account, cloud_status::available);
-        let mut context = saved.unwrap_or_else(|| Context {
-            config: config.clone(),
-            rules: rules.clone(),
-            account_id: account,
+        // Reinterpreting an existing account snapshot under new save rules can
+        // turn unselected files into deletions. Require a dedicated conversion.
+        if self
+            .context
+            .as_ref()
+            .is_some_and(|context| context.rules != rules)
+        {
+            return Err(Error::Unsupported);
+        }
+        let context = self.context.get_or_insert_with(|| Context {
+            config: self.config.clone(),
+            rules,
+            account_id: self.account.clone(),
             pending: None,
             installation_removed: false,
         });
-        // Reinterpreting an existing account snapshot under new save rules can
-        // turn unselected files into deletions. Require a dedicated conversion.
-        if context.rules != rules {
-            return Err(Error::Unsupported);
-        }
-        context.config = config;
-        context.validate(&context.config, &context.account_id)?;
+        context.config = self.config.clone();
         context.save()?;
         // Supported publisher rules activate Forge's Cloud policy. These are
         // not preferences read from Epic's official launcher; no such account
@@ -118,472 +220,67 @@ impl<R: CloudRemote> Session<R> {
             account_enabled: Some(true),
             game_enabled: Some(true),
         });
-        Ok(Some(Self {
-            context,
-            vault,
-            api,
-            control,
-            shown: None,
-            offline,
-            problem: None,
-        }))
+        Ok(Availability::Available)
     }
-
-    fn mark(&self, change: impl FnOnce(&mut cloud_status::Record)) {
-        mark(&self.context.config, &self.context.account_id, change);
+    /// A revision-checked upload either landed or did not: a fresh view
+    /// always decides again.
+    async fn settle(&mut self, _: &mut (), _: &Vault) -> Result<bool> {
+        Ok(false)
     }
-
-    /// A sync clears the last problem. Otherwise a failed operation leaves a
-    /// problem, unless pending work already shows it or `exit` says the game
-    /// just exited; an unanswered conflict is recorded either way.
-    fn record_outcome(&mut self, syncs: u64, exit: bool) {
-        let problem = self.problem.take();
-        if self.vault.syncs() != syncs {
-            self.mark(cloud_status::synced);
-        } else if let Some((kind, key)) = problem
-            && (kind == ProblemKind::Conflict
-                || !exit && !has_pending_work(&self.vault, Some(&self.context)))
-        {
-            self.mark(cloud_status::problem(kind, &key));
-        }
-    }
-
-    /// `alive` answers for a previous session whose game guard remains.
-    pub async fn prepare(&mut self, alive: &SessionAlive<'_>) -> Result<()> {
-        let syncs = self.vault.syncs();
-        self.problem = None;
-        let result = self.prepare_inner(alive).await;
-        if let Err(error) = &result
-            && self.problem.is_none()
-        {
-            self.problem = Some((ProblemKind::Failed, error.to_string()));
-        }
-        self.record_outcome(syncs, false);
-        result
-    }
-
-    async fn prepare_inner(&mut self, alive: &SessionAlive<'_>) -> Result<()> {
-        self.recover_dead_owner(alive)?;
-        if self.offline {
-            self.capture_offline()?;
-            self.control.show(CloudPhase::Pending, None);
-            return Ok(());
-        }
-        self.run(true).await
-    }
-
-    pub fn started(&mut self, id: &str) -> Result<()> {
-        self.control.check()?;
-        // A persisted marker also schedules recovery if Forge disappears while
-        // the game is running, before its exit snapshot can be captured.
-        self.context.pending = Some(Pending::Capture);
-        self.context.save()?;
-        self.vault.game_started(id)?;
+    fn reconciled(&mut self) -> Result<()> {
         Ok(())
     }
-
-    pub async fn finished(&mut self, id: &str) -> Result<()> {
-        let syncs = self.vault.syncs();
-        self.problem = None;
-        let result = self.finish(id).await;
-        self.record_outcome(syncs, true);
-        result
-    }
-
-    async fn finish(&mut self, id: &str) -> Result<()> {
-        self.vault.game_exited(id)?;
-        self.capture_exit()?;
-        if self.control.cancellation().is_cancelled() {
-            self.vault.revoke()?;
-            self.control.show(CloudPhase::Pending, None);
-            return Ok(());
-        }
-        self.run(false).await
-    }
-
-    /// Cloud maintenance of this game: a two-way sync without a launch. The
-    /// caller holds the idle guard, so no supervisor or game owns the saves.
-    pub(crate) async fn maintain(&mut self, alive: &SessionAlive<'_>) -> Result<()> {
-        let syncs = self.vault.syncs();
-        self.problem = None;
-        let result = self.maintain_inner(alive).await;
-        if let Err(error) = &result
-            && self.problem.is_none()
-        {
-            self.problem = Some((ProblemKind::Failed, error.to_string()));
-        }
-        self.record_outcome(syncs, false);
-        result
-    }
-
-    async fn maintain_inner(&mut self, alive: &SessionAlive<'_>) -> Result<()> {
-        self.recover_dead_owner(alive)?;
-        // An uninstalled game only finishes its remote work; its archived
-        // saves are never projected into a missing installation.
-        if !self.context.absent()? && !self.context.installation_removed {
-            let had_work = has_pending_work(&self.vault, Some(&self.context));
-            let bindings = store::bindings(&self.context, &self.vault, None, true)?;
-            self.vault.activate(&bindings)?;
-            self.capture_exit()?;
-            // Saves unchanged since the last sync are compared, not queued: a
-            // failed check must not report them as waiting to be sent.
-            let scope = self.context.config.scope(&self.context.account_id);
-            let journal = cloud_vault::peek(&self.context.config.root, scope)?;
-            if !had_work && journal.baseline && !journal.local_changes {
-                self.context.pending = None;
-                self.context.save()?;
-            }
-        }
-        self.run(false).await
-    }
-
-    /// Account revocation abandoned the launch: its authorization ends now.
-    pub fn revoked(&mut self) -> Result<()> {
-        Ok(self.vault.revoke()?)
-    }
-
-    /// No game ran, or its exec was never confirmed: the exit save is only
-    /// captured, and stays pending.
-    pub fn aborted(&mut self, id: &str) -> Result<()> {
-        self.vault.game_exited(id)?;
-        self.capture_exit()?;
-        self.control.show(CloudPhase::Pending, None);
-        Ok(())
-    }
-
-    /// Only the matching session's actual exit may clear its game guard. The
-    /// caller holds Epic's owner lock, so `alive` can answer for it.
-    fn recover_dead_owner(&mut self, alive: &SessionAlive<'_>) -> Result<()> {
-        let previous = self.vault.game_session().map(str::to_owned);
-        if let Some(id) = previous {
-            if alive(&id)? {
-                return Err(Error::Busy);
-            }
-            self.vault.game_exited(&id)?;
-            self.vault.recover_local()?;
-            self.capture_exit()?;
-        } else {
-            self.vault.recover_local()?;
-            recover_pending(&self.vault, &mut self.context)?;
-            if matches!(self.context.pending, Some(Pending::Capture)) {
-                self.capture_exit()?;
-            }
-        }
-        Ok(())
-    }
-
-    fn capture_exit(&mut self) -> Result<()> {
-        capture_exit(&mut self.vault, &mut self.context)
-    }
-
-    async fn run(&mut self, launching: bool) -> Result<()> {
-        let mut budget = RetryBudget::new(Instant::now());
-        let mut last = Error::Failed;
-        let mut choice = None;
-        loop {
-            self.control.check()?;
-            let remaining = match budget.poll(Instant::now()) {
-                Retry::Wait(wait) => {
-                    self.control.wait(wait).await?;
-                    continue;
-                }
-                Retry::Defer => {
-                    if !launching {
-                        self.control
-                            .show(CloudPhase::Pending, Some(last.to_string()));
-                        return Err(last);
-                    }
-                    let answer = deferred_choice(&self.control, &last, retryable(&last)).await;
-                    self.problem = Some((ProblemKind::Failed, last.to_string()));
-                    match answer? {
-                        Choice::Retry => {
-                            budget = RetryBudget::new(Instant::now());
-                            continue;
-                        }
-                        _ => {
-                            self.capture_offline()?;
-                            self.control.show(CloudPhase::Pending, None);
-                            return Ok(());
-                        }
-                    }
-                }
-                Retry::Attempt { remaining } => remaining,
-            };
-            self.control.show(
-                if launching {
-                    CloudPhase::Checking
-                } else {
-                    CloudPhase::Syncing
-                },
-                None,
-            );
-            let result = tokio::time::timeout(remaining, self.cycle(launching, choice.take()))
-                .await
-                .unwrap_or(Err(Error::Failed));
-            match result {
-                Ok(()) => return Ok(()),
-                Err(error)
-                    if self.shown.is_some()
-                        && matches!(error, Error::Epic(EpicError::CloudConflict)) =>
-                {
-                    let result = self
-                        .control
-                        .ask(Question::Conflict, Some(error.to_string()))
-                        .await;
-                    match result {
-                        Ok(answer @ (Choice::Local | Choice::Cloud)) => {
-                            self.mark(cloud_status::answered);
-                            choice = Some(answer);
-                            budget = RetryBudget::new(Instant::now());
-                        }
-                        _ => {
-                            self.problem = Some((ProblemKind::Conflict, error.to_string()));
-                            return Err(Error::Cancelled);
-                        }
-                    }
-                }
-                Err(
-                    error @ (Error::Cancelled
-                    | Error::Epic(EpicError::Cancelled | EpicError::Unauthorized)),
-                ) => return Err(error),
-                Err(error) => {
-                    budget.failed(Instant::now(), !retryable(&error));
-                    last = error;
-                }
-            }
-        }
-    }
-
-    fn capture_offline(&mut self) -> Result<()> {
-        // Ownership failures and an uninstall fence cannot be bypassed.
-        if self.context.installation_removed {
-            return Err(Error::Recovery);
-        }
-        let bindings = store::bindings(&self.context, &self.vault, None, true)?;
-        self.vault.activate(&bindings)?;
-        self.capture_exit()
-    }
-
-    async fn cycle(&mut self, launching: bool, choice: Option<Choice>) -> Result<()> {
-        self.control.check()?;
-        self.vault.recover_local()?;
-        recover_pending(&self.vault, &mut self.context)?;
-        if self.api.account_id().await? != self.context.account_id {
-            return Err(Error::Session);
-        }
+    async fn view(
+        &mut self,
+        _: &mut (),
+        vault: &mut Vault,
+        control: &Control,
+    ) -> Result<RemoteView> {
         let full = self
             .api
-            .cloud_download(self.cloud_game(), self.control.cancellation())
+            .cloud_download(self.cloud_game(), control.cancellation())
             .await?;
-        let remote = stage_remote(&self.vault, &self.context.rules, &full)?;
-        self.control.check()?;
-        // A prior request may have committed. Never replay its journal. A fresh
-        // verified complete view admits a new comparison and a new operation ID.
-        if let Some(pending) = self.vault.pending().cloned() {
-            let path = Context::path(&self.context.config, &self.context.account_id)?
-                .parent()
-                .ok_or(Error::Storage)?
-                .join(format!("epic-upload-{}.json", pending.id));
-            if !cloud_vault::journal::regular(&path)? {
-                cloud_vault::journal::write(&path, &pending)?;
-            }
-            self.vault.recompare_pending(
-                &pending.id,
-                self.vault.authorize(self.context.account_id.as_str())?,
-                &remote,
-            )?;
-        }
-        let retrying = self.context.pending.is_some();
-        let absent = self.context.absent()?;
-        if absent && (!self.context.installation_removed || launching) {
-            return Err(Error::Recovery);
-        }
-        let bindings = store::bindings(&self.context, &self.vault, Some(&remote.files), !absent)?;
-        let local = if launching {
-            self.vault.activate(&bindings)?;
-            let local = capture_set(
-                &mut self.vault,
-                self.context.installation_removed,
-                &bindings,
-            )?;
-            if retrying {
-                self.context.pending = Some(Pending::Upload {
-                    desired: local.clone(),
-                });
-                self.context.save()?;
-            }
-            local
-        } else {
-            self.context
-                .pending
-                .as_ref()
-                .and_then(Pending::files)
-                .cloned()
-                .or_else(|| self.vault.local().cloned())
-                .ok_or(Error::Recovery)?
-        };
-        let decision = decide(
-            &mut self.vault,
-            &mut self.context,
-            &mut self.shown,
-            &local,
-            &remote,
-            choice,
-        )?;
-        self.control.check()?;
-        match decision {
-            Decision::Converged => {
-                if launching && self.context.installation_removed {
-                    self.vault.restore_local(&bindings)?;
-                }
-                self.vault.confirm_equal(&local, &remote)?;
-            }
-            Decision::Download => {
-                self.context.pending = Some(Pending::Applying {
-                    desired: local.clone(),
-                    remote: remote.clone(),
-                    project: !absent,
-                });
-                self.context.save()?;
-                if absent {
-                    // A Cloud choice resolves remote work only. Preserve the
-                    // archived local version and force a choice on reinstall.
-                    self.vault.confirm_equal(&remote.files, &remote)?;
-                } else {
-                    if !launching && self.vault.capture(&bindings)? != local {
-                        return Err(cloud_vault::Error::Stale.into());
-                    }
-                    self.vault.apply_download(
-                        &bindings,
-                        &remote,
-                        &remote,
-                        choice == Some(Choice::Cloud) || self.context.installation_removed,
-                    )?;
-                }
-            }
-            Decision::KeepLocal => {
-                if launching && self.context.installation_removed {
-                    self.vault.restore_local(&bindings)?;
-                }
-                if !launching || retrying {
-                    self.upload(full, &local, &remote).await?;
-                }
-            }
-            Decision::Conflict => unreachable!(),
-        }
-        self.shown = None;
-        if launching || !absent {
-            self.context.installation_removed = false;
-        }
-        if decision != Decision::KeepLocal || !launching || retrying {
-            self.context.pending = None;
-        }
-        self.context.save()?;
-        self.control.show(
-            if launching {
-                CloudPhase::Ready
-            } else {
-                CloudPhase::Synced
-            },
-            None,
-        );
-        Ok(())
+        let remote = stage_remote(vault, &self.context()?.rules, &full)?;
+        self.snapshot = Some(full);
+        Ok(remote)
     }
-
-    async fn upload(
+    async fn publish(
         &mut self,
-        full: CloudSnapshot,
+        _: &mut (),
+        vault: &mut Vault,
+        control: &Control,
         local: &Manifest,
         remote: &RemoteView,
     ) -> Result<()> {
-        self.context.pending = Some(Pending::Upload {
-            desired: local.clone(),
-        });
-        self.context.save()?;
+        let full = self
+            .snapshot
+            .take()
+            .filter(|full| full.revision == remote.revision)
+            .ok_or(Error::Recovery)?;
+        let rules = self.context()?.rules.clone();
         // Retained remote bytes move into the upload set; the snapshot's copy
         // would otherwise stay live alongside the packaged one.
         let revision = full.revision;
-        let files = upload_files(&self.vault, &self.context.rules, full.files, local)?;
-        self.control.check()?;
-        let authorization = self.vault.authorize(self.context.account_id.as_str())?;
-        let id = self
-            .vault
-            .queue_upload(local, remote, "epic-egs-cloud", authorization)?;
-        let permit = self.vault.begin_upload(&id, authorization, remote)?;
+        let files = upload_files(vault, &rules, full.files, local)?;
+        control.check()?;
+        let authorization = vault.authorize(self.account.as_str())?;
+        let id = vault.queue_upload(local, remote, "epic-egs-cloud", authorization)?;
+        let permit = vault.begin_upload(&id, authorization, remote)?;
         let verified = self
             .api
             .cloud_upload(
                 self.cloud_game(),
-                &self.context.rules,
+                &rules,
                 &files,
                 &revision,
-                self.control.cancellation(),
+                control.cancellation(),
             )
             .await?;
-        self.control.check()?;
-        let readback = stage_remote(&self.vault, &self.context.rules, &verified)?;
-        self.vault.complete_upload(&permit, true, &readback)?;
+        control.check()?;
+        let readback = stage_remote(vault, &rules, &verified)?;
+        vault.complete_upload(&permit, true, &readback)?;
         Ok(())
     }
-
-    fn cloud_game(&self) -> CloudGame<'_> {
-        CloudGame {
-            namespace: &self.context.config.namespace,
-            catalog_item_id: &self.context.config.catalog_item_id,
-            app_name: &self.context.config.app_name,
-        }
-    }
-}
-
-fn decide(
-    vault: &mut Vault,
-    context: &mut Context,
-    shown: &mut Option<(RemoteView, Manifest)>,
-    local: &Manifest,
-    remote: &RemoteView,
-    choice: Option<Choice>,
-) -> Result<Decision> {
-    if let Some(choice) = choice {
-        if shown
-            .as_ref()
-            .is_none_or(|(shown, files)| shown != remote || files != local)
-        {
-            return conflict(context, shown, local, remote);
-        }
-        *shown = None;
-        return match choice {
-            Choice::Local => {
-                vault.choose_local(remote, remote)?;
-                Ok(Decision::KeepLocal)
-            }
-            Choice::Cloud => Ok(Decision::Download),
-            _ => Err(Error::Cancelled),
-        };
-    }
-    *shown = None;
-    let decision = if context.installation_removed && local != &remote.files {
-        Decision::Conflict
-    } else {
-        vault.decision(local, remote)?
-    };
-    if decision == Decision::Conflict {
-        return conflict(context, shown, local, remote);
-    }
-    Ok(decision)
-}
-
-fn conflict(
-    context: &mut Context,
-    shown: &mut Option<(RemoteView, Manifest)>,
-    local: &Manifest,
-    remote: &RemoteView,
-) -> Result<Decision> {
-    *shown = Some((remote.clone(), local.clone()));
-    context.pending = Some(Pending::Upload {
-        desired: local.clone(),
-    });
-    context.save()?;
-    Err(EpicError::CloudConflict.into())
 }
 
 fn stage_remote(vault: &Vault, rules: &CloudRules, full: &CloudSnapshot) -> Result<RemoteView> {
@@ -642,19 +339,6 @@ fn upload_files(
     Ok(files)
 }
 
-fn retryable(error: &Error) -> bool {
-    matches!(
-        error,
-        Error::Failed
-            | Error::Epic(
-                EpicError::Network
-                    | EpicError::CloudConflict
-                    | EpicError::Http(408 | 429 | 500..=599)
-            )
-            | Error::Vault(cloud_vault::Error::Stale)
-    )
-}
-
 pub(crate) fn pending(root: &Path, account: &str) -> Result<Vec<Configuration>> {
     store::safe(root)?;
     let directory = cloud_vault::epic_account_directory(root, account)?;
@@ -668,23 +352,33 @@ pub(crate) fn pending(root: &Path, account: &str) -> Result<Vec<Configuration>> 
         if !entry.file_type()?.is_dir() {
             continue;
         }
-        let path = entry.path().join("epic-context.json");
-        store::safe(&path)?;
-        let Some(context): Option<Context> = cloud_vault::journal::read(&path)? else {
-            continue;
-        };
-        context.validate(&context.config, account)?;
-        if context.config.root != root || Context::path(&context.config, account)? != path {
-            return Err(Error::Storage);
-        }
-        // Vault work outlives the context marker: an uncertain upload or an
-        // interrupted replacement still needs this game's next sync.
-        let vault = cloud_vault::peek(root, context.config.scope(account))?;
-        if context.pending.is_some() || vault.pending.is_some() || vault.applying {
-            configs.push(context.config);
+        // One unreadable game must not hide the others' pending work.
+        match pending_game(root, account, &entry.path()) {
+            Ok(Some(config)) => configs.push(config),
+            Ok(None) => {}
+            Err(error) => eprintln!("Epic Cloud pending work unreadable: {error}"),
         }
     }
     Ok(configs)
+}
+
+fn pending_game(root: &Path, account: &str, directory: &Path) -> Result<Option<Configuration>> {
+    let path = directory.join("epic-context.json");
+    store::safe(&path)?;
+    let Some(context): Option<Context> = cloud_vault::journal::read(&path)? else {
+        return Ok(None);
+    };
+    context.validate(&context.config, account)?;
+    if context.config.root != root || Context::path(&context.config, account)? != path {
+        return Err(Error::Storage);
+    }
+    // Vault work outlives the context marker: an uncertain upload or an
+    // interrupted replacement still needs this game's next sync.
+    let vault = cloud_vault::peek(root, context.config.scope(account))?;
+    Ok(
+        (context.pending.is_some() || vault.pending.is_some() || vault.applying)
+            .then_some(context.config),
+    )
 }
 
 /// One Epic game's Cloud indicator, with the saved configuration that Cloud
@@ -750,19 +444,7 @@ fn indicator(
     {
         return Err(Error::Storage);
     }
-    let journal = context
-        .as_ref()
-        .map_or_else(cloud_status::Journal::default, |context| {
-            cloud_status::Journal {
-                pending: matches!(
-                    context.pending,
-                    Some(Pending::Upload { .. } | Pending::Capture)
-                ),
-                uncertain: false,
-                applying: matches!(context.pending, Some(Pending::Applying { .. })),
-                installation_removed: context.installation_removed,
-            }
-        });
+    let journal = Work::journal(context.as_ref().map(Context::work).as_ref(), false);
     let record = cloud_status::read(root, &scope)?;
     Ok((
         cloud_status::indicator(&scope, &vault, &journal, &record),
@@ -789,11 +471,10 @@ pub(crate) async fn maintain_with<R: CloudRemote>(
     alive: &SessionAlive<'_>,
 ) -> Result<()> {
     let account = api.account_id().await?;
-    match Session::new(config, account, api, control, false).await? {
-        Some(mut session) => session.maintain(alive).await,
-        // Unsupported rules were reported, and recorded as unavailable.
-        None => Ok(()),
-    }
+    let id = uuid::Uuid::new_v4().to_string();
+    open(config, account, api, control, id)?
+        .maintain(alive)
+        .await
 }
 
 pub async fn archive(config: Configuration, api: &EpicClient) -> Result<()> {
@@ -863,17 +544,6 @@ fn archive_context(vault: &mut Vault, context: &mut Context) -> Result<()> {
     context.save()
 }
 
-fn capture_exit(vault: &mut Vault, context: &mut Context) -> Result<()> {
-    let removed = context.installation_removed;
-    let mut bindings = store::bindings(context, vault, None, !removed)?;
-    if removed {
-        bindings.retain(|_, file| file.path.parent().is_some_and(Path::is_dir));
-    }
-    let desired = capture_set(vault, removed, &bindings)?;
-    context.pending = Some(Pending::Upload { desired });
-    context.save()
-}
-
 pub fn removed(config: &Configuration, account: &str) -> Result<()> {
     if config.platform == "Windows" {
         return Ok(());
@@ -889,101 +559,6 @@ pub fn removed(config: &Configuration, account: &str) -> Result<()> {
     }
     context.installation_removed = true;
     context.save()
-}
-
-fn recover_pending(vault: &Vault, context: &mut Context) -> Result<()> {
-    if let Some(Pending::Applying {
-        desired,
-        remote,
-        project,
-    }) = context.pending.clone()
-    {
-        let completed =
-            vault.baseline() == Some(&remote) && (!project || vault.local() == Some(&remote.files));
-        context.pending = if completed {
-            None
-        } else {
-            Some(Pending::Upload { desired })
-        };
-        context.save()?;
-    }
-    Ok(())
-}
-
-/// The question asked once a retry budget is spent. Returns only `Retry` or
-/// `LaunchAnyway`; anything else, including a revoked account, is a cancel.
-async fn deferred_choice(
-    control: &Control,
-    last: &Error,
-    allow_launch_anyway: bool,
-) -> Result<Choice> {
-    let question = Question::Failed {
-        launch_anyway: allow_launch_anyway,
-    };
-    match control.ask(question, Some(last.to_string())).await? {
-        choice @ (Choice::Retry | Choice::LaunchAnyway) => Ok(choice),
-        _ => Err(Error::Cancelled),
-    }
-}
-
-async fn configuration_rules(
-    config: &Configuration,
-    saved: Option<&Context>,
-    api: &impl CloudRemote,
-    control: &Control,
-    launching: bool,
-) -> Result<(Option<CloudRules>, bool)> {
-    let mut budget = RetryBudget::new(Instant::now());
-    let mut last = Error::Failed;
-    loop {
-        control.check()?;
-        let remaining = match budget.poll(Instant::now()) {
-            Retry::Wait(wait) => {
-                control.wait(wait).await?;
-                continue;
-            }
-            Retry::Defer => {
-                // Cloud maintenance asks only about conflicts.
-                if !launching {
-                    return Err(last);
-                }
-                let offer_launch = retryable(&last) && saved.is_some();
-                match deferred_choice(control, &last, offer_launch).await? {
-                    Choice::Retry => {
-                        budget = RetryBudget::new(Instant::now());
-                        continue;
-                    }
-                    _ => {
-                        let context = saved.ok_or(Error::Recovery)?;
-                        context.validate(config, &context.account_id)?;
-                        if api.account_id().await? != context.account_id {
-                            return Err(Error::Session);
-                        }
-                        return Ok((Some(context.rules.clone()), true));
-                    }
-                }
-            }
-            Retry::Attempt { remaining } => remaining,
-        };
-        let result = tokio::select! {
-            _ = control.cancellation().cancelled() => return Err(Error::Cancelled),
-            result = tokio::time::timeout(remaining, api.cloud_configuration(
-                &config.namespace, &config.catalog_item_id, &config.app_name, &config.platform,
-            )) => result.map_err(|_| Error::Failed).and_then(|result| result.map_err(Error::from)),
-        };
-        match result {
-            Ok(rules) => return Ok((rules, false)),
-            Err(error) if retryable(&error) => {
-                budget.failed(Instant::now(), false);
-                last = error;
-            }
-            Err(error) => return Err(error),
-        }
-    }
-}
-
-fn has_pending_work(vault: &Vault, context: Option<&Context>) -> bool {
-    context.is_some_and(|context| context.pending.is_some()) || vault.pending().is_some()
 }
 
 fn has_saved_state(vault: &Vault, context: Option<&Context>) -> bool {

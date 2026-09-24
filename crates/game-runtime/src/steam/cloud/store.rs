@@ -1,5 +1,6 @@
 use super::paths::Paths;
 use super::*;
+use crate::cloud::sync::{Pending, Work};
 use crate::cloud_status;
 use cloud_vault::{Bindings, Manifest, RemoteView, SelectedFile, Vault};
 use serde::de::DeserializeOwned;
@@ -23,6 +24,15 @@ pub(super) struct Context {
     /// An uninstall may have removed part of the save projection. This records
     /// removal intent, not proof that the installation directory is absent.
     pub installation_removed: bool,
+    /// A chosen Cloud version being applied over `desired`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub applying: Option<Applying>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub(super) struct Applying {
+    pub remote: RemoteView,
+    pub project: bool,
 }
 
 pub(super) fn directory(config: &Config, account: u64) -> Result<PathBuf, Failure> {
@@ -93,7 +103,47 @@ impl Context {
             desired: None,
             transaction: None,
             installation_removed: false,
+            applying: None,
         }
+    }
+    /// The shared view of this context's pending work.
+    pub fn work(&self) -> Work {
+        let pending = match (self.needs_work, &self.desired, &self.applying) {
+            (true, Some(desired), Some(applying)) => Some(Pending::Applying {
+                desired: desired.clone(),
+                remote: applying.remote.clone(),
+                project: applying.project,
+            }),
+            (true, Some(desired), None) => Some(Pending::Upload {
+                desired: desired.clone(),
+            }),
+            (true, None, _) => Some(Pending::Capture),
+            (false, _, _) => None,
+        };
+        Work {
+            pending,
+            installation_removed: self.installation_removed,
+        }
+    }
+    pub fn set_work(&mut self, work: Work) {
+        self.installation_removed = work.installation_removed;
+        (self.needs_work, self.desired, self.applying) = match work.pending {
+            None => (false, None, None),
+            Some(Pending::Capture) => (true, None, None),
+            Some(Pending::Upload { desired }) => (true, Some(desired), None),
+            Some(Pending::Applying {
+                desired,
+                remote,
+                project,
+            }) => (true, Some(desired), Some(Applying { remote, project })),
+        };
+    }
+    /// Every manifest this context references, which cleanup must keep.
+    pub fn manifests(&self) -> Vec<Manifest> {
+        let mut manifests = vec![self.remote.files.clone()];
+        manifests.extend(self.desired.clone());
+        manifests.extend(self.applying.iter().map(|a| a.remote.files.clone()));
+        manifests
     }
     pub fn load(config: &Config, account: u64) -> Result<Option<Self>, Failure> {
         let context: Option<Self> = read(&directory(config, account)?.join("context.json"))?;
@@ -138,17 +188,6 @@ impl Context {
             return Err(Failure::Storage);
         }
         Ok(())
-    }
-    pub fn removed_installation_absent(&self) -> Result<bool, Failure> {
-        if !self.installation_removed {
-            return Ok(false);
-        }
-        safe(&self.config.install)?;
-        match fs::symlink_metadata(&self.config.install) {
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(true),
-            Ok(_) => Ok(false),
-            Err(error) => Err(error.into()),
-        }
     }
     pub fn save(&self) -> Result<(), Failure> {
         write(
@@ -226,7 +265,7 @@ impl Context {
     }
     pub fn ensure_parents(&self) -> Result<(), Failure> {
         if !self.config.install.is_dir() {
-            return Err(Failure::Conflict);
+            return Err(Failure::Recovery);
         }
         for binding in self.bindings.values() {
             safe(&binding.path)?;
@@ -394,14 +433,10 @@ fn indicator(root: &Path, account: u64, app_id: u32) -> Result<cloud_status::Ind
         Err(Failure::Unsupported) => None,
         Err(error) => return Err(error),
     };
-    let journal = context.map_or_else(cloud_status::Journal::default, |context| {
-        cloud_status::Journal {
-            pending: context.needs_work || context.desired.is_some(),
-            uncertain: context.transaction.is_some(),
-            applying: false,
-            installation_removed: context.installation_removed,
-        }
-    });
+    let uncertain = context
+        .as_ref()
+        .is_some_and(|context| context.transaction.is_some());
+    let journal = Work::journal(context.as_ref().map(Context::work).as_ref(), uncertain);
     let record = cloud_status::read(root, &scope)?;
     Ok(cloud_status::indicator(&scope, &vault, &journal, &record))
 }
@@ -578,8 +613,8 @@ mod removal_tests {
             Failure::SharedSaves
         ));
         assert_eq!(Failure::SharedSaves.key(), "backend.cloud.sharedSavesInUse");
-        assert!(!Failure::SharedSaves.retryable());
-        assert!(!Failure::SharedSaves.skippable());
+        use crate::cloud::sync::{Failure as _, Kind};
+        assert_eq!(Failure::SharedSaves.kind(), Kind::Blocking);
     }
 
     #[test]
@@ -630,7 +665,7 @@ mod removal_tests {
 
         let context = Context::load(&config, ACCOUNT).unwrap().unwrap();
         assert!(context.installation_removed);
-        assert!(!context.removed_installation_absent().unwrap());
+        assert!(config.install.is_dir());
         assert!(!context.needs_work);
         assert!(context.desired.is_none());
         assert!(pending(&config.root, ACCOUNT).unwrap().is_empty());

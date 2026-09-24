@@ -165,7 +165,7 @@ fn refreshing_remote_and_local_bindings_never_recreates_removed_install() {
         fixture.config.install.join("saves/nested/remote.sav")
     );
     assert!(!fixture.config.install.exists());
-    assert!(matches!(context.ensure_parents(), Err(Failure::Conflict)));
+    assert!(matches!(context.ensure_parents(), Err(Failure::Recovery)));
     assert!(!fixture.config.install.exists());
 }
 

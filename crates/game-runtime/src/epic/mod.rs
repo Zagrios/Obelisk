@@ -5,7 +5,7 @@ pub(crate) mod launch;
 mod session;
 
 // A Game session's phase is `Phase`; its Cloud sync's phase is `CloudPhase`.
-use crate::cloud::{Choice, Control, Phase as CloudPhase, Question};
+use crate::cloud::{Control, Phase as CloudPhase};
 use crate::supervisor::{self, Record, Target};
 pub use crate::supervisor::{FailureReason, Phase};
 pub use client::start;
@@ -13,7 +13,7 @@ use forge_core::transfer::CancelToken;
 pub use launch::serve;
 use serde::{Deserialize, Serialize};
 pub use session::{EpicIndicator, archive, indicators, maintain, removed};
-use std::{path::PathBuf, sync::Arc, time::Instant};
+use std::{path::PathBuf, sync::Arc};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

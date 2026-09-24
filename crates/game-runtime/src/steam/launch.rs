@@ -55,12 +55,7 @@ impl Machine for Mac {
         id: String,
         control: Arc<crate::cloud::Control>,
     ) -> Result<Box<dyn SteamCloud>, Error> {
-        Ok(Box::new(cloud::Session::new(
-            config,
-            credentials,
-            id,
-            control,
-        )?))
+        Ok(Box::new(cloud::open(config, credentials, id, control)?))
     }
     fn rosetta(helper: &Path) -> Result<bool, Core> {
         crate::supervisor::architecture::rosetta_available(helper)
@@ -77,13 +72,13 @@ pub(crate) trait SteamCloud: Send {
 }
 impl SteamCloud for cloud::Session {
     fn native_storage(&self) -> Result<Option<NativeStorage>, Error> {
-        cloud::Session::native_storage(self)
+        self.store().native_storage()
     }
     fn prepare<'a>(&'a mut self, alive: &'a SessionAlive<'a>) -> Operation<'a, Result<(), Error>> {
-        Box::pin(cloud::Session::prepare(self, alive))
+        Box::pin(async move { Ok(cloud::Session::prepare(self, alive).await?) })
     }
     fn started(&mut self) -> Result<(), Error> {
-        cloud::Session::started(self)
+        Ok(cloud::Session::started(self)?)
     }
     fn finished(&mut self, confirmed: bool) -> Operation<'_, ()> {
         Box::pin(cloud::Session::finished(self, confirmed))

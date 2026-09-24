@@ -135,14 +135,15 @@ impl Services for FakeEpic {
         self: &Arc<Self>,
         _: Configuration,
         _: String,
+        _: String,
         control: Arc<Control>,
-    ) -> Result<Option<Box<dyn EpicCloud>>> {
+    ) -> Result<Box<dyn EpicCloud>> {
         let (directory, script) = fixture_directory();
-        Ok(Some(Box::new(FakeCloud {
+        Ok(Box::new(FakeCloud {
             directory,
             script,
             control,
-        })))
+        }))
     }
     fn rosetta(helper: &Path) -> std::result::Result<bool, Core> {
         Ok(helper.exists())
@@ -164,18 +165,21 @@ impl EpicCloud for FakeCloud {
                 hold(&self.directory, "release-cloud", check).await?;
             }
             if self.script.ask {
-                let choice = self.control.ask(Question::Conflict, None).await?;
+                let choice = self
+                    .control
+                    .ask(crate::cloud::Question::Conflict, None)
+                    .await?;
                 record(&self.directory, &format!("answered:{choice:?}"));
                 self.control.show(CloudPhase::Ready, None);
             }
             Ok(())
         })
     }
-    fn started(&mut self, _: &str) -> Result<()> {
+    fn started(&mut self) -> Result<()> {
         record(&self.directory, "cloud.started");
         Ok(())
     }
-    fn finished<'a>(&'a mut self, _: &'a str, confirmed: bool) -> Operation<'a, ()> {
+    fn finished(&mut self, confirmed: bool) -> Operation<'_, ()> {
         Box::pin(async move {
             if self.script.hold_finish {
                 fs::write(self.directory.join("finish-ready"), b"").unwrap();
@@ -185,7 +189,7 @@ impl EpicCloud for FakeCloud {
             record(&self.directory, &format!("cloud.finished:{confirmed}"));
         })
     }
-    fn abandoned(&mut self, _: &str, _: bool, _: bool) {
+    fn aborted(&mut self) {
         record(&self.directory, "cloud.aborted");
     }
 }

@@ -1,6 +1,8 @@
 //! What a Cloud sync publishes and asks, shared by every storefront. A Game
 //! session journals its status; Cloud maintenance keeps it in Forge's memory.
 //! Only the publication differs.
+pub(crate) mod sync;
+
 use crate::supervisor::session::Questions;
 use forge_core::transfer::CancelToken;
 use serde::{Deserialize, Serialize};

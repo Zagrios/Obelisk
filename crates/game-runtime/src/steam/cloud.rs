@@ -6,17 +6,13 @@ mod store;
 pub(crate) fn safe_storage_path(path: &std::path::Path) -> Result<(), crate::Error> {
     store::safe(path).map_err(Into::into)
 }
-pub(crate) use session::Session;
 pub use session::maintain;
+pub(crate) use session::{Session, open};
 pub use store::{archive, archive_with_rules, indicators, removed};
 
-use crate::cloud::{Choice, Control, Phase, Question, Stop};
+use crate::cloud::{Control, Stop};
 use serde::{Deserialize, Serialize};
-use std::{
-    path::PathBuf,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{path::PathBuf, sync::Arc};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
@@ -74,30 +70,6 @@ impl Failure {
             Self::SharedSaves => "backend.cloud.sharedSavesInUse",
             Self::RulesChanged => "backend.steam.cloud.rulesChanged",
         }
-    }
-    fn retryable(self) -> bool {
-        matches!(self, Self::Network | Self::Changed | Self::Uncertain)
-    }
-    /// The Cloud question this failure asks once its retries are spent.
-    fn question(self) -> Question {
-        if matches!(self, Self::Conflict) {
-            Question::Conflict
-        } else {
-            Question::Failed {
-                launch_anyway: self.skippable(),
-            }
-        }
-    }
-    fn skippable(self) -> bool {
-        matches!(
-            self,
-            Self::Network
-                | Self::Preferences
-                | Self::Unsupported
-                | Self::Uncertain
-                | Self::Quota
-                | Self::Changed
-        )
     }
 }
 impl From<cloud_vault::Error> for Failure {
@@ -194,41 +166,28 @@ fn scope(config: &Config, account: u64) -> cloud_vault::Scope {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cloud::sync::{Failure as _, Kind};
 
     #[test]
     fn a_launch_goes_on_without_sync_only_when_local_saves_stay_safe() {
-        assert_eq!(Failure::Conflict.question(), Question::Conflict);
-        for failure in [
-            Failure::Network,
-            Failure::Preferences,
-            Failure::Unsupported,
-            Failure::Uncertain,
-            Failure::Quota,
-            Failure::Changed,
+        for (failure, kind) in [
+            (Failure::Network, Kind::Transient),
+            (Failure::Changed, Kind::Transient),
+            (Failure::Uncertain, Kind::Transient),
+            (Failure::Conflict, Kind::Conflict),
+            (Failure::Preferences, Kind::Unavailable),
+            (Failure::Unsupported, Kind::Unavailable),
+            (Failure::Quota, Kind::Unavailable),
+            (Failure::Authentication, Kind::Denied),
+            (Failure::Cancelled, Kind::Cancelled),
+            (Failure::Storage, Kind::Blocking),
+            (Failure::Ownership, Kind::Blocking),
+            (Failure::Recovery, Kind::Blocking),
+            (Failure::Busy, Kind::Blocking),
+            (Failure::SharedSaves, Kind::Blocking),
+            (Failure::RulesChanged, Kind::Blocking),
         ] {
-            assert_eq!(
-                failure.question(),
-                Question::Failed {
-                    launch_anyway: true
-                }
-            );
-        }
-        for failure in [
-            Failure::Authentication,
-            Failure::Storage,
-            Failure::Ownership,
-            Failure::Recovery,
-            Failure::Cancelled,
-            Failure::Busy,
-            Failure::SharedSaves,
-            Failure::RulesChanged,
-        ] {
-            assert_eq!(
-                failure.question(),
-                Question::Failed {
-                    launch_anyway: false
-                }
-            );
+            assert_eq!(failure.kind(), kind, "{failure:?}");
         }
     }
 }

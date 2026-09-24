@@ -26,13 +26,14 @@ pub(crate) trait Services: Sized + Send + Sync + 'static {
     fn start_presence(&self, activity: Activity);
     fn stop_presence(&self);
     async fn disconnect(&self);
-    /// EGS Cloud for this game, unless its rules are unsupported.
+    /// EGS Cloud for this game and Game session.
     async fn cloud(
         self: &Arc<Self>,
         config: Configuration,
         account_id: String,
+        session_id: String,
         control: Arc<Control>,
-    ) -> Result<Option<Box<dyn EpicCloud>>>;
+    ) -> Result<Box<dyn EpicCloud>>;
     fn rosetta(helper: &Path) -> std::result::Result<bool, Core>;
 }
 
@@ -68,13 +69,11 @@ impl Services for epic_kit::client::Client {
         self: &Arc<Self>,
         config: Configuration,
         account_id: String,
+        session_id: String,
         control: Arc<Control>,
-    ) -> Result<Option<Box<dyn EpicCloud>>> {
-        Ok(
-            cloud_session::Session::new(config, account_id, Arc::clone(self), control, true)
-                .await?
-                .map(|cloud| Box::new(cloud) as Box<dyn EpicCloud>),
-        )
+    ) -> Result<Box<dyn EpicCloud>> {
+        let sync = cloud_session::open(config, account_id, Arc::clone(self), control, session_id)?;
+        Ok(Box::new(sync))
     }
     fn rosetta(helper: &Path) -> std::result::Result<bool, Core> {
         crate::supervisor::architecture::rosetta_available(helper)
@@ -84,39 +83,25 @@ impl Services for epic_kit::client::Client {
 /// EGS Cloud as a launch uses it.
 pub(crate) trait EpicCloud: Send {
     fn prepare<'a>(&'a mut self, alive: &'a SessionAlive<'a>) -> Operation<'a, Result<()>>;
-    fn started(&mut self, id: &str) -> Result<()>;
+    fn started(&mut self) -> Result<()>;
     /// Settles the exit save; `confirmed` is false when exec was never
     /// confirmed, and the save is then only captured and kept pending.
-    fn finished<'a>(&'a mut self, id: &'a str, confirmed: bool) -> Operation<'a, ()>;
-    /// Releases a launch abandoned before spawn. `started` tells whether the
-    /// game guard was taken; `revoked` whether Account revocation ended it.
-    fn abandoned(&mut self, id: &str, started: bool, revoked: bool);
+    fn finished(&mut self, confirmed: bool) -> Operation<'_, ()>;
+    /// Releases a launch abandoned before spawn.
+    fn aborted(&mut self);
 }
 impl<R: cloud_session::CloudRemote> EpicCloud for cloud_session::Session<R> {
     fn prepare<'a>(&'a mut self, alive: &'a SessionAlive<'a>) -> Operation<'a, Result<()>> {
         Box::pin(cloud_session::Session::prepare(self, alive))
     }
-    fn started(&mut self, id: &str) -> Result<()> {
-        cloud_session::Session::started(self, id)
+    fn started(&mut self) -> Result<()> {
+        cloud_session::Session::started(self)
     }
-    fn finished<'a>(&'a mut self, id: &'a str, confirmed: bool) -> Operation<'a, ()> {
-        Box::pin(async move {
-            // The session's outcome is the game's: a Cloud failure lives in
-            // the Cloud status.
-            let _ = if confirmed {
-                cloud_session::Session::finished(self, id).await
-            } else {
-                cloud_session::Session::aborted(self, id)
-            };
-        })
+    fn finished(&mut self, confirmed: bool) -> Operation<'_, ()> {
+        Box::pin(cloud_session::Session::finished(self, confirmed))
     }
-    fn abandoned(&mut self, id: &str, started: bool, revoked: bool) {
-        if started {
-            let _ = cloud_session::Session::aborted(self, id);
-        }
-        if revoked {
-            let _ = cloud_session::Session::revoked(self);
-        }
+    fn aborted(&mut self) {
+        cloud_session::Session::aborted(self);
     }
 }
 
@@ -124,7 +109,6 @@ pub(crate) struct Launch<S: Services = epic_kit::client::Client> {
     request: Request,
     api: Option<Arc<S>>,
     cloud: Option<Box<dyn EpicCloud>>,
-    started: bool,
     activity: Option<Activity>,
     ownership: Option<tempfile::TempDir>,
 }
@@ -165,7 +149,6 @@ impl<S: Services> lifecycle::Launch for Launch<S> {
             request,
             api: None,
             cloud: None,
-            started: false,
             activity: None,
             ownership: None,
         };
@@ -184,17 +167,18 @@ impl<S: Services> lifecycle::Launch for Launch<S> {
         alive: &SessionAlive<'_>,
     ) -> Result<()> {
         let api = self.api()?.clone();
-        self.cloud = api
-            .cloud(
+        // Kept even if preparation fails, so an abandoned launch still
+        // releases its Cloud work.
+        let cloud = self.cloud.insert(
+            api.cloud(
                 self.request.config.clone(),
                 self.request.account_id.clone(),
+                self.request.id.clone(),
                 session.cloud().clone(),
             )
-            .await?;
-        if let Some(cloud) = &mut self.cloud {
-            cloud.prepare(alive).await?;
-        }
-        Ok(())
+            .await?,
+        );
+        cloud.prepare(alive).await
     }
 
     async fn target(
@@ -227,11 +211,10 @@ impl<S: Services> lifecycle::Launch for Launch<S> {
     }
 
     fn admitted(&mut self) -> Result<()> {
-        if let Some(cloud) = &mut self.cloud {
-            cloud.started(&self.request.id)?;
-            self.started = true;
+        match &mut self.cloud {
+            Some(cloud) => cloud.started(),
+            None => Ok(()),
         }
-        Ok(())
     }
 
     fn running(&self, _: &Arc<Host>, _: u32) -> Box<dyn Fn(bool) + Send + Sync> {
@@ -250,14 +233,13 @@ impl<S: Services> lifecycle::Launch for Launch<S> {
 
     async fn finish(&mut self, _: &Arc<Session<Epic>>, confirmed: bool) {
         if let Some(cloud) = &mut self.cloud {
-            cloud.finished(&self.request.id, confirmed).await;
+            cloud.finished(confirmed).await;
         }
     }
 
-    fn abort(&mut self, session: &Arc<Session<Epic>>) {
-        let revoked = session.cloud().revoked();
+    fn abort(&mut self, _: &Arc<Session<Epic>>) {
         if let Some(cloud) = &mut self.cloud {
-            cloud.abandoned(&self.request.id, self.started, revoked);
+            cloud.aborted();
         }
     }
 

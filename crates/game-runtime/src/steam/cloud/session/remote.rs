@@ -144,8 +144,8 @@ impl CloudConnection for CmConnection {
     }
 }
 
-impl<R: CloudRemote> Session<R> {
-    fn cached_file(&self, file: &CloudFile) -> Option<FileVersion> {
+impl<R: CloudRemote> Adapter<R> {
+    fn cached_file(&self, vault: &Vault, file: &CloudFile) -> Option<FileVersion> {
         // Context survives restart. Its listing can have been refreshed before
         // remote bytes, so never trust that pairing: verify the actual blob
         // against the newly listed Steam hash and size on every cache hit.
@@ -153,8 +153,8 @@ impl<R: CloudRemote> Session<R> {
         [
             Some(&self.downloaded),
             self.context.as_ref().map(|c| &c.remote.files),
-            self.vault.baseline().map(|b| &b.files),
-            self.vault.local(),
+            vault.baseline().map(|b| &b.files),
+            vault.local(),
         ]
         .into_iter()
         .flatten()
@@ -162,7 +162,7 @@ impl<R: CloudRemote> Session<R> {
         .filter(|cached| cached.size == u64::from(file.size))
         .filter(|cached| checked.insert((&cached.hash, cached.size)))
         .find_map(|cached| {
-            let bytes = self.vault.read_content(cached).ok()?;
+            let bytes = vault.read_content(cached).ok()?;
             file.verify(&bytes).ok()?;
             Some(FileVersion {
                 platforms: file.platforms,
@@ -174,6 +174,8 @@ impl<R: CloudRemote> Session<R> {
     pub(super) async fn read_remote(
         &mut self,
         source: &mut impl RemoteSource,
+        vault: &Vault,
+        control: &Control,
         listing: &CloudListing,
     ) -> Result<RemoteView, Failure> {
         if listing.steam_id != self.credentials.steam_id || listing.app_id != self.config.app_id {
@@ -183,11 +185,11 @@ impl<R: CloudRemote> Session<R> {
         let mut files = Manifest::default();
         let mut missing = Vec::new();
         for file in &listing.files {
-            self.control.check()?;
+            control.check()?;
             if paths.existing_file(file)?.is_none() {
                 continue;
             }
-            if let Some(version) = self.cached_file(file) {
+            if let Some(version) = self.cached_file(vault, file) {
                 files.0.insert(file.name.clone(), version);
             } else {
                 missing.push(file.clone());
@@ -195,8 +197,7 @@ impl<R: CloudRemote> Session<R> {
         }
         source
             .download_files(&missing, |file, bytes| {
-                let version = self
-                    .vault
+                let version = vault
                     .stage(&bytes, file.platforms)
                     .map_err(|_| CloudError::Storage)?;
                 self.downloaded.0.insert(file.name.clone(), version.clone());
@@ -209,7 +210,7 @@ impl<R: CloudRemote> Session<R> {
         if source.listing().await? != *listing {
             return Err(Failure::Changed);
         }
-        self.control.check()?;
+        control.check()?;
         self.downloaded = files.clone();
         Ok(RemoteView {
             revision: listing.change_number.to_string(),
@@ -219,277 +220,4 @@ impl<R: CloudRemote> Session<R> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use steam_kit::cloud::CloudMetadata;
-
-    const FIRST: &[u8] = b"cloud v1";
-    const SECOND: &[u8] = b"cloud v2";
-    const NAME: &str = "%GameInstall%slot.sav";
-
-    struct Source {
-        listing: CloudListing,
-        bytes: Vec<u8>,
-        downloads: usize,
-        listings: usize,
-    }
-    impl Source {
-        fn new(session: &Session) -> Self {
-            Self {
-                listing: CloudListing {
-                    steam_id: session.credentials.steam_id,
-                    app_id: session.config.app_id,
-                    change_number: 1,
-                    files: vec![CloudFile {
-                        name: NAME.into(),
-                        sha1: "15db5ca03437f87f7c50e14f09d72ea5e04f39a0".into(),
-                        size: FIRST.len() as u32,
-                        timestamp: 1,
-                        persist_state: 0,
-                        platforms: 7,
-                        reupload_requested: false,
-                    }],
-                },
-                bytes: FIRST.into(),
-                downloads: 0,
-                listings: 0,
-            }
-        }
-    }
-    impl RemoteSource for Source {
-        async fn download_files(
-            &mut self,
-            files: &[CloudFile],
-            mut receive: impl FnMut(&CloudFile, Vec<u8>) -> Result<(), CloudError>,
-        ) -> Result<(), Failure> {
-            for file in files {
-                self.downloads += 1;
-                file.verify(&self.bytes)?;
-                receive(file, self.bytes.clone())?;
-            }
-            Ok(())
-        }
-        async fn listing(&mut self) -> Result<CloudListing, Failure> {
-            self.listings += 1;
-            Ok(self.listing.clone())
-        }
-    }
-
-    fn fixture() -> (tempfile::TempDir, Session, Source) {
-        let (temp, mut session, _) = super::super::removal_tests::fixture();
-        // The removal fixture uses synthetic names. This fixture exercises the
-        // real AutoCloud resolver with its canonical GameInstall names.
-        session.vault.record_local(&Manifest::default()).unwrap();
-        let rule = CloudMetadata::Object(
-            [
-                ("root", "GameInstall"),
-                ("path", ""),
-                ("pattern", "*.sav"),
-                ("recursive", "0"),
-            ]
-            .into_iter()
-            .map(|(k, v)| (k.into(), CloudMetadata::Value(v.into())))
-            .collect(),
-        );
-        let context = session.context.as_mut().unwrap();
-        context.metadata = CloudMetadata::Object(vec![(
-            "savefiles".into(),
-            CloudMetadata::Object(vec![("0".into(), rule)]),
-        )]);
-        context.installation_removed = false;
-        context.save().unwrap();
-        let source = Source::new(&session);
-        (temp, session, source)
-    }
-
-    #[tokio::test]
-    async fn sdk_download_projection_restart_and_deletion_use_the_cloud_vault() {
-        let (_temp, mut session, mut source) = fixture();
-        session.config.root = session.config.root.with_file_name("sdk-cloud");
-        session.vault = Vault::open(
-            &session.config.root,
-            scope(&session.config, session.credentials.steam_id),
-        )
-        .unwrap();
-        session.vault.set_preferences(Preferences {
-            account_enabled: Some(true),
-            game_enabled: Some(true),
-        });
-        session.context = Some(Context::new(
-            &session.config,
-            session.credentials.steam_id,
-            CloudMetadata::Object(vec![
-                ("quota".into(), CloudMetadata::Value("1000000".into())),
-                ("maxnumfiles".into(), CloudMetadata::Value("1000".into())),
-            ]),
-        ));
-        source.listing.files[0].name = "slot.sav".into();
-        let listing = source.listing.clone();
-        session.context_mut().unwrap().listing = listing.clone();
-        let remote = session.read_remote(&mut source, &listing).await.unwrap();
-        session.set_listing(listing, remote.clone()).unwrap();
-        let local = session.capture_before_launch().unwrap().unwrap();
-        assert!(local.0.is_empty());
-        assert_eq!(
-            session.reconcile_launch(&local, &remote, None).unwrap(),
-            Decision::Download
-        );
-        let storage = session.native_storage().unwrap().unwrap();
-        assert!(!storage.home.starts_with(&session.config.root));
-        let path = session.context().unwrap().bindings["slot.sav"].path.clone();
-        assert_eq!(std::fs::read(&path).unwrap(), FIRST);
-        let config = session.config.clone();
-        let credentials = session.credentials.clone();
-        let control = session.control.clone();
-        drop(session);
-        let mut session = Session::open(
-            config,
-            credentials,
-            uuid::Uuid::new_v4().to_string(),
-            control,
-        )
-        .unwrap();
-        std::fs::write(&path, SECOND).unwrap();
-        let local = session.capture_before_launch().unwrap().unwrap();
-        assert_eq!(
-            session.vault.read_content(&local.0["slot.sav"]).unwrap(),
-            SECOND
-        );
-        assert_eq!(
-            session.vault.decision(&local, &remote).unwrap(),
-            Decision::KeepLocal
-        );
-        let changed = session.vault.stage(b"another device", 7).unwrap();
-        let divergent = RemoteView {
-            revision: "2".into(),
-            files: Manifest([("slot.sav".into(), changed)].into()),
-        };
-        assert_eq!(
-            session.vault.decision(&local, &divergent).unwrap(),
-            Decision::Conflict
-        );
-        std::fs::remove_file(&path).unwrap();
-        let deleted = session.capture_before_launch().unwrap().unwrap();
-        assert!(deleted.0.is_empty());
-        assert_eq!(
-            session.vault.decision(&deleted, &remote).unwrap(),
-            Decision::KeepLocal
-        );
-    }
-
-    #[test]
-    fn activation_without_early_capture_preserves_files_and_later_capture_reads_current_bytes() {
-        let (_temp, mut session, source) = fixture();
-        // The shared fixture uses synthetic ownership names. Start an empty
-        // archive for this test of the real AutoCloud projection.
-        session.config.root = session.config.root.with_file_name("fresh-cloud");
-        session.vault = Vault::open(
-            &session.config.root,
-            scope(&session.config, session.credentials.steam_id),
-        )
-        .unwrap();
-        session.context.as_mut().unwrap().config = session.config.clone();
-        let save = session.config.install.join("slot.sav");
-        std::fs::write(&save, FIRST).unwrap();
-        session.context.as_mut().unwrap().listing = source.listing;
-        let before = session.vault.local().cloned();
-        session.activate_before_launch().unwrap();
-        session.context().unwrap().save().unwrap();
-        assert_eq!(std::fs::read(&save).unwrap(), FIRST);
-        assert_eq!(session.vault.local(), before.as_ref());
-
-        // An interrupted network check has not discarded the physical saves.
-        let config = session.config.clone();
-        let credentials = session.credentials.clone();
-        let control = session.control.clone();
-        drop(session);
-        let mut session = Session::open(
-            config,
-            credentials,
-            uuid::Uuid::new_v4().to_string(),
-            control,
-        )
-        .unwrap();
-        std::fs::write(&save, SECOND).unwrap();
-        let captured = session.capture_before_launch().unwrap().unwrap();
-        assert_eq!(
-            session.vault.read_content(&captured.0[NAME]).unwrap(),
-            SECOND
-        );
-        assert_eq!(session.vault.local(), Some(&captured));
-    }
-
-    #[tokio::test]
-    async fn unchanged_files_reuse_verified_bytes_across_retry_and_restart() {
-        let (_temp, mut session, mut source) = fixture();
-        let listing = source.listing.clone();
-        let remote = session.read_remote(&mut source, &listing).await.unwrap();
-        session.read_remote(&mut source, &listing).await.unwrap();
-        assert_eq!(source.downloads, 1);
-        assert_eq!(source.listings, 2);
-        session.set_listing(listing.clone(), remote).unwrap();
-        let config = session.config.clone();
-        let credentials = session.credentials.clone();
-        let control = session.control.clone();
-        drop(session);
-        let mut session = Session::open(
-            config,
-            credentials,
-            uuid::Uuid::new_v4().to_string(),
-            control,
-        )
-        .unwrap();
-        session.read_remote(&mut source, &listing).await.unwrap();
-        assert_eq!(source.downloads, 1);
-        assert_eq!(source.listings, 3);
-    }
-
-    #[tokio::test]
-    async fn changed_content_missing_blob_and_remote_races_never_use_stale_cache() {
-        let (_temp, mut session, mut source) = fixture();
-        let first = source.listing.clone();
-        let remote = session.read_remote(&mut source, &first).await.unwrap();
-        let blob = session
-            .config
-            .root
-            .join(session.credentials.steam_id.to_string())
-            .join(session.config.app_id.to_string())
-            .join("blobs")
-            .join(remote.files.0[NAME].hash.as_str());
-        std::fs::remove_file(&blob).unwrap();
-        session.read_remote(&mut source, &first).await.unwrap();
-        assert_eq!(source.downloads, 2);
-        source.listing.change_number = 2;
-        source.listing.files[0].sha1 = "2df584286a54a4b83b7fc9161069b37d61cf8e07".into();
-        source.bytes = SECOND.into();
-        let second = source.listing.clone();
-        let remote = session.read_remote(&mut source, &second).await.unwrap();
-        assert_eq!(source.downloads, 3);
-        assert_eq!(
-            session.vault.read_content(&remote.files.0[NAME]).unwrap(),
-            SECOND
-        );
-        source.listing.change_number = 3;
-        assert!(matches!(
-            session.read_remote(&mut source, &second).await,
-            Err(Failure::Changed)
-        ));
-        assert_eq!(source.downloads, 3);
-        let mut foreign = second.clone();
-        foreign.steam_id += 1;
-        assert!(matches!(
-            session.read_remote(&mut source, &foreign).await,
-            Err(Failure::Authentication)
-        ));
-        source.listing.files.clear();
-        let deleted = source.listing.clone();
-        let remote = session.read_remote(&mut source, &deleted).await.unwrap();
-        assert!(remote.files.0.is_empty());
-        assert!(session.downloaded.0.is_empty());
-        session.control.cancel();
-        assert!(matches!(
-            session.read_remote(&mut source, &second).await,
-            Err(Failure::Cancelled)
-        ));
-    }
-}
+mod tests;

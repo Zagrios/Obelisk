@@ -1,4 +1,5 @@
 use super::*;
+pub(super) use crate::cloud::sync::Pending;
 use cloud_vault::{Bindings, SelectedFile, StoreScope, journal};
 use std::{collections::BTreeSet, fs, os::unix::fs::MetadataExt, path::Path};
 
@@ -12,29 +13,6 @@ pub(super) struct Context {
     pub installation_removed: bool,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(tag = "phase", deny_unknown_fields)]
-pub(super) enum Pending {
-    /// Persisted before game admission and kept until exit bytes are durable.
-    Capture,
-    Upload {
-        desired: Manifest,
-    },
-    /// A Cloud choice is durable before changing the projection or baseline.
-    Applying {
-        desired: Manifest,
-        remote: RemoteView,
-        project: bool,
-    },
-}
-impl Pending {
-    pub fn files(&self) -> Option<&Manifest> {
-        match self {
-            Self::Capture => None,
-            Self::Upload { desired } | Self::Applying { desired, .. } => Some(desired),
-        }
-    }
-}
 impl Context {
     pub fn path(config: &Configuration, account: &str) -> Result<PathBuf> {
         config.validate(account)?;
@@ -53,10 +31,10 @@ impl Context {
     }
     pub fn validate(&self, config: &Configuration, account: &str) -> Result<()> {
         self.config.validate(account)?;
+        // A moved installation keeps its saves: only the game's identity binds.
         if self.account_id != account
             || self.config.root != config.root
             || self.config.home != config.home
-            || self.config.install != config.install
             || self.config.namespace != config.namespace
             || self.config.app_name != config.app_name
             || self.config.catalog_item_id != config.catalog_item_id
@@ -81,19 +59,29 @@ impl Context {
             &self.config.app_name,
         )?)
     }
+    pub fn work(&self) -> Work {
+        Work {
+            pending: self.pending.clone(),
+            installation_removed: self.installation_removed,
+        }
+    }
     pub fn save(&self) -> Result<()> {
         self.validate(&self.config, &self.account_id)?;
         journal::write(&Self::path(&self.config, &self.account_id)?, self)?;
         Ok(())
     }
     pub fn absent(&self) -> Result<bool> {
-        safe(&self.config.install)?;
-        match fs::symlink_metadata(&self.config.install) {
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(true),
-            Ok(metadata) if metadata.is_dir() => Ok(false),
-            Ok(_) => Err(Error::Storage),
-            Err(error) => Err(error.into()),
-        }
+        absent(&self.config)
+    }
+}
+
+pub(super) fn absent(config: &Configuration) -> Result<bool> {
+    safe(&config.install)?;
+    match fs::symlink_metadata(&config.install) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(true),
+        Ok(metadata) if metadata.is_dir() => Ok(false),
+        Ok(_) => Err(Error::Storage),
+        Err(error) => Err(error.into()),
     }
 }
 
