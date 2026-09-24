@@ -1,6 +1,6 @@
 //! Account-scoped, event-driven Steam friends state. The watch channel contains
 //! complete snapshots, so a slow consumer can coalesce updates without losing
-//! relationship removals or field clears. It never owns the content-query lock.
+//! relationship removals or field clears. Content requests never wait for it.
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::{Arc, Mutex, PoisonError},
@@ -603,6 +603,70 @@ impl FriendsEventSource {
     pub(crate) fn retain_hydration(&self, pending: &mut BTreeSet<u64>) {
         let reducer = self.reducer.lock().unwrap_or_else(PoisonError::into_inner);
         pending.retain(|id| reducer.friends.contains_key(id));
+    }
+}
+
+/// What a CM session still owes the friends list: one push of every friend's
+/// persona state once the full list arrived, and the details of friends it
+/// revealed, requested in bounded batches. The connection sends the messages.
+#[derive(Default)]
+pub(crate) struct Hydration {
+    pending: BTreeSet<u64>,
+    push_pending: bool,
+    push_in_flight: bool,
+    deadline: Option<tokio::time::Instant>,
+}
+
+impl Hydration {
+    /// A session started; its friends list must load in time.
+    pub(crate) fn started(&mut self) {
+        self.deadline = Some(tokio::time::Instant::now() + std::time::Duration::from_secs(20));
+    }
+
+    pub(crate) fn deadline(&self) -> Option<tokio::time::Instant> {
+        self.deadline
+    }
+
+    pub(crate) fn timed_out(&mut self, friends: &FriendsEventSource) {
+        friends.loading_timed_out();
+        self.deadline = None;
+    }
+
+    /// Applies one packet, noting the friends whose details it revealed.
+    pub(crate) fn apply(&mut self, friends: &FriendsEventSource, kind: u32, body: &[u8]) {
+        let revealed = friends.apply_packet_deferred(kind, body);
+        self.push_pending |= !revealed.is_empty();
+        self.pending.extend(revealed);
+        if kind == FRIENDS_LIST {
+            friends.retain_hydration(&mut self.pending);
+        }
+    }
+
+    /// Whether to ask Steam to push every friend's persona state now. Bursts
+    /// of relationship changes coalesce into one push at a time.
+    pub(crate) fn push_due(&self, friends: &FriendsEventSource) -> bool {
+        self.push_pending && !self.push_in_flight && friends.has_full_list()
+    }
+
+    pub(crate) fn push_sent(&mut self) {
+        self.push_pending = false;
+        self.push_in_flight = true;
+    }
+
+    pub(crate) fn push_answered(&mut self) {
+        self.push_in_flight = false;
+    }
+
+    pub(crate) fn has_batch(&self) -> bool {
+        !self.pending.is_empty()
+    }
+
+    /// The next friends whose details to request, still in the list.
+    pub(crate) fn next_batch(&mut self, friends: &FriendsEventSource) -> Vec<u64> {
+        (0..REQUEST_BATCH)
+            .filter_map(|_| self.pending.pop_first())
+            .filter(|id| friends.retains(*id))
+            .collect()
     }
 }
 
