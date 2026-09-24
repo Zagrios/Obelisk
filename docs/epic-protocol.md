@@ -4,7 +4,7 @@
 
 Forge displays the Epic Games website in an embedded sign-in window, captures the authorization code automatically, and loads the account's library. Password and two-factor authentication are handled on the Epic website. Forge downloads and verifies Epic games using BuildPatch manifests, and launches native Mac games after checking for updates.
 
-The protocol implementation lives in `epic-kit`; native process ownership and EGS Cloud coordination live in `steam-runtime::epic`. Forge neither runs Legendary or the Epic launcher nor requires them to be installed. See [Epic Cloud Saves](epic-cloud.md) for the current synchronization lifecycle and its validation limits.
+The protocol implementation lives in `epic-kit`; native process ownership and EGS Cloud coordination live in `game-runtime::epic`. Forge neither runs Legendary or the Epic launcher nor requires them to be installed. See [Epic Cloud Saves](epic-cloud.md) for the current synchronization lifecycle and its validation limits.
 
 ## Protocol
 

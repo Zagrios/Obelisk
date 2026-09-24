@@ -1,5 +1,5 @@
 [package]
-name = "steam-runtime"
+name = "game-runtime"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

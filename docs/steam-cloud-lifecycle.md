@@ -1,6 +1,6 @@
 # AutoCloud launch and detached completion
 
-September 19, 2026. The macOS launcher, detached supervisor and save interface now use `steam-runtime::cloud`. The coordinator uses the ordinary authenticated Forge session; no credential is copied to an argument, environment variable, log or archive.
+September 19, 2026. The macOS launcher, detached supervisor and save interface now use `game-runtime::steam::cloud`. The coordinator uses the ordinary authenticated Forge session; no credential is copied to an argument, environment variable, log or archive.
 
 ## Initial Silksong cycle, before save-history removal
 

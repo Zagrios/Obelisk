@@ -1,5 +1,5 @@
 use forge_steam_native::{host, native};
-use steam_runtime::protocol::{Event, Failure};
+use game_runtime::protocol::{Event, Failure};
 
 fn main() {
     let code = run();
@@ -18,7 +18,7 @@ fn run() -> i32 {
         Some("epic-supervise") => return epic_supervise(),
         Some("game-exec") => {
             return i32::from(
-                steam_runtime::supervisor::exec::game_exec(std::io::stdin().lock()).is_err(),
+                game_runtime::supervisor::exec::game_exec(std::io::stdin().lock()).is_err(),
             );
         }
         _ => {}
@@ -72,24 +72,24 @@ fn process_identity(argument: Option<&String>) -> i32 {
 /// when the kernel confirms it; otherwise it is uncertainty.
 fn inspect(
     pid: u32,
-) -> Result<Option<steam_runtime::supervisor::Identity>, steam_runtime::supervisor::Error> {
+) -> Result<Option<game_runtime::supervisor::Identity>, game_runtime::supervisor::Error> {
     let value = native::process_identity(pid);
     if value.is_none() && !native::process_is_absent(pid) {
-        return Err(steam_runtime::supervisor::Error::Unavailable);
+        return Err(game_runtime::supervisor::Error::Unavailable);
     }
     Ok(value)
 }
 
 fn supervise() -> i32 {
     let served = native::detach_supervisor().is_ok()
-        && steam_runtime::steam::serve(std::io::stdin().lock(), std::io::stderr().lock(), inspect)
+        && game_runtime::steam::serve(std::io::stdin().lock(), std::io::stderr().lock(), inspect)
             .is_ok();
     i32::from(!served)
 }
 
 fn epic_supervise() -> i32 {
     let served = native::detach_supervisor().is_ok()
-        && steam_runtime::epic::serve(std::io::stdin().lock(), std::io::stderr().lock(), inspect)
+        && game_runtime::epic::serve(std::io::stdin().lock(), std::io::stderr().lock(), inspect)
             .is_ok();
     i32::from(!served)
 }

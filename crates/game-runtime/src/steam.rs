@@ -1,6 +1,6 @@
 //! The Steam adapter of the Game session supervisor.
 use crate::{
-    Config, Error, HostState, cloud,
+    Config, Error, HostState,
     protocol::Credentials,
     supervisor::{self, Record, Target},
 };
@@ -10,6 +10,7 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
+pub mod cloud;
 pub(crate) mod launch;
 pub use launch::serve;
 

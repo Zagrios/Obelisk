@@ -1,6 +1,6 @@
 use crate::Result;
+use game_runtime::protocol::Event;
 use std::{fs::File, io::Write};
-use steam_runtime::protocol::Event;
 
 /// Reserve the original stdout for our typed events, then discard all native
 /// stdout/stderr before loading Valve. The private FD cannot reach a child exec.

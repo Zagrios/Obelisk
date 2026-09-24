@@ -23,8 +23,8 @@ impl Sample for Steam {
             host: crate::HostState::Online,
         }
     }
-    fn choice() -> crate::cloud::Choice {
-        crate::cloud::Choice::Local
+    fn choice() -> crate::steam::cloud::Choice {
+        crate::steam::cloud::Choice::Local
     }
 }
 impl Sample for Epic {

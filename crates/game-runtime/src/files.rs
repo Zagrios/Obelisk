@@ -24,11 +24,11 @@ impl Prepared {
             .map_or_else(|| self.run_directory.join("home"), |s| s.home.clone())
     }
     pub fn enable_storage(&mut self, storage: &crate::NativeStorage) -> Result<(), Error> {
-        crate::cloud::safe_storage_path(&storage.home)?;
+        crate::steam::cloud::safe_storage_path(&storage.home)?;
         let steam = storage.steam_directory();
         let app = storage.cache_directory();
         for path in [app.join("remote"), steam.join("appcache")] {
-            crate::cloud::safe_storage_path(&path)?;
+            crate::steam::cloud::safe_storage_path(&path)?;
             private_directory(&path)?;
         }
         // The coordinator must publish a complete local projection before a

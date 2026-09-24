@@ -3,11 +3,11 @@
 //! Swift task cancellation, so an attempt has an explicit revisioned status,
 //! answer and cancel.
 use crate::{EpicCloudConfiguration, EpicError, EpicSession, SteamCredentials, SteamError};
+use game_runtime::{cloud_status, epic, protocol::Credentials, steam::cloud};
 use std::{
     path::{Path, PathBuf},
     sync::{Arc, Condvar, Mutex},
 };
-use steam_runtime::{cloud, cloud_status, epic, protocol::Credentials};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum CloudSavedState {
@@ -386,7 +386,7 @@ fn steam_maintenance(
     request: SteamCloudMaintenanceRequest,
     control: Arc<cloud::Control>,
 ) -> Outcome {
-    let idle = match steam_runtime::steam::Client::idle_guard(
+    let idle = match game_runtime::steam::Client::idle_guard(
         Path::new(&request.session_directory),
         Path::new(&request.helper),
     ) {

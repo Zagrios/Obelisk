@@ -442,9 +442,9 @@ dependencies = [
 name = "forge-steam-native"
 version = "0.1.0"
 dependencies = [
+ "game-runtime",
  "libc",
  "serde_json",
- "steam-runtime",
  "zeroize",
 ]
 
@@ -521,6 +521,27 @@ dependencies = [
  "memchr",
  "pin-project-lite",
  "slab",
+]
+
+[[package]]
+name = "game-runtime"
+version = "0.1.0"
+dependencies = [
+ "epic-kit",
+ "flate2",
+ "forge-core",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "steam-cloud",
+ "steam-kit",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "uuid",
+ "zeroize",
+ "zip",
 ]
 
 [[package]]
@@ -1751,27 +1772,6 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-tungstenite",
- "zip",
-]
-
-[[package]]
-name = "steam-runtime"
-version = "0.1.0"
-dependencies = [
- "epic-kit",
- "flate2",
- "forge-core",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "steam-cloud",
- "steam-kit",
- "tempfile",
- "thiserror",
- "tokio",
- "uuid",
- "zeroize",
  "zip",
 ]
 

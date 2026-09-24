@@ -10,7 +10,7 @@ fn identity_helper_flushes_its_bounded_response_before_immediate_exit() {
         .output()
         .unwrap();
     assert!(output.status.success());
-    let actual: Option<steam_runtime::supervisor::Identity> =
+    let actual: Option<game_runtime::supervisor::Identity> =
         serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(actual, Some(expected));
     let output = Command::new(env!("CARGO_BIN_EXE_forge-steam-host"))
@@ -24,15 +24,15 @@ fn identity_helper_flushes_its_bounded_response_before_immediate_exit() {
 
 #[test]
 fn native_supervisor_acknowledges_and_reports_preparation_failure_without_valve() {
-    use std::{
-        path::PathBuf,
-        time::{Duration, Instant, SystemTime, UNIX_EPOCH},
-    };
-    use steam_runtime::{
+    use game_runtime::{
         Config, Launch,
         protocol::Credentials,
         steam::Request,
         supervisor::{Phase, Target},
+    };
+    use std::{
+        path::PathBuf,
+        time::{Duration, Instant, SystemTime, UNIX_EPOCH},
     };
     struct Scratch(PathBuf);
     impl Drop for Scratch {

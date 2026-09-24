@@ -1,8 +1,8 @@
 # Native Steam launches from Forge
 
 Forge's existing Launch button starts a separate Rust supervisor for the Game
-session. The storefront-neutral core in `steam_runtime::supervisor` owns its
-lifecycle; the Steam adapter in `steam_runtime::steam` authenticates, reconciles
+session. The storefront-neutral core in `game_runtime::supervisor` owns its
+lifecycle; the Steam adapter in `game_runtime::steam` authenticates, reconciles
 Steam Cloud and starts the Steam host before the native macOS game. Forge passes
 the session already held by `SteamModel` through a one-time private stdin pipe.
 No interactive sign-in or additional Keychain query is involved. After Cloud
@@ -75,7 +75,7 @@ experiment was run for this removal.
 
 ## Ownership and lifetime
 
-- `crates/steam-runtime` contains safe process supervision, cache preparation,
+- `crates/game-runtime` contains safe process supervision, cache preparation,
   bounded credential transport, cancellation and sanitized diagnostics.
 - `crates/steam-native` is a separate workspace for the Rust executable, private
   ABI calls, Mach transport and discovery adapter. The main workspace retains
@@ -297,7 +297,7 @@ supervisor record.
 
 ## Bundled runtime preparation
 
-`crates/steam-runtime/runtime-manifest.json` pins Valve client version `1788652215`,
+`crates/game-runtime/runtime-manifest.json` pins Valve client version `1788652215`,
 three HTTPS archive URLs, their byte lengths and SHA-256 hashes, and the exact
 eight files retained from them. The acquisition source is Valve's
 [macOS update manifest](https://client-update.akamai.steamstatic.com/steam_client_osx),
@@ -361,7 +361,7 @@ factories without creating a global user, authenticating or launching a game:
 
 ```sh
 FORGE_STEAM_BUNDLE="$PWD/build/xcode/Build/Products/Debug/Forge.app" \
-  cargo test --locked -p steam-runtime \
+  cargo test --locked -p game-runtime \
   bundled_runtime_loads_without_steam_installation_access -- --ignored
 ```
 
@@ -439,7 +439,7 @@ the native host was integrated and validated through Forge. Its prototypes,
 command-line runner, optional Keychain reader, manifests and build output are no
 longer maintained. Forge's build and launch path did not depend on that workspace.
 The production implementations and their tests remain in `crates/steam-native`,
-`crates/steam-runtime` and the Swift/UniFFI integration.
+`crates/game-runtime` and the Swift/UniFFI integration.
 
 The eleven research reports were moved unchanged to the
 [historical evidence archive](evidence/steam-native-research/README.md). They retain

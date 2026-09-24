@@ -10,7 +10,7 @@ The existing local work does not need repeating. Native local writes, private/pu
 
 ## Pinned input and reproduction
 
-The universal `build/steam-cloud-feasibility/steamclient.dylib` was hashed again for this investigation. SHA-256 is `035722a42c74989fa38c7efe0d735fdb38444e1102c92246652b5d913d019840`, matching the [runtime manifest](../crates/steam-runtime/runtime-manifest.json). Addresses below refer to its ARM64 image, not universal-file offsets or process addresses.
+The universal `build/steam-cloud-feasibility/steamclient.dylib` was hashed again for this investigation. SHA-256 is `035722a42c74989fa38c7efe0d735fdb38444e1102c92246652b5d913d019840`, matching the [runtime manifest](../crates/game-runtime/runtime-manifest.json). Addresses below refer to its ARM64 image, not universal-file offsets or process addresses.
 
 The previously extracted ARM64 image remains at `/var/folders/bj/bjxppt2d0jg9ppj9_bkdsz580000gn/T/forge-cloud-static-w0ewwrzw/arm64.dylib`. `parsed.json` there records Mach-O sections and `LC_FUNCTION_STARTS`. The evidence can be reproduced with bounded disassembly, for example:
 

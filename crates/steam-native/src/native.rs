@@ -11,7 +11,7 @@ pub fn exec_game() -> std::io::Result<()> {
     use std::{fs::File, os::fd::AsRawFd};
     // The confirmation descriptor closes atomically on exec, while the game
     // itself gets null stdout.
-    steam_runtime::protocol::exec_or_report(|| {
+    game_runtime::protocol::exec_or_report(|| {
         let null = File::options().read(true).write(true).open("/dev/null")?;
         // SAFETY: valid null descriptor, redirecting only this helper's stdout.
         if unsafe { libc::dup2(null.as_raw_fd(), 1) } < 0 {
@@ -19,7 +19,7 @@ pub fn exec_game() -> std::io::Result<()> {
         }
         // The supervisor first persists ownership of this PID, then admits it.
         // Losing that parent before its message must never launch a game.
-        let admission = steam_runtime::supervisor::exec::receive(std::io::stdin().lock())?;
+        let admission = game_runtime::supervisor::exec::receive(std::io::stdin().lock())?;
         // SAFETY: valid readable null descriptor; the game must not inherit the
         // private admission pipe or any bytes remaining in it.
         if unsafe { libc::dup2(null.as_raw_fd(), 0) } < 0 {
@@ -192,7 +192,7 @@ pub fn parent_pid() -> i32 {
 }
 
 /// Kernel birth time prevents adopting a different process after PID reuse.
-pub fn process_identity(pid: u32) -> Option<steam_runtime::supervisor::Identity> {
+pub fn process_identity(pid: u32) -> Option<game_runtime::supervisor::Identity> {
     let pid = i32::try_from(pid).ok()?;
     // SAFETY: proc_bsdinfo is a C POD; the buffer length matches its allocation.
     let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
@@ -218,7 +218,7 @@ pub fn process_identity(pid: u32) -> Option<steam_runtime::supervisor::Identity>
         return None;
     }
     let end = path.iter().position(|&b| b == 0)?;
-    Some(steam_runtime::supervisor::Identity {
+    Some(game_runtime::supervisor::Identity {
         pid: pid as u32,
         uid: info.pbi_uid,
         birth_seconds: info.pbi_start_tvsec,

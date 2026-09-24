@@ -1,6 +1,7 @@
 //! Both exec helpers through their process boundary: the arm64
 //! `forge-steam-host game-exec` and the Intel `forge-steam-sdk exec-game`.
 //! Each becomes the game only after the supervisor's admission message.
+use game_runtime::supervisor::exec::Admission;
 use std::{
     ffi::OsStr,
     io::{Read, Write},
@@ -9,7 +10,6 @@ use std::{
     process::{Child, Command, ExitStatus, Stdio},
     time::Duration,
 };
-use steam_runtime::supervisor::exec::Admission;
 
 /// The two helpers, as the supervisor spawns them.
 fn helpers() -> [Command; 2] {
@@ -31,7 +31,7 @@ fn spawn(mut helper: Command) -> Child {
 
 fn admit(child: &mut Child, admission: &Admission) {
     let mut input = child.stdin.take().unwrap();
-    steam_runtime::supervisor::exec::send(&mut input, admission).unwrap();
+    game_runtime::supervisor::exec::send(&mut input, admission).unwrap();
 }
 
 /// Waits for the helper's exec confirmation, then releases the replacement.
@@ -75,7 +75,7 @@ fn a_failed_exec_reports_failure_without_starting_a_replacement() {
         );
         let result = child.wait_with_output().unwrap();
         assert_eq!(result.status.code(), Some(1));
-        assert_eq!(result.stdout, steam_runtime::protocol::EXEC_FAILED);
+        assert_eq!(result.stdout, game_runtime::protocol::EXEC_FAILED);
     }
 }
 
@@ -109,7 +109,7 @@ fn a_missing_or_invalid_admission_never_executes_the_target() {
             }
             assert!(!started, "target executed without supervisor admission");
             assert_eq!(result.status.code(), Some(1));
-            assert_eq!(result.stdout, steam_runtime::protocol::EXEC_FAILED);
+            assert_eq!(result.stdout, game_runtime::protocol::EXEC_FAILED);
         }
     }
 }

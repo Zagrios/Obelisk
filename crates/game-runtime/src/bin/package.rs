@@ -6,5 +6,5 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if args.len() != 3 {
         return Err("Usage: forge-steam-runtime-package DOWNLOAD_CACHE OUTPUT_ZIP".into());
     }
-    steam_runtime::packaging::build(Path::new(&args[1]), Path::new(&args[2])).await
+    game_runtime::packaging::build(Path::new(&args[1]), Path::new(&args[2])).await
 }

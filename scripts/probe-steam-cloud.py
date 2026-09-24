@@ -41,7 +41,7 @@ def main():
     ], check=True)
     binary = project / "build/steam-native-target/debug/examples/cloud_storage_probe"
     package = project / "build/xcode/Build/Products/Debug/Forge.app/Contents/Resources/SteamRuntime/runtime.zip"
-    manifest = json.loads((project / "crates/steam-runtime/runtime-manifest.json").read_text())
+    manifest = json.loads((project / "crates/game-runtime/runtime-manifest.json").read_text())
     signing = (project / "apps/macos/Config/Signing.local.xcconfig").read_text()
     identity = re.search(r"^CODE_SIGN_IDENTITY\s*=\s*([0-9A-Fa-f]{40})\s*$", signing, re.M)
     if identity is None:
@@ -160,7 +160,7 @@ def main():
         for path in ["crates/steam-native/examples/cloud_storage_probe.rs",
                      "crates/steam-native/examples/cloud_storage_probe/live_storage.rs",
                      "crates/steam-native/examples/cloud_storage_probe/sync_controls.rs",
-                     "scripts/probe-steam-cloud.py", "crates/steam-runtime/runtime-manifest.json"]
+                     "scripts/probe-steam-cloud.py", "crates/game-runtime/runtime-manifest.json"]
     }
     cloud_log = scratch / "home/Library/Application Support/Steam/logs/cloud_log.txt"
     if cloud_log.is_file():

@@ -17,7 +17,7 @@ RUNTIME_PACKAGE="$PROJECT_ROOT/build/steam-runtime/runtime.zip"
 # Optimized: the no-op path still inflates and hashes the whole payload, which
 # costs seconds per incremental build when this tool is built unoptimized.
 CARGO_TARGET_DIR="$PROJECT_ROOT/target" cargo run --locked --release \
-    --manifest-path "$PROJECT_ROOT/Cargo.toml" -p steam-runtime \
+    --manifest-path "$PROJECT_ROOT/Cargo.toml" -p game-runtime \
     --features packaging --bin forge-steam-runtime-package -- \
     "$PROJECT_ROOT/build/steam-runtime/downloads" "$RUNTIME_PACKAGE"
 RUNTIME_DESTINATION="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/SteamRuntime"

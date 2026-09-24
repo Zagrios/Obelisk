@@ -19,7 +19,7 @@ cli = ["uniffi/cli"]
 
 [dependencies]
 forge-core.workspace = true
-steam-runtime.workspace = true
+game-runtime.workspace = true
 steam-kit.workspace = true
 epic-kit.workspace = true
 gog-kit.workspace = true

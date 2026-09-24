@@ -440,13 +440,13 @@ impl SteamSession {
             .client
             .cloud_archive_metadata(config.app_id)
             .await
-            .map_err(steam_runtime::cloud::Failure::from)?;
+            .map_err(game_runtime::steam::cloud::Failure::from)?;
         if let Some((metadata, listing)) = rules {
             tokio::task::spawn_blocking(move || {
-                steam_runtime::cloud::archive_with_rules(&config.into(), metadata, listing)
+                game_runtime::steam::cloud::archive_with_rules(&config.into(), metadata, listing)
             })
             .await
-            .map_err(|_| steam_runtime::Error::Storage)??;
+            .map_err(|_| game_runtime::Error::Storage)??;
         }
         Ok(())
     }

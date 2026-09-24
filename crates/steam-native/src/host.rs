@@ -1,4 +1,5 @@
 use crate::{Result, abi::Engine, mach};
+use game_runtime::protocol::{Credentials, Event, Failure, HostCommand};
 use std::{
     ffi::{CStr, CString},
     fs::File,
@@ -8,7 +9,6 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use steam_runtime::protocol::{Credentials, Event, Failure, HostCommand};
 use zeroize::Zeroizing;
 
 pub use crate::events::{emit, event_pipe};
@@ -199,7 +199,7 @@ pub fn serve(
             expected_id as u32
         ));
         let started = Instant::now();
-        while !steam_runtime::native_cache_checkpoint(cache.clone(), app) {
+        while !game_runtime::native_cache_checkpoint(cache.clone(), app) {
             if started.elapsed() > Duration::from_millis(500) {
                 return Err("Native storage index incomplete".into());
             }

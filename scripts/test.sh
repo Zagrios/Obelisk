@@ -14,5 +14,5 @@ xcodebuild -project "$PROJECT_ROOT/apps/macos/Forge.xcodeproj" -scheme Forge \
     -destination 'platform=macOS' test
 "$PROJECT_ROOT/scripts/verify-app-signature.sh" "$PROJECT_ROOT/build/xcode/Build/Products/Debug/Forge.app"
 FORGE_STEAM_BUNDLE="$PROJECT_ROOT/build/xcode/Build/Products/Debug/Forge.app" \
-    cargo test --locked --manifest-path "$PROJECT_ROOT/Cargo.toml" -p steam-runtime \
+    cargo test --locked --manifest-path "$PROJECT_ROOT/Cargo.toml" -p game-runtime \
     bundled_runtime_loads_without_steam_installation_access -- --ignored

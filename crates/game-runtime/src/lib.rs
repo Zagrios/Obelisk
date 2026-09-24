@@ -1,5 +1,4 @@
 //! Safe launcher-side supervision. Native ABI code lives in the separate helper.
-pub mod cloud;
 pub mod cloud_status;
 pub mod epic;
 mod files;
@@ -19,6 +18,7 @@ use std::{
     },
     time::{Duration, Instant},
 };
+use steam::cloud;
 
 /// Every supervisor entry point drives its async work from one blocking thread.
 pub(crate) fn executor() -> std::io::Result<Executor> {

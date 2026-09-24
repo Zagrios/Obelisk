@@ -99,7 +99,7 @@ impl Context {
 
 /// The Steam supervisor's storage guard, which this module shares verbatim.
 pub(super) fn safe(path: &Path) -> Result<()> {
-    crate::cloud::safe_storage_path(path).map_err(|_| Error::Storage)
+    crate::steam::cloud::safe_storage_path(path).map_err(|_| Error::Storage)
 }
 
 /// Discover names before ownership activation without reading another account's bytes.

@@ -1,7 +1,7 @@
 //! Presentation of the Rust-owned Epic supervisor and Cloud decisions.
 use crate::{EpicError, EpicSession, RosettaRequest};
+use game_runtime::epic;
 use std::{path::Path, sync::Arc};
-use steam_runtime::epic;
 
 impl From<epic::Error> for EpicError {
     fn from(error: epic::Error) -> Self {

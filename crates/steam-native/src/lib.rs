@@ -14,10 +14,10 @@ pub mod mach;
 pub mod native;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
-pub use steam_runtime::client_sha256;
+pub use game_runtime::client_sha256;
 
 fn sha(path: &std::path::Path) -> Result<String> {
-    Ok(steam_runtime::sha(path)?)
+    Ok(game_runtime::sha(path)?)
 }
 pub fn pinned_client(path: &std::path::Path) -> Result<()> {
     if sha(path)? != client_sha256() {

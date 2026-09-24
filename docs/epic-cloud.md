@@ -8,7 +8,7 @@ The protocol research is in [Epic Cloud research](research-epic-cloud-saves.md) 
 
 ## Ownership and admission
 
-`epic-kit::cloud` owns publisher rules, safe Mac path resolution and BuildPatch serialization. `epic-kit::Client` owns authenticated savesync requests and remote verification. The storefront-neutral supervisor core in `steam-runtime::supervisor` owns the Game session's lifecycle, process lifetime, journal and recovery, shared with Steam. `steam-runtime::epic` is its Epic adapter and owns the synchronization policy. Swift presents snapshots and sends explicit decisions through `forge-bridge::EpicGameSession`.
+`epic-kit::cloud` owns publisher rules, safe Mac path resolution and BuildPatch serialization. `epic-kit::Client` owns authenticated savesync requests and remote verification. The storefront-neutral supervisor core in `game-runtime::supervisor` owns the Game session's lifecycle, process lifetime, journal and recovery, shared with Steam. `game-runtime::epic` is its Epic adapter and owns the synchronization policy. Swift presents snapshots and sends explicit decisions through `forge-bridge::EpicGameSession`.
 
 Swift reserves an Epic session before installation verification. It completes the existing verify/update pipeline, then asks Rust to create a detached `forge-steam-host epic-supervise` process. A one-use exchange code travels through a private pipe. The helper obtains an independent Epic OAuth session and revokes only that session when finished; it never persists credentials or revokes the UI's remembered token.
 
