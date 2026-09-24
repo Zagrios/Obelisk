@@ -7,7 +7,7 @@ Cancellation and account revocation wake the waiting supervisor. Installation ca
 ## Shared Steam and Epic requirement
 
 Both storefronts use the same bounded Mach-O parser and signed Rosetta probe,
-the same asynchronous Rust wait in `rosetta::Gate::wait`, and the shared `RosettaModel`
+the same asynchronous Rust wait in `supervisor::rosetta::Gate::wait`, and the shared `RosettaModel`
 and `RosettaPromptView`. The wait uses `Notify` for resume and cancellation;
 only the bounded execution probe runs on a blocking worker. Steam selects a slice
 compatible with its original Steam API library; Epic selects from the game
@@ -15,11 +15,12 @@ executable alone, preferring ARM64 and otherwise accepting x86_64. Epic does not
 load the Steam runtime. Its native exec helper lets macOS launch the selected
 Intel executable after Rosetta availability has been confirmed.
 
-Each provider retains its own account identity and session journal. The common
-Rosetta request carries a decision ID. A resume must match session, account and
-decision, and the supervisor probes again before admitting the game. Cancelling
-or signing out before admission prevents execution; closing the UI after an
-admitted launch never terminates the game. `game_session` shares exec
+Each provider retains its own account identity and session directory; the
+supervisor core owns the journal, the Rosetta wait and the admission for both.
+The common Rosetta request carries a decision ID. A resume must match session,
+account and decision, and the supervisor probes again before admitting the game.
+Cancelling or signing out before admission prevents execution; closing the UI
+after an admitted launch never terminates the game. `supervisor::child` shares exec
 confirmation and event-driven child exit for both providers.
 
 The shared path is covered by disposable process and Mach-O fixtures and Swift
@@ -38,15 +39,15 @@ Apple documents [`openApplication(at:configuration:completionHandler:)`](https:/
 
 The runtime reads bounded Mach-O headers from the game and its original Steam API library. It selects a shared ARM64 slice when available, otherwise a shared x86_64 slice. Unsupported, malformed or incompatible binaries fail before SDK preparation. The Valve package already includes both architectures and is unchanged.
 
-The private Steam engine and supervisor remain ARM64. `forge-steam-sdk-x86_64` only performs the Intel exec handoff described below. The public SDK diagnostics, their legacy profile and the ARM64 SDK helper were removed. The discovery adapter is universal. Host and game use the same private endpoints and verified runtime generation. Build and signature checks verify each helper's exact architecture set and reject the obsolete ARM64 SDK helper.
+The private Steam engine and supervisor remain ARM64. `forge-steam-sdk-x86_64` only performs the Intel exec handoff described below. Epic games use the arm64 `game-exec` helper, and macOS runs a selected Intel executable under Rosetta. The public SDK diagnostics, their legacy profile and the ARM64 SDK helper were removed. The discovery adapter is universal. Host and game use the same private endpoints and verified runtime generation. Build and signature checks verify each helper's exact architecture set and reject the obsolete ARM64 SDK helper.
 
 ## Intel process handoff
 
-The signed Intel exec helper replaces itself with the game using `POSIX_SPAWN_SETEXEC` and an explicit binary preference. This retains the process identity, working directory, literal arguments and game environment, including the discovery adapter. It avoids passing that environment through a protected system launcher that could strip DYLD variables.
+The signed Intel exec helper replaces itself with the game using `POSIX_SPAWN_SETEXEC` and an explicit binary preference. This retains the process identity and the game environment, including the discovery adapter, which the supervisor set when it spawned the helper. It avoids passing that environment through a protected system launcher that could strip DYLD variables. `POSIX_SPAWN_SETSIGDEF` gives the game the default SIGPIPE disposition instead of the helper's inherited ignore.
 
-The helper initially waits for an admission byte on stdin. The supervisor records its identity and expected game executable before sending that byte. Losing the supervisor before admission closes the pipe and prevents execution. After admission, recovery recognizes either the same helper or its replacement game using UID, PID, kernel birth timestamp and the expected executable. Unknown identity retains the reservation.
+The helper initially waits for an admission message on stdin, shared with the arm64 `game-exec` helper. It names the executable, the literal arguments and the working directory. The supervisor records the helper's identity and expected game executable before sending it. Losing the supervisor before a complete message closes the pipe and prevents execution. After admission, recovery recognizes the helper's process, before or after it becomes the game, by PID, UID and kernel birth timestamp. The executable does not decide, so a game that execs another binary stays reserved. Unknown identity retains the reservation.
 
-A separate close-on-exec control pipe reports an explicit `exec-failed` marker if replacement fails. The game receives null stdin/stdout rather than the control channels. The supervisor reaps a failed helper before aborting preparation. Observation errors after a child starts cannot release its reservation while it may still be alive.
+A separate close-on-exec control pipe reports an explicit `exec-failed` marker if replacement fails. After reading its admission, the helper replaces its stdin with null, so the game receives null stdin/stdout rather than the admission or control channels. The supervisor reaps a failed helper before aborting preparation. Observation errors after a child starts cannot release its reservation while it may still be alive.
 
 ## Validation scope
 

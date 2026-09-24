@@ -39,6 +39,7 @@ fn host_readiness_admits_an_unknown_sdk_and_reports_it_as_unchecked() {
     let runtime = Launch::new(credentials())
         .prepare_runtime(
             &config,
+            None,
             &mut Vec::new(),
             credentials(),
             prepared,
@@ -83,10 +84,10 @@ fn local_storage_is_validated_before_host_start_without_an_sdk_consumer() {
     let (storage, cache) = storage(&root);
     let index = fs::read(cache.join("remotecache.vdf")).unwrap();
     let launch = Launch::new(credentials());
-    *launch.storage.lock().unwrap() = Some(storage.clone());
     let runtime = launch
         .prepare_runtime(
             &config,
+            Some(storage.clone()),
             &mut Vec::new(),
             credentials(),
             prepared,
@@ -142,9 +143,9 @@ fn invalid_or_wrong_account_storage_never_starts_the_host() {
             _ => unreachable!(),
         }
         let launch = Launch::new(credentials());
-        *launch.storage.lock().unwrap() = Some(storage);
         let result = launch.prepare_runtime(
             &config,
+            Some(storage),
             &mut Vec::new(),
             credentials(),
             prepared,
@@ -168,6 +169,7 @@ fn native_authentication_and_ownership_failures_still_block_admission() {
         let (config, prepared) = fixture(root.path());
         let result = Launch::new(credentials()).prepare_runtime(
             &config,
+            None,
             &mut Vec::new(),
             credentials(),
             prepared,

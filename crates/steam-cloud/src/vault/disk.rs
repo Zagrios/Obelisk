@@ -66,8 +66,27 @@ pub(super) fn store_lock(root: &Path, scope: &StoreScope) -> Result<File> {
         self::directory(&directory)?;
     }
     let file = lock_file(&directory.join("owner.lock"))?;
-    file.try_lock().map_err(|_| Error::Busy)?;
+    try_lock(&file)?;
     Ok(file)
+}
+
+/// How long a child spawned by another thread can share this process's locks:
+/// until its exec closes them. That window is not another owner.
+const INHERITED_LOCK: Duration = Duration::from_millis(250);
+
+/// A free lock can look taken while another thread spawns a child, so only a
+/// lock still taken after `INHERITED_LOCK` is busy.
+pub fn try_lock(file: &File) -> Result<()> {
+    let deadline = Instant::now() + INHERITED_LOCK;
+    loop {
+        match file.try_lock() {
+            Ok(()) => return Ok(()),
+            Err(std::fs::TryLockError::WouldBlock) if Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            Err(_) => return Err(Error::Busy),
+        }
+    }
 }
 
 /// Proof that this process holds `owners.lock`. flock belongs to an open file
@@ -170,4 +189,53 @@ pub(super) fn content(directory: &Path, file: &FileVersion) -> Result<Vec<u8>> {
         return Err(Error::Integrity);
     }
     Ok(bytes)
+}
+
+#[cfg(test)]
+mod spawn_tests {
+    use super::*;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+
+    /// Another thread keeps spawning short-lived children, as Forge does
+    /// while it inspects processes.
+    fn spawning() -> (Arc<AtomicBool>, std::thread::JoinHandle<()>) {
+        let stop = Arc::new(AtomicBool::new(false));
+        let spawner = {
+            let stop = stop.clone();
+            std::thread::spawn(move || {
+                let mut children = Vec::new();
+                while !stop.load(Ordering::Relaxed) {
+                    if let Ok(child) = std::process::Command::new("/bin/sleep").arg("0.1").spawn() {
+                        children.push(child);
+                    }
+                }
+                for mut child in children {
+                    let _ = child.wait();
+                }
+            })
+        };
+        (stop, spawner)
+    }
+
+    #[test]
+    fn a_released_store_lock_is_free_again_while_other_threads_spawn_children() {
+        let root = tempfile::tempdir().unwrap();
+        let scope = StoreScope::from(crate::EpicScope {
+            account_id: "0123456789abcdef0123456789abcdef".into(),
+            namespace: "namespace".into(),
+            app_name: "game".into(),
+        });
+        let (stop, spawner) = spawning();
+        let deadline = Instant::now() + Duration::from_millis(500);
+        let mut busy = 0;
+        while Instant::now() < deadline {
+            busy += usize::from(store_lock(root.path(), &scope).is_err());
+        }
+        stop.store(true, Ordering::Relaxed);
+        spawner.join().unwrap();
+        assert_eq!(busy, 0, "a spawning child briefly shares every open lock");
+    }
 }

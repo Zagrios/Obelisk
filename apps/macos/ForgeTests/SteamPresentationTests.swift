@@ -844,6 +844,28 @@ final class SteamPresentationTests: XCTestCase {
     }
 
     @MainActor
+    func testCancellingAPreGameCloudConflictRestoresLaunchWithoutAnError() async throws {
+        let game = RecoveredGameFixture(appID: 620, phase: .preparing, cloudPhase: .checking)
+        let fixture = try await launchFixture(verify: false, game: game)
+        defer { fixture.cleanUp() }
+        let model = fixture.model
+        model.primaryAction()
+        try await eventually { model.gameSessions.active?.cloud.phase == .checking }
+        await game.update(cloudPhase: .conflict, cloudError: "backend.steam.cloud.conflict",
+                          decisionID: 4, allowedChoices: [.local, .cloud, .cancel])
+        try await eventually { model.cloud.promptPresented }
+
+        model.cloud.respond(.cancel)
+        try await eventually { await game.cloudChoices.map(\.choice) == [.cancel] }
+        // The supervisor types its cancellation; Forge never reads its message.
+        await game.fail(reason: "backend.steam.runtime.cancelled", cancelled: true)
+        try await eventually { !model.gameSessions.isBusy && !model.isLaunching }
+        XCTAssertNil(model.errorMessage)
+        XCTAssertNil(model.gameSessions.recoveryError)
+        XCTAssertTrue(model.primaryActionAvailable)
+    }
+
+    @MainActor
     func testCloudMaintenanceHoldsTheReservationAndTheSyncMenuFollowsItsRules() async throws {
         let services = CloudServicesFixture()
         services.steamIndicator = CloudIndicator(state: .unavailable, gameSession: false, syncedAt: nil,

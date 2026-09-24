@@ -8,29 +8,30 @@ The protocol research is in [Epic Cloud research](research-epic-cloud-saves.md) 
 
 ## Ownership and admission
 
-`epic-kit::cloud` owns publisher rules, safe Mac path resolution and BuildPatch serialization. `epic-kit::Client` owns authenticated savesync requests and remote verification. `steam-runtime::epic` owns synchronization policy, process lifetime and recovery. Swift presents snapshots and sends explicit decisions through `forge-bridge::EpicGameSession`.
+`epic-kit::cloud` owns publisher rules, safe Mac path resolution and BuildPatch serialization. `epic-kit::Client` owns authenticated savesync requests and remote verification. The storefront-neutral supervisor core in `steam-runtime::supervisor` owns the Game session's lifecycle, process lifetime, journal and recovery, shared with Steam. `steam-runtime::epic` is its Epic adapter and owns the synchronization policy. Swift presents snapshots and sends explicit decisions through `forge-bridge::EpicGameSession`.
 
 Swift reserves an Epic session before installation verification. It completes the existing verify/update pipeline, then asks Rust to create a detached `forge-steam-host epic-supervise` process. A one-use exchange code travels through a private pipe. The helper obtains an independent Epic OAuth session and revokes only that session when finished; it never persists credentials or revokes the UI's remembered token.
 
-The helper persists its identity and acknowledges the handoff before doing Cloud work. It waits for `begin()` from the caller. Swift receives the client, finishes credential persistence, checks cancellation and account revocation, and only then begins work. An abandoned handoff expires after 120 seconds. Observing a recovered session does not begin it.
+The helper persists its identity and acknowledges the handoff before doing Cloud work. It waits for `begin()` from the caller, a start gate of the core that only Epic uses. Swift receives the client, finishes credential persistence, checks cancellation and account revocation, and only then begins work. Begin is idempotent and the Rust client retries it, so a lost reply cannot cancel the launch. An abandoned handoff expires after 120 seconds. Observing a recovered session does not begin it.
 
-For a launch, the helper prepares Cloud saves before requesting fresh launch arguments. It records a durable capture marker and game guard before opening a private exec pipe to its child. The target cannot execute until the helper has recorded the child's kernel identity. Launch admission, cancellation and account revocation share the same admission lock.
+The helper prepares Cloud saves before requesting fresh launch arguments. It records a durable capture marker and game guard, then spawns the `forge-steam-host game-exec` helper with the game's environment. The supervisor records that helper's kernel identity as the session's durable `starting` process before sending it one admission message; the target cannot execute before that message is complete. Launch admission, cancellation and account revocation share the same admission lock.
 
 After resolving the native executable, Epic uses the shared Mach-O selection
 and [Rosetta requirement](steam-rosetta-intel.md#shared-steam-and-epic-requirement).
 An Intel-only game waits for the signed probe before admission. If installation
 was required, the supervisor refreshes the short-lived launch plan and ownership
 token, then validates the new executable before admission. Steam and Epic
-share `game_session` for exec confirmation and asynchronous child exit. The
-helper reports exec failure explicitly; it is reaped before releasing a failed
-launch. The presence task runs on the supervisor's executor until game exit or
-account revocation.
+share the supervisor's admission and `supervisor::child` for exec confirmation and
+asynchronous child exit. The helper reports exec failure explicitly; it is
+reaped before releasing a failed launch. The core starts presence once the game
+runs and stops it at game exit or account revocation; a revocation during
+admission fences a late exec from ever publishing it.
 
-The helper waits for actual child exit before taking the exit snapshot and uploading. Closing Forge only detaches the observer. Cancelling preparation cannot release a running game's installation. Signing out cancels Cloud transfers; a running game stays tracked and its eventual local exit snapshot is archived for the original account.
+The helper waits for actual child exit before taking the exit snapshot and uploading. An exit the helper never confirmed as the game fails the session and keeps its capture pending instead of uploading it. Closing Forge only detaches the observer. Cancelling preparation cannot release a running game's installation. Signing out cancels Cloud transfers; a running game stays tracked and its eventual local exit snapshot is archived for the original account.
 
 Recovery compares PID, UID and kernel birth time. A process can change executable with `exec()` without losing ownership. Failed inspection or lost IPC remains an unknown live state and keeps mutations blocked. A dead helper alone does not prove that its game exited.
 
-Terminal failures carry a typed reason through the persisted snapshot and UniFFI. Both runtime and transport cancellations become `Cancelled`; the display message does not determine Swift behavior. Rust recognizes the two historical cancellation keys only when reading a terminal snapshot without a typed reason. A failure while a child is still owned keeps the session running and has no terminal failure reason.
+Terminal failures carry a typed reason through the persisted snapshot and UniFFI, for Epic and Steam alike. Both runtime and transport cancellations become `Cancelled`; the display message does not determine Swift behavior. Rust recognizes the historical cancellation keys only when reading a terminal snapshot without a typed reason. A session is terminal only in a final phase with no game or starting process left, so a failure while a child is still owned keeps the session running and has no terminal failure reason.
 
 ## Identity and local storage
 
@@ -38,7 +39,7 @@ The shared archive uses `StoreScope::Steam` and `StoreScope::Epic`. Existing Ste
 
 `steam-cloud::Vault` provides content-addressed snapshots, local projection journals, physical-path ownership and upload settlement. Ownership fences also apply when two stores or accounts select the same physical save directory. Capture does not adopt another account's bytes. Epic holds its own archive lock, `SteamCloud/epic/owner.lock`, so a running Steam game never blocks Epic Cloud work. Both storefronts share `owners.json` under `owners.lock`. Epic cannot take a save path from a Steam game that holds the Steam lock: that refusal names the same game on another platform.
 
-The shared journal reader rejects files with group or other permission bits, checking the opened file before reading JSON. Missing journals remain absent; symlinks and nonregular files are refused. Atomic writes create private files, and the existing size limits remain unchanged.
+The shared journal reader rejects files with group or other permission bits, checking the opened file before reading JSON. Missing journals remain absent; symlinks and nonregular files are refused. Atomic writes create private files, and the existing size limits remain unchanged. Game session records are not vault journals: the supervisor core's version 2 journal applies the same descriptor checks and bounds each record at 64 KiB.
 
 `epic-context.json` stores configuration, rules and pending work beside the vault. It contains no credentials. Pending work has three states:
 

@@ -91,7 +91,7 @@ pub(crate) fn prepare(
     ];
     // Refuse an unsupported or malformed SDK library before anything is written.
     // The selected slice itself is owned by Launch, which the supervisor reads.
-    crate::architecture::Architecture::preferred(&config.steam_api)?;
+    crate::supervisor::architecture::Architecture::preferred(&config.steam_api)?;
     let prepared = Prepared {
         storage: None,
         directory,

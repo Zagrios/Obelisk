@@ -1,9 +1,38 @@
+//! Both exec helpers through their process boundary: the arm64
+//! `forge-steam-host game-exec` and the Intel `forge-steam-sdk exec-game`.
+//! Each becomes the game only after the supervisor's admission message.
 use std::{
+    ffi::OsStr,
     io::{Read, Write},
-    path::Path,
+    os::unix::ffi::OsStrExt,
+    path::{Path, PathBuf},
     process::{Child, Command, ExitStatus, Stdio},
     time::Duration,
 };
+use steam_runtime::supervisor::exec::Admission;
+
+/// The two helpers, as the supervisor spawns them.
+fn helpers() -> [Command; 2] {
+    let mut arm = Command::new(env!("CARGO_BIN_EXE_forge-steam-host"));
+    arm.arg("game-exec");
+    let mut intel = Command::new(env!("CARGO_BIN_EXE_forge-steam-sdk"));
+    intel.arg("exec-game");
+    [arm, intel]
+}
+
+fn spawn(mut helper: Command) -> Child {
+    helper
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap()
+}
+
+fn admit(child: &mut Child, admission: &Admission) {
+    let mut input = child.stdin.take().unwrap();
+    steam_runtime::supervisor::exec::send(&mut input, admission).unwrap();
+}
 
 /// Waits for the helper's exec confirmation, then releases the replacement.
 /// Returns the handshake bytes, whether the replacement was still running when
@@ -26,56 +55,75 @@ fn confirm_replacement(child: &mut Child, directory: &Path) -> (Vec<u8>, bool, E
     (handshake.unwrap(), running, status)
 }
 
-#[test]
-fn game_exec_failure_returns_failure_without_starting_a_replacement() {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_forge-steam-sdk"))
-        .args(["exec-game", "/forge-missing-game-fixture"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
-    child.stdin.take().unwrap().write_all(b"1").unwrap();
-    let result = child.wait_with_output().unwrap();
-    assert_eq!(result.status.code(), Some(1));
-    assert_eq!(result.stdout, steam_runtime::protocol::EXEC_FAILED);
+fn scratch(name: &str) -> PathBuf {
+    let directory = std::env::temp_dir().join(format!("forge-{name}-{}", std::process::id()));
+    std::fs::create_dir_all(&directory).unwrap();
+    directory.canonicalize().unwrap()
 }
 
 #[test]
-fn missing_or_invalid_admission_never_executes_the_target() {
-    let marker =
-        std::env::temp_dir().join(format!("forge-missing-admission-{}", std::process::id()));
-    for input in [b"".as_slice(), b"0"] {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_forge-steam-sdk"))
-            .args(["exec-game", "/usr/bin/touch"])
-            .arg(&marker)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()
-            .unwrap();
-        child.stdin.take().unwrap().write_all(input).unwrap();
+fn a_failed_exec_reports_failure_without_starting_a_replacement() {
+    for helper in helpers() {
+        let mut child = spawn(helper);
+        admit(
+            &mut child,
+            &Admission {
+                executable: "/forge-missing-game-fixture".into(),
+                arguments: vec![],
+                working_directory: "/tmp".into(),
+            },
+        );
         let result = child.wait_with_output().unwrap();
-        let started = marker.exists();
-        if started {
-            std::fs::remove_file(&marker).unwrap();
-        }
-        assert!(!started, "target executed without supervisor admission");
         assert_eq!(result.status.code(), Some(1));
         assert_eq!(result.stdout, steam_runtime::protocol::EXEC_FAILED);
     }
 }
 
 #[test]
-fn game_exec_preserves_pid_arguments_environment_and_working_directory() {
-    let directory = std::env::temp_dir().join(format!("forge-exec-game-{}", std::process::id()));
-    std::fs::create_dir_all(&directory).unwrap();
-    let directory = directory.canonicalize().unwrap();
+fn a_missing_or_invalid_admission_never_executes_the_target() {
+    let marker = scratch("missing-admission").join("started");
+    let complete = serde_json::to_vec(&Admission {
+        executable: "/usr/bin/touch".into(),
+        arguments: vec![marker.to_string_lossy().into_owned()],
+        working_directory: "/tmp".into(),
+    })
+    .unwrap();
+    let relative = serde_json::to_vec(&Admission {
+        executable: "touch".into(),
+        arguments: vec![marker.to_string_lossy().into_owned()],
+        working_directory: "/tmp".into(),
+    })
+    .unwrap();
+    // Losing the supervisor before admission closes the pipe mid-message.
+    let inputs: [&[u8]; 4] = [b"", b"1", &complete[..complete.len() - 1], &relative];
+    for input in inputs {
+        for helper in helpers() {
+            let mut child = spawn(helper);
+            let mut pipe = child.stdin.take().unwrap();
+            pipe.write_all(input).unwrap();
+            drop(pipe);
+            let result = child.wait_with_output().unwrap();
+            let started = marker.exists();
+            if started {
+                std::fs::remove_file(&marker).unwrap();
+            }
+            assert!(!started, "target executed without supervisor admission");
+            assert_eq!(result.status.code(), Some(1));
+            assert_eq!(result.stdout, steam_runtime::protocol::EXEC_FAILED);
+        }
+    }
+}
+
+#[test]
+fn the_game_keeps_the_helper_pid_its_environment_and_default_signals() {
+    let directory = scratch("exec-game");
     let executable = directory.join("game-fixture");
     let adapter = directory.join("adapter-fixture.dylib");
     let source = directory.join("adapter.c");
     std::fs::write(&source, "int forge_fixture(void) { return 0; }\n").unwrap();
     for (source, output, library) in [
         (
-            std::path::Path::new(concat!(
+            Path::new(concat!(
                 env!("CARGO_MANIFEST_DIR"),
                 "/tests/fixtures/exec_game.c"
             )),
@@ -98,80 +146,37 @@ fn game_exec_preserves_pid_arguments_environment_and_working_directory() {
                 .success()
         );
     }
-    let mut child = Command::new(env!("CARGO_BIN_EXE_forge-steam-sdk"))
-        .args(["exec-game"])
-        .arg(&executable)
-        .args(["a b", "$not-a-shell"])
-        .current_dir(&directory)
-        .env_clear()
-        .env("EXPECTED_CWD", &directory)
-        .env("EXPECTED_ADAPTER", &adapter)
-        .env("DYLD_INSERT_LIBRARIES", &adapter)
-        .env(
-            "FORGE_PRIVATE_STEAM_DISCOVERY",
-            "com.zagrios.forge.discovery.fixture",
-        )
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap();
-    let pid = child.id();
-    child.stdin.take().unwrap().write_all(b"1").unwrap();
-    let (handshake, running, status) = confirm_replacement(&mut child, &directory);
-    let proof = std::fs::read_to_string(directory.join("game-proof.txt")).unwrap();
+    for mut helper in helpers() {
+        let _ = std::fs::remove_file(directory.join("finish"));
+        // The supervisor sets the game's environment when it spawns the
+        // helper; only the admission message names the target.
+        helper
+            .current_dir("/")
+            .env_clear()
+            .env("EXPECTED_CWD", &directory)
+            .env("EXPECTED_ADAPTER", &adapter)
+            .env("DYLD_INSERT_LIBRARIES", &adapter)
+            .env(
+                "FORGE_PRIVATE_STEAM_DISCOVERY",
+                "com.zagrios.forge.discovery.fixture",
+            )
+            .env("FORGE_FIXTURE_BYTES", OsStr::from_bytes(b"\xff\xfe"));
+        let mut child = spawn(helper);
+        let pid = child.id();
+        admit(
+            &mut child,
+            &Admission {
+                executable: executable.clone(),
+                arguments: vec!["a b".into(), "$not-a-shell".into()],
+                working_directory: directory.clone(),
+            },
+        );
+        let (handshake, running, status) = confirm_replacement(&mut child, &directory);
+        let proof = std::fs::read_to_string(directory.join("game-proof.txt")).unwrap();
+        assert_eq!(status.code(), Some(23));
+        assert!(handshake.is_empty());
+        assert!(running);
+        assert_eq!(proof.trim(), pid.to_string());
+    }
     std::fs::remove_dir_all(directory).unwrap();
-    assert_eq!(status.code(), Some(23));
-    assert!(handshake.is_empty());
-    assert!(running);
-    assert_eq!(proof.trim(), pid.to_string());
-}
-
-fn epic_child(target: &steam_runtime::supervisor::Target) -> Child {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_forge-steam-host"))
-        .arg("epic-exec")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap();
-    let mut input = child.stdin.take().unwrap();
-    serde_json::to_writer(&mut input, target).unwrap();
-    input.write_all(b"\n").unwrap();
-    child
-}
-
-#[test]
-fn epic_exec_failure_uses_the_shared_confirmation_protocol() {
-    let result = epic_child(&steam_runtime::supervisor::Target {
-        executable: "/forge-missing-epic-game-fixture".into(),
-        arguments: vec![],
-        working_directory: "/tmp".into(),
-        environment: Default::default(),
-    })
-    .wait_with_output()
-    .unwrap();
-    assert_eq!(result.status.code(), Some(1));
-    assert_eq!(result.stdout, steam_runtime::protocol::EXEC_FAILED);
-}
-
-#[test]
-fn epic_exec_confirms_replacement_before_exit_and_preserves_parentage() {
-    let directory = std::env::temp_dir().join(format!("forge-epic-exec-{}", std::process::id()));
-    std::fs::create_dir_all(&directory).unwrap();
-    let directory = directory.canonicalize().unwrap();
-    let mut child = epic_child(&steam_runtime::supervisor::Target {
-        executable: "/bin/sh".into(),
-        arguments: vec!["-c".into(), "printf '%s' \"$$\" > proof; i=0; while [ ! -e finish ] && [ \"$i\" -lt 500 ]; do /bin/sleep 0.01; i=$((i + 1)); done; exit 23".into()],
-        working_directory: directory.clone(),
-        environment: Default::default(),
-    });
-    let pid = child.id();
-    let (handshake, running, status) = confirm_replacement(&mut child, &directory);
-    let proof = std::fs::read_to_string(directory.join("proof")).unwrap();
-    std::fs::remove_dir_all(directory).unwrap();
-    assert_eq!(status.code(), Some(23));
-    assert!(handshake.is_empty());
-    assert!(running);
-    assert_eq!(proof, pid.to_string());
 }

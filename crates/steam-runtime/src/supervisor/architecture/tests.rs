@@ -233,11 +233,11 @@ fn probe_success_and_failure_use_process_result_without_launchservices() {
     probe_script(root.path(), "exit 7");
     assert!(matches!(
         rosetta_available(&path),
-        Err(Error::RosettaUnavailable)
+        Err(crate::supervisor::Error::RosettaUnavailable)
     ));
     assert!(matches!(
         rosetta_available(&root.path().join("missing")),
-        Err(Error::Unavailable)
+        Err(crate::supervisor::Error::Unavailable)
     ));
 }
 
@@ -249,7 +249,7 @@ fn hung_probe_is_stopped_instead_of_being_treated_as_missing_rosetta() {
     let start = Instant::now();
     assert!(matches!(
         rosetta_available(&path),
-        Err(Error::RosettaUnavailable)
+        Err(crate::supervisor::Error::RosettaUnavailable)
     ));
     assert!(start.elapsed() < Duration::from_secs(10));
 }

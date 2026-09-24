@@ -16,8 +16,10 @@ fn run() -> i32 {
         Some("process-identity") => return process_identity(args.get(2)),
         Some("supervise") => return supervise(),
         Some("epic-supervise") => return epic_supervise(),
-        Some("epic-exec") => {
-            return i32::from(steam_runtime::epic::exec_game(std::io::stdin().lock()).is_err());
+        Some("game-exec") => {
+            return i32::from(
+                steam_runtime::supervisor::exec::game_exec(std::io::stdin().lock()).is_err(),
+            );
         }
         _ => {}
     }
@@ -66,27 +68,26 @@ fn process_identity(argument: Option<&String>) -> i32 {
     i32::from(!written)
 }
 
+/// Process inspection for a supervisor: a missing identity is absence only
+/// when the kernel confirms it; otherwise it is uncertainty.
+fn inspect(
+    pid: u32,
+) -> Result<Option<steam_runtime::supervisor::Identity>, steam_runtime::supervisor::Error> {
+    let value = native::process_identity(pid);
+    if value.is_none() && !native::process_is_absent(pid) {
+        return Err(steam_runtime::supervisor::Error::Unavailable);
+    }
+    Ok(value)
+}
+
 fn supervise() -> i32 {
     let served = native::detach_supervisor().is_ok()
-        && steam_runtime::supervisor::serve(
-            std::io::stdin().lock(),
-            std::io::stderr().lock(),
-            native::process_identity,
-        )
-        .is_ok();
+        && steam_runtime::steam::serve(std::io::stdin().lock(), std::io::stderr().lock(), inspect)
+            .is_ok();
     i32::from(!served)
 }
 
 fn epic_supervise() -> i32 {
-    fn inspect(
-        pid: u32,
-    ) -> steam_runtime::epic::Result<Option<steam_runtime::supervisor::Identity>> {
-        let value = native::process_identity(pid);
-        if value.is_none() && !native::process_is_absent(pid) {
-            return Err(steam_runtime::epic::Error::Session);
-        }
-        Ok(value)
-    }
     let served = native::detach_supervisor().is_ok()
         && steam_runtime::epic::serve(std::io::stdin().lock(), std::io::stderr().lock(), inspect)
             .is_ok();

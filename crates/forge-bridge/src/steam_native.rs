@@ -60,7 +60,7 @@ impl SteamNativeLaunch {
                 install: configuration.install_directory.clone().into(),
                 app_id: configuration.app_id,
             };
-            let client = launch.start_supervised(steam_runtime::supervisor::Request {
+            let client = launch.start_supervised(steam_runtime::steam::Request {
                 root: session_directory.into(),
                 id: String::new(),
                 config: configuration.into(),
@@ -144,6 +144,21 @@ impl From<steam_runtime::supervisor::Phase> for SteamGamePhase {
     }
 }
 
+/// Why a terminal session failed. Swift treats a cancellation as silent.
+#[derive(Clone, Copy, Debug, uniffi::Enum)]
+pub enum SteamGameFailureReason {
+    Cancelled,
+    Failed,
+}
+impl From<steam_runtime::supervisor::FailureReason> for SteamGameFailureReason {
+    fn from(reason: steam_runtime::supervisor::FailureReason) -> Self {
+        match reason {
+            steam_runtime::supervisor::FailureReason::Cancelled => Self::Cancelled,
+            steam_runtime::supervisor::FailureReason::Failed => Self::Failed,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, uniffi::Enum)]
 pub enum SteamSupervisorConnection {
     Connected,
@@ -166,6 +181,9 @@ pub struct SteamGameSnapshot {
     pub error: Option<String>,
     pub revision: u64,
     pub rosetta: Option<RosettaRequest>,
+    /// Defaulted so that records built before it existed still compile.
+    #[uniffi(default)]
+    pub failure_reason: Option<SteamGameFailureReason>,
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -180,9 +198,11 @@ impl From<steam_runtime::supervisor::RosettaRequest> for RosettaRequest {
     }
 }
 
-impl From<steam_runtime::supervisor::Snapshot> for SteamGameSnapshot {
-    fn from(s: steam_runtime::supervisor::Snapshot) -> Self {
+impl From<steam_runtime::steam::Snapshot> for SteamGameSnapshot {
+    fn from(s: steam_runtime::steam::Snapshot) -> Self {
+        let failure_reason = s.failure_reason().map(Into::into);
         Self {
+            failure_reason,
             phase: s.phase.into(),
             connection: if s.reconnecting {
                 SteamSupervisorConnection::Reconnecting
@@ -190,7 +210,7 @@ impl From<steam_runtime::supervisor::Snapshot> for SteamGameSnapshot {
                 SteamSupervisorConnection::Connected
             },
             id: s.id,
-            app_id: s.app_id,
+            app_id: s.store.app_id,
             account_id: s.account_id,
             cloud_phase: s.cloud.phase.into(),
             cloud_decision_id: s.cloud.id,
@@ -201,7 +221,7 @@ impl From<steam_runtime::supervisor::Snapshot> for SteamGameSnapshot {
                 .into_iter()
                 .map(Into::into)
                 .collect(),
-            host: s.host.into(),
+            host: s.store.host.into(),
             exit_code: s.exit_code,
             error: s.error,
             revision: s.revision,
@@ -212,7 +232,7 @@ impl From<steam_runtime::supervisor::Snapshot> for SteamGameSnapshot {
 
 #[derive(uniffi::Object)]
 pub struct SteamGameSession {
-    client: Arc<steam_runtime::supervisor::Client>,
+    client: Arc<steam_runtime::steam::Client>,
 }
 
 #[uniffi::export(async_runtime = "tokio")]
@@ -226,7 +246,7 @@ impl SteamGameSession {
         .map_err(|_| steam_runtime::Error::StartFailed)?
     }
     pub fn cancel_preparation(&self) {
-        self.client.cancel_preparation();
+        self.client.cancel();
     }
 
     pub async fn resume_after_rosetta(
@@ -237,7 +257,7 @@ impl SteamGameSession {
         let client = self.client.clone();
         tokio::task::spawn_blocking(move || {
             client
-                .resume_after_rosetta(account_id, decision_id)
+                .resume_after_rosetta(&account_id, decision_id)
                 .map_err(Into::into)
         })
         .await
@@ -253,7 +273,7 @@ impl SteamGameSession {
         let client = self.client.clone();
         tokio::task::spawn_blocking(move || {
             client
-                .cloud_choice(account_id, decision_id, choice.into())
+                .choose(&account_id, decision_id, choice.into())
                 .map_err(Into::into)
         })
         .await
@@ -262,7 +282,7 @@ impl SteamGameSession {
 
     pub async fn revoke_cloud(&self, account_id: u64) -> Result<(), SteamError> {
         let client = self.client.clone();
-        tokio::task::spawn_blocking(move || client.revoke_cloud(account_id).map_err(Into::into))
+        tokio::task::spawn_blocking(move || client.revoke(&account_id).map_err(Into::into))
             .await
             .map_err(|_| steam_runtime::Error::StartFailed)?
     }
@@ -389,7 +409,7 @@ pub async fn recover_steam_game_session(
     helper: String,
 ) -> Result<Option<Arc<SteamGameSession>>, SteamError> {
     tokio::task::spawn_blocking(move || {
-        Ok(steam_runtime::supervisor::Client::recover(
+        Ok(steam_runtime::steam::Client::recover(
             std::path::Path::new(&session_directory),
             std::path::Path::new(&helper),
         )?
@@ -401,4 +421,58 @@ pub async fn recover_steam_game_session(
     })
     .await
     .map_err(|_| steam_runtime::Error::StartFailed)?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::{Value, json};
+
+    fn failed(error: &str) -> Value {
+        json!({
+            "version": 2,
+            "id": "fixture-session",
+            "account_id": 42,
+            "store": {"app_id": 620, "host": "stopped"},
+            "phase": "Failed",
+            "cloud": {"phase": "Idle", "id": 0, "error": null, "allowed_choices": []},
+            "exit_code": null,
+            "error": error,
+            "revision": 2,
+            "supervisor": {
+                "pid": 42, "uid": 501, "birth_seconds": 1, "birth_microseconds": 2,
+                "executable": "/fixture/forge-steam-host"
+            },
+            "game": null,
+            "socket": "/fixture/control"
+        })
+    }
+
+    fn bridged(value: Value) -> SteamGameSnapshot {
+        serde_json::from_value::<steam_runtime::steam::Snapshot>(value)
+            .unwrap()
+            .into()
+    }
+
+    #[test]
+    fn a_steam_cancellation_reaches_swift_typed_independently_of_its_message() {
+        let mut value = failed("A renamed cancellation message");
+        value["failure_reason"] = json!("Cancelled");
+        assert!(matches!(
+            bridged(value).failure_reason,
+            Some(SteamGameFailureReason::Cancelled)
+        ));
+        // Records without a typed reason classify only the cancellation key.
+        assert!(matches!(
+            bridged(failed("backend.steam.runtime.cancelled")).failure_reason,
+            Some(SteamGameFailureReason::Cancelled)
+        ));
+        assert!(matches!(
+            bridged(failed("backend.steam.runtime.startFailed")).failure_reason,
+            Some(SteamGameFailureReason::Failed)
+        ));
+        let mut running = failed("backend.steam.runtime.cancelled");
+        running["phase"] = json!("Running");
+        assert!(bridged(running).failure_reason.is_none());
+    }
 }

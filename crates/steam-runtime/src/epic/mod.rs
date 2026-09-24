@@ -1,18 +1,17 @@
 //! Epic game ownership and EGS Cloud orchestration. The UI only observes and
 //! answers revision-bound choices; a detached process owns the entire session.
 mod client;
+pub(crate) mod launch;
 mod maintenance;
-mod server;
 mod session;
-#[cfg(test)]
-mod tests;
 
-use crate::supervisor::{Identity, RosettaRequest, StartingGame, Target};
-pub use client::{Client, start};
+use crate::supervisor::{self, Record, Target};
+pub use crate::supervisor::{FailureReason, Phase};
+pub use client::start;
 use forge_core::transfer::CancelToken;
+pub use launch::serve;
 pub use maintenance::{MaintenanceChannel, MaintenanceStatus};
 use serde::{Deserialize, Serialize};
-pub use server::{exec_game, serve};
 pub use session::{EpicIndicator, archive, indicators, maintain, removed};
 use std::{
     path::PathBuf,
@@ -57,6 +56,19 @@ impl From<steam_cloud::Error> for Error {
         }
     }
 }
+impl From<supervisor::Error> for Error {
+    fn from(error: supervisor::Error) -> Self {
+        match error {
+            supervisor::Error::Storage => Self::Storage,
+            supervisor::Error::NewerSession | supervisor::Error::Busy => Self::Busy,
+            supervisor::Error::Cancelled => Self::Cancelled,
+            supervisor::Error::RosettaUnavailable => Self::RosettaUnavailable,
+            supervisor::Error::InvalidSession
+            | supervisor::Error::Unavailable
+            | supervisor::Error::StartFailed => Self::Session,
+        }
+    }
+}
 impl From<crate::Error> for Error {
     fn from(error: crate::Error) -> Self {
         match error {
@@ -67,7 +79,6 @@ impl From<crate::Error> for Error {
     }
 }
 pub type Result<T> = std::result::Result<T, Error>;
-pub type Inspect = fn(u32) -> Result<Option<Identity>>;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -116,21 +127,9 @@ impl Configuration {
     }
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub enum Phase {
-    Preparing,
-    Running,
-    Finalizing,
-    Finished,
-    Failed,
-}
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub enum FailureReason {
-    Cancelled,
-    Failed,
-}
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub enum CloudPhase {
+    #[default]
     Checking,
     Ready,
     Syncing,
@@ -150,53 +149,68 @@ pub enum Choice {
     LaunchAnyway,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct Snapshot {
-    pub id: String,
-    pub account_id: String,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Epic;
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Store {
     pub namespace: String,
     pub app_name: String,
-    pub phase: Phase,
-    pub cloud_phase: CloudPhase,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Cloud {
+    pub phase: CloudPhase,
+    /// Shared by Cloud questions and the Rosetta requirement.
     pub decision_id: u64,
     pub allowed_choices: Vec<Choice>,
-    pub error: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub failure_reason: Option<FailureReason>,
-    pub exit_code: Option<i32>,
-    pub revision: u64,
-    #[serde(skip)]
-    pub reconnecting: bool,
-    pub supervisor: Identity,
-    pub game: Option<Identity>,
-    pub starting: Option<StartingGame>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rosetta: Option<RosettaRequest>,
-    pub socket: PathBuf,
 }
-impl Snapshot {
-    pub fn finished(&self) -> bool {
-        matches!(self.phase, Phase::Finished | Phase::Failed)
-            && self.game.is_none()
-            && self.starting.is_none()
+
+pub type Snapshot = Record<Epic>;
+pub type Client = supervisor::Client<Epic>;
+pub type IdleGuard = supervisor::IdleGuard<Epic>;
+
+impl supervisor::Provider for Epic {
+    type Account = String;
+    type Store = Store;
+    type Cloud = Cloud;
+    type Choice = Choice;
+    type Error = Error;
+    const SUPERVISE: &'static str = "epic-supervise";
+    const CANCELLED: &'static [&'static str] =
+        &["backend.epic.cloud.cancelled", "backend.epic.cancelled"];
+
+    fn valid(record: &Record<Self>) -> bool {
+        record.account_id.len() == 32
+            && !record.store.app_name.is_empty()
+            && record.socket.is_absolute()
     }
 
-    pub fn failure_reason(&self) -> Option<FailureReason> {
-        if !self.finished() || self.phase != Phase::Failed {
-            return None;
+    fn cancelled(error: &Error) -> bool {
+        matches!(
+            error,
+            Error::Cancelled | Error::Epic(epic_kit::EpicError::Cancelled)
+        )
+    }
+
+    fn same_game(a: &Store, b: &Store) -> bool {
+        a == b
+    }
+
+    /// Epic keeps reconnecting to a game that still runs. A retired session's
+    /// Cloud work stays pending for its next sync.
+    fn orphaned(record: &mut Record<Self>, owned: bool) {
+        if owned {
+            record.reconnecting = true;
+            return;
         }
-        if let Some(reason) = self.failure_reason {
-            return Some(reason);
+        if !matches!(
+            record.cloud.phase,
+            CloudPhase::Unsupported | CloudPhase::Disabled | CloudPhase::Synced
+        ) {
+            record.cloud.phase = CloudPhase::Pending;
         }
-        // Compatibility with journals and helpers predating typed failures.
-        // New snapshots classify the Rust variant before formatting it.
-        Some(match self.error.as_deref() {
-            Some("backend.epic.cloud.cancelled" | "backend.epic.cancelled") => {
-                FailureReason::Cancelled
-            }
-            _ => FailureReason::Failed,
-        })
+        record.cloud.allowed_choices.clear();
     }
 }
 
@@ -209,51 +223,8 @@ struct Request {
     account_id: String,
     exchange_code: String,
 }
-#[derive(Serialize, Deserialize)]
-enum Command {
-    Begin {
-        id: String,
-        account: String,
-    },
-    Observe {
-        id: String,
-        after: Option<u64>,
-    },
-    Cancel {
-        id: String,
-    },
-    Choose {
-        id: String,
-        account: String,
-        decision: u64,
-        choice: Choice,
-    },
-    Revoke {
-        id: String,
-        account: String,
-    },
-    ResumeAfterRosetta {
-        id: String,
-        account: String,
-        decision_id: u64,
-    },
-}
-struct State {
-    snapshot: Snapshot,
-    begun: bool,
-    choice: Option<Choice>,
-    observed: Instant,
-}
-struct Control {
-    state: Mutex<State>,
-    changed: Condvar,
-    admission: Mutex<bool>,
-    cancel: CancelToken,
-    root: PathBuf,
-    rosetta: crate::rosetta::Gate,
-}
-/// Where an Epic Cloud sync reports its progress and asks the player. The
-/// detached supervisor journals it for Forge to observe; Cloud maintenance
+/// Where an Epic Cloud sync reports its progress and asks the player. A
+/// supervised launch journals it for Forge to observe; Cloud maintenance
 /// keeps it in Forge's memory.
 pub(crate) trait CloudChannel: Send + Sync + 'static {
     fn cancellation(&self) -> &CancelToken;
@@ -271,152 +242,4 @@ pub(crate) trait CloudChannel: Send + Sync + 'static {
     fn check(&self) -> Result<()> {
         self.cancellation().check().map_err(|_| Error::Cancelled)
     }
-}
-impl CloudChannel for Control {
-    fn cancellation(&self) -> &CancelToken {
-        &self.cancel
-    }
-    fn launching(&self) -> bool {
-        self.snapshot().phase == Phase::Preparing
-    }
-    fn show(&self, phase: CloudPhase, error: Option<String>) -> Result<()> {
-        self.update(|s| {
-            s.cloud_phase = phase;
-            s.allowed_choices.clear();
-            s.error = error;
-        })
-    }
-    fn question(
-        &self,
-        phase: CloudPhase,
-        error: Option<String>,
-        choices: Vec<Choice>,
-    ) -> Result<Choice> {
-        self.ask(phase, error, choices)
-    }
-}
-impl Control {
-    fn snapshot(&self) -> Snapshot {
-        self.state.lock().unwrap().snapshot.clone()
-    }
-    /// Wake both the blocking observers and the executor's Rosetta wait.
-    fn notify_changed(&self) {
-        self.changed.notify_all();
-        self.rosetta.wake();
-    }
-    fn update(&self, change: impl FnOnce(&mut Snapshot)) -> Result<()> {
-        let mut state = self.state.lock().unwrap();
-        change(&mut state.snapshot);
-        state.snapshot.revision += 1;
-        let result = write_snapshot(&self.root, &state.snapshot);
-        self.notify_changed();
-        result
-    }
-    fn fail(&self, error: &Error) -> Result<()> {
-        self.update(|s| {
-            s.phase = if s.game.is_some() || s.starting.is_some() {
-                Phase::Running
-            } else {
-                Phase::Failed
-            };
-            s.failure_reason = (s.phase == Phase::Failed).then_some(match error {
-                Error::Cancelled | Error::Epic(epic_kit::EpicError::Cancelled) => {
-                    FailureReason::Cancelled
-                }
-                _ => FailureReason::Failed,
-            });
-            if !matches!(s.cloud_phase, CloudPhase::Conflict | CloudPhase::Pending) {
-                s.cloud_phase = CloudPhase::Failed;
-            }
-            s.error = Some(error.to_string());
-            s.allowed_choices.clear();
-            s.rosetta = None;
-        })
-    }
-    fn check(&self) -> Result<()> {
-        self.cancel.check().map_err(|_| Error::Cancelled)
-    }
-    fn ask(
-        &self,
-        phase: CloudPhase,
-        error: Option<String>,
-        choices: Vec<Choice>,
-    ) -> Result<Choice> {
-        {
-            let mut state = self.state.lock().unwrap();
-            state.choice = None;
-            state.snapshot.decision_id += 1;
-            state.snapshot.cloud_phase = phase;
-            state.snapshot.error = error;
-            state.snapshot.allowed_choices = choices;
-            state.snapshot.revision += 1;
-            write_snapshot(&self.root, &state.snapshot)?;
-            self.changed.notify_all();
-        }
-        let mut state = self.state.lock().unwrap();
-        loop {
-            self.check()?;
-            if let Some(choice) = state.choice.take() {
-                state.snapshot.allowed_choices.clear();
-                return Ok(choice);
-            }
-            // A vanished observer cannot strand an authenticated helper forever.
-            // The durable conflict remains pending for the next account session.
-            if state.observed.elapsed() > Duration::from_secs(120) {
-                return Err(Error::Cancelled);
-            }
-            state = self
-                .changed
-                .wait_timeout(state, Duration::from_secs(1))
-                .unwrap()
-                .0;
-        }
-    }
-}
-
-fn read_snapshot(root: &std::path::Path, id: Option<&str>) -> Result<Option<Snapshot>> {
-    if id.is_some_and(|id| uuid::Uuid::parse_str(id).is_err()) {
-        return Err(Error::Session);
-    }
-    let path = root.join(id.map_or_else(|| "session.json".into(), |id| format!("{id}.json")));
-    let value = steam_cloud::journal::read::<Snapshot>(&path)?;
-    if let Some(s) = &value
-        && (uuid::Uuid::parse_str(&s.id).is_err()
-            || id.is_some_and(|id| id != s.id)
-            || s.account_id.len() != 32
-            || s.app_name.is_empty()
-            || !s.socket.is_absolute())
-    {
-        return Err(Error::Session);
-    }
-    Ok(value)
-}
-fn write_snapshot(root: &std::path::Path, snapshot: &Snapshot) -> Result<()> {
-    steam_cloud::journal::write(&root.join(format!("{}.json", snapshot.id)), snapshot)?;
-    steam_cloud::journal::write(&root.join("session.json"), snapshot)?;
-    Ok(())
-}
-fn owns_child(
-    snapshot: &Snapshot,
-    inspect: impl Fn(u32) -> Result<Option<Identity>>,
-) -> Result<bool> {
-    let same_process = |before: &Identity, now: &Identity| {
-        now.pid == before.pid
-            && now.uid == before.uid
-            && now.birth_seconds == before.birth_seconds
-            && now.birth_microseconds == before.birth_microseconds
-    };
-    // exec() can replace a game's executable without ending its process. Kernel
-    // birth identity, not the last observed executable, controls ownership.
-    if let Some(game) = &snapshot.game
-        && inspect(game.pid)?.is_some_and(|now| same_process(game, &now))
-    {
-        return Ok(true);
-    }
-    if let Some(StartingGame::Process { identity, .. }) = &snapshot.starting
-        && let Some(now) = inspect(identity.pid)?
-    {
-        return Ok(same_process(identity, &now));
-    }
-    Ok(false)
 }

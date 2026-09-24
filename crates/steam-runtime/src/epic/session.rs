@@ -1,5 +1,6 @@
 use super::*;
 use crate::cloud_status::{self, ProblemKind, UnavailableReason};
+use crate::supervisor::client::SessionAlive;
 use epic_kit::{
     EpicError,
     client::Client as EpicClient,
@@ -25,8 +26,6 @@ pub(super) struct Session<R: CloudRemote> {
     vault: Vault,
     api: Arc<R>,
     control: Arc<dyn CloudChannel>,
-    /// How a dead owner's process identity is checked. Tests replace it.
-    inspect: fn(&Path, u32) -> Result<Option<Identity>>,
     shown: Option<(RemoteView, Manifest)>,
     offline: bool,
     /// How the current operation ended without a sync, for the status file.
@@ -122,7 +121,6 @@ impl<R: CloudRemote> Session<R> {
             shown: None,
             offline,
             problem: None,
-            inspect: client::inspect,
         }))
     }
 
@@ -145,10 +143,11 @@ impl<R: CloudRemote> Session<R> {
         }
     }
 
-    pub async fn prepare(&mut self) -> Result<()> {
+    /// `alive` answers for a previous session whose game guard remains.
+    pub async fn prepare(&mut self, alive: &SessionAlive<'_>) -> Result<()> {
         let syncs = self.vault.syncs();
         self.problem = None;
-        let result = self.prepare_inner().await;
+        let result = self.prepare_inner(alive).await;
         if let Err(error) = &result
             && self.problem.is_none()
         {
@@ -158,8 +157,8 @@ impl<R: CloudRemote> Session<R> {
         result
     }
 
-    async fn prepare_inner(&mut self) -> Result<()> {
-        self.recover_dead_owner()?;
+    async fn prepare_inner(&mut self, alive: &SessionAlive<'_>) -> Result<()> {
+        self.recover_dead_owner(alive)?;
         if self.offline {
             self.capture_offline()?;
             return self.control.show(CloudPhase::Pending, None);
@@ -198,10 +197,10 @@ impl<R: CloudRemote> Session<R> {
 
     /// Cloud maintenance of this game: a two-way sync without a launch. The
     /// caller holds the idle guard, so no supervisor or game owns the saves.
-    pub(crate) async fn maintain(&mut self) -> Result<()> {
+    pub(crate) async fn maintain(&mut self, alive: &SessionAlive<'_>) -> Result<()> {
         let syncs = self.vault.syncs();
         self.problem = None;
-        let result = self.maintain_inner().await;
+        let result = self.maintain_inner(alive).await;
         if let Err(error) = &result
             && self.problem.is_none()
         {
@@ -211,8 +210,8 @@ impl<R: CloudRemote> Session<R> {
         result
     }
 
-    async fn maintain_inner(&mut self) -> Result<()> {
-        self.recover_dead_owner()?;
+    async fn maintain_inner(&mut self, alive: &SessionAlive<'_>) -> Result<()> {
+        self.recover_dead_owner(alive)?;
         // An uninstalled game only finishes its remote work; its archived
         // saves are never projected into a missing installation.
         if !self.context.absent()? && !self.context.installation_removed {
@@ -232,29 +231,25 @@ impl<R: CloudRemote> Session<R> {
         self.run(false).await
     }
 
-    /// The caller proved that no child was accepted by the failed spawn.
+    /// Account revocation abandoned the launch: its authorization ends now.
+    pub fn revoked(&mut self) -> Result<()> {
+        Ok(self.vault.revoke()?)
+    }
+
+    /// No game ran, or its exec was never confirmed: the exit save is only
+    /// captured, and stays pending.
     pub fn aborted(&mut self, id: &str) -> Result<()> {
         self.vault.game_exited(id)?;
         self.capture_exit()?;
         self.control.show(CloudPhase::Pending, None)
     }
 
-    fn recover_dead_owner(&mut self) -> Result<()> {
+    /// Only the matching session's actual exit may clear its game guard. The
+    /// caller holds Epic's owner lock, so `alive` can answer for it.
+    fn recover_dead_owner(&mut self, alive: &SessionAlive<'_>) -> Result<()> {
         let previous = self.vault.game_session().map(str::to_owned);
         if let Some(id) = previous {
-            let config = &self.context.config;
-            let snapshot =
-                read_snapshot(&config.session_directory, Some(&id))?.ok_or(Error::Recovery)?;
-            if snapshot.account_id != self.context.account_id
-                || snapshot.namespace != config.namespace
-                || snapshot.app_name != config.app_name
-            {
-                return Err(Error::Recovery);
-            }
-            if (self.inspect)(&config.helper, snapshot.supervisor.pid)?.as_ref()
-                == Some(&snapshot.supervisor)
-                || owns_child(&snapshot, |pid| (self.inspect)(&config.helper, pid))?
-            {
+            if alive(&id)? {
                 return Err(Error::Busy);
             }
             self.vault.game_exited(&id)?;
@@ -779,25 +774,26 @@ fn indicator(
 }
 
 /// Cloud maintenance of one Epic game, run inside Forge with the UI's
-/// authenticated client. `_idle` proves no Epic launch or supervisor can
+/// authenticated client. `idle` proves no Epic launch or supervisor can
 /// start while it runs.
 pub async fn maintain(
     config: Configuration,
     api: Arc<EpicClient>,
     channel: Arc<MaintenanceChannel>,
-    _idle: &crate::supervisor::IdleGuard,
+    idle: &IdleGuard,
 ) -> Result<()> {
-    maintain_with(config, api, channel).await
+    maintain_with(config, api, channel, &|id| idle.session_alive(id)).await
 }
 
 pub(crate) async fn maintain_with<R: CloudRemote>(
     config: Configuration,
     api: Arc<R>,
     channel: Arc<dyn CloudChannel>,
+    alive: &SessionAlive<'_>,
 ) -> Result<()> {
     let account = api.account_id().await?;
     match Session::new(config, account, api, channel).await? {
-        Some(mut session) => session.maintain().await,
+        Some(mut session) => session.maintain(alive).await,
         // Unsupported rules were reported, and recorded as unavailable.
         None => Ok(()),
     }

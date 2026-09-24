@@ -67,7 +67,7 @@ impl Game {
     pub async fn synced(&self, bytes: &[u8]) {
         fs::write(self.save(), bytes).unwrap();
         self.cloud.publish(SLOT, bytes);
-        self.session().prepare().await.unwrap();
+        self.session().prepare(&no_other_session).await.unwrap();
     }
 }
 
@@ -100,7 +100,7 @@ async fn a_launch_with_equal_saves_is_ready_and_records_a_cloud_sync() {
     game.cloud.publish(SLOT, b"progress");
     let mut session = game.session();
 
-    session.prepare().await.unwrap();
+    session.prepare(&no_other_session).await.unwrap();
 
     assert_eq!(game.status().phase, Phase::Ready);
     assert!(session.vault.synced_at().is_some());
@@ -113,10 +113,46 @@ async fn a_launch_downloads_a_newer_cloud_save() {
     game.synced(b"old").await;
     game.cloud.publish(SLOT, b"from another device");
 
-    game.session().prepare().await.unwrap();
+    game.session().prepare(&no_other_session).await.unwrap();
 
     assert_eq!(game.status().phase, Phase::Ready);
     assert_eq!(fs::read(game.save()).unwrap(), b"from another device");
+}
+
+#[tokio::test]
+async fn an_unconfirmed_game_exit_only_captures_its_save() {
+    let game = game();
+    game.synced(b"old").await;
+    let mut session = game.session();
+    session.prepare(&no_other_session).await.unwrap();
+    session.started().unwrap();
+    fs::write(game.save(), b"maybe played").unwrap();
+
+    // The helper exited without confirming that the game ever ran.
+    session.finished(false).await;
+
+    assert_eq!(game.cloud.file(SLOT).unwrap(), b"old");
+    assert_eq!(game.cloud.uploads(), 0);
+    assert_eq!(game.status().phase, Phase::Pending);
+    assert_eq!(store::pending(&game.config.root, ACCOUNT).unwrap(), [42]);
+}
+
+#[tokio::test]
+async fn a_launch_revoked_before_spawn_withdraws_its_cloud_authorization() {
+    let game = game();
+    game.synced(b"old").await;
+    let mut session = game.session();
+    session.prepare(&no_other_session).await.unwrap();
+    let before = format!("{:?}", session.vault.authorize(ACCOUNT).unwrap());
+    game.control.revoke(ACCOUNT).unwrap();
+
+    session.aborted();
+
+    let after = format!("{:?}", session.vault.authorize(ACCOUNT).unwrap());
+    assert_ne!(
+        before, after,
+        "the account's authorization generation moved on"
+    );
 }
 
 #[tokio::test]
@@ -124,11 +160,11 @@ async fn game_exit_uploads_local_progress() {
     let game = game();
     game.synced(b"old").await;
     let mut session = game.session();
-    session.prepare().await.unwrap();
+    session.prepare(&no_other_session).await.unwrap();
     session.started().unwrap();
     fs::write(game.save(), b"new progress").unwrap();
 
-    session.finished().await;
+    session.finished(true).await;
 
     assert_eq!(game.status().phase, Phase::Synced);
     assert_eq!(game.cloud.file(SLOT).unwrap(), b"new progress");
@@ -143,7 +179,7 @@ async fn a_launch_conflict_asks_and_applies_the_cloud_choice() {
     game.cloud.publish(SLOT, b"cloud progress");
     let answering = answer(&game.control, Choice::Cloud);
 
-    game.session().prepare().await.unwrap();
+    game.session().prepare(&no_other_session).await.unwrap();
 
     answering.join().unwrap();
     assert_eq!(game.status().phase, Phase::Ready);
@@ -155,12 +191,12 @@ async fn a_failed_exit_upload_keeps_the_exit_save_pending() {
     let game = game();
     game.synced(b"old").await;
     let mut session = game.session();
-    session.prepare().await.unwrap();
+    session.prepare(&no_other_session).await.unwrap();
     session.started().unwrap();
     fs::write(game.save(), b"new progress").unwrap();
     game.cloud.fail_next_connection(Failure::Quota);
 
-    session.finished().await;
+    session.finished(true).await;
 
     assert_eq!(game.status().phase, Phase::Pending);
     assert_eq!(game.cloud.file(SLOT).unwrap(), b"old");
@@ -184,7 +220,7 @@ async fn a_game_without_steam_cloud_is_unavailable_until_its_rules_return() {
     let game = game();
     game.cloud.set_metadata(None);
 
-    game.session().prepare().await.unwrap();
+    game.session().prepare(&no_other_session).await.unwrap();
 
     assert_eq!(game.status().phase, Phase::Disabled);
     assert_eq!(unavailable(&game), Some(UnavailableReason::NoCloud));
@@ -200,7 +236,7 @@ async fn cloud_turned_off_in_steam_is_recorded_as_unavailable() {
     fs::write(game.save(), b"progress").unwrap();
     game.cloud.set_enabled(Some(false));
 
-    game.session().prepare().await.unwrap();
+    game.session().prepare(&no_other_session).await.unwrap();
 
     assert_eq!(game.status().phase, Phase::Disabled);
     assert_eq!(unavailable(&game), Some(UnavailableReason::Disabled));
@@ -213,11 +249,11 @@ async fn playing_with_cloud_turned_off_leaves_no_pending_work() {
     game.synced(b"old").await;
     game.cloud.set_enabled(Some(false));
     let mut session = game.session();
-    session.prepare().await.unwrap();
+    session.prepare(&no_other_session).await.unwrap();
     session.started().unwrap();
     fs::write(game.save(), b"played with Cloud off").unwrap();
 
-    session.finished().await;
+    session.finished(true).await;
 
     assert_eq!(game.status().phase, Phase::Disabled);
     let saved = Context::load(&game.config, ACCOUNT).unwrap().unwrap();
@@ -239,13 +275,13 @@ async fn a_cancelled_launch_check_is_a_failed_sync_until_the_next_sync() {
     game.cloud.fail_next_connection(Failure::Quota);
     let answering = answer(&game.control, Choice::Cancel);
 
-    assert!(game.session().prepare().await.is_err());
+    assert!(game.session().prepare(&no_other_session).await.is_err());
 
     answering.join().unwrap();
     let problem = record(&game).problem.unwrap();
     assert_eq!(problem.kind, ProblemKind::Failed);
     assert_eq!(problem.key, Failure::Quota.key());
-    game.session().prepare().await.unwrap();
+    game.session().prepare(&no_other_session).await.unwrap();
     assert_eq!(record(&game).problem, None);
 }
 
@@ -257,7 +293,7 @@ async fn launching_anyway_without_pending_work_is_a_failed_sync() {
     game.cloud.fail_next_connection(Failure::Quota);
     let answering = answer(&game.control, Choice::LaunchAnyway);
 
-    game.session().prepare().await.unwrap();
+    game.session().prepare(&no_other_session).await.unwrap();
 
     answering.join().unwrap();
     assert_eq!(game.status().phase, Phase::Pending);
@@ -273,14 +309,14 @@ async fn an_unanswered_launch_conflict_is_recorded_until_it_is_answered() {
     game.cloud.publish(SLOT, b"cloud progress");
     let answering = answer(&game.control, Choice::Cancel);
 
-    assert!(game.session().prepare().await.is_err());
+    assert!(game.session().prepare(&no_other_session).await.is_err());
 
     answering.join().unwrap();
     let problem = record(&game).problem.unwrap();
     assert_eq!(problem.kind, ProblemKind::Conflict);
     assert_eq!(problem.key, Failure::Conflict.key());
     let answering = answer(&game.control, Choice::Local);
-    game.session().prepare().await.unwrap();
+    game.session().prepare(&no_other_session).await.unwrap();
     answering.join().unwrap();
     assert_eq!(record(&game).problem, None);
 }
@@ -324,13 +360,13 @@ async fn a_game_exit_conflict_is_asked_live_and_answered() {
         let game = game();
         game.synced(b"old").await;
         let mut session = game.session();
-        session.prepare().await.unwrap();
+        session.prepare(&no_other_session).await.unwrap();
         session.started().unwrap();
         fs::write(game.save(), b"played here").unwrap();
         game.cloud.publish(SLOT, b"played elsewhere");
         let answering = answer(&game.control, choice);
 
-        session.finished().await;
+        session.finished(true).await;
 
         answering.join().unwrap();
         assert_eq!(game.status().phase, Phase::Synced);
@@ -352,13 +388,13 @@ async fn an_unanswered_exit_conflict_stays_pending_with_a_conflict_marker() {
     let game = game();
     game.synced(b"old").await;
     let mut session = game.session();
-    session.prepare().await.unwrap();
+    session.prepare(&no_other_session).await.unwrap();
     session.started().unwrap();
     fs::write(game.save(), b"played here").unwrap();
     game.cloud.publish(SLOT, b"played elsewhere");
     let answering = answer(&game.control, Choice::Cancel);
 
-    session.finished().await;
+    session.finished(true).await;
 
     answering.join().unwrap();
     assert_eq!(game.status().phase, Phase::Pending);
@@ -373,6 +409,14 @@ async fn an_unanswered_exit_conflict_stays_pending_with_a_conflict_marker() {
 }
 
 async fn maintain(game: &Game, target: MaintenanceTarget) -> Result<(), Failure> {
+    maintain_beside(game, target, &no_other_session).await
+}
+
+async fn maintain_beside(
+    game: &Game,
+    target: MaintenanceTarget,
+    alive: &SessionAlive<'_>,
+) -> Result<(), Failure> {
     // A maintenance never waits on a question it should not ask.
     tokio::time::timeout(
         Duration::from_secs(20),
@@ -381,6 +425,7 @@ async fn maintain(game: &Game, target: MaintenanceTarget) -> Result<(), Failure>
             target,
             &credentials(),
             Arc::clone(&game.control),
+            alive,
         ),
     )
     .await
@@ -401,11 +446,11 @@ fn uninstalled(game: &Game) -> MaintenanceTarget {
 /// The game exits while Steam Cloud is unreachable: its exit save stays pending.
 async fn played_offline(game: &Game, bytes: &[u8]) {
     let mut session = game.session();
-    session.prepare().await.unwrap();
+    session.prepare(&no_other_session).await.unwrap();
     session.started().unwrap();
     fs::write(game.save(), bytes).unwrap();
     game.cloud.fail_next_connection(Failure::Quota);
-    session.finished().await;
+    session.finished(true).await;
     assert_eq!(game.status().phase, Phase::Pending);
 }
 
@@ -501,6 +546,23 @@ async fn maintenance_clears_the_guard_of_a_dead_game_session() {
     assert_eq!(game.cloud.file(SLOT).unwrap(), b"played before a crash");
     let vault = Vault::open(&game.config.root, scope(&game.config, ACCOUNT)).unwrap();
     assert!(vault.game_session().is_none());
+}
+
+#[tokio::test]
+async fn maintenance_keeps_the_guard_of_a_game_session_that_still_runs() {
+    let game = game();
+    game.synced(b"old").await;
+    let mut session = game.session();
+    session.started().unwrap();
+    fs::write(game.save(), b"still playing").unwrap();
+    drop(session);
+
+    let refused = maintain_beside(&game, installed(&game), &|_| Ok(true)).await;
+
+    assert!(matches!(refused, Err(Failure::Busy)));
+    assert_eq!(game.cloud.file(SLOT).unwrap(), b"old");
+    let vault = Vault::open(&game.config.root, scope(&game.config, ACCOUNT)).unwrap();
+    assert!(vault.game_session().is_some());
 }
 
 #[tokio::test]
@@ -608,7 +670,7 @@ async fn a_game_without_steam_cloud_has_an_unavailable_indicator() {
     use crate::cloud_status::SavedState;
     let game = game();
     game.cloud.set_metadata(None);
-    game.session().prepare().await.unwrap();
+    game.session().prepare(&no_other_session).await.unwrap();
 
     let shown = store::indicators(&game.config.root, ACCOUNT, &[42]).unwrap();
 
@@ -620,7 +682,7 @@ async fn a_stopped_exit_upload_waits_without_claiming_a_conflict() {
     let game = game();
     game.synced(b"old").await;
     let mut session = game.session();
-    session.prepare().await.unwrap();
+    session.prepare(&no_other_session).await.unwrap();
     session.started().unwrap();
     fs::write(game.save(), b"new progress").unwrap();
     game.cloud.fail_next_connection(Failure::Network);
@@ -631,7 +693,7 @@ async fn a_stopped_exit_upload_waits_without_claiming_a_conflict() {
         control.cancel();
     });
 
-    session.finished().await;
+    session.finished(true).await;
 
     stopper.join().unwrap();
     let status = game.status();

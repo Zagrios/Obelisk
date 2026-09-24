@@ -31,7 +31,8 @@ fn native_supervisor_acknowledges_and_reports_preparation_failure_without_valve(
     use steam_runtime::{
         Config, Launch,
         protocol::Credentials,
-        supervisor::{Phase, Request, Target},
+        steam::Request,
+        supervisor::{Phase, Target},
     };
     struct Scratch(PathBuf);
     impl Drop for Scratch {
@@ -81,7 +82,7 @@ fn native_supervisor_acknowledges_and_reports_preparation_failure_without_valve(
     let mut after = None;
     loop {
         let snapshot = client.snapshot(after).unwrap();
-        assert_eq!(snapshot.app_id, 42);
+        assert_eq!(snapshot.store.app_id, 42);
         assert_eq!(snapshot.account_id, 123);
         assert!(snapshot.game.is_none());
         if snapshot.finished() {

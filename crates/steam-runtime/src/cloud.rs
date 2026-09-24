@@ -201,6 +201,9 @@ struct DecisionState {
 }
 pub struct Control {
     account_id: u64,
+    /// Decision IDs and question deadlines, shared with a supervisor's
+    /// Rosetta requirement when one runs this sync.
+    questions: Arc<crate::supervisor::session::Questions>,
     revoked: AtomicBool,
     cancelled: AtomicBool,
     state: Mutex<DecisionState>,
@@ -209,9 +212,22 @@ pub struct Control {
     publish: Box<dyn Fn(Status) + Send + Sync>,
 }
 impl Control {
+    /// Cloud maintenance in Forge, where the UI waits for any answer.
     pub fn new(account_id: u64, publish: impl Fn(Status) + Send + Sync + 'static) -> Self {
+        Self::with_questions(
+            account_id,
+            Arc::new(crate::supervisor::session::Questions::in_app()),
+            publish,
+        )
+    }
+    pub(crate) fn with_questions(
+        account_id: u64,
+        questions: Arc<crate::supervisor::session::Questions>,
+        publish: impl Fn(Status) + Send + Sync + 'static,
+    ) -> Self {
         Self {
             account_id,
+            questions,
             revoked: AtomicBool::new(false),
             cancelled: AtomicBool::new(false),
             state: Mutex::new(DecisionState {
@@ -249,7 +265,10 @@ impl Control {
         self.stop.notify_waiters();
         self.changed.notify_waiters();
     }
-    fn check(&self) -> Result<(), Failure> {
+    pub(crate) fn revoked(&self) -> bool {
+        self.revoked.load(Ordering::Acquire)
+    }
+    pub(crate) fn check(&self) -> Result<(), Failure> {
         if self.cancelled.load(Ordering::Acquire) {
             Err(Failure::Cancelled)
         } else if self.revoked.load(Ordering::Acquire) {
@@ -258,12 +277,12 @@ impl Control {
             Ok(())
         }
     }
-    fn status(&self, phase: Phase, error: Option<Failure>) {
+    pub(crate) fn status(&self, phase: Phase, error: Option<Failure>) {
         let status = {
             let mut state = self.state.lock().unwrap();
             state.status = Status {
                 phase,
-                id: state.status.id + 1,
+                id: self.questions.next(),
                 error: error.map(|e| e.key().into()),
                 allowed_choices: match phase {
                     Phase::Conflict => vec![Choice::Local, Choice::Cloud, Choice::Cancel],
@@ -282,7 +301,7 @@ impl Control {
         };
         (self.publish)(status);
     }
-    async fn ask(&self, failure: Failure) -> Result<Choice, Failure> {
+    pub(crate) async fn ask(&self, failure: Failure) -> Result<Choice, Failure> {
         self.status(
             if matches!(failure, Failure::Conflict) {
                 Phase::Conflict
@@ -291,7 +310,8 @@ impl Control {
             },
             Some(failure),
         );
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(600);
+        // Abandoned after its deadline, or once nobody observes the session.
+        let published = std::time::Instant::now();
         loop {
             let changed = self.changed.notified();
             tokio::pin!(changed);
@@ -304,9 +324,10 @@ impl Control {
                     Ok(choice)
                 };
             }
-            if tokio::time::timeout_at(deadline, changed).await.is_err() {
+            if self.questions.abandoned(published) {
                 return Err(Failure::Cancelled);
             }
+            let _ = tokio::time::timeout(Duration::from_secs(1), changed).await;
         }
     }
     async fn guarded<T>(

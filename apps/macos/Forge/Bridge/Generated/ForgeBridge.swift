@@ -4949,10 +4949,17 @@ public struct SteamGameSnapshot: Equatable, Hashable {
     public var error: String?
     public var revision: UInt64
     public var rosetta: RosettaRequest?
+    /**
+     * Defaulted so that records built before it existed still compile.
+     */
+    public var failureReason: SteamGameFailureReason?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(id: String, appId: UInt32, accountId: UInt64, phase: SteamGamePhase, cloudPhase: SteamCloudPhase, cloudDecisionId: UInt64, cloudError: String?, cloudAllowedChoices: [SteamCloudChoice], connection: SteamSupervisorConnection, host: SteamHostState, exitCode: Int32?, error: String?, revision: UInt64, rosetta: RosettaRequest?) {
+    public init(id: String, appId: UInt32, accountId: UInt64, phase: SteamGamePhase, cloudPhase: SteamCloudPhase, cloudDecisionId: UInt64, cloudError: String?, cloudAllowedChoices: [SteamCloudChoice], connection: SteamSupervisorConnection, host: SteamHostState, exitCode: Int32?, error: String?, revision: UInt64, rosetta: RosettaRequest?, 
+        /**
+         * Defaulted so that records built before it existed still compile.
+         */failureReason: SteamGameFailureReason? = nil) {
         self.id = id
         self.appId = appId
         self.accountId = accountId
@@ -4967,6 +4974,7 @@ public struct SteamGameSnapshot: Equatable, Hashable {
         self.error = error
         self.revision = revision
         self.rosetta = rosetta
+        self.failureReason = failureReason
     }
 
     
@@ -4998,7 +5006,8 @@ public struct FfiConverterTypeSteamGameSnapshot: FfiConverterRustBuffer {
                 exitCode: FfiConverterOptionInt32.read(from: &buf), 
                 error: FfiConverterOptionString.read(from: &buf), 
                 revision: FfiConverterUInt64.read(from: &buf), 
-                rosetta: FfiConverterOptionTypeRosettaRequest.read(from: &buf)
+                rosetta: FfiConverterOptionTypeRosettaRequest.read(from: &buf), 
+                failureReason: FfiConverterOptionTypeSteamGameFailureReason.read(from: &buf)
         )
     }
 
@@ -5017,6 +5026,7 @@ public struct FfiConverterTypeSteamGameSnapshot: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.error, into: &buf)
         FfiConverterUInt64.write(value.revision, into: &buf)
         FfiConverterOptionTypeRosettaRequest.write(value.rosetta, into: &buf)
+        FfiConverterOptionTypeSteamGameFailureReason.write(value.failureReason, into: &buf)
     }
 }
 
@@ -7233,6 +7243,75 @@ public func FfiConverterTypeSteamFriendsConnection_lower(_ value: SteamFriendsCo
 
 
 
+/**
+ * Why a terminal session failed. Swift treats a cancellation as silent.
+ */
+
+public enum SteamGameFailureReason: Equatable, Hashable {
+    
+    case cancelled
+    case failed
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension SteamGameFailureReason: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSteamGameFailureReason: FfiConverterRustBuffer {
+    typealias SwiftType = SteamGameFailureReason
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SteamGameFailureReason {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .cancelled
+        
+        case 2: return .failed
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: SteamGameFailureReason, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .cancelled:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .failed:
+            writeInt(&buf, Int32(2))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSteamGameFailureReason_lift(_ buf: RustBuffer) throws -> SteamGameFailureReason {
+    return try FfiConverterTypeSteamGameFailureReason.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSteamGameFailureReason_lower(_ value: SteamGameFailureReason) -> RustBuffer {
+    return FfiConverterTypeSteamGameFailureReason.lower(value)
+}
+
+
+
 
 public enum SteamGamePhase: Equatable, Hashable {
     
@@ -8098,6 +8177,30 @@ fileprivate struct FfiConverterOptionTypeEpicGameFailureReason: FfiConverterRust
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeEpicGameFailureReason.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeSteamGameFailureReason: FfiConverterRustBuffer {
+    typealias SwiftType = SteamGameFailureReason?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeSteamGameFailureReason.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeSteamGameFailureReason.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }

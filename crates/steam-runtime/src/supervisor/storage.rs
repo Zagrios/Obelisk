@@ -1,14 +1,14 @@
+//! Private session-directory locks and bounded one-line packets.
 use super::*;
-use crate::Error;
 use std::{
     fs::{self, File, OpenOptions},
     io::{Read, Write},
-    os::unix::fs::{OpenOptionsExt, PermissionsExt},
+    os::unix::fs::OpenOptionsExt,
     path::Path,
 };
 
 fn lock_file(root: &Path, name: &str) -> Result<File, Error> {
-    crate::files::private_directory(root)?;
+    crate::files::private_directory(root).map_err(|_| Error::Storage)?;
     let path = root.join(name);
     if fs::symlink_metadata(&path).is_ok_and(|m| !m.file_type().is_file()) {
         return Err(Error::Storage);
@@ -23,9 +23,11 @@ fn lock_file(root: &Path, name: &str) -> Result<File, Error> {
     Ok(file)
 }
 
+/// Busy only once the lock stays taken past the window in which a child that
+/// another thread spawns shares it.
 pub(crate) fn lock(root: &Path, name: &str) -> Result<File, Error> {
     let file = lock_file(root, name)?;
-    file.try_lock().map_err(|_| Error::SessionBusy)?;
+    steam_cloud::lock::try_lock(&file).map_err(|_| Error::Busy)?;
     Ok(file)
 }
 
@@ -42,45 +44,7 @@ pub(crate) fn owner_released(root: &Path, starting: File) -> Result<File, Error>
     });
     receive
         .recv_timeout(std::time::Duration::from_secs(1))
-        .map_err(|_| Error::SessionBusy)?
-}
-
-pub(super) fn read(root: &Path) -> Result<Option<Snapshot>, Error> {
-    read_path(&root.join("session.json"))
-}
-
-pub(super) fn read_id(root: &Path, id: &str) -> Result<Option<Snapshot>, Error> {
-    if uuid::Uuid::parse_str(id).is_err() {
-        return Err(Error::InvalidSession);
-    }
-    read_path(&root.join(format!("{id}.json")))
-}
-
-fn read_path(path: &Path) -> Result<Option<Snapshot>, Error> {
-    match fs::symlink_metadata(path) {
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Ok(m)
-            if m.file_type().is_file()
-                && m.len() <= 65536
-                && m.permissions().mode() & 0o077 == 0 => {}
-        _ => return Err(Error::Storage),
-    }
-    let snapshot: Snapshot = packet(File::open(path)?)?;
-    if uuid::Uuid::parse_str(&snapshot.id).is_err() || snapshot.app_id == 0 {
-        return Err(Error::Storage);
-    }
-    Ok(Some(snapshot))
-}
-
-pub(super) fn write(root: &Path, snapshot: &Snapshot) -> Result<(), Error> {
-    write_path(&root.join(format!("{}.json", snapshot.id)), snapshot)?;
-    write_path(&root.join("session.json"), snapshot)
-}
-
-fn write_path(path: &Path, snapshot: &Snapshot) -> Result<(), Error> {
-    crate::files::atomic_write(path, crate::files::Durability::FileSync, |file| {
-        send(file, snapshot)
-    })
+        .map_err(|_| Error::Busy)?
 }
 
 pub(crate) fn packet<T: serde::de::DeserializeOwned>(input: impl Read) -> Result<T, Error> {
@@ -91,6 +55,31 @@ pub(crate) fn packet<T: serde::de::DeserializeOwned>(input: impl Read) -> Result
         return Err(Error::InvalidSession);
     }
     serde_json::from_slice(&bytes).map_err(|_| Error::InvalidSession)
+}
+
+/// Every control command names the protocol version it was written for.
+#[derive(Serialize, Deserialize)]
+struct Envelope<C> {
+    version: u32,
+    command: C,
+}
+
+pub(crate) fn send_command(output: &mut impl Write, command: &impl Serialize) -> Result<(), Error> {
+    send(
+        output,
+        &Envelope {
+            version: journal::VERSION,
+            command,
+        },
+    )
+}
+
+pub(crate) fn command<C: serde::de::DeserializeOwned>(input: impl Read) -> Result<C, Error> {
+    let envelope: Envelope<C> = packet(input)?;
+    if envelope.version != journal::VERSION {
+        return Err(Error::InvalidSession);
+    }
+    Ok(envelope.command)
 }
 
 pub(crate) fn send(output: &mut impl Write, value: &impl Serialize) -> Result<(), Error> {

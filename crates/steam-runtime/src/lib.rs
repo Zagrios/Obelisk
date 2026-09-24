@@ -1,17 +1,14 @@
 //! Safe launcher-side supervision. Native ABI code lives in the separate helper.
-mod architecture;
 pub mod cloud;
 pub mod cloud_status;
 pub mod epic;
 mod files;
-mod game_session;
 pub mod package;
 #[cfg(feature = "packaging")]
 pub mod packaging;
-mod presence;
 mod process;
 pub mod protocol;
-mod rosetta;
+pub mod steam;
 pub mod supervisor;
 use protocol::{Credentials, Event};
 use std::{
@@ -114,7 +111,7 @@ impl From<std::io::Error> for Error {
     }
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct Config {
     pub helpers: PathBuf,
     pub package: PathBuf,
@@ -130,8 +127,6 @@ pub struct Config {
 pub struct Launch {
     credentials: Mutex<Option<Credentials>>,
     cancelled: Arc<AtomicBool>,
-    storage: Mutex<Option<NativeStorage>>,
-    architecture: Mutex<Option<architecture::Architecture>>,
 }
 #[derive(Clone)]
 pub struct NativeStorage {
@@ -156,17 +151,12 @@ impl Launch {
         Self {
             credentials: Mutex::new(Some(credentials)),
             cancelled: Arc::new(AtomicBool::new(false)),
-            storage: Mutex::new(None),
-            architecture: Mutex::new(None),
         }
     }
     pub fn cancel(&self) {
         self.cancelled.store(true, Ordering::Release);
     }
-    pub fn start_supervised(
-        &self,
-        mut request: supervisor::Request,
-    ) -> Result<supervisor::Client, Error> {
+    pub fn start_supervised(&self, mut request: steam::Request) -> Result<steam::Client, Error> {
         self.check_cancelled()?;
         let credentials = self
             .credentials
@@ -176,17 +166,28 @@ impl Launch {
             .ok_or(Error::InvalidSession)?;
         request.id = uuid::Uuid::new_v4().to_string();
         let helper = request.config.helpers.join(package::HOST);
-        supervisor::start(&helper, &credentials, request, &self.cancelled)
+        steam::start(&helper, &credentials, request, &self.cancelled)
     }
-    pub fn prepare(&self, config: Config) -> Result<Runtime, Error> {
+    /// Starts the native host. `storage` is the Steam Cloud cache the game's
+    /// SDK reads, when Cloud runs for this launch.
+    pub fn prepare(
+        &self,
+        config: Config,
+        storage: Option<NativeStorage>,
+    ) -> Result<Runtime, Error> {
         let mut events = Vec::new();
-        let result = self.prepare_inner(&config, &mut events);
+        let result = self.prepare_inner(&config, storage, &mut events);
         if let Err(error) = &result {
             let _ = files::failure_report(&config, error, &events);
         }
         result
     }
-    fn prepare_inner(&self, config: &Config, events: &mut Vec<Event>) -> Result<Runtime, Error> {
+    fn prepare_inner(
+        &self,
+        config: &Config,
+        storage: Option<NativeStorage>,
+        events: &mut Vec<Event>,
+    ) -> Result<Runtime, Error> {
         self.check_cancelled()?;
         let credentials = self
             .credentials
@@ -198,23 +199,26 @@ impl Launch {
             return Err(Error::InvalidSession);
         }
         let prepared = files::prepare(config, &self.cancelled)?;
-        self.prepare_runtime(config, events, credentials, prepared, process::Child::host)
+        self.prepare_runtime(
+            config,
+            storage,
+            events,
+            credentials,
+            prepared,
+            process::Child::host,
+        )
     }
     fn prepare_runtime(
         &self,
         config: &Config,
+        storage: Option<NativeStorage>,
         events: &mut Vec<Event>,
         credentials: Credentials,
         mut prepared: files::Prepared,
         start_host: impl FnOnce(&files::Prepared, &Config, &str) -> Result<process::Child, Error>,
     ) -> Result<Runtime, Error> {
         let id = credentials.steam_id;
-        if let Some(storage) = self
-            .storage
-            .lock()
-            .map_err(|_| Error::InvalidSession)?
-            .as_ref()
-        {
+        if let Some(storage) = &storage {
             if storage.account_id != id || storage.app_id != config.app_id {
                 return Err(Error::InvalidSession);
             }

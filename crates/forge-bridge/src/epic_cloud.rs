@@ -124,12 +124,17 @@ impl From<epic::Snapshot> for EpicGameSnapshot {
         Self {
             id: s.id,
             account_id: s.account_id,
-            namespace: s.namespace,
-            app_name: s.app_name,
+            namespace: s.store.namespace,
+            app_name: s.store.app_name,
             phase: s.phase.into(),
-            cloud_phase: s.cloud_phase.into(),
-            decision_id: s.decision_id,
-            allowed_choices: s.allowed_choices.into_iter().map(Into::into).collect(),
+            cloud_phase: s.cloud.phase.into(),
+            decision_id: s.cloud.decision_id,
+            allowed_choices: s
+                .cloud
+                .allowed_choices
+                .into_iter()
+                .map(Into::into)
+                .collect(),
             error: s.error,
             failure_reason,
             exit_code: s.exit_code,
@@ -167,7 +172,7 @@ impl EpicGameSession {
         blocking(move || self.client.snapshot(after_revision).map(Into::into)).await
     }
     pub fn cancel_preparation(&self) {
-        self.client.cancel_preparation();
+        self.client.cancel();
     }
     pub async fn choose(
         self: Arc<Self>,
@@ -185,7 +190,7 @@ impl EpicGameSession {
         blocking(move || self.client.resume_after_rosetta(&account_id, decision_id)).await
     }
     pub async fn revoke_cloud(self: Arc<Self>, account_id: String) -> Result<(), EpicError> {
-        blocking(move || self.client.revoke_cloud(&account_id)).await
+        blocking(move || self.client.revoke(&account_id)).await
     }
 }
 
@@ -199,7 +204,7 @@ impl Drop for Admission {
         if self.armed {
             self.cancel.cancel();
             if let Some(client) = &*self.client.lock().unwrap() {
-                client.cancel_preparation();
+                client.cancel();
             }
         }
     }
@@ -231,7 +236,7 @@ impl EpicSession {
             )?);
             *client_slot.lock().unwrap() = Some(Arc::clone(&client));
             if cancel.is_cancelled() {
-                client.cancel_preparation();
+                client.cancel();
             }
             Ok::<_, epic::Error>(client)
         })
@@ -284,14 +289,12 @@ mod tests {
 
     fn failed_snapshot(error: &str) -> Value {
         json!({
+            "version": 2,
             "id": "fixture-session",
             "account_id": "fixture-account",
-            "namespace": "fixture-namespace",
-            "app_name": "fixture-game",
+            "store": {"namespace": "fixture-namespace", "app_name": "fixture-game"},
             "phase": "Failed",
-            "cloud_phase": "Failed",
-            "decision_id": 1,
-            "allowed_choices": [],
+            "cloud": {"phase": "Failed", "decision_id": 1, "allowed_choices": []},
             "error": error,
             "exit_code": null,
             "revision": 2,

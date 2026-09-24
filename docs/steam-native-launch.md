@@ -1,8 +1,13 @@
 # Native Steam launches from Forge
 
-Forge's existing Launch button starts a separate Rust supervisor, which starts
-the Steam host before the native macOS game. It passes the session already held
-by `SteamModel` through a one-time private stdin pipe. No interactive sign-in or additional Keychain query is involved. After Cloud reconciliation, Intel games can present the [Rosetta requirement](steam-rosetta-intel.md) if translation is unavailable.
+Forge's existing Launch button starts a separate Rust supervisor for the Game
+session. The storefront-neutral core in `steam_runtime::supervisor` owns its
+lifecycle; the Steam adapter in `steam_runtime::steam` authenticates, reconciles
+Steam Cloud and starts the Steam host before the native macOS game. Forge passes
+the session already held by `SteamModel` through a one-time private stdin pipe.
+No interactive sign-in or additional Keychain query is involved. After Cloud
+reconciliation, Intel games can present the [Rosetta requirement](steam-rosetta-intel.md)
+if translation is unavailable.
 
 The app bundles a minimal, hash-pinned Valve runtime archive. The host loads its
 original libraries from a verified private cache prepared from that archive. It
@@ -14,7 +19,13 @@ consumer or require `SteamAPI_InitFlat`, a particular `SteamUser` version, or an
 SDK library fingerprint.
 
 The Intel `forge-steam-sdk-x86_64` helper only implements `exec-game`, which
-selects the game's Intel slice without initializing Steamworks. The SDK
+selects the game's Intel slice without initializing Steamworks. It and the
+arm64 `forge-steam-host game-exec` share one admission protocol: the
+supervisor spawns the helper with the game's environment, records the helper
+as the session's durable `starting` process, then sends one bounded message on
+its stdin naming the executable, arguments and working directory. The helper
+becomes the game only after that complete message, with the default SIGPIPE
+disposition. The SDK
 diagnostics, their Debug entry points and the ARM64 SDK helper were removed.
 Normal launch reports host account/license
 verification and `sdk_checked: false`; it makes no claim that game-side SDK
@@ -100,8 +111,9 @@ finite stage names and error keys. Reports are under
 Forge currently admits one Steam game session at a time. `SteamGameSessions.launch`
 reserves it synchronously before invoking the model's launch verification and plan
 preparation. The module releases it after a definite preparation failure, confirmed
-absence during recovery, or actual game exit and host teardown. The running game's
-action reads "Running". Selecting
+absence during recovery, or actual game exit, Cloud finalization and host teardown.
+A record is terminal only in `Finished` or `Failed` with no game or starting
+process left. The running game's action reads "Running". Selecting
 another installed Steam game does not enable another launch. Download, resume,
 verification and uninstall entry points reject operations on the reserved App ID,
 including through a replacement account session. Other games can still download
@@ -109,10 +121,13 @@ while a game is running.
 
 The independent Rust supervisor consumes the host's typed event pipe. The UI
 observes snapshots through a private Unix socket and an asynchronous UniFFI wait.
-UniFFI exposes the supervisor's `Preparing`, `Running`, `Finished` and `Failed`
-phases directly. Control reconnection is separate from both game phase and Steam
-host state: an IPC error or failed identity query does not declare the host dead.
-The Rust client retains its last observed snapshot and paces retries at 500 ms;
+UniFFI exposes the supervisor's `Preparing`, `Running`, `Finalizing`, `Finished`
+and `Failed` phases directly. A `Failed` snapshot also carries a typed failure
+reason, `Cancelled` or `Failed`; Swift treats a cancelled session as a
+cancellation and never reads its message to decide. Control reconnection is
+separate from both game phase and Steam host state: an IPC error or failed
+identity query does not declare the host dead. The shared Rust client retains its
+last observed snapshot and paces failed recoveries and observations at 500 ms;
 Swift presents those states without its own transport retry timer.
 Network disconnection, reconnection and host loss are distinct states.
 Disconnection and loss appear in the game details without releasing the session
@@ -121,20 +136,34 @@ or terminating the game. Diagnostics retain the last `host_state` separately fro
 No credentials or native log payloads are added to those records.
 
 Once the supervisor spawns the game, Swift task cancellation does not terminate
-or abandon it. The supervisor waits for process exit even if the account signs out. A failed
+or abandon it. The supervisor waits for process exit even if the account signs out.
+Spawning is one linearization point: a cancellation or revocation either precedes
+it and prevents the game, or follows it and never ends the game. A failed
 post-spawn diagnostic write or host death likewise cannot trigger termination.
-A nonzero game exit reports an error and releases the session after cleanup.
+A nonzero game exit reports an error and releases the session after cleanup. An
+exit the helper never confirmed as the game is `Failed`, and Steam Cloud keeps
+its saves Pending instead of uploading them.
 Callers cannot release reservations or forward session events. Each operation owns
 its client observation through completion; cancelling an old completed operation
 cannot change the next session.
 
-This tracks the directly launched process. Games that hand execution to another
-process need separate compatibility work. Recovering Steamworks inside a game
-after host loss is not implemented. Steam Cloud is unchanged.
+This tracks the directly launched process. A game that execs another binary
+keeps the same process and stays reserved; games that hand execution to a
+separate process need compatibility work. Recovering Steamworks inside a game
+after host loss is not implemented. Steam Cloud runs in the same supervisor; see
+the [Cloud coordinator](steam-cloud-coordinator.md).
 
-Tests use disposable processes and scripted supervisor snapshots for cancellation after
-spawn, immediate/nonzero exit, failed spawn, duplicate requests, file-operation
-guards, network recovery, host loss, account sign-out and old operation handles.
+One lifecycle suite in `supervisor::session::tests` runs every scenario against
+a recording adapter and against the Steam and Epic adapters, with disposable
+supervisor processes and a shell exec helper: ordering, detach and recovery,
+lost acknowledgement, cancellation and revocation around admission, supervisor
+crash, corrupt or unreadable metadata, failed and unconfirmed exec, journal
+failure, Cloud questions and their deadlines, Rosetta, and the move from the
+previous build's journal. The Steam adapter adds its environment, host loss and
+credential-free journal tests. Swift tests use scripted supervisor snapshots for
+cancellation after spawn, immediate/nonzero exit, failed spawn, duplicate
+requests, file-operation guards, network recovery, host loss, account sign-out
+and old operation handles.
 `SteamGameSessionsTests` covers lost acknowledgement followed by failed/delayed
 recovery, cancellation before preparation, during handoff and after spawn, control
 loss, terminal errors and old operation handles. `SteamPresentationTests` exercises
@@ -142,24 +171,31 @@ that same module through launch, verification/download/uninstall guards and acco
 replacement during recovery, using scripted supervisor snapshots.
 These controls are separate from authenticated Silksong checks. The September 17
 [session validation report](evidence/steam-session-lifecycle-2026-09-17.json) records
-237 main-workspace Rust tests, one native test, 183 Swift tests with nine skips
-and no failures, app signature verification and isolated runtime loading. That
-automated validation did not use a real game or save.
+the earlier Steam-only supervisor: 237 main-workspace Rust tests, one native test,
+183 Swift tests with nine skips and no failures, app signature verification and
+isolated runtime loading. That automated validation did not use a real game or save.
 
 ## Surviving Forge closure and crash
 
-Steam and Epic share `game_session` for exec confirmation, process identity
-resolution and asynchronous child reaping. Each supervisor runs one Tokio
-executor through preparation, gameplay and finalization. Steam Cloud uses that
-executor. Steam presence uses the native host's existing connection. Native
-Steam host preparation stays in an awaited blocking task, while host events
-retain their independent pipe observer. Account and Cloud protocols remain in
-their storefront adapters.
+Steam and Epic share one supervisor: `supervisor::session::serve` runs a
+storefront's `Launch` adapter through the same ordered steps. It opens the
+request, takes the owner lock, journals the session, starts the control
+listener and acknowledges; then it authenticates, prepares Cloud, selects the
+target, waits for Rosetta if needed, prepares the host, admits the game, starts
+presence, waits for exit, stops presence and finalizes Cloud. `supervisor::child`
+supplies exec confirmation and asynchronous child reaping. Each supervisor runs
+one Tokio executor through preparation, gameplay and finalization. Cloud
+questions share one decision counter and deadline: ten minutes for an answer,
+two minutes without any observer. Steam presence uses the native host's existing
+connection. Native Steam host preparation stays in an awaited blocking task,
+while host events retain their independent pipe observer. Account and Cloud
+protocols remain in their storefront adapters.
 
 After confirmed execution, including the Intel exec handshake, the supervisor
 requests Online persona on the native host's existing Steam user. The game's
 own SDK registers its activity with that same host. Account revocation requests
-Offline permanently without killing the game; normal exit withdraws presence
+Offline permanently without killing the game, and a revocation during admission
+fences a late exec from ever publishing presence. Normal exit withdraws presence
 before closing the host and finalizing Cloud. Closing Forge leaves the supervisor
 and host alive. Reopening observes the existing session. A lost host can lose
 Steam presence while the game continues; process observation does not replace
@@ -183,8 +219,8 @@ fixture, but a new real launch/exit check was blocked by the locked Mac.
 The supervisor receives its bounded launch request and credentials once over a
 private Unix socket pair mapped to stdin and stderr. After publishing its initial
 record and starting its control listener, it acknowledges the session over that
-same channel. The client bounds the reply wait at 15 seconds; it no longer polls
-`session.json` during startup. Failed acknowledgement returns an uncertain-handoff
+same channel. The client bounds the reply wait at 15 seconds; it does not poll
+the journal during startup. Failed acknowledgement returns an uncertain-handoff
 error to `SteamGameSessions`,
 which starts durable recovery on the same injected instance without releasing its
 reservation. While recovery has not identified the live game, all Steam installation
@@ -197,23 +233,28 @@ login item or persistent system service is installed.
 
 A private `SteamSessions` directory under
 `~/Library/Application Support/com.zagrios.forge/` holds launch/owner locks and
-atomic session metadata. Each session has a UUID, App ID, account ID, supervisor
-and game identity, socket address and final status. Credentials and ownership
-tickets are never written there. Directories use mode 0700 and records mode 0600.
-Session metadata and diagnostics share a unique-temporary-file/rename helper;
-session writes retain file `fsync`, while diagnostic writes remain best effort.
-This preserves the existing file durability policy, not a new directory-fsync
-or power-loss recovery guarantee.
+the version 2 journal. `session.v2.json` only names the current session;
+`<id>.v2.json` holds its record. A launch writes the name first and its record
+last, so a record exists only after the whole initial write. Each record has a
+UUID, App ID, account ID, supervisor, game and starting-process identities,
+socket address and final status. Credentials and ownership tickets are never
+written there. Directories use mode 0700 and records mode 0600. A read opens the
+file once and checks that descriptor's owner, mode and 64 KiB bound; each write
+syncs the file and its directory before and after the rename. Files written by
+older builds use other names and are never opened, and a record from a newer
+build keeps launches blocked. Diagnostic writes remain best effort.
 A separate short, random 0700 directory under `/tmp` holds the control socket to
 respect macOS socket-path limits even with long home-directory names.
 
 The supervisor holds an exclusive file lock for its lifetime. Launch admission
 also uses a startup lock. A blocking lock waiter allows one second for the old
 owner's terminal teardown; after timeout it retains the startup lock until the
-owner releases, preventing additional waiters or competing launches.
-A client validates UID, executable path and libproc's
-kernel birth timestamp, including microseconds, before connecting to a recorded
-supervisor. Responses must match the session UUID, account, App ID and supervisor
+owner releases, preventing additional waiters or competing launches. A
+non-blocking lock attempt retries for 250 ms, because macOS briefly shares a
+parent's locks with a child it is spawning. A client validates PID, UID and
+libproc's kernel birth timestamp, including microseconds, before connecting to a
+recorded supervisor. The executable path never decides ownership: exec keeps the
+process. Responses must match the session UUID, account, App ID and supervisor
 identity. Stale PID reuse does not establish a session. Normal observation waits
 for state changes over the socket, with a bounded timeout for lost connections.
 The control listener blocks in `accept` and receives an explicit shutdown wakeup.
@@ -225,14 +266,16 @@ an unreachable listener.
 At startup, Swift blocks Steam installation operations and launches until
 recovery completes. A recovered running game restores the Running action and
 its App ID's installation guards, independently of account authentication. The
-supervisor reaps its game child, stops the host, publishes the final status and
-removes the socket/scratch directory even if Forge never reopens. Private final
+supervisor reaps its game child, stops the host, finalizes Cloud, publishes the
+final status and removes the socket/scratch directory even if Forge never
+reopens. Private final
 metadata remains available to a late observer, including after another session
 starts. Automatic metadata/cache retention cleanup is separate work.
 
 A supervisor crash is different from an interface crash. If the supervisor is
 lost, the game identity is checked before retaining the reservation; the UI
-reports host loss and keeps protecting the game until that exact process exits.
+reports host loss and keeps protecting the game until that process exits, even
+after it execs another binary.
 This exceptional path rechecks process identity, without restarting Steamworks.
 Unreadable metadata, failed identity queries or an ambiguous running record keep
 operations blocked. An orphan's exit code cannot be recovered from libproc.

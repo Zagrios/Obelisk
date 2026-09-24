@@ -7,7 +7,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{Arc, Condvar, Mutex},
 };
-use steam_runtime::{cloud, cloud_status, epic, protocol::Credentials, supervisor};
+use steam_runtime::{cloud, cloud_status, epic, protocol::Credentials};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum CloudSavedState {
@@ -386,7 +386,7 @@ fn steam_maintenance(
     request: SteamCloudMaintenanceRequest,
     control: Arc<cloud::Control>,
 ) -> Outcome {
-    let idle = match supervisor::Client::idle_guard(
+    let idle = match steam_runtime::steam::Client::idle_guard(
         Path::new(&request.session_directory),
         Path::new(&request.helper),
     ) {

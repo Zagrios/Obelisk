@@ -1,5 +1,5 @@
 //! Rosetta translation gate shared by the Steam and Epic supervisors.
-use crate::Error;
+use crate::supervisor::Error;
 use std::path::{Path, PathBuf};
 use tokio::sync::Notify;
 

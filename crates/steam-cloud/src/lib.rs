@@ -10,6 +10,10 @@ pub use reconcile::*;
 pub use retry::*;
 pub use vault::*;
 
+/// Exclusive locks that tolerate a child briefly sharing them while it spawns.
+pub mod lock {
+    pub use crate::vault::disk::try_lock;
+}
 /// Durable JSON journal primitives shared with adapters that keep their own
 /// small state files beside the archive.
 pub mod journal {

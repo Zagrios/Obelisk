@@ -1,10 +1,11 @@
 //! Epic Cloud sync through the session interface. An in-memory Epic Cloud
 //! stands in for the network.
 use super::{
-    fake::{Call, FakeCloud},
+    fake::{Call, FakeCloud, LaunchChannel},
     *,
 };
 use crate::epic::MaintenanceChannel;
+use crate::supervisor::client::no_other_session;
 use std::fs;
 
 pub(crate) const ACCOUNT: &str = "0123456789abcdef0123456789abcdef";
@@ -13,7 +14,7 @@ pub(crate) struct Game {
     _temporary: tempfile::TempDir,
     pub config: Configuration,
     pub cloud: Arc<FakeCloud>,
-    pub control: Arc<Control>,
+    pub control: Arc<LaunchChannel>,
 }
 
 pub(crate) fn rules() -> CloudRules {
@@ -49,7 +50,7 @@ pub(crate) fn game() -> Game {
         fs::create_dir_all(directory).unwrap();
     }
     Game {
-        control: crate::epic::tests::control(&config.session_directory),
+        control: LaunchChannel::new(),
         cloud: FakeCloud::new(ACCOUNT, Some(rules())),
         config,
         _temporary: temporary,
@@ -74,36 +75,29 @@ impl Game {
     }
 
     pub fn cloud_phase(&self) -> CloudPhase {
-        self.control.snapshot().cloud_phase
+        self.control.phase()
     }
 
     /// A first launch that finds both sides equal and records the baseline.
     pub async fn synced(&self, bytes: &[u8]) {
         fs::write(self.save(), bytes).unwrap();
         self.cloud.publish(&[("slot.sav", bytes)]);
-        self.session().await.prepare().await.unwrap();
+        self.session()
+            .await
+            .prepare(&no_other_session)
+            .await
+            .unwrap();
     }
 }
 
 /// Answers the next Cloud question offering `choice`, as the UI would. A
 /// question already shown when this starts is an older one.
-pub(crate) fn answer(control: &Arc<Control>, choice: Choice) -> std::thread::JoinHandle<()> {
+pub(crate) fn answer(control: &Arc<LaunchChannel>, choice: Choice) -> std::thread::JoinHandle<()> {
     let control = Arc::clone(control);
-    let shown = control.snapshot().decision_id;
+    let shown = control.decision_id();
     std::thread::spawn(move || {
         let deadline = Instant::now() + Duration::from_secs(5);
-        loop {
-            {
-                let mut state = control.state.lock().unwrap();
-                if state.snapshot.decision_id > shown
-                    && state.snapshot.allowed_choices.contains(&choice)
-                    && state.choice.is_none()
-                {
-                    state.choice = Some(choice);
-                    control.notify_changed();
-                    return;
-                }
-            }
+        while !control.answer_after(shown, choice) {
             assert!(
                 Instant::now() < deadline,
                 "no Cloud question offered {choice:?}"
@@ -120,7 +114,7 @@ async fn a_launch_with_equal_saves_is_ready_and_records_a_cloud_sync() {
     game.cloud.publish(&[("slot.sav", b"progress")]);
     let mut session = game.session().await;
 
-    session.prepare().await.unwrap();
+    session.prepare(&no_other_session).await.unwrap();
 
     assert_eq!(game.cloud_phase(), CloudPhase::Ready);
     assert!(session.vault.synced_at().is_some());
@@ -133,7 +127,11 @@ async fn a_launch_downloads_a_newer_cloud_save() {
     game.synced(b"old").await;
     game.cloud.publish(&[("slot.sav", b"from another device")]);
 
-    game.session().await.prepare().await.unwrap();
+    game.session()
+        .await
+        .prepare(&no_other_session)
+        .await
+        .unwrap();
 
     assert_eq!(game.cloud_phase(), CloudPhase::Ready);
     assert_eq!(fs::read(game.save()).unwrap(), b"from another device");
@@ -144,7 +142,7 @@ async fn game_exit_uploads_local_progress() {
     let game = game();
     game.synced(b"old").await;
     let mut session = game.session().await;
-    session.prepare().await.unwrap();
+    session.prepare(&no_other_session).await.unwrap();
     let id = uuid::Uuid::new_v4().to_string();
     session.started(&id).unwrap();
     fs::write(game.save(), b"new progress").unwrap();
@@ -164,7 +162,11 @@ async fn a_launch_conflict_asks_and_applies_the_cloud_choice() {
     game.cloud.publish(&[("slot.sav", b"cloud progress")]);
     let answering = answer(&game.control, Choice::Cloud);
 
-    game.session().await.prepare().await.unwrap();
+    game.session()
+        .await
+        .prepare(&no_other_session)
+        .await
+        .unwrap();
 
     answering.join().unwrap();
     assert_eq!(game.cloud_phase(), CloudPhase::Ready);
@@ -176,7 +178,7 @@ async fn a_failed_exit_upload_keeps_the_exit_save_pending() {
     let game = game();
     game.synced(b"old").await;
     let mut session = game.session().await;
-    session.prepare().await.unwrap();
+    session.prepare(&no_other_session).await.unwrap();
     let id = uuid::Uuid::new_v4().to_string();
     session.started(&id).unwrap();
     fs::write(game.save(), b"new progress").unwrap();
@@ -231,13 +233,23 @@ async fn a_cancelled_launch_check_is_a_failed_sync_until_the_next_sync() {
     game.cloud.fail_next(Call::Download, EpicError::Http(403));
     let answering = answer(&game.control, Choice::Cancel);
 
-    assert!(game.session().await.prepare().await.is_err());
+    assert!(
+        game.session()
+            .await
+            .prepare(&no_other_session)
+            .await
+            .is_err()
+    );
 
     answering.join().unwrap();
     let problem = record(&game).problem.unwrap();
     assert_eq!(problem.kind, ProblemKind::Failed);
     assert_eq!(problem.key, "backend.epic.content_http");
-    game.session().await.prepare().await.unwrap();
+    game.session()
+        .await
+        .prepare(&no_other_session)
+        .await
+        .unwrap();
     assert_eq!(record(&game).problem, None);
 }
 
@@ -250,12 +262,22 @@ async fn an_unanswered_launch_conflict_is_recorded_until_it_is_answered() {
     game.cloud.publish(&[("slot.sav", b"cloud progress")]);
     let answering = answer(&game.control, Choice::Cancel);
 
-    assert!(game.session().await.prepare().await.is_err());
+    assert!(
+        game.session()
+            .await
+            .prepare(&no_other_session)
+            .await
+            .is_err()
+    );
 
     answering.join().unwrap();
     assert_eq!(record(&game).problem.unwrap().kind, ProblemKind::Conflict);
     let answering = answer(&game.control, Choice::Local);
-    game.session().await.prepare().await.unwrap();
+    game.session()
+        .await
+        .prepare(&no_other_session)
+        .await
+        .unwrap();
     answering.join().unwrap();
     assert_eq!(record(&game).problem, None);
 }
@@ -358,6 +380,14 @@ fn answer_maintenance(
 }
 
 async fn maintain(game: &Game, channel: &Arc<MaintenanceChannel>) -> Result<()> {
+    maintain_beside(game, channel, &no_other_session).await
+}
+
+async fn maintain_beside(
+    game: &Game,
+    channel: &Arc<MaintenanceChannel>,
+    alive: &SessionAlive<'_>,
+) -> Result<()> {
     // A maintenance never waits on a question it should not ask.
     tokio::time::timeout(
         Duration::from_secs(20),
@@ -365,6 +395,7 @@ async fn maintain(game: &Game, channel: &Arc<MaintenanceChannel>) -> Result<()> 
             game.config.clone(),
             Arc::clone(&game.cloud),
             channel.clone() as Arc<dyn CloudChannel>,
+            alive,
         ),
     )
     .await
@@ -374,7 +405,7 @@ async fn maintain(game: &Game, channel: &Arc<MaintenanceChannel>) -> Result<()> 
 /// The game exits while Epic Cloud is unreachable: its exit save stays pending.
 async fn played_offline(game: &Game, bytes: &[u8]) {
     let mut session = game.session().await;
-    session.prepare().await.unwrap();
+    session.prepare(&no_other_session).await.unwrap();
     let id = uuid::Uuid::new_v4().to_string();
     session.started(&id).unwrap();
     fs::write(game.save(), bytes).unwrap();
@@ -448,31 +479,30 @@ async fn maintenance_clears_the_guard_of_a_dead_epic_game_session() {
     let game = game();
     game.synced(b"old").await;
     let mut session = game.session().await;
-    let id = uuid::Uuid::new_v4().to_string();
-    session.started(&id).unwrap();
+    session.started(&uuid::Uuid::new_v4().to_string()).unwrap();
     fs::write(game.save(), b"played before a crash").unwrap();
     drop(session);
-    let mut dead = game.control.snapshot();
-    dead.id = id;
-    dead.account_id = ACCOUNT.into();
-    dead.app_name = game.config.app_name.clone();
-    crate::epic::write_snapshot(&game.config.session_directory, &dead).unwrap();
-    let channel = channel();
-    let mut session = Session::new(
-        game.config.clone(),
-        ACCOUNT.into(),
-        Arc::clone(&game.cloud),
-        channel.clone() as Arc<dyn CloudChannel>,
-    )
-    .await
-    .unwrap()
-    .unwrap();
-    session.inspect = |_, _| Ok(None);
 
-    session.maintain().await.unwrap();
+    maintain(&game, &channel()).await.unwrap();
 
     assert_eq!(game.cloud.files()["slot.sav"], b"played before a crash");
-    assert!(session.vault.game_session().is_none());
+    assert!(game.session().await.vault.game_session().is_none());
+}
+
+#[tokio::test]
+async fn maintenance_keeps_the_guard_of_an_epic_game_session_that_still_runs() {
+    let game = game();
+    game.synced(b"old").await;
+    let mut session = game.session().await;
+    session.started(&uuid::Uuid::new_v4().to_string()).unwrap();
+    fs::write(game.save(), b"still playing").unwrap();
+    drop(session);
+
+    let refused = maintain_beside(&game, &channel(), &|_| Ok(true)).await;
+
+    assert!(matches!(refused, Err(Error::Busy)));
+    assert_eq!(game.cloud.files()["slot.sav"], b"old");
+    assert!(game.session().await.vault.game_session().is_some());
 }
 
 #[tokio::test]

@@ -2,6 +2,7 @@ use super::{store::Context, *};
 use crate::{
     cloud_status::{self, ProblemKind, UnavailableReason},
     protocol::Credentials,
+    supervisor::client::SessionAlive,
 };
 use steam_cloud::{Decision, Manifest, Preferences, RemoteView, Retry, RetryBudget, Vault};
 use steam_kit::{
@@ -13,6 +14,8 @@ use steam_kit::{
 mod cycle_tests;
 #[cfg(test)]
 mod fake;
+#[cfg(test)]
+use crate::supervisor::client::no_other_session;
 mod remote;
 pub(crate) use remote::SteamCm;
 pub(crate) use remote::{CloudConnection, CloudRemote, RemoteSource};
@@ -109,21 +112,23 @@ impl<R: CloudRemote> Session<R> {
             self.mark(cloud_status::problem(kind, failure.key()));
         }
     }
-    /// Clear a dead prior owner's durable game guard and roll forward any
-    /// interrupted local transaction. Only a caller that has established that
-    /// no game or supervisor remains (the process-owner lock, or an idle guard)
-    /// may call this.
-    fn recover_dead_owner(&mut self) -> Result<(), Failure> {
+    /// Clear a prior owner's durable game guard once its session is known
+    /// dead, and roll forward any interrupted local transaction. The caller
+    /// holds Steam's owner lock, so `alive` can answer for that session.
+    fn recover_dead_owner(&mut self, alive: &SessionAlive<'_>) -> Result<(), Failure> {
         if let Some(old) = self.vault.game_session().map(str::to_owned) {
+            if alive(&old).map_err(|_| Failure::Recovery)? {
+                return Err(Failure::Busy);
+            }
             self.vault.game_exited(&old)?;
         }
         self.vault.recover_local()?;
         Ok(())
     }
-    pub async fn prepare(&mut self) -> Result<(), crate::Error> {
+    pub async fn prepare(&mut self, alive: &SessionAlive<'_>) -> Result<(), crate::Error> {
         let syncs = self.vault.syncs();
         self.problem = None;
-        let result = self.prepare_inner().await;
+        let result = self.prepare_inner(alive).await;
         if matches!(result, Err(crate::Error::Cloud(Failure::Authentication))) {
             self.control
                 .status(Phase::Failed, Some(Failure::Authentication));
@@ -131,10 +136,10 @@ impl<R: CloudRemote> Session<R> {
         self.record_outcome(syncs, false);
         result
     }
-    async fn prepare_inner(&mut self) -> Result<(), crate::Error> {
-        // The supervisor has acquired its process-owner lock and checked the
+    async fn prepare_inner(&mut self, alive: &SessionAlive<'_>) -> Result<(), crate::Error> {
+        // The supervisor holds its process-owner lock and has checked the
         // previous game identity before admitting this launch.
-        self.recover_dead_owner()?;
+        self.recover_dead_owner(alive)?;
         Ok(self.compare(false).await?)
     }
     /// Compares local and Cloud saves until they agree, the player decides or
@@ -510,10 +515,10 @@ impl<R: CloudRemote> Session<R> {
     }
     /// Cloud maintenance of this game: a two-way sync without a launch. The
     /// caller holds the idle guard, so no supervisor or game owns the saves.
-    pub(crate) async fn maintain(&mut self) -> Result<(), Failure> {
+    pub(crate) async fn maintain(&mut self, alive: &SessionAlive<'_>) -> Result<(), Failure> {
         let syncs = self.vault.syncs();
         self.problem = None;
-        let result = self.maintain_inner().await;
+        let result = self.maintain_inner(alive).await;
         if let Err(failure) = result
             && self.problem.is_none()
         {
@@ -522,8 +527,8 @@ impl<R: CloudRemote> Session<R> {
         self.record_outcome(syncs, false);
         result
     }
-    async fn maintain_inner(&mut self) -> Result<(), Failure> {
-        self.recover_dead_owner()?;
+    async fn maintain_inner(&mut self, alive: &SessionAlive<'_>) -> Result<(), Failure> {
+        self.recover_dead_owner(alive)?;
         let uninstalled = match &self.context {
             Some(context) => context.removed_installation_absent()?,
             None => false,
@@ -543,15 +548,21 @@ impl<R: CloudRemote> Session<R> {
         if self.game_guard_held() {
             let _ = self.vault.game_exited(&self.session_id);
         }
+        // Account revocation abandoned this launch: its authorization ends now.
+        if self.control.revoked() {
+            let _ = self.vault.revoke();
+        }
     }
-    pub async fn finished(&mut self) {
+    /// `confirmed` is false when exec was never confirmed: the exit save is
+    /// captured and kept pending, never uploaded.
+    pub async fn finished(&mut self, confirmed: bool) {
         let syncs = self.vault.syncs();
         self.problem = None;
-        self.finish().await;
+        self.finish(confirmed).await;
         // Exit failures show through the pending work they leave.
         self.record_outcome(syncs, true);
     }
-    async fn finish(&mut self) {
+    async fn finish(&mut self, confirmed: bool) {
         let capture = (|| -> Result<(), Failure> {
             if self.game_guard_held() {
                 self.vault.game_exited(&self.session_id)?;
@@ -570,6 +581,10 @@ impl<R: CloudRemote> Session<R> {
             return;
         }
         if self.context.is_none() {
+            return;
+        }
+        if !confirmed {
+            self.control.status(Phase::Pending, None);
             return;
         }
         if let Err(error) = self.finalize().await {
@@ -871,16 +886,22 @@ fn recovery_is_settled(
     }
 }
 
-/// Cloud maintenance of one Steam game, run inside Forge. `_idle` proves that
+/// Cloud maintenance of one Steam game, run inside Forge. `idle` proves that
 /// no Steam launch or supervisor can start while it runs.
 pub fn maintain(
     target: MaintenanceTarget,
     credentials: &Credentials,
     control: Arc<Control>,
-    _idle: &crate::supervisor::IdleGuard,
+    idle: &crate::steam::IdleGuard,
 ) -> Result<(), Failure> {
     let runtime = crate::executor()?;
-    runtime.block_on(maintain_with(SteamCm::new()?, target, credentials, control))
+    runtime.block_on(maintain_with(
+        SteamCm::new()?,
+        target,
+        credentials,
+        control,
+        &|id| idle.session_alive(id),
+    ))
 }
 
 pub(crate) async fn maintain_with<R: CloudRemote>(
@@ -888,6 +909,7 @@ pub(crate) async fn maintain_with<R: CloudRemote>(
     target: MaintenanceTarget,
     credentials: &Credentials,
     control: Arc<Control>,
+    alive: &SessionAlive<'_>,
 ) -> Result<(), Failure> {
     let config = match target {
         MaintenanceTarget::Installed(config) => config,
@@ -902,7 +924,7 @@ pub(crate) async fn maintain_with<R: CloudRemote>(
         uuid::Uuid::new_v4().to_string(),
         control,
     )?;
-    session.maintain().await
+    session.maintain(alive).await
 }
 
 #[cfg(test)]
@@ -1111,7 +1133,7 @@ mod removal_tests {
         session.control.revoke(ACCOUNT).unwrap();
 
         assert!(matches!(
-            session.prepare().await,
+            session.prepare(&no_other_session).await,
             Err(crate::Error::Cloud(Failure::Authentication))
         ));
         let status = session.control.state.lock().unwrap().status.clone();

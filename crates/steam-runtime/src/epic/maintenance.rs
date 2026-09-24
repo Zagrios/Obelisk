@@ -1,9 +1,7 @@
 //! Cloud maintenance of one Epic game inside Forge. The sync reports to the
 //! attempt that observes it, not to a supervisor journal.
 use super::*;
-
-/// A question left unanswered this long ends the maintenance attempt.
-const QUESTION_DEADLINE: Duration = Duration::from_secs(600);
+use crate::supervisor::session::Questions;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MaintenanceStatus {
@@ -20,6 +18,8 @@ struct Question {
 
 pub struct MaintenanceChannel {
     cancel: CancelToken,
+    /// Shares Steam's decision counter and deadline.
+    questions: Questions,
     state: Mutex<Question>,
     changed: Condvar,
     publish: Box<dyn Fn(MaintenanceStatus) + Send + Sync>,
@@ -29,6 +29,7 @@ impl MaintenanceChannel {
     pub fn new(publish: impl Fn(MaintenanceStatus) + Send + Sync + 'static) -> Self {
         Self {
             cancel: CancelToken::new(),
+            questions: Questions::in_app(),
             state: Mutex::new(Question {
                 status: MaintenanceStatus {
                     cloud_phase: CloudPhase::Checking,
@@ -101,17 +102,18 @@ impl CloudChannel for MaintenanceChannel {
         error: Option<String>,
         choices: Vec<Choice>,
     ) -> Result<Choice> {
+        let decision_id = self.questions.next();
         self.set(|state| {
             state.answer = None;
-            state.status.decision_id += 1;
+            state.status.decision_id = decision_id;
             state.status.cloud_phase = phase;
             state.status.error = error;
             state.status.allowed_choices = choices;
         });
-        let deadline = Instant::now() + QUESTION_DEADLINE;
+        let published = Instant::now();
         let mut state = self.state.lock().unwrap();
         let choice = loop {
-            if self.cancel.is_cancelled() || Instant::now() >= deadline {
+            if self.cancel.is_cancelled() || self.questions.abandoned(published) {
                 break Err(Error::Cancelled);
             }
             if let Some(choice) = state.answer.take() {

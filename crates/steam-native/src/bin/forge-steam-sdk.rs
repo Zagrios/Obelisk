@@ -10,10 +10,10 @@ fn main() {
 
 fn run() -> i32 {
     let arguments: Vec<_> = std::env::args_os().collect();
-    if arguments.get(1).is_some_and(|mode| mode == "exec-game") {
-        // SETEXEC receives the exact game arguments/environment supplied by the
-        // supervisor and preserves its process admission handshake.
-        let _ = native::exec_game(&arguments[2..]);
+    if arguments.len() == 2 && arguments[1] == "exec-game" {
+        // SETEXEC receives the game its supervisor admits and the environment
+        // the supervisor spawned this helper with.
+        let _ = native::exec_game();
         return 1;
     }
     2

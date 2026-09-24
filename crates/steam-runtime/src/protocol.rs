@@ -98,7 +98,14 @@ pub const EXEC_FAILED: &[u8] = b"exec-failed\n";
 pub fn exec_or_report<E: From<std::io::Error>>(
     exec: impl FnOnce() -> Result<(), E>,
 ) -> Result<(), E> {
-    let mut confirmation = exec_confirmation()?;
+    exec_or_report_to(exec_confirmation()?, exec)
+}
+
+/// `confirmation` must close on exec.
+fn exec_or_report_to<E>(
+    mut confirmation: std::fs::File,
+    exec: impl FnOnce() -> Result<(), E>,
+) -> Result<(), E> {
     let result = exec();
     let _ = confirmation.write_all(EXEC_FAILED);
     result

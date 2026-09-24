@@ -125,3 +125,85 @@ impl CloudRemote for FakeCloud {
         Ok(state.snapshot.clone())
     }
 }
+
+/// A launch's Cloud channel without a supervisor: what the sync shows and
+/// asks, and the player's answer to the question it shows.
+pub(crate) struct LaunchChannel {
+    cancel: CancelToken,
+    state: Mutex<Shown>,
+    changed: std::sync::Condvar,
+}
+
+#[derive(Default)]
+struct Shown {
+    phase: CloudPhase,
+    decision_id: u64,
+    allowed_choices: Vec<Choice>,
+    answer: Option<Choice>,
+}
+
+impl LaunchChannel {
+    pub(crate) fn new() -> Arc<Self> {
+        Arc::new(Self {
+            cancel: CancelToken::new(),
+            state: Mutex::new(Shown::default()),
+            changed: std::sync::Condvar::new(),
+        })
+    }
+    pub(crate) fn phase(&self) -> CloudPhase {
+        self.state.lock().unwrap().phase
+    }
+    pub(crate) fn decision_id(&self) -> u64 {
+        self.state.lock().unwrap().decision_id
+    }
+    /// Answers the question shown after decision `shown`, once it offers
+    /// `choice`.
+    pub(crate) fn answer_after(&self, shown: u64, choice: Choice) -> bool {
+        let mut state = self.state.lock().unwrap();
+        if state.decision_id <= shown || !state.allowed_choices.contains(&choice) {
+            return false;
+        }
+        state.answer = Some(choice);
+        self.changed.notify_all();
+        true
+    }
+}
+
+impl CloudChannel for LaunchChannel {
+    fn cancellation(&self) -> &CancelToken {
+        &self.cancel
+    }
+    fn launching(&self) -> bool {
+        true
+    }
+    fn show(&self, phase: CloudPhase, _: Option<String>) -> Result<()> {
+        let mut state = self.state.lock().unwrap();
+        state.phase = phase;
+        state.allowed_choices.clear();
+        Ok(())
+    }
+    fn question(
+        &self,
+        phase: CloudPhase,
+        _: Option<String>,
+        choices: Vec<Choice>,
+    ) -> Result<Choice> {
+        let mut state = self.state.lock().unwrap();
+        state.phase = phase;
+        state.decision_id += 1;
+        state.allowed_choices = choices;
+        state.answer = None;
+        loop {
+            self.check()?;
+            if let Some(choice) = state.answer.take() {
+                state.allowed_choices.clear();
+                return Ok(choice);
+            }
+            state = self
+                .changed
+                .wait_timeout(state, std::time::Duration::from_millis(50))
+                .unwrap()
+                .0;
+        }
+    }
+}

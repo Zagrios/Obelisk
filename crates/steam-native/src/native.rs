@@ -4,10 +4,11 @@ use std::ffi::{CStr, CString, c_char, c_void};
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 
-/// Replace this architecture-specific helper with the selected slice of a game.
-/// No shell or platform wrapper gets a chance to strip the game's dyld variables.
-pub fn exec_game(arguments: &[std::ffi::OsString]) -> std::io::Result<()> {
-    use std::{fs::File, io::Read, os::fd::AsRawFd};
+/// Replace this architecture-specific helper with the selected slice of the
+/// game its supervisor admits on stdin. No shell or platform wrapper gets a
+/// chance to strip the game's dyld variables.
+pub fn exec_game() -> std::io::Result<()> {
+    use std::{fs::File, os::fd::AsRawFd};
     // The confirmation descriptor closes atomically on exec, while the game
     // itself gets null stdout.
     steam_runtime::protocol::exec_or_report(|| {
@@ -16,19 +17,18 @@ pub fn exec_game(arguments: &[std::ffi::OsString]) -> std::io::Result<()> {
         if unsafe { libc::dup2(null.as_raw_fd(), 1) } < 0 {
             return Err(std::io::Error::last_os_error());
         }
-        // The supervisor first persists ownership of this PID, then grants exec.
-        // Losing that parent before its acknowledgement must never launch a game.
-        let mut admission = [0];
-        std::io::stdin().read_exact(&mut admission)?;
-        if admission != *b"1" {
-            return Err(std::io::Error::from_raw_os_error(libc::EINVAL));
-        }
+        // The supervisor first persists ownership of this PID, then admits it.
+        // Losing that parent before its message must never launch a game.
+        let admission = steam_runtime::supervisor::exec::receive(std::io::stdin().lock())?;
         // SAFETY: valid readable null descriptor; the game must not inherit the
         // private admission pipe or any bytes remaining in it.
         if unsafe { libc::dup2(null.as_raw_fd(), 0) } < 0 {
             return Err(std::io::Error::last_os_error());
         }
-        exec_game_inner(arguments)
+        std::env::set_current_dir(&admission.working_directory)?;
+        let mut arguments = vec![admission.executable.into_os_string()];
+        arguments.extend(admission.arguments.into_iter().map(Into::into));
+        exec_game_inner(&arguments)
     })
 }
 
@@ -72,9 +72,24 @@ fn exec_game_inner(arguments: &[std::ffi::OsString]) -> std::io::Result<()> {
                 status
             }));
         }
+        // The Rust runtime ignores SIGPIPE; the game starts with the default.
+        let mut defaults = std::mem::MaybeUninit::<libc::sigset_t>::uninit();
+        // SAFETY: writable signal set storage, initialized by sigemptyset
+        // before sigaddset and posix_spawnattr_setsigdefault read it.
+        let status = unsafe {
+            libc::sigemptyset(defaults.as_mut_ptr());
+            libc::sigaddset(defaults.as_mut_ptr(), libc::SIGPIPE);
+            libc::posix_spawnattr_setsigdefault(&mut attributes, defaults.as_ptr())
+        };
+        if status != 0 {
+            return Err(std::io::Error::from_raw_os_error(status));
+        }
         // SAFETY: SETEXEC replaces this PID, retaining supervisor parentage.
         let status = unsafe {
-            libc::posix_spawnattr_setflags(&mut attributes, libc::POSIX_SPAWN_SETEXEC as i16)
+            libc::posix_spawnattr_setflags(
+                &mut attributes,
+                (libc::POSIX_SPAWN_SETEXEC | libc::POSIX_SPAWN_SETSIGDEF) as i16,
+            )
         };
         if status != 0 {
             return Err(std::io::Error::from_raw_os_error(status));
@@ -83,8 +98,8 @@ fn exec_game_inner(arguments: &[std::ffi::OsString]) -> std::io::Result<()> {
             fn _NSGetEnviron() -> *mut *mut *mut c_char;
         }
         // SAFETY: argv is NUL terminated and all owned strings remain live. This
-        // startup path has not modified the inherited environment or cwd. The
-        // process environment is passed verbatim, including non-UTF8 values.
+        // startup path has not modified the inherited environment. It is passed
+        // verbatim, including non-UTF8 values.
         let status = unsafe {
             libc::posix_spawn(
                 std::ptr::null_mut(),

@@ -103,7 +103,7 @@ final class SteamGameSessions {
                 do {
                     _ = try await recoverAndObserve(onRunning: {})
                 } catch {
-                    if !Task.isCancelled { recoveryError = SteamModel.message(error) }
+                    if !Task.isCancelled && !(error is CancellationError) { recoveryError = SteamModel.message(error) }
                 }
                 finish()
             }
@@ -320,6 +320,7 @@ final class SteamGameSessions {
                 if isRecovering { isRecovering = false }
                 if recoveryError != nil { recoveryError = nil }
                 if snapshot.finished {
+                    if snapshot.phase == .failed && snapshot.failureReason == .cancelled { throw CancellationError() }
                     if let error = snapshot.error { throw SteamError.Failure(reason: error) }
                     if let code = snapshot.exitCode, code != 0 { throw SteamError.Failure(reason: "model.steam.gameExited") }
                     return

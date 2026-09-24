@@ -179,6 +179,7 @@ final class EpicGameSessions {
         if self.client === client { appliedRevocations.insert(accountId) }
     }
 
+    /// Native recovery and observation pace failed attempts, so retries only yield.
     private func recoverAndObserve(onRunning: @escaping @MainActor () -> Void) async throws -> Bool {
         while true {
             let recovered: (any EpicGameSessionProtocol)?
@@ -187,7 +188,7 @@ final class EpicGameSessions {
                 recovered = try await Task { try await self.recoverSession() }.value
             } catch {
                 recoveryError = L10n.string("model.epic.recoveringSession")
-                await retryDelay()
+                await Task.yield()
                 continue
             }
             guard let recovered else { return false }
@@ -237,7 +238,7 @@ final class EpicGameSessions {
                 } catch {
                     active?.reconnecting = true
                     recoveryError = L10n.string("model.epic.recoveringSession")
-                    await retryDelay()
+                    await Task.yield()
                     continue
                 }
                 revision = snapshot.revision
@@ -267,10 +268,6 @@ final class EpicGameSessions {
         } onCancel: {
             Task.detached { observed.cancelPreparation() }
         }
-    }
-
-    private func retryDelay() async {
-        try? await Task.sleep(for: .milliseconds(250))
     }
 
     private func finish() {

@@ -495,9 +495,10 @@ actor RecoveredGameFixture: SteamGameSessionProtocol {
         wake()
     }
 
-    func fail(reason: String) {
+    func fail(reason: String, cancelled: Bool = false) {
         current.phase = .failed
         current.error = reason
+        current.failureReason = cancelled ? .cancelled : nil
         current.exitCode = nil
         current.revision += 1
         wake()

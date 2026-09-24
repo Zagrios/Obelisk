@@ -140,7 +140,8 @@ fn slices(path: &Path) -> Result<u8, Error> {
 
 /// A bounded execution of our signed Intel helper proves availability. It does
 /// not open an app through LaunchServices or request a system installation.
-pub(crate) fn rosetta_available(helper: &Path) -> Result<bool, Error> {
+pub(crate) fn rosetta_available(helper: &Path) -> Result<bool, crate::supervisor::Error> {
+    use crate::supervisor::Error;
     let mut child = match Command::new(helper)
         .arg("--probe")
         .env_clear()

@@ -1,7 +1,10 @@
+//! The UI's side of a Game session: starting or recovering its supervisor,
+//! observing it and sending it commands. Dropping a client only detaches; it
+//! never owns or stops a game.
 use super::*;
-use crate::{Error, protocol::Credentials};
 use std::{
     fs,
+    marker::PhantomData,
     os::fd::OwnedFd,
     os::unix::{
         fs::{MetadataExt, PermissionsExt},
@@ -9,82 +12,127 @@ use std::{
     },
     path::Path,
     process::{Command as Process, Stdio},
-    sync::{
-        Mutex,
-        atomic::{AtomicBool, Ordering},
-    },
-    time::Duration,
+    sync::Mutex,
+    time::{Duration, Instant},
 };
 
-type Probe = fn(&Path, u32) -> Result<Option<Identity>, Error>;
+pub(crate) type Probe = fn(&Path, u32) -> Result<Option<Identity>, Error>;
 
-/// Dropping a UI client only detaches. It never owns or stops a game/host.
-pub struct Client {
+/// Every native failure and uncertain observation is paced here, including
+/// failures before a valid record exists. The UI owns presentation, not
+/// transport retry policy.
+const PACE: Duration = Duration::from_millis(500);
+
+pub struct Client<P: Provider> {
     root: PathBuf,
     helper: PathBuf,
     id: String,
     probe: Probe,
-    last: Mutex<Option<Snapshot>>,
+    last: Mutex<Option<Record<P>>>,
 }
 
-/// Excludes launch admission while Cloud maintenance runs in Forge, including
-/// stores left by a dead supervisor. Construction checks the kernel
-/// identities, including birth time. Both storefronts' guards share this type.
-pub struct IdleGuard {
-    _starting: fs::File,
-    _owner: fs::File,
+/// Answers whether the Game session with this ID still owns a process.
+pub(crate) type SessionAlive<'a> = dyn Fn(&str) -> Result<bool, Error> + Sync + 'a;
+
+/// No other Game session holds the saves.
+#[cfg(test)]
+pub(crate) fn no_other_session(_: &str) -> Result<bool, Error> {
+    Ok(false)
 }
-impl IdleGuard {
-    /// `starting` and `owner` are a provider's held `start.lock` and
-    /// `owner.lock`, after it has found no live supervisor or game.
-    pub(crate) fn hold(starting: fs::File, owner: fs::File) -> Self {
-        Self {
-            _starting: starting,
-            _owner: owner,
+
+/// A storefront's `owner.lock`, held: no other supervisor of that storefront
+/// is alive.
+pub struct OwnerLock<P> {
+    _file: fs::File,
+    root: PathBuf,
+    provider: PhantomData<P>,
+}
+impl<P: Provider> OwnerLock<P> {
+    pub(crate) fn take(root: &Path) -> Result<Self, Error> {
+        Ok(Self {
+            _file: storage::lock(root, "owner.lock")?,
+            root: root.into(),
+            provider: PhantomData,
+        })
+    }
+
+    /// With no other supervisor alive, a session without a record is dead: it
+    /// was never accepted, or a previous build launched it.
+    pub(crate) fn session_alive(
+        &self,
+        id: &str,
+        inspect: impl Fn(u32) -> Result<Option<Identity>, Error>,
+    ) -> Result<bool, Error> {
+        match journal::by_id::<Record<P>>(&self.root, id)? {
+            Some(record) if !record.finished() => {
+                Ok(record.liveness(inspect)? != ownership::Liveness::Dead)
+            }
+            _ => Ok(false),
         }
     }
 }
-impl Client {
-    pub fn idle_guard(root: &Path, helper: &Path) -> Result<IdleGuard, Error> {
-        Self::idle_guard_with(root, helper, inspect)
+
+/// Excludes a storefront's launch admission while Cloud maintenance runs in
+/// Forge, including stores left by a dead supervisor. Construction checks the
+/// kernel identities of the recorded supervisor and game.
+pub struct IdleGuard<P> {
+    _starting: fs::File,
+    owner: OwnerLock<P>,
+    helper: PathBuf,
+    probe: Probe,
+}
+impl<P: Provider> IdleGuard<P> {
+    pub(crate) fn session_alive(&self, id: &str) -> Result<bool, Error> {
+        self.owner
+            .session_alive(id, |pid| (self.probe)(&self.helper, pid))
+    }
+}
+
+impl<P: Provider> Client<P> {
+    pub fn id(&self) -> &str {
+        &self.id
     }
 
-    pub(super) fn idle_guard_with(
+    pub fn idle_guard(root: &Path, helper: &Path) -> Result<IdleGuard<P>, P::Error> {
+        Ok(Self::idle_guard_with(root, helper, inspect)?)
+    }
+
+    pub(crate) fn idle_guard_with(
         root: &Path,
         helper: &Path,
         probe: Probe,
-    ) -> Result<IdleGuard, Error> {
+    ) -> Result<IdleGuard<P>, Error> {
         let starting = storage::lock(root, "start.lock")?;
-        let owner = storage::lock(root, "owner.lock")?;
-        if let Some(saved) = storage::read(root)?
+        let owner = OwnerLock::take(root)?;
+        if let Some(saved) = journal::current::<Record<P>>(root)?
             && !saved.finished()
-            && (probe(helper, saved.supervisor.pid)?.as_ref() == Some(&saved.supervisor)
-                || owns_live_child(&saved, helper, probe)?)
+            && (ownership::alive(&saved.supervisor, |pid| probe(helper, pid))?
+                || saved.liveness(|pid| probe(helper, pid))? != ownership::Liveness::Dead)
         {
-            return Err(Error::SessionBusy);
+            return Err(Error::Busy);
         }
-        Ok(IdleGuard::hold(starting, owner))
-    }
-    pub fn recover(root: &Path, helper: &Path) -> Result<Option<Self>, Error> {
-        paced(Self::recover_with(root, helper, inspect))
+        Ok(IdleGuard {
+            _starting: starting,
+            owner,
+            helper: helper.into(),
+            probe,
+        })
     }
 
-    pub(super) fn recover_with(
+    pub fn recover(root: &Path, helper: &Path) -> Result<Option<Self>, P::Error> {
+        Ok(paced(Self::recover_with(root, helper, inspect))?)
+    }
+
+    pub(crate) fn recover_with(
         root: &Path,
         helper: &Path,
         probe: Probe,
     ) -> Result<Option<Self>, Error> {
         let _starting = storage::lock(root, "start.lock")?;
-        let Some(snapshot) = storage::read(root)? else {
+        let Some(record) = journal::current::<Record<P>>(root)? else {
             return Ok(None);
         };
-        let client = Self {
-            root: root.into(),
-            helper: helper.into(),
-            id: snapshot.id,
-            probe,
-            last: Mutex::new(None),
-        };
+        let client = Self::new(root, helper, record.id, probe);
         let first = client.observe(None)?;
         if first.finished() {
             Ok(None)
@@ -94,22 +142,36 @@ impl Client {
         }
     }
 
-    pub fn snapshot(&self, after: Option<u64>) -> Result<Snapshot, Error> {
-        let result = paced(self.observe(after));
-        if let Ok(snapshot) = &result {
-            let mut last = self.last.lock().unwrap();
-            if last
-                .as_ref()
-                .is_none_or(|old| old.revision <= snapshot.revision)
-            {
-                *last = Some(snapshot.clone());
-            }
+    fn new(root: &Path, helper: &Path, id: String, probe: Probe) -> Self {
+        Self {
+            root: root.into(),
+            helper: helper.into(),
+            id,
+            probe,
+            last: Mutex::new(None),
         }
-        result
     }
 
-    fn observe(&self, after: Option<u64>) -> Result<Snapshot, Error> {
-        let disk = storage::read_id(&self.root, &self.id);
+    pub fn snapshot(&self, after: Option<u64>) -> Result<Record<P>, P::Error> {
+        let result = paced(self.observe(after));
+        if let Ok(record) = &result {
+            self.remember(record);
+        }
+        Ok(result?)
+    }
+
+    fn remember(&self, record: &Record<P>) {
+        let mut last = self.last.lock().unwrap();
+        if last
+            .as_ref()
+            .is_none_or(|old| old.revision <= record.revision)
+        {
+            *last = Some(record.clone());
+        }
+    }
+
+    fn observe(&self, after: Option<u64>) -> Result<Record<P>, Error> {
+        let disk = journal::by_id::<Record<P>>(&self.root, &self.id);
         let cached = self.last.lock().unwrap().clone();
         let saved = match (disk, cached) {
             (Ok(Some(saved)), Some(last)) if last.revision > saved.revision => last,
@@ -118,19 +180,16 @@ impl Client {
             (Err(error), None) => return Err(error),
             (Ok(None), None) => return Err(Error::Unavailable),
         };
-        if saved.id != self.id {
-            return Err(Error::InvalidSession);
-        }
         if saved.finished() {
             return Ok(saved);
         }
-        // A failed inspection or RPC is uncertainty, not proof of host death.
-        // Keep the durable lifecycle and all guards while reconnecting.
+        // A failed inspection or RPC is uncertainty, not proof of the
+        // supervisor's death. Keep the record and every guard while reconnecting.
         match self.observe_saved(saved.clone(), after) {
-            Ok(snapshot) => Ok(snapshot),
+            Ok(record) => Ok(record),
             Err(_) => {
-                std::thread::sleep(Duration::from_millis(500));
-                Ok(Snapshot {
+                std::thread::sleep(PACE);
+                Ok(Record {
                     reconnecting: true,
                     ..saved
                 })
@@ -138,260 +197,247 @@ impl Client {
         }
     }
 
-    fn observe_saved(&self, saved: Snapshot, after: Option<u64>) -> Result<Snapshot, Error> {
-        // Authenticate the recorded process by UID, executable and kernel birth
-        // timestamp, not PID alone. Socket permissions and the session UUID bind
-        // the connection to this supervisor instance.
-        if (self.probe)(&self.helper, saved.supervisor.pid)?.as_ref() == Some(&saved.supervisor) {
+    fn observe_saved(&self, saved: Record<P>, after: Option<u64>) -> Result<Record<P>, Error> {
+        // Socket permissions and the session UUID bind the connection to this
+        // supervisor instance once its kernel identity matches.
+        if ownership::alive(&saved.supervisor, |pid| (self.probe)(&self.helper, pid))? {
             let response = exchange(
                 &saved,
-                &Command::Observe {
+                &Command::<P>::Observe {
                     id: self.id.clone(),
                     after,
                 },
             );
             if response.is_err()
-                && let Some(final_state) = storage::read_id(&self.root, &self.id)?
-                && final_state.finished()
+                && let Some(last) = journal::by_id::<Record<P>>(&self.root, &self.id)?
+                && last.finished()
             {
-                return Ok(final_state);
+                return Ok(last);
             }
             return response;
         }
+        // Only the supervisor writes the journal. A lost supervisor's record
+        // is retired in memory, and only while no other supervisor can start.
         let _owner = storage::lock(&self.root, "owner.lock")?;
         let mut orphan = saved;
         orphan.reconnecting = false;
-        orphan.host = HostState::Lost;
         orphan.revision += 1;
-        if owns_live_child(&orphan, &self.helper, self.probe)? {
-            // Exceptional supervisor loss preserves even a helper that has not
-            // yet replaced itself. Never restart or cancel its accepted launch.
-            if after.is_some() {
-                std::thread::sleep(Duration::from_millis(500));
+        match orphan.liveness(|pid| (self.probe)(&self.helper, pid))? {
+            ownership::Liveness::Dead => {
+                orphan.phase = Phase::Finished;
+                orphan.exit_code = None;
+                orphan.game = None;
+                orphan.starting = None;
+                orphan.rosetta = None;
+                P::orphaned(&mut orphan, false);
             }
-        } else {
-            orphan.phase = Phase::Finished;
-            orphan.exit_code = None;
-            orphan.starting = None;
+            ownership::Liveness::Owned => {
+                // Supervisor loss preserves even a helper that has not replaced
+                // itself yet. Never restart or cancel its accepted launch.
+                P::orphaned(&mut orphan, true);
+                if after.is_some() {
+                    std::thread::sleep(PACE);
+                }
+            }
+            ownership::Liveness::Unknown => return Err(Error::Busy),
         }
         Ok(orphan)
     }
 
-    pub fn cancel_preparation(&self) {
-        if let Ok(Some(saved)) = storage::read_id(&self.root, &self.id)
-            && saved.id == self.id
+    /// Best effort: a supervisor ignores Cancel once the game was spawned.
+    pub fn cancel(&self) {
+        if let Ok(Some(saved)) = journal::by_id::<Record<P>>(&self.root, &self.id)
             && !saved.finished()
+            && ownership::alive(&saved.supervisor, |pid| (self.probe)(&self.helper, pid))
+                .unwrap_or(false)
         {
             let _ = exchange(
                 &saved,
-                &Command::Cancel {
+                &Command::<P>::Cancel {
                     id: self.id.clone(),
                 },
             );
         }
     }
 
-    pub fn cloud_choice(
+    /// Opens a supervisor's start gate. Begin is idempotent, so a lost request
+    /// is retried while the supervisor lives, instead of silently expiring.
+    pub fn begin(&self) -> Result<(), P::Error> {
+        // As long as the supervisor itself waits for it.
+        let deadline = Instant::now() + super::session::BEGIN_DEADLINE;
+        loop {
+            let saved =
+                journal::by_id::<Record<P>>(&self.root, &self.id)?.ok_or(Error::Unavailable)?;
+            let command = Command::<P>::Begin {
+                id: self.id.clone(),
+                account_id: saved.account_id.clone(),
+            };
+            match self.command(None, command, false) {
+                Ok(_) => return Ok(()),
+                Err(Error::InvalidSession) => return Err(Error::InvalidSession.into()),
+                Err(error) if Instant::now() >= deadline => return Err(error.into()),
+                Err(_) => std::thread::sleep(PACE),
+            }
+        }
+    }
+
+    pub fn choose(
         &self,
-        account_id: u64,
+        account_id: &P::Account,
         decision_id: u64,
-        choice: crate::cloud::Choice,
-    ) -> Result<(), Error> {
-        self.cloud_command(
-            account_id,
-            Command::CloudChoice {
-                id: self.id.clone(),
-                account_id,
-                decision_id,
-                choice,
-            },
-        )
+        choice: P::Choice,
+    ) -> Result<(), P::Error> {
+        let command = Command::<P>::CloudChoice {
+            id: self.id.clone(),
+            account_id: account_id.clone(),
+            decision_id,
+            choice,
+        };
+        self.command(Some(account_id), command, true)?;
+        Ok(())
     }
 
-    pub fn revoke_cloud(&self, account_id: u64) -> Result<(), Error> {
-        self.cloud_command(
-            account_id,
-            Command::Revoke {
-                id: self.id.clone(),
-                account_id,
-            },
-        )
+    pub fn revoke(&self, account_id: &P::Account) -> Result<(), P::Error> {
+        let command = Command::<P>::Revoke {
+            id: self.id.clone(),
+            account_id: account_id.clone(),
+        };
+        self.command(Some(account_id), command, false)?;
+        Ok(())
     }
 
-    pub fn resume_after_rosetta(&self, account_id: u64, decision_id: u64) -> Result<(), Error> {
-        let response = self.account_command(
-            account_id,
-            Command::ResumeAfterRosetta {
-                id: self.id.clone(),
-                account_id,
-                decision_id,
-            },
-        )?;
+    pub fn resume_after_rosetta(
+        &self,
+        account_id: &P::Account,
+        decision_id: u64,
+    ) -> Result<(), P::Error> {
+        let command = Command::<P>::ResumeAfterRosetta {
+            id: self.id.clone(),
+            account_id: account_id.clone(),
+            decision_id,
+        };
+        let response = self.command(Some(account_id), command, true)?;
         if response.rosetta.is_some() {
-            return Err(Error::RosettaUnavailable);
+            return Err(Error::RosettaUnavailable.into());
         }
         if response.finished() && response.phase != Phase::Finished {
-            return Err(Error::InvalidSession);
+            return Err(Error::InvalidSession.into());
         }
         Ok(())
     }
 
-    fn cloud_command(&self, account_id: u64, command: Command) -> Result<(), Error> {
-        self.account_command(account_id, command).map(|_| ())
-    }
-
-    fn account_command(&self, account_id: u64, command: Command) -> Result<Snapshot, Error> {
-        let saved = storage::read_id(&self.root, &self.id)?.ok_or(Error::Unavailable)?;
-        if account_id == 0
-            || saved.id != self.id
-            || saved.account_id != account_id
-            || (self.probe)(&self.helper, saved.supervisor.pid)?.as_ref() != Some(&saved.supervisor)
-        {
+    /// An answer to a terminal session is refused, so a stale answer never
+    /// reads as accepted. Other commands to it have nothing left to do.
+    pub(super) fn command(
+        &self,
+        account_id: Option<&P::Account>,
+        command: Command<P>,
+        answer: bool,
+    ) -> Result<Record<P>, Error> {
+        let saved = journal::by_id::<Record<P>>(&self.root, &self.id)?.ok_or(Error::Unavailable)?;
+        if account_id.is_some_and(|account_id| *account_id != saved.account_id) {
+            return Err(Error::InvalidSession);
+        }
+        if saved.finished() {
+            return if answer {
+                Err(Error::InvalidSession)
+            } else {
+                Ok(saved)
+            };
+        }
+        if !ownership::alive(&saved.supervisor, |pid| (self.probe)(&self.helper, pid))? {
             return Err(Error::InvalidSession);
         }
         let response = exchange(&saved, &command)?;
-        let mut last = self.last.lock().unwrap();
-        if last
-            .as_ref()
-            .is_none_or(|old| old.revision <= response.revision)
-        {
-            *last = Some(response.clone());
-        }
+        self.remember(&response);
         Ok(response)
     }
-}
 
-fn owns_live_child(snapshot: &Snapshot, helper: &Path, probe: Probe) -> Result<bool, Error> {
-    if let Some(game) = &snapshot.game
-        && probe(helper, game.pid)?.as_ref() == Some(game)
-    {
-        return Ok(true);
+    /// The default supervisor command: the storefront's helper subcommand
+    /// with an empty environment.
+    pub(crate) fn supervisor_command(helper: &Path) -> Process {
+        let mut command = Process::new(helper);
+        command
+            .arg(P::SUPERVISE)
+            .env_clear()
+            .env("PATH", "/usr/bin:/bin");
+        command
     }
-    match &snapshot.starting {
-        Some(StartingGame::Process {
-            identity,
-            executable,
-        }) => {
-            let Some(actual) = probe(helper, identity.pid)? else {
-                return Ok(false);
-            };
-            // SETEXEC keeps PID, UID and kernel birth time, but changes the
-            // executable. Permit only the recorded wrapper or intended game.
-            Ok(actual == *identity
-                || actual.pid == identity.pid
-                    && actual.uid == identity.uid
-                    && actual.birth_seconds == identity.birth_seconds
-                    && actual.birth_microseconds == identity.birth_microseconds
-                    && Path::new(&actual.executable) == executable)
-        }
-        None if snapshot.game.is_none() && snapshot.phase == Phase::Running => {
-            Err(Error::SessionBusy)
-        }
-        None => Ok(false),
-    }
-}
 
-pub fn start(
-    helper: &Path,
-    credentials: &Credentials,
-    request: Request,
-    cancelled: &AtomicBool,
-) -> Result<Client, Error> {
-    let mut command = Process::new(helper);
-    command
-        .arg("supervise")
-        .env_clear()
-        .env("PATH", "/usr/bin:/bin");
-    start_command(helper, credentials, request, cancelled, command, inspect)
-}
-
-pub(super) fn start_command(
-    helper: &Path,
-    credentials: &Credentials,
-    request: Request,
-    cancelled: &AtomicBool,
-    mut command: Process,
-    probe: Probe,
-) -> Result<Client, Error> {
-    let _starting = storage::lock(&request.root, "start.lock")?;
-    if let Some(saved) = storage::read(&request.root)? {
-        let old = Client {
-            root: request.root.clone(),
-            helper: helper.into(),
-            id: saved.id,
-            probe,
-            last: Mutex::new(None),
-        };
-        if !old.snapshot(None)?.finished() {
-            return Err(Error::SessionBusy);
+    /// Spawns a supervisor and hands it the launch. `handoff` writes the
+    /// storefront's request, including any credentials, to the private pipe;
+    /// `acknowledges` checks that the reply describes that launch.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn start_with(
+        root: &Path,
+        helper: &Path,
+        id: String,
+        mut command: Process,
+        probe: Probe,
+        handoff: impl FnOnce(&mut UnixStream) -> Result<(), Error>,
+        acknowledges: impl Fn(&Record<P>) -> bool,
+        cancelled: impl Fn() -> bool,
+    ) -> Result<Self, Error> {
+        let starting = storage::lock(root, "start.lock")?;
+        if let Some(saved) = journal::current::<Record<P>>(root)? {
+            let old = Self::new(root, helper, saved.id, probe);
+            if !paced(old.observe(None))?.finished() {
+                return Err(Error::Busy);
+            }
         }
-    }
-    // Even an absent record must not permit racing an owner that is publishing
-    // its first state. The supervisor takes this lock for its entire lifetime.
-    let _starting = storage::owner_released(&request.root, _starting)?;
-    if cancelled.load(Ordering::Acquire) {
-        return Err(Error::Cancelled);
-    }
-    // A private duplex pipe carries the request on stdin and one acknowledgement
-    // on stderr. Neither credentials nor acknowledgements enter log files.
-    let (mut pipe, child_pipe) = UnixStream::pair()?;
-    pipe.set_read_timeout(Some(Duration::from_secs(15)))?;
-    pipe.set_write_timeout(Some(Duration::from_secs(2)))?;
-    let mut child = command
-        .stdin(Stdio::from(OwnedFd::from(child_pipe.try_clone()?)))
-        .stdout(Stdio::null())
-        .stderr(Stdio::from(OwnedFd::from(child_pipe)))
-        .spawn()
-        .map_err(|_| Error::StartFailed)?;
-    drop(command);
-    let handoff = (|| {
-        credentials.write(&mut pipe)?;
-        storage::send(&mut pipe, &request)
-    })();
-    let client = Client {
-        root: request.root,
-        helper: helper.into(),
-        id: request.id,
-        probe,
-        last: Mutex::new(None),
-    };
-    let result = handoff.and_then(|_| {
-        let acknowledged = storage::packet::<Snapshot>(&pipe).and_then(|snapshot| {
-            if snapshot.id != client.id
-                || snapshot.account_id != credentials.steam_id
-                || snapshot.app_id != request.config.app_id
-                || snapshot.supervisor.pid != child.id()
-                || (client.probe)(&client.helper, child.id())?.as_ref()
-                    != Some(&snapshot.supervisor)
-            {
-                return Err(Error::InvalidSession);
+        // Even an absent record must not permit racing an owner that is
+        // publishing its first state. A supervisor holds owner.lock for life.
+        let _starting = storage::owner_released(root, starting)?;
+        if cancelled() {
+            return Err(Error::Cancelled);
+        }
+        // A private duplex pipe carries the request on stdin and one
+        // acknowledgement on stderr. Neither reaches a log file.
+        let (mut pipe, child_pipe) = UnixStream::pair()?;
+        pipe.set_read_timeout(Some(Duration::from_secs(15)))?;
+        pipe.set_write_timeout(Some(Duration::from_secs(3)))?;
+        let mut child = command
+            .stdin(Stdio::from(OwnedFd::from(child_pipe.try_clone()?)))
+            .stdout(Stdio::null())
+            .stderr(Stdio::from(OwnedFd::from(child_pipe)))
+            .spawn()
+            .map_err(|_| Error::StartFailed)?;
+        drop(command);
+        let client = Self::new(root, helper, id, probe);
+        let result = handoff(&mut pipe).and_then(|()| {
+            let acknowledged = storage::packet::<Record<P>>(&pipe).and_then(|ack| {
+                if ack.id != client.id
+                    || ack.supervisor.pid != child.id()
+                    || !acknowledges(&ack)
+                    || !ownership::alive(&ack.supervisor, |pid| probe(helper, pid))?
+                {
+                    return Err(Error::InvalidSession);
+                }
+                Ok(())
+            });
+            // An accepted launch survives a lost reply, including a UI crash:
+            // its durable record and authenticated socket stay recoverable.
+            if let Err(error) = acknowledged {
+                match journal::by_id::<Record<P>>(root, &client.id)? {
+                    Some(_) => drop(paced(client.observe(None))?),
+                    None => return Err(error),
+                }
+            }
+            if cancelled() {
+                client.cancel();
             }
             Ok(())
         });
-        // A committed launch survives a lost reply (including a UI crash). Its
-        // durable record and authenticated control socket remain recoverable.
-        if let Err(error) = acknowledged {
-            match storage::read_id(&client.root, &client.id)? {
-                Some(_) => {
-                    client.snapshot(None)?;
-                }
-                None => return Err(error),
-            }
-        }
-        if cancelled.load(Ordering::Acquire) {
-            client.cancel_preparation();
-        }
-        Ok(client)
-    });
-    // Reap while this UI exists. Parent exit naturally reparents the supervisor;
-    // none of its stdio is attached to Forge after the one-time handoff.
-    std::thread::spawn(move || {
-        let _ = child.wait();
-    });
-    result
+        // Reap while this UI exists. Parent exit reparents the supervisor;
+        // none of its stdio stays attached to Forge after the handoff.
+        std::thread::spawn(move || {
+            let _ = child.wait();
+        });
+        result.map(|()| client)
+    }
 }
 
-fn exchange(saved: &Snapshot, command: &Command) -> Result<Snapshot, Error> {
+fn exchange<P: Provider>(saved: &Record<P>, command: &Command<P>) -> Result<Record<P>, Error> {
     let parent = saved.socket.parent().ok_or(Error::InvalidSession)?;
     let metadata = fs::symlink_metadata(parent)?;
     if !metadata.file_type().is_dir()
@@ -402,13 +448,13 @@ fn exchange(saved: &Snapshot, command: &Command) -> Result<Snapshot, Error> {
     }
     let mut stream = UnixStream::connect(&saved.socket)?;
     stream.set_read_timeout(Some(Duration::from_secs(20)))?;
-    stream.set_write_timeout(Some(Duration::from_secs(2)))?;
-    storage::send(&mut stream, command)?;
-    let response: Snapshot = storage::packet(stream)?;
+    stream.set_write_timeout(Some(Duration::from_secs(3)))?;
+    storage::send_command(&mut stream, command)?;
+    let response: Record<P> = storage::packet(stream)?;
     if response.id != saved.id
-        || response.app_id != saved.app_id
         || response.account_id != saved.account_id
-        || response.supervisor != saved.supervisor
+        || !P::same_game(&response.store, &saved.store)
+        || !ownership::same_process(&saved.supervisor, &response.supervisor)
     {
         return Err(Error::InvalidSession);
     }
@@ -429,116 +475,12 @@ pub(crate) fn inspect(helper: &Path, pid: u32) -> Result<Option<Identity>, Error
     serde_json::from_slice(&output.stdout).map_err(|_| Error::InvalidSession)
 }
 
-// All native failure retries are paced here, including failures before a valid
-// snapshot exists. Swift owns presentation, not transport retry policy.
 fn paced<T>(result: Result<T, Error>) -> Result<T, Error> {
     if result.is_err() {
-        std::thread::sleep(Duration::from_millis(500));
+        std::thread::sleep(PACE);
     }
     result
 }
 
 #[cfg(test)]
-mod cloud_commands {
-    use super::*;
-
-    fn identity(birth_seconds: u64) -> Identity {
-        Identity {
-            pid: 42,
-            uid: 501,
-            birth_seconds,
-            birth_microseconds: 0,
-            executable: "/fixture/supervisor".into(),
-        }
-    }
-
-    fn fixture(probe: Probe) -> (tempfile::TempDir, Client) {
-        let root = tempfile::tempdir().unwrap();
-        let id = uuid::Uuid::new_v4().to_string();
-        let snapshot = Snapshot {
-            id: id.clone(),
-            app_id: 42,
-            account_id: 123,
-            supervisor: identity(1),
-            game: None,
-            starting: None,
-            socket: root.path().join("absent.sock"),
-            phase: Phase::Preparing,
-            cloud: crate::cloud::Status {
-                phase: crate::cloud::Phase::Conflict,
-                id: 7,
-                error: None,
-                allowed_choices: vec![
-                    crate::cloud::Choice::Local,
-                    crate::cloud::Choice::Cloud,
-                    crate::cloud::Choice::Cancel,
-                ],
-            },
-            host: HostState::Stopped,
-            exit_code: None,
-            error: None,
-            revision: 1,
-            reconnecting: false,
-            rosetta: None,
-        };
-        storage::write(root.path(), &snapshot).unwrap();
-        let client = Client {
-            root: root.path().into(),
-            helper: "/fixture/supervisor".into(),
-            id,
-            probe,
-            last: Mutex::new(None),
-        };
-        (root, client)
-    }
-
-    fn must_not_probe(_: &Path, _: u32) -> Result<Option<Identity>, Error> {
-        panic!("a mismatched account or session must fail before process inspection");
-    }
-
-    #[test]
-    fn rejects_another_account_before_sending_choice_or_revocation() {
-        let (_root, client) = fixture(must_not_probe);
-        assert!(matches!(
-            client.cloud_choice(456, 7, crate::cloud::Choice::Local),
-            Err(Error::InvalidSession)
-        ));
-        assert!(matches!(
-            client.revoke_cloud(456),
-            Err(Error::InvalidSession)
-        ));
-    }
-
-    #[test]
-    fn rejects_a_replaced_session_record_before_process_inspection() {
-        let (root, client) = fixture(must_not_probe);
-        let mut replacement = storage::read(root.path()).unwrap().unwrap();
-        replacement.id = uuid::Uuid::new_v4().to_string();
-        storage::write(root.path(), &replacement).unwrap();
-        fs::copy(
-            root.path().join(format!("{}.json", replacement.id)),
-            root.path().join(format!("{}.json", client.id)),
-        )
-        .unwrap();
-        assert!(matches!(
-            client.revoke_cloud(123),
-            Err(Error::InvalidSession)
-        ));
-    }
-
-    #[test]
-    fn rejects_reused_pid_before_sending_choice_or_revocation() {
-        fn replaced(_: &Path, _: u32) -> Result<Option<Identity>, Error> {
-            Ok(Some(identity(2)))
-        }
-        let (_root, client) = fixture(replaced);
-        assert!(matches!(
-            client.cloud_choice(123, 7, crate::cloud::Choice::Cloud),
-            Err(Error::InvalidSession)
-        ));
-        assert!(matches!(
-            client.revoke_cloud(123),
-            Err(Error::InvalidSession)
-        ));
-    }
-}
+mod tests;
