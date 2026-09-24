@@ -15,6 +15,8 @@ protocol CloudStorefront: GameStorefront {
     static func request(of maintenance: Maintenance) -> IndicatorRequest
     /// A failed answer, as the storefront's models describe errors.
     @MainActor static func describe(_ error: Error) -> String
+    /// Where the storefront's Game sessions keep their journals.
+    static func sessions(in locations: ForgeLocations) -> String
 }
 
 extension SteamGames: CloudStorefront {
@@ -23,6 +25,7 @@ extension SteamGames: CloudStorefront {
     static func game(of maintenance: SteamCloudMaintenanceRequest) -> UInt32 { maintenance.appId }
     static func request(of maintenance: SteamCloudMaintenanceRequest) -> UInt32 { maintenance.appId }
     @MainActor static func describe(_ error: Error) -> String { SteamModel.message(error) }
+    static func sessions(in locations: ForgeLocations) -> String { locations.steamSessions }
 }
 
 extension EpicGames: CloudStorefront {
@@ -35,6 +38,7 @@ extension EpicGames: CloudStorefront {
         EpicCloudGame(namespace: maintenance.namespace, appName: maintenance.appName)
     }
     @MainActor static func describe(_ error: Error) -> String { EpicModel.message(error) }
+    static func sessions(in locations: ForgeLocations) -> String { locations.epicSessions }
 }
 
 extension EpicCloudConfiguration {
@@ -70,8 +74,10 @@ final class CloudModel<Store: CloudStorefront> {
                                       _ games: [Store.IndicatorRequest]) throws -> [Store.Indicator]
     typealias StartMaintenance = @MainActor (Store.Maintenance) async -> any CloudMaintenanceProtocol
 
-    let root: String
-    let sessionDirectory: String
+    let locations: ForgeLocations
+    /// The Cloud archive.
+    var root: String { locations.cloudArchive }
+    var sessionDirectory: String { Store.sessions(in: locations) }
     private let sessions: GameSessions<Store>
     @ObservationIgnored private let loadIndicators: Indicators
     private(set) var account: Store.AccountID?
@@ -93,9 +99,8 @@ final class CloudModel<Store: CloudStorefront> {
         }
     }
 
-    init(root: String, sessionDirectory: String, sessions: GameSessions<Store>, indicators: @escaping Indicators) {
-        self.root = root
-        self.sessionDirectory = sessionDirectory
+    init(locations: ForgeLocations, sessions: GameSessions<Store>, indicators: @escaping Indicators) {
+        self.locations = locations
         self.sessions = sessions
         loadIndicators = indicators
     }
@@ -249,9 +254,9 @@ final class CloudModel<Store: CloudStorefront> {
 extension CloudModel where Store == SteamGames {
     /// Starts Cloud maintenance. `install` is nil for an uninstalled game.
     func startMaintenance(appId: UInt32, install: String?) {
-        startMaintenance(SteamCloudMaintenanceRequest(root: root, home: NSHomeDirectory(), install: install,
+        startMaintenance(SteamCloudMaintenanceRequest(root: root, home: locations.home, install: install,
                                                       appId: appId, sessionDirectory: sessionDirectory,
-                                                      helper: SteamGameLauncher.helper))
+                                                      helper: locations.helper))
     }
 
     func archive(_ receipt: SteamInstallReceipt, session: any SteamSessionProtocol) async throws {
@@ -264,7 +269,7 @@ extension CloudModel where Store == SteamGames {
     }
 
     private func configuration(_ receipt: SteamInstallReceipt) -> SteamCloudConfiguration {
-        SteamCloudConfiguration(root: root, home: NSHomeDirectory(), install: receipt.directory, appId: receipt.appId)
+        SteamCloudConfiguration(root: root, home: locations.home, install: receipt.directory, appId: receipt.appId)
     }
 }
 
@@ -278,13 +283,13 @@ extension CloudModel where Store == EpicGames {
         guard var configuration = indicators[libraryID]?.configuration else { return nil }
         configuration.root = root
         configuration.sessionDirectory = sessionDirectory
-        configuration.helper = SteamGameLauncher.helper
+        configuration.helper = locations.helper
         return configuration
     }
 
     func configuration(game: EpicGame, receipt: EpicInstallReceipt, language: String) -> EpicCloudConfiguration {
-        EpicCloudConfiguration(root: root, home: NSHomeDirectory(), install: receipt.directory,
-                               sessionDirectory: sessionDirectory, helper: SteamGameLauncher.helper,
+        EpicCloudConfiguration(root: root, home: locations.home, install: receipt.directory,
+                               sessionDirectory: sessionDirectory, helper: locations.helper,
                                namespace: game.namespace, catalogItemId: game.catalogItemId,
                                appName: game.appName, platform: receipt.platform, language: language)
     }

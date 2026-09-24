@@ -10,16 +10,16 @@ enum SteamGameLauncher {
         }.value
         try Task.checkCancellation()
         let attempt = SteamNativeLaunch(credentials: credentials)
-        let home = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+        let locations = ForgeLocations.live
         let configuration = SteamNativeConfiguration(
             appId: plan.appId,
-            helpers: helpersDirectory.path,
-            package: Bundle.main.bundleURL.appending(path: "Contents/Resources/SteamRuntime/runtime.zip").path,
-            cache: home.appending(path: "Library/Caches/com.zagrios.forge/SteamRuntime").path,
-            diagnostics: home.appending(path: "Library/Logs/Forge/Steam").path,
+            helpers: locations.helpers,
+            package: locations.steamRuntimePackage,
+            cache: locations.steamRuntimeCache,
+            diagnostics: locations.steamDiagnostics,
             steamApi: api.path,
-            home: home.path,
-            cloudDirectory: cloudDirectory,
+            home: locations.home,
+            cloudDirectory: locations.cloudArchive,
             installDirectory: plan.installDirectory
         )
         let supervisedTarget = try await Task.detached(priority: .userInitiated) {
@@ -28,35 +28,14 @@ enum SteamGameLauncher {
         try Task.checkCancellation()
         do {
             return try await withTaskCancellationHandler {
-                try await attempt.startGame(configuration: configuration, target: supervisedTarget, sessionDirectory: sessionDirectory)
+                try await attempt.startGame(configuration: configuration, target: supervisedTarget,
+                                            sessionDirectory: locations.steamSessions)
             } onCancel: { attempt.cancel() }
         } catch {
             // The supervisor may have accepted the game before its reply was lost.
             // The session owner must resolve this before releasing its reservation.
             throw GameHandoffFailure(cause: error)
         }
-    }
-
-    static var sessionDirectory: String {
-        AppIdentity.libraryDirectory.appending(path: "SteamSessions").path
-    }
-
-    /// Steam and Epic must resolve the same vault root: owners.json arbitrates
-    /// physical save ownership across both stores from a single directory.
-    static func cloudDirectory(in directory: URL) -> String {
-        directory.appending(path: "SteamCloud").path
-    }
-
-    static var cloudDirectory: String {
-        cloudDirectory(in: AppIdentity.libraryDirectory)
-    }
-
-    static var helpersDirectory: URL {
-        Bundle.main.bundleURL.appending(path: "Contents/Helpers/SteamNative", directoryHint: .isDirectory)
-    }
-
-    static var helper: String {
-        helpersDirectory.appending(path: "forge-steam-host").path
     }
 
     // Low-level process fixtures exercise bundle/argument handling without an account.

@@ -109,9 +109,8 @@ final class EpicModel {
         self.launchGame = launchGame
         self.maintainCloud = maintainCloud
         self.rosetta = EpicRosettaModel(sessions: gameSessions)
-        self.cloud = EpicCloudModel(root: SteamGameLauncher.cloudDirectory(in: directory),
-                                    sessionDirectory: EpicGames.sessionDirectory(in: directory),
-                                    sessions: gameSessions, indicators: cloudServices.indicators)
+        self.cloud = EpicCloudModel(locations: .of(library: directory), sessions: gameSessions,
+                                    indicators: cloudServices.indicators)
         self.installations = EpicInstallations(directory: directory, sessions: gameSessions, cloud: cloud)
         wakeObserver = SystemWakeObservation { [weak self] in
             Task { @MainActor [weak self] in self?.retryFriends() }

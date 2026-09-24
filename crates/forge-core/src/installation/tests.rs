@@ -350,3 +350,97 @@ async fn an_up_to_date_installation_reports_no_downloaded_content() {
         "backend.transfer.upToDate"
     );
 }
+
+fn installed(parent: &Path, name: &str) -> PathBuf {
+    let directory = parent.join(name);
+    fs::create_dir_all(&directory).unwrap();
+    fs::write(directory.join("game.bin"), b"installed content").unwrap();
+    directory
+}
+
+#[test]
+fn removal_deletes_only_the_dedicated_installation() {
+    let parent = tempfile::tempdir().unwrap();
+    let game = installed(parent.path(), "steam-620-macos");
+    let sibling = installed(parent.path(), "steam-570-macos");
+    remove(&game, "steam-620-macos", &[parent.path()]).unwrap();
+    assert!(!game.exists());
+    assert!(sibling.join("game.bin").exists());
+}
+
+#[test]
+fn removal_refuses_other_names_protected_folders_and_short_paths() {
+    let parent = tempfile::tempdir().unwrap();
+    let game = installed(parent.path(), "Imported folder");
+    for (directory, expected) in [
+        (game.as_path(), "steam-620-macos"),
+        (game.as_path(), ""),
+        (game.as_path(), "a/b"),
+        (Path::new("relative/steam-620-macos"), "steam-620-macos"),
+    ] {
+        assert!(
+            matches!(
+                remove(directory, expected, &[]),
+                Err(RemovalFailure::Unsafe(_))
+            ),
+            "{directory:?} {expected:?}"
+        );
+    }
+    let library = parent.path().join("library");
+    fs::create_dir_all(library.join("inside")).unwrap();
+    assert!(matches!(
+        remove(&library, "library", &[&library.join("inside")]),
+        Err(RemovalFailure::Unsafe(_))
+    ));
+    assert!(matches!(
+        remove(Path::new("/"), "", &[]),
+        Err(RemovalFailure::Unsafe(_))
+    ));
+    assert!(matches!(
+        remove(Path::new("/tmp"), "tmp", &[]),
+        Err(RemovalFailure::Unsafe(_))
+    ));
+    assert!(game.join("game.bin").exists());
+    assert!(library.join("inside").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn removal_refuses_links_to_the_folder_but_never_follows_links_inside() {
+    let parent = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let target = installed(outside.path(), "steam-620-macos");
+    let link = parent.path().join("steam-620-macos");
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+    assert!(matches!(
+        remove(&link, "steam-620-macos", &[]),
+        Err(RemovalFailure::Unsafe(_))
+    ));
+    let redirect = parent.path().join("redirect");
+    std::os::unix::fs::symlink(outside.path(), &redirect).unwrap();
+    assert!(matches!(
+        remove(&redirect.join("steam-620-macos"), "steam-620-macos", &[]),
+        Err(RemovalFailure::Unsafe(_))
+    ));
+    fs::remove_file(&link).unwrap();
+    let game = installed(parent.path(), "steam-620-macos");
+    std::os::unix::fs::symlink(outside.path(), game.join("external")).unwrap();
+    remove(&game, "steam-620-macos", &[]).unwrap();
+    assert!(!game.exists());
+    assert!(target.join("game.bin").exists());
+}
+
+#[test]
+fn removal_waits_for_the_installation_lock() {
+    let parent = tempfile::tempdir().unwrap();
+    let game = installed(parent.path(), "steam-620-macos");
+    let held = lock(&game).unwrap();
+    assert!(matches!(
+        remove(&game, "steam-620-macos", &[]),
+        Err(RemovalFailure::Busy)
+    ));
+    assert!(game.join("game.bin").exists());
+    drop(held);
+    remove(&game, "steam-620-macos", &[]).unwrap();
+    assert!(!game.exists());
+}

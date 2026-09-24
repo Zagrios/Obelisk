@@ -15,7 +15,7 @@ use std::{
 };
 
 const MANIFEST: &str = include_str!("../runtime-manifest.json");
-pub(crate) const HOST: &str = "forge-steam-host";
+pub const HOST: &str = "forge-steam-host";
 pub(crate) const ADAPTER: &str = "libforge_steam_discovery_adapter.dylib";
 pub(crate) const SDK_INTEL: &str = "forge-steam-sdk-x86_64";
 pub(crate) const HELPERS: [&str; 3] = [HOST, ADAPTER, SDK_INTEL];

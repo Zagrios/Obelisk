@@ -3738,6 +3738,110 @@ public func FfiConverterTypeEpicLaunchPlan_lower(_ value: EpicLaunchPlan) -> Rus
 }
 
 
+/**
+ * Where Forge keeps everything, derived from its library directory, its
+ * application bundle and the user's home.
+ */
+public struct ForgeLocations: Equatable, Hashable {
+    public var library: String
+    public var home: String
+    /**
+     * The Cloud archive every storefront shares. The folder keeps its first
+     * name so existing save versions and running Game sessions stay valid.
+     */
+    public var cloudArchive: String
+    public var steamSessions: String
+    public var epicSessions: String
+    /**
+     * The bundled native host every supervisor runs as.
+     */
+    public var helper: String
+    public var helpers: String
+    public var steamRuntimePackage: String
+    public var steamRuntimeCache: String
+    public var steamDiagnostics: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(library: String, home: String, 
+        /**
+         * The Cloud archive every storefront shares. The folder keeps its first
+         * name so existing save versions and running Game sessions stay valid.
+         */cloudArchive: String, steamSessions: String, epicSessions: String, 
+        /**
+         * The bundled native host every supervisor runs as.
+         */helper: String, helpers: String, steamRuntimePackage: String, steamRuntimeCache: String, steamDiagnostics: String) {
+        self.library = library
+        self.home = home
+        self.cloudArchive = cloudArchive
+        self.steamSessions = steamSessions
+        self.epicSessions = epicSessions
+        self.helper = helper
+        self.helpers = helpers
+        self.steamRuntimePackage = steamRuntimePackage
+        self.steamRuntimeCache = steamRuntimeCache
+        self.steamDiagnostics = steamDiagnostics
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ForgeLocations: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeForgeLocations: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ForgeLocations {
+        return
+            try ForgeLocations(
+                library: FfiConverterString.read(from: &buf), 
+                home: FfiConverterString.read(from: &buf), 
+                cloudArchive: FfiConverterString.read(from: &buf), 
+                steamSessions: FfiConverterString.read(from: &buf), 
+                epicSessions: FfiConverterString.read(from: &buf), 
+                helper: FfiConverterString.read(from: &buf), 
+                helpers: FfiConverterString.read(from: &buf), 
+                steamRuntimePackage: FfiConverterString.read(from: &buf), 
+                steamRuntimeCache: FfiConverterString.read(from: &buf), 
+                steamDiagnostics: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ForgeLocations, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.library, into: &buf)
+        FfiConverterString.write(value.home, into: &buf)
+        FfiConverterString.write(value.cloudArchive, into: &buf)
+        FfiConverterString.write(value.steamSessions, into: &buf)
+        FfiConverterString.write(value.epicSessions, into: &buf)
+        FfiConverterString.write(value.helper, into: &buf)
+        FfiConverterString.write(value.helpers, into: &buf)
+        FfiConverterString.write(value.steamRuntimePackage, into: &buf)
+        FfiConverterString.write(value.steamRuntimeCache, into: &buf)
+        FfiConverterString.write(value.steamDiagnostics, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeForgeLocations_lift(_ buf: RustBuffer) throws -> ForgeLocations {
+    return try FfiConverterTypeForgeLocations.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeForgeLocations_lower(_ value: ForgeLocations) -> RustBuffer {
+    return FfiConverterTypeForgeLocations.lower(value)
+}
+
+
 public struct Game: Equatable, Hashable {
     public var id: String
     public var title: String
@@ -6679,6 +6783,93 @@ public func FfiConverterTypeGameStore_lower(_ value: GameStore) -> RustBuffer {
 
 
 public 
+enum RemovalError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+
+    
+    
+    case Unsafe
+    case Busy
+    case Storage(message: String
+    )
+
+    
+
+    
+
+    
+    public var errorDescription: String? {
+        String(reflecting: self)
+    }
+    
+}
+
+#if compiler(>=6)
+extension RemovalError: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRemovalError: FfiConverterRustBuffer {
+    typealias SwiftType = RemovalError
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RemovalError {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        
+
+        
+        case 1: return .Unsafe
+        case 2: return .Busy
+        case 3: return .Storage(
+            message: try FfiConverterString.read(from: &buf)
+            )
+
+         default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: RemovalError, into buf: inout [UInt8]) {
+        switch value {
+
+        
+
+        
+        
+        case .Unsafe:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .Busy:
+            writeInt(&buf, Int32(2))
+        
+        
+        case let .Storage(message):
+            writeInt(&buf, Int32(3))
+            FfiConverterString.write(message, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRemovalError_lift(_ buf: RustBuffer) throws -> RemovalError {
+    return try FfiConverterTypeRemovalError.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRemovalError_lower(_ value: RemovalError) -> RustBuffer {
+    return FfiConverterTypeRemovalError.lower(value)
+}
+
+
+public 
 enum SteamError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
@@ -8246,6 +8437,29 @@ public func recoverEpicGameSession(sessionDirectory: String, helper: String)asyn
             errorHandler: FfiConverterTypeEpicError_lift
         )
 }
+public func forgeLocations(library: String, bundle: String, home: String) -> ForgeLocations  {
+    return try!  FfiConverterTypeForgeLocations_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_forge_bridge_fn_func_forge_locations(
+        FfiConverterString.lower(library),
+        FfiConverterString.lower(bundle),
+        FfiConverterString.lower(home),uniffiCallStatus
+    )
+})
+}
+/**
+ * Removes a storefront's dedicated installation folder under the lock every
+ * Transfer and launch of it takes. `protected` folders are never removed.
+ */
+public func removeGameInstallation(directory: String, expectedDirectoryName: String, protected: [String])throws   {try rustCallWithError(FfiConverterTypeRemovalError_lift) {
+        uniffiCallStatus in
+    uniffi_forge_bridge_fn_func_remove_game_installation(
+        FfiConverterString.lower(directory),
+        FfiConverterString.lower(expectedDirectoryName),
+        FfiConverterSequenceString.lower(protected),uniffiCallStatus
+    )
+}
+}
 public func steamLanguage(locale: String) -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
         uniffiCallStatus in
@@ -8354,6 +8568,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_forge_bridge_checksum_func_recover_epic_game_session() != 32212) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_forge_bridge_checksum_func_forge_locations() != 37764) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_forge_bridge_checksum_func_remove_game_installation() != 8109) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_forge_bridge_checksum_func_steam_language() != 4891) {

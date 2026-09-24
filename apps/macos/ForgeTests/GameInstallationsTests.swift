@@ -93,8 +93,7 @@ private final class Fixture {
         let receipt = SteamInstallReceipt(appId: 620, name: game.name, directory: directory.path, platform: "macos",
                                           language: "english", totalBytes: 100)
         try InstallationReceipts.save([receipt], to: receiptsFile)
-        let cloud = SteamCloudModel(root: root.appending(path: "Cloud").path, sessionDirectory: root.path,
-                                    sessions: sessions, indicators: { _, _, _ in [] })
+        let cloud = SteamCloudModel(locations: .of(library: root), sessions: sessions, indicators: { _, _, _ in [] })
         installations = SteamInstallations(directory: root, sessions: sessions, cloud: cloud)
     }
 

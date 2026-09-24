@@ -35,8 +35,8 @@ enum SteamGames: GameStorefront {
     @MainActor static let sessions = GameSessions<SteamGames>(recoverExisting: true, recoverSession: recover)
 
     @MainActor private static func recover() async throws -> (any GameSessionProtocol)? {
-        try await recoverSteamGameSession(sessionDirectory: SteamGameLauncher.sessionDirectory,
-                                          helper: SteamGameLauncher.helper)
+        let locations = ForgeLocations.live
+        return try await recoverSteamGameSession(sessionDirectory: locations.steamSessions, helper: locations.helper)
     }
 }
 
@@ -52,16 +52,11 @@ enum EpicGames: GameStorefront {
     static let gameExited = "model.epic.gameExited"
     static let sessionFailed = "backend.epic.cloud.failed"
 
-    static func sessionDirectory(in directory: URL) -> String {
-        directory.appending(path: "EpicSessions").path
-    }
-    static var sessionDirectory: String { sessionDirectory(in: AppIdentity.libraryDirectory) }
-
     @MainActor static let sessions = GameSessions<EpicGames>(recoverExisting: true, recoverSession: recover)
 
     @MainActor private static func recover() async throws -> (any GameSessionProtocol)? {
-        try await recoverEpicGameSession(sessionDirectory: EpicGames.sessionDirectory,
-                                         helper: SteamGameLauncher.helper)
+        let locations = ForgeLocations.live
+        return try await recoverEpicGameSession(sessionDirectory: locations.epicSessions, helper: locations.helper)
     }
 }
 

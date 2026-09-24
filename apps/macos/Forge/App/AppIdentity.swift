@@ -14,3 +14,12 @@ enum AppIdentity {
         return URL.applicationSupportDirectory.appending(path: storageIdentifier, directoryHint: .isDirectory)
     }
 }
+
+extension ForgeLocations {
+    /// Every path of a Forge whose library lives in `library`. Tests pass their own.
+    static func of(library: URL) -> ForgeLocations {
+        forgeLocations(library: library.path, bundle: Bundle.main.bundleURL.path, home: NSHomeDirectory())
+    }
+
+    @MainActor static let live = of(library: AppIdentity.libraryDirectory)
+}

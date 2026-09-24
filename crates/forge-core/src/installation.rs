@@ -281,5 +281,72 @@ pub fn open<R: DeserializeOwned>(directory: &Path) -> Result<Installation<R>, In
     })
 }
 
+/// Why an installation was not removed.
+#[derive(Debug, Error)]
+pub enum RemovalFailure {
+    #[error("not a dedicated installation folder: {0}")]
+    Unsafe(PathBuf),
+    #[error("a Transfer, launch or uninstall holds the installation")]
+    Busy,
+    #[error(transparent)]
+    Io(#[from] io::Error),
+}
+
+/// Removes a storefront's dedicated installation folder under its
+/// installation lock. The folder must be named `expected`, must not be or
+/// contain any of `protected`, and no link may lead to it. Links inside it
+/// are removed, never followed.
+pub fn remove(directory: &Path, expected: &str, protected: &[&Path]) -> Result<(), RemovalFailure> {
+    let refuse = || RemovalFailure::Unsafe(directory.to_owned());
+    if !directory.is_absolute()
+        || expected.is_empty()
+        || expected.contains('/')
+        || directory
+            .components()
+            .any(|component| matches!(component, Component::ParentDir))
+    {
+        return Err(refuse());
+    }
+    let candidate: PathBuf = directory
+        .components()
+        .filter(|component| !matches!(component, Component::CurDir))
+        .collect();
+    let named = |path: &Path| path.file_name().is_some_and(|name| name == expected);
+    if !fs::symlink_metadata(&candidate)?.is_dir() || !named(&candidate) {
+        return Err(refuse());
+    }
+    let resolved = candidate.canonicalize()?;
+    if !named(&resolved)
+        || resolved.components().count() <= 2
+        || protected.iter().any(|path| {
+            path.canonicalize()
+                .unwrap_or_else(|_| path.to_path_buf())
+                .starts_with(&resolved)
+        })
+        // macOS spells its temporary folders both ways; any other link on
+        // the way redirects the removal.
+        || system_path(&candidate) != system_path(&resolved)
+    {
+        return Err(refuse());
+    }
+    let _lock = lock(&resolved).map_err(|failure| match failure {
+        InstallFailure::Locked => RemovalFailure::Busy,
+        InstallFailure::Io(error) => RemovalFailure::Io(error),
+        _ => refuse(),
+    })?;
+    Ok(fs::remove_dir_all(&resolved)?)
+}
+
+fn system_path(path: &Path) -> PathBuf {
+    for alias in ["/var", "/tmp"] {
+        if let Ok(rest) = path.strip_prefix(alias) {
+            return Path::new("/private")
+                .join(alias.trim_start_matches('/'))
+                .join(rest);
+        }
+    }
+    path.to_owned()
+}
+
 #[cfg(test)]
 mod tests;

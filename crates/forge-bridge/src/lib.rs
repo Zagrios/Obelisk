@@ -19,6 +19,8 @@ mod cloud_maintenance;
 pub use cloud_maintenance::*;
 mod game_session;
 pub use game_session::*;
+mod locations;
+pub use locations::*;
 
 uniffi::setup_scaffolding!();
 

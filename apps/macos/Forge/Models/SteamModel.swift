@@ -173,9 +173,8 @@ final class SteamModel {
         self.gameSessions = gameSessions
         self.startGame = startGame
         self.startCloudMaintenance = cloudServices.startMaintenance
-        self.cloud = SteamCloudModel(root: SteamGameLauncher.cloudDirectory(in: directory),
-                                     sessionDirectory: SteamGameLauncher.sessionDirectory,
-                                     sessions: gameSessions, indicators: cloudServices.indicators)
+        self.cloud = SteamCloudModel(locations: .of(library: directory), sessions: gameSessions,
+                                     indicators: cloudServices.indicators)
         self.rosetta = SteamRosettaModel(sessions: gameSessions)
         self.installations = SteamInstallations(directory: directory, sessions: gameSessions, cloud: cloud)
         wakeObserver = SystemWakeObservation { [weak self] in

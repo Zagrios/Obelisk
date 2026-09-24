@@ -328,7 +328,7 @@ final class EpicCloudTests: XCTestCase {
     func testEpicMaintenanceAsksLiveAndShowsNoBannerAfterAFailure() async throws {
         let sessions = EpicGameSessions(recoverSession: { nil })
         let services = CloudServicesFixture()
-        let cloud = EpicCloudModel(root: "/fixture-cloud", sessionDirectory: "/fixture-sessions", sessions: sessions,
+        let cloud = EpicCloudModel(locations: .of(library: URL(fileURLWithPath: "/fixture")), sessions: sessions,
                                    indicators: services.epic(CloudIndicator(state: .pending, gameSession: false, syncedAt: nil,
                                                                             pendingUpload: true, installationRemoved: false)).indicators)
         cloud.connect(account: "account") { services.startEpicMaintenance($0) }
@@ -524,7 +524,7 @@ final class EpicCloudTests: XCTestCase {
     }
 
     private func makeCloud(_ sessions: EpicGameSessions) -> EpicCloudModel {
-        EpicCloudModel(root: "/fixture-cloud", sessionDirectory: "/fixture-sessions", sessions: sessions,
+        EpicCloudModel(locations: .of(library: URL(fileURLWithPath: "/fixture")), sessions: sessions,
                        indicators: { _, _, _ in [] })
     }
 

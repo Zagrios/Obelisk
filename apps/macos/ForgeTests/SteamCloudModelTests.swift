@@ -75,7 +75,7 @@ final class SteamCloudModelTests: XCTestCase {
 
         try await eventually { model.indicator(for: 42)?.state == .synced }
         XCTAssertEqual(services.steamRequests.last?.accountId, accountID)
-        XCTAssertEqual(services.steamRequests.last?.root, directory.path)
+        XCTAssertEqual(services.steamRequests.last?.root, ForgeLocations.of(library: directory).cloudArchive)
         connect(model, services, accountID + 1)
         XCTAssertNil(model.indicator(for: 42))
         let reads = services.steamRequests.count
@@ -97,7 +97,7 @@ final class SteamCloudModelTests: XCTestCase {
         XCTAssertTrue(model.isMaintaining, "The Reservation holds before the attempt exists")
         try await eventually { services.steamMaintenance.count == 1 }
         XCTAssertEqual(services.steamMaintenance.last?.request.install, "/fixture/steam-42-macos")
-        XCTAssertEqual(services.steamMaintenance.last?.request.root, directory.path)
+        XCTAssertEqual(services.steamMaintenance.last?.request.root, ForgeLocations.of(library: directory).cloudArchive)
         XCTAssertEqual(services.steamMaintenance.last?.credentials.steamId, accountID)
         let attempt = try XCTUnwrap(services.steamMaintenance.last?.attempt)
         attempt.publish(.syncing)
@@ -209,8 +209,7 @@ final class SteamCloudModelTests: XCTestCase {
     @MainActor
     private func model(_ directory: URL, sessions: SteamGameSessions = SteamGameSessions(),
                        services: CloudServicesFixture = CloudServicesFixture()) -> SteamCloudModel {
-        SteamCloudModel(root: directory.path, sessionDirectory: directory.appending(path: "Sessions").path,
-                        sessions: sessions, indicators: services.steam.indicators)
+        SteamCloudModel(locations: .of(library: directory), sessions: sessions, indicators: services.steam.indicators)
     }
 
     /// Connects the account as SteamModel does, with its Cloud maintenance.

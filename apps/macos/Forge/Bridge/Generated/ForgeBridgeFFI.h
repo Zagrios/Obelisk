@@ -733,6 +733,16 @@ uint64_t uniffi_forge_bridge_fn_func_epic_cloud_removed(RustBuffer configuration
 uint64_t uniffi_forge_bridge_fn_func_recover_epic_game_session(RustBuffer session_directory, RustBuffer helper
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_FORGE_BRIDGE_FN_FUNC_FORGE_LOCATIONS
+#define UNIFFI_FFIDEF_UNIFFI_FORGE_BRIDGE_FN_FUNC_FORGE_LOCATIONS
+RustBuffer uniffi_forge_bridge_fn_func_forge_locations(RustBuffer library, RustBuffer bundle, RustBuffer home, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_FORGE_BRIDGE_FN_FUNC_REMOVE_GAME_INSTALLATION
+#define UNIFFI_FFIDEF_UNIFFI_FORGE_BRIDGE_FN_FUNC_REMOVE_GAME_INSTALLATION
+void uniffi_forge_bridge_fn_func_remove_game_installation(RustBuffer directory, RustBuffer expected_directory_name, RustBuffer protected, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_FORGE_BRIDGE_FN_FUNC_STEAM_LANGUAGE
 #define UNIFFI_FFIDEF_UNIFFI_FORGE_BRIDGE_FN_FUNC_STEAM_LANGUAGE
 RustBuffer uniffi_forge_bridge_fn_func_steam_language(RustBuffer locale, RustCallStatus *_Nonnull out_status
@@ -1075,6 +1085,18 @@ uint16_t uniffi_forge_bridge_checksum_func_epic_cloud_removed(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_FORGE_BRIDGE_CHECKSUM_FUNC_RECOVER_EPIC_GAME_SESSION
 #define UNIFFI_FFIDEF_UNIFFI_FORGE_BRIDGE_CHECKSUM_FUNC_RECOVER_EPIC_GAME_SESSION
 uint16_t uniffi_forge_bridge_checksum_func_recover_epic_game_session(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_FORGE_BRIDGE_CHECKSUM_FUNC_FORGE_LOCATIONS
+#define UNIFFI_FFIDEF_UNIFFI_FORGE_BRIDGE_CHECKSUM_FUNC_FORGE_LOCATIONS
+uint16_t uniffi_forge_bridge_checksum_func_forge_locations(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_FORGE_BRIDGE_CHECKSUM_FUNC_REMOVE_GAME_INSTALLATION
+#define UNIFFI_FFIDEF_UNIFFI_FORGE_BRIDGE_CHECKSUM_FUNC_REMOVE_GAME_INSTALLATION
+uint16_t uniffi_forge_bridge_checksum_func_remove_game_installation(void
     
 );
 #endif
