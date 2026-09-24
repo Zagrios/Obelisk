@@ -376,8 +376,8 @@ final class EpicPresentationTests: XCTestCase {
         fixture.layout()
         try await Task.sleep(for: .milliseconds(100))
         fixture.layout()
-        XCTAssertFalse(model.primaryActionAvailable)
-        guard let button = accessibilityElement(in: fixture.host, label: L10n.string("ui.game.download")) else {
+        XCTAssertFalse(model.installations.primaryActionAvailable)
+        guard let button = accessibilityElement(in: fixture.host, label: L10n.string("model.game.download")) else {
             // AppKit may omit SwiftUI virtual buttons from an offscreen host's
             // accessibility tree. Keep this explicit instead of claiming a click.
             throw XCTSkip("This macOS host does not expose the SwiftUI download button through accessibility")

@@ -25,8 +25,8 @@ final class EpicCloudTests: XCTestCase {
         model.open(owned)
         let game = EpicCloudGameFixture(phase: .preparing, cloudPhase: .checking)
         let task = try XCTUnwrap(sessions.launch(game: owned.libraryID, account: "account", prepare: { game }))
-        try await eventually { model.isSynchronizingSaves }
-        XCTAssertEqual(model.primaryActionTitle, L10n.string("ui.cloud.sync_short"))
+        try await eventually { model.installations.isSynchronizingSaves }
+        XCTAssertEqual(model.installations.primaryActionTitle, L10n.string("ui.cloud.sync_short"))
         let view = EpicView(model: model)
             .environment(\.colorScheme, .dark)
             .tint(ForgeStyle.accent)
@@ -309,14 +309,14 @@ final class EpicCloudTests: XCTestCase {
                               gameSessions: sessions)
         await model.start()
         model.open(owned)
-        XCTAssertTrue(model.primaryActionAvailable)
+        XCTAssertTrue(model.installations.primaryActionAvailable)
         let game = EpicCloudGameFixture(phase: .running, cloudPhase: .ready)
         let task = try XCTUnwrap(sessions.launch(game: owned.libraryID, account: "account", prepare: { game }))
         try await eventually { sessions.active?.phase == .running }
-        XCTAssertEqual(model.primaryActionTitle, L10n.string("model.steam.running"))
-        XCTAssertFalse(model.primaryActionAvailable)
-        model.downloadSelected()
-        XCTAssertFalse(model.isDownloading)
+        XCTAssertEqual(model.installations.primaryActionTitle, L10n.string("model.game.running"))
+        XCTAssertFalse(model.installations.primaryActionAvailable)
+        model.installations.downloadSelected()
+        XCTAssertFalse(model.installations.isDownloading)
         model.signOut()
         XCTAssertTrue(sessions.protects(owned.libraryID))
         try await eventually { await game.revocations == ["account"] }
@@ -378,15 +378,15 @@ final class EpicCloudTests: XCTestCase {
                               maintainCloud: { services.startEpicMaintenance($1) })
         await model.start()
         model.open(owned)
-        try await eventually { model.cloudIndicator != nil }
-        XCTAssertNil(model.selectedInstallation)
-        XCTAssertTrue(model.canSyncCloud)
+        try await eventually { model.installations.cloudIndicator != nil }
+        XCTAssertNil(model.installations.selectedReceipt)
+        XCTAssertTrue(model.installations.canSyncCloud)
 
         model.syncCloud()
 
         XCTAssertTrue(model.cloud.isMaintaining)
-        XCTAssertFalse(model.canModifyInstallation(of: owned.libraryID), "Maintenance holds the Reservation")
-        XCTAssertFalse(model.canSyncCloud)
+        XCTAssertFalse(model.installations.canModify(owned.libraryID), "Maintenance holds the Reservation")
+        XCTAssertFalse(model.installations.canSyncCloud)
         try await eventually { services.epicMaintenance.count == 1 }
         XCTAssertEqual(services.epicMaintenance.last?.configuration.install, "/removed-game")
         XCTAssertNotEqual(services.epicMaintenance.last?.configuration.root, "/old-cloud", "This Forge's paths replace saved ones")

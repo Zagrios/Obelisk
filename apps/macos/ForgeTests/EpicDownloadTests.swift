@@ -134,11 +134,11 @@ final class EpicDownloadTests: XCTestCase {
         await fixture.session.holdNextDownload()
         await fixture.session.rotateOnPrepare(credentials("prepared"))
 
-        fixture.model.downloadSelected()
-        fixture.model.downloadSelected()
-        XCTAssertTrue(fixture.model.isDownloading)
-        XCTAssertEqual(fixture.model.activeTransferLibraryID, fixture.game.libraryID)
-        XCTAssertFalse(fixture.model.primaryActionAvailable)
+        fixture.model.installations.downloadSelected()
+        fixture.model.installations.downloadSelected()
+        XCTAssertTrue(fixture.model.installations.isDownloading)
+        XCTAssertEqual(fixture.model.installations.activeTransferGame, fixture.game.libraryID)
+        XCTAssertFalse(fixture.model.installations.primaryActionAvailable)
         try await eventually { await fixture.session.waitingForDownload }
         let requests = await fixture.session.downloads
         XCTAssertEqual(requests.count, 1)
@@ -150,17 +150,17 @@ final class EpicDownloadTests: XCTestCase {
         let prepared = await fixture.store.value
         XCTAssertEqual(prepared?.refreshToken, "prepared")
 
-        try await eventually { fixture.model.transfer?.state == .downloading }
-        XCTAssertEqual(fixture.model.transfer?.completedBytes, 40)
+        try await eventually { fixture.model.installations.transfer?.state == .downloading }
+        XCTAssertEqual(fixture.model.installations.transfer?.completedBytes, 40)
         await fixture.session.completeDownload(rotated: credentials("rotated-download"))
-        try await eventually { !fixture.model.isDownloading }
+        try await eventually { !fixture.model.installations.isDownloading }
         let stored = await fixture.store.value
         XCTAssertEqual(stored?.refreshToken, "rotated-download")
-        XCTAssertEqual(fixture.model.selectedInstallation?.appName, "native")
-        XCTAssertEqual(fixture.model.selectedInstallation?.name, "Game native")
-        XCTAssertEqual(fixture.model.transfer?.state, .complete)
-        XCTAssertEqual(fixture.model.primaryActionTitle, L10n.string("model.steam.launch"))
-        XCTAssertFalse(fixture.model.canResumeDownload)
+        XCTAssertEqual(fixture.model.installations.selectedReceipt?.appName, "native")
+        XCTAssertEqual(fixture.model.installations.selectedReceipt?.name, "Game native")
+        XCTAssertEqual(fixture.model.installations.transfer?.state, .complete)
+        XCTAssertEqual(fixture.model.installations.primaryActionTitle, L10n.string("model.game.launch"))
+        XCTAssertFalse(fixture.model.installations.canResumeDownload)
         XCTAssertNil(fixture.model.errorMessage)
         let receipt = try XCTUnwrap(receiptFiles(in: fixture.directory).first)
         let text = try String(contentsOf: receipt, encoding: .utf8)
@@ -171,18 +171,18 @@ final class EpicDownloadTests: XCTestCase {
     func testWindowsDownloadDoesNotRequireOptionalDetailsAndUnsupportedGameIsDisabled() async throws {
         let fixture = try await fixture(game: game("windows"))
         defer { fixture.cleanUp() }
-        XCTAssertTrue(fixture.model.primaryActionAvailable)
-        fixture.model.downloadSelected()
-        try await eventually { !fixture.model.isDownloading }
+        XCTAssertTrue(fixture.model.installations.primaryActionAvailable)
+        fixture.model.installations.downloadSelected()
+        try await eventually { !fixture.model.installations.isDownloading }
         let requests = await fixture.session.downloads
         XCTAssertEqual(requests.first?.platform, "Windows")
-        XCTAssertNotNil(fixture.model.selectedInstallation)
+        XCTAssertNotNil(fixture.model.installations.selectedReceipt)
 
         var unsupported = game("unsupported")
         unsupported.windows = false
         fixture.model.open(unsupported)
-        XCTAssertFalse(fixture.model.primaryActionAvailable)
-        fixture.model.downloadSelected()
+        XCTAssertFalse(fixture.model.installations.primaryActionAvailable)
+        fixture.model.installations.downloadSelected()
         let afterUnsupported = await fixture.session.downloads
         XCTAssertEqual(afterUnsupported.count, 1)
     }
@@ -191,26 +191,26 @@ final class EpicDownloadTests: XCTestCase {
         let fixture = try await fixture()
         defer { fixture.cleanUp() }
         await fixture.session.holdNextDownload()
-        fixture.model.downloadSelected()
+        fixture.model.installations.downloadSelected()
         try await eventually { await fixture.session.waitingForDownload }
-        fixture.model.cancelDownload()
+        fixture.model.installations.cancelDownload()
         XCTAssertEqual(fixture.session.cancellations, 1)
         // Deliberately return success after cancellation to exercise the UI guard.
         await fixture.session.completeDownload()
-        try await eventually { !fixture.model.isDownloading }
-        XCTAssertTrue(fixture.model.installations.isEmpty)
-        XCTAssertEqual(fixture.model.transfer?.state, .cancelled)
-        XCTAssertTrue(fixture.model.canResumeDownload)
-        XCTAssertEqual(fixture.model.primaryActionTitle, L10n.string("model.steam.resume"))
+        try await eventually { !fixture.model.installations.isDownloading }
+        XCTAssertTrue(fixture.model.installations.receipts.isEmpty)
+        XCTAssertEqual(fixture.model.installations.transfer?.state, .cancelled)
+        XCTAssertTrue(fixture.model.installations.canResumeDownload)
+        XCTAssertEqual(fixture.model.installations.primaryActionTitle, L10n.string("model.game.resume"))
         XCTAssertNil(fixture.model.errorMessage)
 
-        fixture.model.downloadSelected()
-        try await eventually { !fixture.model.isDownloading }
+        fixture.model.installations.downloadSelected()
+        try await eventually { !fixture.model.installations.isDownloading }
         let requests = await fixture.session.downloads
         XCTAssertEqual(requests.count, 2)
         XCTAssertEqual(requests.first, requests.last)
-        XCTAssertEqual(fixture.model.installations.count, 1)
-        XCTAssertEqual(fixture.model.transfer?.state, .complete)
+        XCTAssertEqual(fixture.model.installations.receipts.count, 1)
+        XCTAssertEqual(fixture.model.installations.transfer?.state, .complete)
     }
 
     func testCancellationDuringFinalCredentialSaveRetainsCompletedInstallation() async throws {
@@ -218,20 +218,20 @@ final class EpicDownloadTests: XCTestCase {
         defer { fixture.cleanUp() }
         try await eventually { !fixture.model.isLoadingGameDetails && fixture.session.credentialRevisions.isWaiting }
         await fixture.session.holdNextDownload()
-        fixture.model.downloadSelected()
+        fixture.model.installations.downloadSelected()
         try await eventually { await fixture.session.waitingForDownload }
         await fixture.store.holdNextSave()
         await fixture.session.completeDownload()
         try await eventually { await fixture.store.waitingForSave }
 
-        XCTAssertEqual(fixture.model.installations.count, 1)
-        XCTAssertEqual(fixture.model.transfer?.state, .complete)
-        fixture.model.cancelDownload()
+        XCTAssertEqual(fixture.model.installations.receipts.count, 1)
+        XCTAssertEqual(fixture.model.installations.transfer?.state, .complete)
+        fixture.model.installations.cancelDownload()
         await fixture.store.completeSave()
-        try await eventually { !fixture.model.isDownloading }
-        XCTAssertEqual(fixture.model.installations.count, 1)
-        XCTAssertEqual(fixture.model.transfer?.state, .complete)
-        XCTAssertFalse(fixture.model.canResumeDownload)
+        try await eventually { !fixture.model.installations.isDownloading }
+        XCTAssertEqual(fixture.model.installations.receipts.count, 1)
+        XCTAssertEqual(fixture.model.installations.transfer?.state, .complete)
+        XCTAssertFalse(fixture.model.installations.canResumeDownload)
         XCTAssertNil(fixture.model.errorMessage)
     }
 
@@ -239,17 +239,17 @@ final class EpicDownloadTests: XCTestCase {
         let fixture = try await fixture()
         defer { fixture.cleanUp() }
         await fixture.session.holdNextPrepare()
-        fixture.model.downloadSelected()
+        fixture.model.installations.downloadSelected()
         try await eventually { await fixture.session.waitingForPrepare }
-        fixture.model.cancelDownload()
+        fixture.model.installations.cancelDownload()
         await fixture.session.completePrepare(rotated: credentials("cancelled-prepare"))
-        try await eventually { !fixture.model.isDownloading }
+        try await eventually { !fixture.model.installations.isDownloading }
         let requests = await fixture.session.downloads
         let saved = await fixture.store.value
         XCTAssertTrue(requests.isEmpty)
         XCTAssertEqual(saved?.refreshToken, "cancelled-prepare")
-        XCTAssertEqual(fixture.model.transfer?.state, .cancelled)
-        XCTAssertTrue(fixture.model.canResumeDownload)
+        XCTAssertEqual(fixture.model.installations.transfer?.state, .cancelled)
+        XCTAssertTrue(fixture.model.installations.canResumeDownload)
         XCTAssertNil(fixture.model.errorMessage)
     }
 
@@ -257,43 +257,43 @@ final class EpicDownloadTests: XCTestCase {
         let fixture = try await fixture()
         defer { fixture.cleanUp() }
         await fixture.session.failNextDownload(rotated: credentials("failed-download"))
-        fixture.model.downloadSelected()
-        try await eventually { !fixture.model.isDownloading }
+        fixture.model.installations.downloadSelected()
+        try await eventually { !fixture.model.installations.isDownloading }
         let saved = await fixture.store.value
         XCTAssertEqual(saved?.refreshToken, "failed-download")
-        XCTAssertEqual(fixture.model.transfer?.state, .failed)
+        XCTAssertEqual(fixture.model.installations.transfer?.state, .failed)
         XCTAssertEqual(fixture.model.errorMessage, L10n.string("model.epic.network"))
-        XCTAssertTrue(fixture.model.canResumeDownload)
-        XCTAssertTrue(fixture.model.installations.isEmpty)
+        XCTAssertTrue(fixture.model.installations.canResumeDownload)
+        XCTAssertTrue(fixture.model.installations.receipts.isEmpty)
 
-        fixture.model.resumeDownload()
-        try await eventually { !fixture.model.isDownloading }
+        fixture.model.installations.resumeDownload()
+        try await eventually { !fixture.model.installations.isDownloading }
         XCTAssertNil(fixture.model.errorMessage)
-        XCTAssertEqual(fixture.model.installations.count, 1)
-        XCTAssertFalse(fixture.model.canResumeDownload)
+        XCTAssertEqual(fixture.model.installations.receipts.count, 1)
+        XCTAssertFalse(fixture.model.installations.canResumeDownload)
     }
 
     func testRetryPreparationFailureDoesNotInheritPreviousCancellation() async throws {
         let fixture = try await fixture()
         defer { fixture.cleanUp() }
         await fixture.session.holdNextDownload()
-        fixture.model.downloadSelected()
+        fixture.model.installations.downloadSelected()
         try await eventually { await fixture.session.waitingForDownload }
-        fixture.model.cancelDownload()
+        fixture.model.installations.cancelDownload()
         await fixture.session.completeDownload(cancelled: true)
-        try await eventually { !fixture.model.isDownloading }
+        try await eventually { !fixture.model.installations.isDownloading }
         XCTAssertEqual(fixture.session.downloadProgress()?.state, .cancelled)
 
         await fixture.session.failNextPrepare()
-        fixture.model.resumeDownload()
-        try await eventually { !fixture.model.isDownloading }
-        XCTAssertEqual(fixture.model.transfer?.state, .failed)
+        fixture.model.installations.resumeDownload()
+        try await eventually { !fixture.model.installations.isDownloading }
+        XCTAssertEqual(fixture.model.installations.transfer?.state, .failed)
         XCTAssertEqual(fixture.model.errorMessage, L10n.string("model.epic.network"))
-        XCTAssertTrue(fixture.model.canResumeDownload)
+        XCTAssertTrue(fixture.model.installations.canResumeDownload)
 
-        fixture.model.resumeDownload()
-        try await eventually { !fixture.model.isDownloading }
-        XCTAssertEqual(fixture.model.transfer?.state, .complete)
+        fixture.model.installations.resumeDownload()
+        try await eventually { !fixture.model.installations.isDownloading }
+        XCTAssertEqual(fixture.model.installations.transfer?.state, .complete)
         XCTAssertNil(fixture.model.errorMessage)
     }
 
@@ -301,22 +301,22 @@ final class EpicDownloadTests: XCTestCase {
         let fixture = try await fixture()
         defer { fixture.cleanUp() }
         await fixture.session.holdNextDownload()
-        fixture.model.downloadSelected()
+        fixture.model.installations.downloadSelected()
         try await eventually { await fixture.session.waitingForDownload }
         let other = game("other")
         fixture.model.open(other)
-        XCTAssertEqual(fixture.model.activeTransferLibraryID, fixture.game.libraryID)
-        XCTAssertNil(fixture.model.selectedInstallation)
-        XCTAssertFalse(fixture.model.primaryActionAvailable)
+        XCTAssertEqual(fixture.model.installations.activeTransferGame, fixture.game.libraryID)
+        XCTAssertNil(fixture.model.installations.selectedReceipt)
+        XCTAssertFalse(fixture.model.installations.primaryActionAvailable)
 
         await fixture.session.completeDownload()
-        try await eventually { !fixture.model.isDownloading }
+        try await eventually { !fixture.model.installations.isDownloading }
         XCTAssertEqual(fixture.model.selectedGame?.libraryID, other.libraryID)
-        XCTAssertNil(fixture.model.selectedInstallation)
-        XCTAssertEqual(fixture.model.installations.first?.libraryID, fixture.game.libraryID)
-        XCTAssertEqual(fixture.model.transferLibraryID, fixture.game.libraryID)
-        XCTAssertEqual(fixture.model.primaryActionTitle, L10n.string("ui.game.download"))
-        XCTAssertTrue(fixture.model.primaryActionAvailable)
+        XCTAssertNil(fixture.model.installations.selectedReceipt)
+        XCTAssertEqual(fixture.model.installations.receipts.first?.libraryID, fixture.game.libraryID)
+        XCTAssertEqual(fixture.model.installations.transferGame, fixture.game.libraryID)
+        XCTAssertEqual(fixture.model.installations.primaryActionTitle, L10n.string("model.game.download"))
+        XCTAssertTrue(fixture.model.installations.primaryActionAvailable)
     }
 
     func testSignOutAndNewAccountIgnoreLateDownloadAndCredentials() async throws {
@@ -333,7 +333,7 @@ final class EpicDownloadTests: XCTestCase {
         model.open(game("one"))
         try await eventually { !model.isLoadingGameDetails }
         await oldSession.holdNextDownload()
-        model.downloadSelected()
+        model.installations.downloadSelected()
         try await eventually { await oldSession.waitingForDownload }
         model.signOut()
         XCTAssertEqual(oldSession.cancellations, 1)
@@ -348,51 +348,51 @@ final class EpicDownloadTests: XCTestCase {
         let saved = await store.value
         XCTAssertEqual(saved, newCredentials)
         XCTAssertEqual(model.selectedGame?.appName, "two")
-        XCTAssertTrue(model.installations.isEmpty)
-        XCTAssertNil(model.transfer)
-        XCTAssertFalse(model.isDownloading)
+        XCTAssertTrue(model.installations.receipts.isEmpty)
+        XCTAssertNil(model.installations.transfer)
+        XCTAssertFalse(model.installations.isDownloading)
         XCTAssertTrue(try receiptFiles(in: directory).isEmpty)
     }
 
     func testRestartRestoresOnlyCurrentAccountReceiptsAndVerifiesExistingDirectory() async throws {
         let fixture = try await fixture()
         defer { fixture.cleanUp() }
-        fixture.model.downloadSelected()
-        try await eventually { !fixture.model.isDownloading }
-        let installed = try XCTUnwrap(fixture.model.selectedInstallation)
+        fixture.model.installations.downloadSelected()
+        try await eventually { !fixture.model.installations.isDownloading }
+        let installed = try XCTUnwrap(fixture.model.installations.selectedReceipt)
 
         let restored = EpicModel(directory: fixture.directory, keychain: fixture.store, restore: { _ in fixture.session })
         await restored.start()
         restored.open(fixture.game)
-        XCTAssertEqual(restored.selectedInstallation?.directory, installed.directory)
+        XCTAssertEqual(restored.installations.selectedReceipt?.directory, installed.directory)
         await fixture.session.holdNextDownload()
-        restored.downloadSelected()
-        XCTAssertEqual(restored.selectedInstallation?.needsVerification, true)
+        restored.installations.downloadSelected()
+        XCTAssertEqual(restored.installations.selectedReceipt?.needsVerification, true)
         try await eventually { await fixture.session.waitingForDownload }
         let request = await fixture.session.downloads.last
         XCTAssertEqual(request?.directory, URL(fileURLWithPath: installed.directory).deletingLastPathComponent().path)
-        restored.cancelDownload()
+        restored.installations.cancelDownload()
         await fixture.session.completeDownload()
-        try await eventually { !restored.isDownloading }
+        try await eventually { !restored.installations.isDownloading }
 
         let interrupted = EpicModel(directory: fixture.directory, keychain: fixture.store, restore: { _ in fixture.session })
         await interrupted.start()
         interrupted.open(fixture.game)
-        XCTAssertEqual(interrupted.selectedInstallation?.needsVerification, true)
-        interrupted.downloadSelected()
-        try await eventually { !interrupted.isDownloading }
-        XCTAssertEqual(interrupted.selectedInstallation?.needsVerification, false)
+        XCTAssertEqual(interrupted.installations.selectedReceipt?.needsVerification, true)
+        interrupted.installations.downloadSelected()
+        try await eventually { !interrupted.installations.isDownloading }
+        XCTAssertEqual(interrupted.installations.selectedReceipt?.needsVerification, false)
 
         let different = credentials("different", account: "different-account")
         let otherSession = EpicDownloadSession(credentials: different, game: fixture.game)
         let other = EpicModel(directory: fixture.directory, keychain: EpicMemoryStore(different), restore: { _ in otherSession })
         await other.start()
-        XCTAssertTrue(other.installations.isEmpty)
+        XCTAssertTrue(other.installations.receipts.isEmpty)
 
         try FileManager.default.removeItem(atPath: installed.directory)
         let missing = EpicModel(directory: fixture.directory, keychain: fixture.store, restore: { _ in fixture.session })
         await missing.start()
-        XCTAssertTrue(missing.installations.isEmpty)
+        XCTAssertTrue(missing.installations.receipts.isEmpty)
     }
 
     func testTransferProgressIsClamped() {
@@ -405,45 +405,45 @@ final class EpicDownloadTests: XCTestCase {
     func testInstalledPrimaryActionAlwaysVerifiesThenAuthorizesAndLaunchesWithoutDuplicates() async throws {
         let fixture = try await fixture(game: game("native", macos: true))
         defer { fixture.cleanUp() }
-        fixture.model.primaryAction()
-        try await eventually { !fixture.model.isDownloading }
+        fixture.model.installations.primaryAction()
+        try await eventually { !fixture.model.installations.isDownloading }
         let installedLaunches = await fixture.session.launchRequests
         XCTAssertTrue(installedLaunches.isEmpty, "Installing a game must not launch it")
-        XCTAssertEqual(fixture.model.primaryActionTitle, L10n.string("model.steam.launch"))
+        XCTAssertEqual(fixture.model.installations.primaryActionTitle, L10n.string("model.game.launch"))
 
         await fixture.session.holdNextDownload()
         await fixture.session.holdNextLaunch()
         await fixture.session.holdNextRunningGame()
-        fixture.model.primaryAction()
-        fixture.model.primaryAction()
-        XCTAssertTrue(fixture.model.isLaunching)
-        XCTAssertTrue(fixture.model.isVerifyingBeforeLaunch)
+        fixture.model.installations.primaryAction()
+        fixture.model.installations.primaryAction()
+        XCTAssertTrue(fixture.model.installations.isLaunching)
+        XCTAssertTrue(fixture.model.installations.isVerifyingBeforeLaunch)
         XCTAssertTrue(fixture.model.gameSessions.isBusy)
         try await eventually { await fixture.session.waitingForDownload }
         let verifyingLaunches = await fixture.session.launchRequests
         XCTAssertTrue(verifyingLaunches.isEmpty)
         await fixture.session.completeDownload()
         try await eventually { await fixture.session.waitingForLaunch }
-        XCTAssertFalse(fixture.model.isDownloading)
-        XCTAssertTrue(fixture.model.isLaunching)
-        XCTAssertFalse(fixture.model.isVerifyingBeforeLaunch)
-        XCTAssertEqual(fixture.model.primaryActionTitle, L10n.string("model.steam.launching"))
-        fixture.model.primaryAction()
+        XCTAssertFalse(fixture.model.installations.isDownloading)
+        XCTAssertTrue(fixture.model.installations.isLaunching)
+        XCTAssertFalse(fixture.model.installations.isVerifyingBeforeLaunch)
+        XCTAssertEqual(fixture.model.installations.primaryActionTitle, L10n.string("model.game.launching"))
+        fixture.model.installations.primaryAction()
         await fixture.session.completeLaunch(rotated: credentials("launch-rotation"))
         try await eventually { fixture.model.gameSessions.active?.phase == .running }
         let game = try await launchedGame(fixture)
         let storedAtBegin = await game.credentialsAtBegin
         XCTAssertEqual(storedAtBegin?.refreshToken, "launch-rotation")
-        XCTAssertFalse(fixture.model.isLaunching)
+        XCTAssertFalse(fixture.model.installations.isLaunching)
         XCTAssertTrue(fixture.model.gameSessions.isBusy)
-        XCTAssertFalse(fixture.model.primaryActionAvailable)
-        fixture.model.primaryAction()
+        XCTAssertFalse(fixture.model.installations.primaryActionAvailable)
+        fixture.model.installations.primaryAction()
         let requests = await fixture.session.downloads
         let launches = await fixture.session.launchRequests
         XCTAssertEqual(requests.count, 2)
         XCTAssertEqual(launches.count, 1)
         XCTAssertEqual(launches.first?.language, "fr-FR")
-        XCTAssertEqual(launches.first?.install, fixture.model.selectedInstallation?.directory)
+        XCTAssertEqual(launches.first?.install, fixture.model.installations.selectedReceipt?.directory)
         XCTAssertEqual(launches.first?.namespace, fixture.game.namespace)
         XCTAssertEqual(launches.first?.appName, fixture.game.appName)
         await game.finish()
@@ -451,7 +451,7 @@ final class EpicDownloadTests: XCTestCase {
         let events = await fixture.session.events
         XCTAssertEqual(events, ["download", "download", "launchGame", "begin"])
 
-        fixture.model.primaryAction()
+        fixture.model.installations.primaryAction()
         try await eventually { !fixture.model.gameSessions.isBusy }
         let repeated = await fixture.session.events
         let repeatedLaunches = await fixture.session.launchRequests
@@ -462,32 +462,32 @@ final class EpicDownloadTests: XCTestCase {
     func testCancelledLaunchVerificationNeverHandsOffOrBeginsAndKeepsLaunchAction() async throws {
         let fixture = try await fixture()
         defer { fixture.cleanUp() }
-        fixture.model.downloadSelected()
-        try await eventually { !fixture.model.isDownloading }
+        fixture.model.installations.downloadSelected()
+        try await eventually { !fixture.model.installations.isDownloading }
         await fixture.session.holdNextDownload()
-        fixture.model.primaryAction()
+        fixture.model.installations.primaryAction()
         try await eventually { await fixture.session.waitingForDownload }
-        fixture.model.cancelDownload()
+        fixture.model.installations.cancelDownload()
         await fixture.session.completeDownload()
         try await eventually { !fixture.model.gameSessions.isBusy }
         let launches = await fixture.session.launchRequests
         let games = await fixture.session.launchedGames
         XCTAssertTrue(launches.isEmpty)
         XCTAssertTrue(games.isEmpty)
-        XCTAssertEqual(fixture.model.selectedInstallation?.needsVerification, true)
-        XCTAssertEqual(fixture.model.primaryActionTitle, L10n.string("model.steam.launch"))
+        XCTAssertEqual(fixture.model.installations.selectedReceipt?.needsVerification, true)
+        XCTAssertEqual(fixture.model.installations.primaryActionTitle, L10n.string("model.game.launch"))
         XCTAssertNil(fixture.model.errorMessage)
     }
 
     func testCancelledLaunchHandoffPersistsRotationAndCancelsLateClientWithoutBeginning() async throws {
         let fixture = try await fixture()
         defer { fixture.cleanUp() }
-        fixture.model.downloadSelected()
-        try await eventually { !fixture.model.isDownloading }
+        fixture.model.installations.downloadSelected()
+        try await eventually { !fixture.model.installations.isDownloading }
         await fixture.session.holdNextLaunch()
-        fixture.model.primaryAction()
+        fixture.model.installations.primaryAction()
         try await eventually { await fixture.session.waitingForLaunch }
-        fixture.model.cancelDownload()
+        fixture.model.installations.cancelDownload()
         await fixture.session.completeLaunch(rotated: credentials("cancelled-launch-rotation"))
         try await eventually { !fixture.model.gameSessions.isBusy }
         let game = try await launchedGame(fixture)
@@ -497,16 +497,16 @@ final class EpicDownloadTests: XCTestCase {
         XCTAssertEqual(saved?.refreshToken, "cancelled-launch-rotation")
         XCTAssertEqual(beginnings, 0)
         XCTAssertNil(fixture.model.errorMessage)
-        XCTAssertEqual(fixture.model.primaryActionTitle, L10n.string("model.steam.launch"))
+        XCTAssertEqual(fixture.model.installations.primaryActionTitle, L10n.string("model.game.launch"))
     }
 
     func testCancelledLaunchDuringFinalCredentialSaveCancelsClientBeforeSaveCompletes() async throws {
         let fixture = try await fixture()
         defer { fixture.cleanUp() }
-        fixture.model.downloadSelected()
-        try await eventually { !fixture.model.isDownloading }
+        fixture.model.installations.downloadSelected()
+        try await eventually { !fixture.model.installations.isDownloading }
         await fixture.session.holdNextLaunch()
-        fixture.model.primaryAction()
+        fixture.model.installations.primaryAction()
         try await eventually { await fixture.session.waitingForLaunch }
         await fixture.store.holdNextSave()
         await fixture.session.completeLaunch(rotated: credentials("final-launch-rotation"))
@@ -515,7 +515,7 @@ final class EpicDownloadTests: XCTestCase {
         let game = try await launchedGame(fixture)
         let beginningsBeforeCancel = await game.beginnings
         XCTAssertEqual(beginningsBeforeCancel, 0)
-        fixture.model.cancelDownload()
+        fixture.model.installations.cancelDownload()
         try await eventually { await game.cancellations > 0 }
         let stillSaving = await fixture.store.waitingForSave
         XCTAssertTrue(stillSaving, "Cancellation must reach the returned client while credential storage is blocked")
@@ -525,17 +525,17 @@ final class EpicDownloadTests: XCTestCase {
         let beginnings = await game.beginnings
         XCTAssertEqual(saved?.refreshToken, "final-launch-rotation")
         XCTAssertEqual(beginnings, 0)
-        XCTAssertNotNil(fixture.model.selectedInstallation)
+        XCTAssertNotNil(fixture.model.installations.selectedReceipt)
         XCTAssertNil(fixture.model.errorMessage)
     }
 
     func testSignOutRevokesLateLaunchClientWithoutBeginning() async throws {
         let fixture = try await fixture()
         defer { fixture.cleanUp() }
-        fixture.model.downloadSelected()
-        try await eventually { !fixture.model.isDownloading }
+        fixture.model.installations.downloadSelected()
+        try await eventually { !fixture.model.installations.isDownloading }
         await fixture.session.holdNextLaunch()
-        fixture.model.primaryAction()
+        fixture.model.installations.primaryAction()
         try await eventually { await fixture.session.waitingForLaunch }
         fixture.model.signOut()
         await fixture.session.completeLaunch(rotated: credentials("abandoned-launch"))
@@ -548,21 +548,21 @@ final class EpicDownloadTests: XCTestCase {
         XCTAssertNil(saved)
         XCTAssertEqual(beginnings, 0)
         XCTAssertEqual(revocations, ["download-account"])
-        XCTAssertFalse(fixture.model.isLaunching)
-        XCTAssertFalse(fixture.model.isDownloading)
-        XCTAssertTrue(fixture.model.installations.isEmpty)
+        XCTAssertFalse(fixture.model.installations.isLaunching)
+        XCTAssertFalse(fixture.model.installations.isDownloading)
+        XCTAssertTrue(fixture.model.installations.receipts.isEmpty)
     }
 
     func testChangingSelectionDoesNotRetargetPendingLaunch() async throws {
         let fixture = try await fixture()
         defer { fixture.cleanUp() }
-        fixture.model.downloadSelected()
-        try await eventually { !fixture.model.isDownloading }
+        fixture.model.installations.downloadSelected()
+        try await eventually { !fixture.model.installations.isDownloading }
         await fixture.session.holdNextLaunch()
-        fixture.model.primaryAction()
+        fixture.model.installations.primaryAction()
         try await eventually { await fixture.session.waitingForLaunch }
         fixture.model.open(game("other"))
-        XCTAssertFalse(fixture.model.primaryActionAvailable)
+        XCTAssertFalse(fixture.model.installations.primaryActionAvailable)
         await fixture.session.completeLaunch()
         try await eventually { !fixture.model.gameSessions.isBusy }
         let launched = try await launchedGame(fixture)
@@ -572,25 +572,25 @@ final class EpicDownloadTests: XCTestCase {
         XCTAssertEqual(launch?.appName, fixture.game.appName)
         XCTAssertEqual(launch?.namespace, fixture.game.namespace)
         XCTAssertEqual(fixture.model.selectedGame?.appName, "other")
-        XCTAssertNil(fixture.model.selectedInstallation)
-        XCTAssertTrue(fixture.model.primaryActionAvailable)
+        XCTAssertNil(fixture.model.installations.selectedReceipt)
+        XCTAssertTrue(fixture.model.installations.primaryActionAvailable)
     }
 
     func testVerificationAndLaunchHandoffFailuresNeverBegin() async throws {
         let fixture = try await fixture()
         defer { fixture.cleanUp() }
-        fixture.model.downloadSelected()
-        try await eventually { !fixture.model.isDownloading }
+        fixture.model.installations.downloadSelected()
+        try await eventually { !fixture.model.installations.isDownloading }
         await fixture.session.failNextDownload(rotated: credentials("verify-failure"))
-        fixture.model.primaryAction()
+        fixture.model.installations.primaryAction()
         try await eventually { !fixture.model.gameSessions.isBusy }
         let firstLaunches = await fixture.session.launchRequests
         XCTAssertTrue(firstLaunches.isEmpty)
         XCTAssertNotNil(fixture.model.errorMessage)
-        XCTAssertEqual(fixture.model.primaryActionTitle, L10n.string("model.steam.launch"))
+        XCTAssertEqual(fixture.model.installations.primaryActionTitle, L10n.string("model.game.launch"))
 
         await fixture.session.failNextLaunch(rotated: credentials("handoff-failure"))
-        fixture.model.primaryAction()
+        fixture.model.installations.primaryAction()
         try await eventually { !fixture.model.gameSessions.isBusy }
         let saved = await fixture.store.value
         let games = await fixture.session.launchedGames
@@ -604,43 +604,43 @@ final class EpicDownloadTests: XCTestCase {
     func testUninstallDeletesCapturedEpicInstallationAndRestoresDownloadAction() async throws {
         let fixture = try await fixture()
         defer { fixture.cleanUp() }
-        fixture.model.downloadSelected()
-        try await eventually { !fixture.model.isDownloading }
-        let receipt = try XCTUnwrap(fixture.model.selectedInstallation)
-        XCTAssertTrue(fixture.model.canUninstallSelectedGame)
-        fixture.model.uninstall(receipt)
-        XCTAssertTrue(fixture.model.isUninstalling)
-        XCTAssertFalse(fixture.model.primaryActionAvailable)
-        XCTAssertFalse(fixture.model.canUninstallSelectedGame)
-        fixture.model.uninstall(receipt)
+        fixture.model.installations.downloadSelected()
+        try await eventually { !fixture.model.installations.isDownloading }
+        let receipt = try XCTUnwrap(fixture.model.installations.selectedReceipt)
+        XCTAssertTrue(fixture.model.installations.canUninstallSelectedGame)
+        fixture.model.installations.uninstall(receipt)
+        XCTAssertTrue(fixture.model.installations.isUninstalling)
+        XCTAssertFalse(fixture.model.installations.primaryActionAvailable)
+        XCTAssertFalse(fixture.model.installations.canUninstallSelectedGame)
+        fixture.model.installations.uninstall(receipt)
         fixture.model.open(game("other"))
-        try await eventually { !fixture.model.isUninstalling }
+        try await eventually { !fixture.model.installations.isUninstalling }
         XCTAssertFalse(FileManager.default.fileExists(atPath: receipt.directory))
-        XCTAssertTrue(fixture.model.installations.isEmpty)
+        XCTAssertTrue(fixture.model.installations.receipts.isEmpty)
         XCTAssertEqual(fixture.model.selectedGame?.appName, "other")
         XCTAssertNil(fixture.model.errorMessage)
-        XCTAssertNil(fixture.model.transfer)
+        XCTAssertNil(fixture.model.installations.transfer)
         let file = try XCTUnwrap(receiptFiles(in: fixture.directory).first)
         XCTAssertTrue(try JSONDecoder().decode([EpicInstallReceipt].self, from: Data(contentsOf: file)).isEmpty)
         fixture.model.open(fixture.game)
-        XCTAssertEqual(fixture.model.primaryActionTitle, L10n.string("ui.game.download"))
-        XCTAssertTrue(fixture.model.primaryActionAvailable)
+        XCTAssertEqual(fixture.model.installations.primaryActionTitle, L10n.string("model.game.download"))
+        XCTAssertTrue(fixture.model.installations.primaryActionAvailable)
     }
 
     func testUninstallKeepsEpicReceiptAfterFilesystemLockFailure() async throws {
         let fixture = try await fixture()
         defer { fixture.cleanUp() }
-        fixture.model.downloadSelected()
-        try await eventually { !fixture.model.isDownloading }
-        let receipt = try XCTUnwrap(fixture.model.selectedInstallation)
+        fixture.model.installations.downloadSelected()
+        try await eventually { !fixture.model.installations.isDownloading }
+        let receipt = try XCTUnwrap(fixture.model.installations.selectedReceipt)
         let descriptor = Darwin.open(URL(fileURLWithPath: receipt.directory).appending(path: ".forge-install.lock").path,
                                      O_RDWR | O_CREAT, S_IRUSR | S_IWUSR)
         XCTAssertGreaterThanOrEqual(descriptor, 0)
         defer { Darwin.close(descriptor) }
         XCTAssertEqual(flock(descriptor, LOCK_EX | LOCK_NB), 0)
-        fixture.model.uninstall(receipt)
-        try await eventually { !fixture.model.isUninstalling }
-        XCTAssertEqual(fixture.model.selectedInstallation, receipt)
+        fixture.model.installations.uninstall(receipt)
+        try await eventually { !fixture.model.installations.isUninstalling }
+        XCTAssertEqual(fixture.model.installations.selectedReceipt, receipt)
         XCTAssertNotNil(fixture.model.errorMessage)
         XCTAssertTrue(FileManager.default.fileExists(atPath: receipt.directory))
     }
@@ -648,14 +648,14 @@ final class EpicDownloadTests: XCTestCase {
     func testUninstallArchivesSavesBeforeRemovingFilesAndStopsOnArchiveFailure() async throws {
         let fixture = try await fixture(game: game("native", macos: true))
         defer { fixture.cleanUp() }
-        fixture.model.downloadSelected()
-        try await eventually { !fixture.model.isDownloading }
-        let receipt = try XCTUnwrap(fixture.model.selectedInstallation)
+        fixture.model.installations.downloadSelected()
+        try await eventually { !fixture.model.installations.isDownloading }
+        let receipt = try XCTUnwrap(fixture.model.installations.selectedReceipt)
         await fixture.session.failNextArchive()
-        fixture.model.uninstall(receipt)
-        try await eventually { !fixture.model.isUninstalling }
+        fixture.model.installations.uninstall(receipt)
+        try await eventually { !fixture.model.installations.isUninstalling }
         XCTAssertTrue(FileManager.default.fileExists(atPath: receipt.directory))
-        XCTAssertEqual(fixture.model.selectedInstallation, receipt)
+        XCTAssertEqual(fixture.model.installations.selectedReceipt, receipt)
         XCTAssertNotNil(fixture.model.errorMessage)
         let requests = await fixture.session.archives
         XCTAssertEqual(requests.count, 1)
@@ -670,37 +670,37 @@ final class EpicDownloadTests: XCTestCase {
     func testUninstallRejectsEpicStaleReceiptAndActiveDownload() async throws {
         let fixture = try await fixture()
         defer { fixture.cleanUp() }
-        fixture.model.downloadSelected()
-        try await eventually { !fixture.model.isDownloading }
-        let receipt = try XCTUnwrap(fixture.model.selectedInstallation)
+        fixture.model.installations.downloadSelected()
+        try await eventually { !fixture.model.installations.isDownloading }
+        let receipt = try XCTUnwrap(fixture.model.installations.selectedReceipt)
         let forged = EpicInstallReceipt(namespace: receipt.namespace, appName: receipt.appName, name: receipt.name,
                                         directory: fixture.directory.path, platform: receipt.platform, totalBytes: receipt.totalBytes)
-        fixture.model.uninstall(forged)
-        XCTAssertFalse(fixture.model.isUninstalling)
+        fixture.model.installations.uninstall(forged)
+        XCTAssertFalse(fixture.model.installations.isUninstalling)
         await fixture.session.holdNextDownload()
-        fixture.model.primaryAction()
-        fixture.model.uninstall(receipt)
-        XCTAssertFalse(fixture.model.isUninstalling)
-        XCTAssertFalse(fixture.model.canUninstallSelectedGame)
+        fixture.model.installations.primaryAction()
+        fixture.model.installations.uninstall(receipt)
+        XCTAssertFalse(fixture.model.installations.isUninstalling)
+        XCTAssertFalse(fixture.model.installations.canUninstallSelectedGame)
         try await eventually { await fixture.session.waitingForDownload }
-        fixture.model.cancelDownload()
+        fixture.model.installations.cancelDownload()
         await fixture.session.completeDownload(cancelled: true)
-        try await eventually { !fixture.model.isLaunching }
-        XCTAssertNotNil(fixture.model.selectedInstallation)
+        try await eventually { !fixture.model.installations.isLaunching }
+        XCTAssertNotNil(fixture.model.installations.selectedReceipt)
         XCTAssertTrue(FileManager.default.fileExists(atPath: receipt.directory))
     }
 
     func testSignOutBeforeEpicUninstallStartsPreservesGameAndReceipt() async throws {
         let fixture = try await fixture()
         defer { fixture.cleanUp() }
-        fixture.model.downloadSelected()
-        try await eventually { !fixture.model.isDownloading }
-        let receipt = try XCTUnwrap(fixture.model.selectedInstallation)
-        fixture.model.uninstall(receipt)
+        fixture.model.installations.downloadSelected()
+        try await eventually { !fixture.model.installations.isDownloading }
+        let receipt = try XCTUnwrap(fixture.model.installations.selectedReceipt)
+        fixture.model.installations.uninstall(receipt)
         fixture.model.signOut()
-        try await eventually { !fixture.model.isUninstalling && !fixture.model.isSigningOut }
+        try await eventually { !fixture.model.installations.isUninstalling && !fixture.model.isSigningOut }
         XCTAssertFalse(fixture.model.isConnected)
-        XCTAssertTrue(fixture.model.installations.isEmpty)
+        XCTAssertTrue(fixture.model.installations.receipts.isEmpty)
         XCTAssertTrue(FileManager.default.fileExists(atPath: receipt.directory))
         let file = try XCTUnwrap(receiptFiles(in: fixture.directory).first)
         XCTAssertEqual(try JSONDecoder().decode([EpicInstallReceipt].self, from: Data(contentsOf: file)), [receipt])

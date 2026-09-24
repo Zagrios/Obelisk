@@ -66,35 +66,35 @@ final class SteamPresentationTests: XCTestCase {
         XCTAssertNil(model.details)
         XCTAssertTrue(model.isLoadingDetails)
         XCTAssertEqual(model.platform, "macos")
-        XCTAssertEqual(model.selectedInstallation, receipts[0])
-        XCTAssertEqual(model.primaryActionTitle, L10n.string("model.steam.launch"))
-        XCTAssertEqual(model.primaryActionSymbol, "play.fill")
-        XCTAssertFalse(model.primaryActionAvailable)
+        XCTAssertEqual(model.installations.selectedReceipt, receipts[0])
+        XCTAssertEqual(model.installations.primaryActionTitle, L10n.string("model.game.launch"))
+        XCTAssertEqual(model.installations.primaryActionSymbol, "play.fill")
+        XCTAssertFalse(model.installations.primaryActionAvailable)
         // A premature click must not start a download or launch while metadata loads.
-        model.primaryAction()
-        XCTAssertFalse(model.isDownloading)
-        XCTAssertFalse(model.isLaunching)
+        model.installations.primaryAction()
+        XCTAssertFalse(model.installations.isDownloading)
+        XCTAssertFalse(model.installations.isLaunching)
         await details.release(DetailsRequest(appId: 620, language: "french"), value: fixtureDetails(620))
         try await eventually { model.details != nil }
-        XCTAssertEqual(model.primaryActionTitle, L10n.string("model.steam.launch"))
-        XCTAssertEqual(model.primaryActionSymbol, "play.fill")
+        XCTAssertEqual(model.installations.primaryActionTitle, L10n.string("model.game.launch"))
+        XCTAssertEqual(model.installations.primaryActionSymbol, "play.fill")
 
         // Switching away from a Mac game must not carry its platform into a
         // Windows installation while that game's response is still pending.
         model.open(fixtureGames[1])
         XCTAssertNil(model.details)
         XCTAssertEqual(model.platform, "windows")
-        XCTAssertEqual(model.selectedInstallation, receipts[1])
-        XCTAssertEqual(model.primaryActionTitle, L10n.string("model.steam.launch"))
-        XCTAssertEqual(model.primaryActionSymbol, "play.fill")
+        XCTAssertEqual(model.installations.selectedReceipt, receipts[1])
+        XCTAssertEqual(model.installations.primaryActionTitle, L10n.string("model.game.launch"))
+        XCTAssertEqual(model.installations.primaryActionSymbol, "play.fill")
         await details.release(DetailsRequest(appId: 570, language: "french"), value: fixtureDetails(570))
         try await eventually { model.details != nil }
         XCTAssertEqual(model.platform, model.details?.preferredPlatform)
 
         model.open(fixtureGames[2])
-        XCTAssertNil(model.selectedInstallation)
-        XCTAssertEqual(model.primaryActionTitle, L10n.string("model.steam.download"))
-        XCTAssertEqual(model.primaryActionSymbol, "arrow.down")
+        XCTAssertNil(model.installations.selectedReceipt)
+        XCTAssertEqual(model.installations.primaryActionTitle, L10n.string("model.game.download"))
+        XCTAssertEqual(model.installations.primaryActionSymbol, "arrow.down")
         await details.release(DetailsRequest(appId: 440, language: "french"), value: fixtureDetails(440))
         try await eventually { model.details != nil }
     }
@@ -113,20 +113,20 @@ final class SteamPresentationTests: XCTestCase {
         await model.start()
         model.open(fixtureGames[0])
         XCTAssertNil(model.details)
-        XCTAssertNil(model.selectedInstallation)
-        XCTAssertEqual(model.primaryActionTitle, L10n.string("model.steam.running"))
-        XCTAssertEqual(model.primaryActionSymbol, "play.fill")
-        XCTAssertFalse(model.primaryActionAvailable)
+        XCTAssertNil(model.installations.selectedReceipt)
+        XCTAssertEqual(model.installations.primaryActionTitle, L10n.string("model.game.running"))
+        XCTAssertEqual(model.installations.primaryActionSymbol, "play.fill")
+        XCTAssertFalse(model.installations.primaryActionAvailable)
         await details.release(DetailsRequest(appId: 620, language: "french"), value: fixtureDetails(620))
         try await eventually { model.details != nil }
-        XCTAssertEqual(model.primaryActionSymbol, "play.fill")
+        XCTAssertEqual(model.installations.primaryActionSymbol, "play.fill")
         await game.update(reconnecting: true)
         try await eventually { sessions.active?.reconnecting == true }
         XCTAssertEqual(sessions.active?.phase, .running)
         XCTAssertEqual(sessions.active?.host, .online)
         XCTAssertEqual(model.gameSessionMessage, L10n.string("model.steam.recoveringSession"))
-        XCTAssertEqual(model.primaryActionTitle, L10n.string("model.steam.running"))
-        XCTAssertFalse(model.primaryActionAvailable)
+        XCTAssertEqual(model.installations.primaryActionTitle, L10n.string("model.game.running"))
+        XCTAssertFalse(model.installations.primaryActionAvailable)
         XCTAssertTrue(sessions.protects(620))
         XCTAssertTrue(sessions.isBusy)
         await game.update(reconnecting: false)
@@ -134,7 +134,7 @@ final class SteamPresentationTests: XCTestCase {
         XCTAssertNil(model.gameSessionMessage)
         await game.finish()
         try await eventually { !sessions.isBusy }
-        XCTAssertEqual(model.primaryActionSymbol, "arrow.down")
+        XCTAssertEqual(model.installations.primaryActionSymbol, "arrow.down")
     }
 
     @MainActor
@@ -273,7 +273,7 @@ final class SteamPresentationTests: XCTestCase {
             let scroller = try XCTUnwrap(scroll.verticalScroller)
             let knob = scroller.rect(for: .knob).intersection(scroller.bounds)
             let document = try XCTUnwrap(scroll.documentView)
-            let diagnostics = "Steam layout during \(phase), fixture \(size): sameScroller=\(scroller === originalScroller), hidden=\(scroller.isHidden), enabled=\(scroller.isEnabled), alpha=\(scroller.alphaValue), knob=\(NSStringFromRect(knob)), proportion=\(scroller.knobProportion), host=\(NSStringFromRect(host.bounds)), scroll=\(NSStringFromRect(scroll.frame)), scroller=\(NSStringFromRect(scroller.frame)), clipFrame=\(NSStringFromRect(scroll.contentView.frame)), clipBounds=\(NSStringFromRect(scroll.contentView.bounds)), documentFrame=\(NSStringFromRect(document.frame)), documentBounds=\(NSStringFromRect(document.bounds)), contentInsets=\(scroll.contentInsets), scrollerInsets=\(scroll.scrollerInsets), documentSafeArea=\(document.safeAreaInsets), autoInsets=\(scroll.automaticallyAdjustsContentInsets), searchAX=\(String(describing: accessibilityFrame(in: host, label: L10n.string("ui.search.store_library", L10n.string("ui.store.steam"))))), backAX=\(String(describing: accessibilityFrame(in: host, label: L10n.string("ui.steam.library")))), actionAX=\(String(describing: accessibilityFrame(in: host, label: L10n.string("ui.game.download"))))"
+            let diagnostics = "Steam layout during \(phase), fixture \(size): sameScroller=\(scroller === originalScroller), hidden=\(scroller.isHidden), enabled=\(scroller.isEnabled), alpha=\(scroller.alphaValue), knob=\(NSStringFromRect(knob)), proportion=\(scroller.knobProportion), host=\(NSStringFromRect(host.bounds)), scroll=\(NSStringFromRect(scroll.frame)), scroller=\(NSStringFromRect(scroller.frame)), clipFrame=\(NSStringFromRect(scroll.contentView.frame)), clipBounds=\(NSStringFromRect(scroll.contentView.bounds)), documentFrame=\(NSStringFromRect(document.frame)), documentBounds=\(NSStringFromRect(document.bounds)), contentInsets=\(scroll.contentInsets), scrollerInsets=\(scroll.scrollerInsets), documentSafeArea=\(document.safeAreaInsets), autoInsets=\(scroll.automaticallyAdjustsContentInsets), searchAX=\(String(describing: accessibilityFrame(in: host, label: L10n.string("ui.search.store_library", L10n.string("ui.store.steam"))))), backAX=\(String(describing: accessibilityFrame(in: host, label: L10n.string("ui.steam.library")))), actionAX=\(String(describing: accessibilityFrame(in: host, label: L10n.string("model.game.download"))))"
             XCTContext.runActivity(named: "Scrollbar during \(phase)") { activity in
                 activity.add(XCTAttachment(string: diagnostics))
             }
@@ -376,19 +376,19 @@ final class SteamPresentationTests: XCTestCase {
         try await eventually { model.details?.appId == 620 }
         XCTAssertEqual(model.platform, "macos")
 
-        model.downloadSelected()
-        XCTAssertNil(model.transfer)
-        XCTAssertEqual(model.activeTransferAppId, 620)
+        model.installations.downloadSelected()
+        XCTAssertEqual(model.installations.transfer?.state, .preparing, "Progress shows before its first snapshot")
+        XCTAssertEqual(model.installations.activeTransferGame, 620)
         model.backToLibrary()
         XCTAssertNil(model.selectedGame)
-        XCTAssertEqual(model.activeTransferAppId, 620)
+        XCTAssertEqual(model.installations.activeTransferGame, 620)
         model.open(fixtureGames[1])
-        XCTAssertEqual(model.activeTransferAppId, 620)
+        XCTAssertEqual(model.installations.activeTransferGame, 620)
         let defaultDirectory = root.appending(path: "Games/Steam")
         let downloadRequest = DownloadRequest(appId: 620, platform: "macos", language: "tchinese", directory: defaultDirectory.path)
         try await eventually { await downloads.wasRequested(downloadRequest) }
         XCTAssertTrue(FileManager.default.fileExists(atPath: defaultDirectory.path))
-        XCTAssertTrue(model.isDownloading)
+        XCTAssertTrue(model.installations.isDownloading)
 
         var windowsOnly = fixtureDetails(570)
         windowsOnly.macos = false
@@ -400,16 +400,16 @@ final class SteamPresentationTests: XCTestCase {
         let installedDirectory = defaultDirectory.appending(path: "steam-620-macos")
         try FileManager.default.createDirectory(at: installedDirectory, withIntermediateDirectories: true)
         await downloads.release(downloadRequest, value: SteamInstallation(appId: 620, name: "Portal 2", directory: installedDirectory.path, platform: "macos", language: "tchinese", totalBytes: 100))
-        try await eventually { !model.isDownloading }
-        XCTAssertNil(model.activeTransferAppId)
-        XCTAssertEqual(model.installations.first?.appId, 620)
-        XCTAssertEqual(model.installations.first?.platform, "macos")
-        XCTAssertEqual(model.installations.first?.language, "tchinese")
-        XCTAssertFalse(model.isLaunching)
+        try await eventually { !model.installations.isDownloading }
+        XCTAssertNil(model.installations.activeTransferGame)
+        XCTAssertEqual(model.installations.receipts.first?.appId, 620)
+        XCTAssertEqual(model.installations.receipts.first?.platform, "macos")
+        XCTAssertEqual(model.installations.receipts.first?.language, "tchinese")
+        XCTAssertFalse(model.installations.isLaunching)
         XCTAssertNil(model.errorMessage)
         model.open(fixtureGames[0])
         try await eventually { model.details?.appId == 620 }
-        XCTAssertEqual(model.primaryActionTitle, L10n.string("model.steam.launch"))
+        XCTAssertEqual(model.installations.primaryActionTitle, L10n.string("model.game.launch"))
     }
 
     @MainActor
@@ -429,13 +429,13 @@ final class SteamPresentationTests: XCTestCase {
         model.open(fixtureGames[0])
         await details.release(DetailsRequest(appId: 620, language: "french"), value: fixtureDetails(620))
         try await eventually { model.details != nil }
-        model.downloadSelected()
+        model.installations.downloadSelected()
         let request = DownloadRequest(appId: 620, platform: "macos", language: "french", directory: oldParent.path)
         try await eventually { await downloads.wasRequested(request) }
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appending(path: "Games/Steam").path))
         await downloads.release(request, value: SteamInstallation(appId: 620, name: "Portal 2", directory: installedDirectory.path, platform: "macos", language: "french", totalBytes: 100))
-        try await eventually { !model.isDownloading }
-        XCTAssertEqual(model.installations.first?.directory, installedDirectory.path)
+        try await eventually { !model.installations.isDownloading }
+        XCTAssertEqual(model.installations.receipts.first?.directory, installedDirectory.path)
     }
 
     @MainActor
@@ -455,10 +455,10 @@ final class SteamPresentationTests: XCTestCase {
         await first.start()
         first.open(fixtureGames[0])
         try await eventually { first.details != nil }
-        first.downloadSelected()
-        try await eventually { !first.isDownloading && first.errorMessage != nil }
-        XCTAssertNil(first.activeTransferAppId)
-        let interrupted = try XCTUnwrap(first.installations.first)
+        first.installations.downloadSelected()
+        try await eventually { !first.installations.isDownloading && first.errorMessage != nil }
+        XCTAssertNil(first.installations.activeTransferGame)
+        let interrupted = try XCTUnwrap(first.installations.receipts.first)
         XCTAssertEqual(interrupted.directory, installedDirectory.path)
         let persisted = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: receiptFile)) as? [[String: Any]])
         XCTAssertEqual(persisted.first?["needsVerification"] as? Bool, true)
@@ -467,18 +467,18 @@ final class SteamPresentationTests: XCTestCase {
         let resumedSession = FixtureSteamSession(games: fixtureGames, details: details, download: { try await downloads.request($0) })
         let reopened = SteamModel(directory: root, keychain: FixtureCredentialStore(), connect: { _ in resumedSession }, news: { _ in [] }, localeIdentifier: "fr-FR")
         await reopened.start()
-        XCTAssertEqual(reopened.installations.first?.directory, installedDirectory.path)
+        XCTAssertEqual(reopened.installations.receipts.first?.directory, installedDirectory.path)
         reopened.open(fixtureGames[0])
         try await eventually { reopened.details != nil }
-        reopened.downloadSelected()
+        reopened.installations.downloadSelected()
         let request = DownloadRequest(appId: 620, platform: "macos", language: "french", directory: oldParent.path)
         try await eventually { await downloads.wasRequested(request) }
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appending(path: "Games/Steam").path))
         await downloads.release(request, value: SteamInstallation(appId: 620, name: "Portal 2", directory: installedDirectory.path, platform: "macos", language: "french", totalBytes: 100))
-        try await eventually { !reopened.isDownloading }
+        try await eventually { !reopened.installations.isDownloading }
         let verified = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: receiptFile)) as? [[String: Any]])
         XCTAssertNil(verified.first?["needsVerification"])
-        XCTAssertEqual(reopened.installations.first?.directory, installedDirectory.path)
+        XCTAssertEqual(reopened.installations.receipts.first?.directory, installedDirectory.path)
     }
 
     @MainActor
@@ -486,41 +486,41 @@ final class SteamPresentationTests: XCTestCase {
         let fixture = try await launchFixture()
         defer { fixture.cleanUp() }
         XCTAssertTrue(fixture.model.verifyBeforeLaunch)
-        XCTAssertEqual(fixture.model.primaryActionTitle, L10n.string("model.steam.launch"))
-        fixture.model.primaryAction()
-        XCTAssertTrue(fixture.model.isLaunching)
-        XCTAssertTrue(fixture.model.isVerifyingBeforeLaunch)
-        XCTAssertFalse(fixture.model.isDownloading)
-        XCTAssertNil(fixture.model.transfer)
-        XCTAssertEqual(fixture.model.activeTransferAppId, 620)
-        XCTAssertEqual(fixture.model.primaryActionTitle, L10n.string("model.steam.verifying"))
-        fixture.model.primaryAction()
+        XCTAssertEqual(fixture.model.installations.primaryActionTitle, L10n.string("model.game.launch"))
+        fixture.model.installations.primaryAction()
+        XCTAssertTrue(fixture.model.installations.isLaunching)
+        XCTAssertTrue(fixture.model.installations.isVerifyingBeforeLaunch)
+        XCTAssertFalse(fixture.model.installations.isDownloading)
+        XCTAssertNil(fixture.model.installations.transfer)
+        XCTAssertEqual(fixture.model.installations.activeTransferGame, 620)
+        XCTAssertEqual(fixture.model.installations.primaryActionTitle, L10n.string("model.game.verifying"))
+        fixture.model.installations.primaryAction()
         fixture.model.open(fixtureGames[1])
-        XCTAssertEqual(fixture.model.activeTransferAppId, 620)
+        XCTAssertEqual(fixture.model.installations.activeTransferGame, 620)
         try await eventually { await fixture.downloads.wasRequested(fixture.request) }
-        XCTAssertTrue(fixture.model.isDownloading)
-        XCTAssertEqual(fixture.model.activeTransferAppId, 620)
+        XCTAssertTrue(fixture.model.installations.isDownloading)
+        XCTAssertEqual(fixture.model.installations.activeTransferGame, 620)
         let pending = await fixture.events.snapshot()
         XCTAssertEqual(pending, ["verify:620"])
         await fixture.downloads.release(fixture.request, value: fixture.installation)
-        try await eventually { !fixture.model.isLaunching }
-        XCTAssertNil(fixture.model.activeTransferAppId)
+        try await eventually { !fixture.model.installations.isLaunching }
+        XCTAssertNil(fixture.model.installations.activeTransferGame)
         let completed = await fixture.events.snapshot()
         XCTAssertEqual(completed, ["verify:620", "plan:620", "execute:620"])
         let downloadCount = await fixture.downloads.numberOfRequests(fixture.request)
         XCTAssertEqual(downloadCount, 1)
         XCTAssertEqual(fixture.model.selectedGame?.appId, 570)
         XCTAssertNil(fixture.model.errorMessage)
-        XCTAssertNil(fixture.model.installations.first?.needsVerification)
+        XCTAssertNil(fixture.model.installations.receipts.first?.needsVerification)
     }
 
     @MainActor
     func testLaunchCanSkipVerificationAndSettingPersists() async throws {
         let fixture = try await launchFixture(verify: false)
         defer { fixture.cleanUp() }
-        fixture.model.primaryAction()
-        XCTAssertNil(fixture.model.activeTransferAppId)
-        try await eventually { !fixture.model.isLaunching }
+        fixture.model.installations.primaryAction()
+        XCTAssertNil(fixture.model.installations.activeTransferGame)
+        try await eventually { !fixture.model.installations.isLaunching }
         let completed = await fixture.events.snapshot()
         XCTAssertEqual(completed, ["plan:620", "execute:620"])
         let restarted = SteamModel(directory: fixture.root, preferences: fixture.preferences)
@@ -534,11 +534,11 @@ final class SteamPresentationTests: XCTestCase {
     func testUnverifiedReceiptForcesVerificationWhenPreferenceDisabled() async throws {
         let fixture = try await launchFixture(verify: false, needsVerification: true)
         defer { fixture.cleanUp() }
-        fixture.model.primaryAction()
+        fixture.model.installations.primaryAction()
         try await eventually { await fixture.downloads.wasRequested(fixture.request) }
-        XCTAssertTrue(fixture.model.isVerifyingBeforeLaunch)
+        XCTAssertTrue(fixture.model.installations.isVerifyingBeforeLaunch)
         await fixture.downloads.release(fixture.request, value: fixture.installation)
-        try await eventually { !fixture.model.isLaunching }
+        try await eventually { !fixture.model.installations.isLaunching }
         let completed = await fixture.events.snapshot()
         XCTAssertEqual(completed, ["verify:620", "plan:620", "execute:620"])
     }
@@ -547,11 +547,11 @@ final class SteamPresentationTests: XCTestCase {
     func testFailedVerificationDoesNotLaunch() async throws {
         let fixture = try await launchFixture(failVerification: true)
         defer { fixture.cleanUp() }
-        fixture.model.primaryAction()
-        try await eventually { !fixture.model.isLaunching }
-        XCTAssertNil(fixture.model.activeTransferAppId)
+        fixture.model.installations.primaryAction()
+        try await eventually { !fixture.model.installations.isLaunching }
+        XCTAssertNil(fixture.model.installations.activeTransferGame)
         XCTAssertNotNil(fixture.model.errorMessage)
-        XCTAssertEqual(fixture.model.installations.first?.needsVerification, true)
+        XCTAssertEqual(fixture.model.installations.receipts.first?.needsVerification, true)
         let completed = await fixture.events.snapshot()
         XCTAssertEqual(completed, ["verify:620"])
     }
@@ -560,15 +560,15 @@ final class SteamPresentationTests: XCTestCase {
     func testCancelledVerificationDoesNotLaunchEvenIfDownloadReturnsSuccess() async throws {
         let fixture = try await launchFixture()
         defer { fixture.cleanUp() }
-        fixture.model.primaryAction()
+        fixture.model.installations.primaryAction()
         try await eventually { await fixture.downloads.wasRequested(fixture.request) }
-        XCTAssertEqual(fixture.model.activeTransferAppId, 620)
-        fixture.model.cancelDownload()
+        XCTAssertEqual(fixture.model.installations.activeTransferGame, 620)
+        fixture.model.installations.cancelDownload()
         await fixture.downloads.release(fixture.request, value: fixture.installation)
-        try await eventually { !fixture.model.isLaunching }
-        XCTAssertNil(fixture.model.activeTransferAppId)
+        try await eventually { !fixture.model.installations.isLaunching }
+        XCTAssertNil(fixture.model.installations.activeTransferGame)
         XCTAssertNil(fixture.model.errorMessage)
-        XCTAssertEqual(fixture.model.installations.first?.needsVerification, true)
+        XCTAssertEqual(fixture.model.installations.receipts.first?.needsVerification, true)
         let completed = await fixture.events.snapshot()
         XCTAssertEqual(completed, ["verify:620"])
     }
@@ -578,18 +578,18 @@ final class SteamPresentationTests: XCTestCase {
         let fixture = try await launchFixture()
         defer { fixture.cleanUp() }
         // There is deliberately no suspension between these two actions.
-        fixture.model.primaryAction()
+        fixture.model.installations.primaryAction()
         fixture.model.signOut()
-        XCTAssertFalse(fixture.model.isLaunching)
-        XCTAssertFalse(fixture.model.isDownloading)
-        XCTAssertNil(fixture.model.activeTransferAppId)
+        XCTAssertFalse(fixture.model.installations.isLaunching)
+        XCTAssertFalse(fixture.model.installations.isDownloading)
+        XCTAssertNil(fixture.model.installations.activeTransferGame)
         await Task.yield()
         await Task.yield()
         await Task.yield()
         XCTAssertFalse(fixture.model.isConnected)
-        XCTAssertFalse(fixture.model.isLaunching)
-        XCTAssertFalse(fixture.model.isDownloading)
-        XCTAssertTrue(fixture.model.installations.isEmpty)
+        XCTAssertFalse(fixture.model.installations.isLaunching)
+        XCTAssertFalse(fixture.model.installations.isDownloading)
+        XCTAssertTrue(fixture.model.installations.receipts.isEmpty)
         let events = await fixture.events.snapshot()
         XCTAssertTrue(events.isEmpty, "A cancelled launch task must not even start verification after sign-out")
     }
@@ -598,12 +598,12 @@ final class SteamPresentationTests: XCTestCase {
     func testCancelBeforeLaunchTaskStartsClearsBusyStateWithoutVerification() async throws {
         let fixture = try await launchFixture()
         defer { fixture.cleanUp() }
-        fixture.model.primaryAction()
-        XCTAssertEqual(fixture.model.activeTransferAppId, 620)
-        fixture.model.cancelDownload()
-        try await eventually { !fixture.model.isLaunching }
-        XCTAssertFalse(fixture.model.isDownloading)
-        XCTAssertNil(fixture.model.activeTransferAppId)
+        fixture.model.installations.primaryAction()
+        XCTAssertEqual(fixture.model.installations.activeTransferGame, 620)
+        fixture.model.installations.cancelDownload()
+        try await eventually { !fixture.model.installations.isLaunching }
+        XCTAssertFalse(fixture.model.installations.isDownloading)
+        XCTAssertNil(fixture.model.installations.activeTransferGame)
         let events = await fixture.events.snapshot()
         XCTAssertTrue(events.isEmpty)
     }
@@ -615,61 +615,61 @@ final class SteamPresentationTests: XCTestCase {
         let accountID: UInt64 = 0x0110_0001_0000_002a
         let fixture = try await launchFixture(accountID: accountID)
         defer { fixture.cleanUp() }
-        let receipt = try XCTUnwrap(fixture.model.selectedInstallation)
-        XCTAssertTrue(fixture.model.canUninstallSelectedGame)
-        fixture.model.uninstall(receipt)
-        XCTAssertTrue(fixture.model.isUninstalling)
-        XCTAssertFalse(fixture.model.primaryActionAvailable)
-        XCTAssertFalse(fixture.model.canUninstallSelectedGame)
-        fixture.model.uninstall(receipt)
+        let receipt = try XCTUnwrap(fixture.model.installations.selectedReceipt)
+        XCTAssertTrue(fixture.model.installations.canUninstallSelectedGame)
+        fixture.model.installations.uninstall(receipt)
+        XCTAssertTrue(fixture.model.installations.isUninstalling)
+        XCTAssertFalse(fixture.model.installations.primaryActionAvailable)
+        XCTAssertFalse(fixture.model.installations.canUninstallSelectedGame)
+        fixture.model.installations.uninstall(receipt)
         fixture.model.open(fixtureGames[1])
-        try await eventually { !fixture.model.isUninstalling }
+        try await eventually { !fixture.model.installations.isUninstalling }
         XCTAssertNil(fixture.model.errorMessage)
         XCTAssertFalse(FileManager.default.fileExists(atPath: receipt.directory))
-        XCTAssertTrue(fixture.model.installations.isEmpty)
+        XCTAssertTrue(fixture.model.installations.receipts.isEmpty)
         XCTAssertEqual(fixture.model.selectedGame?.appId, fixtureGames[1].appId)
         let stored = try JSONDecoder().decode([SteamInstallReceipt].self, from: Data(contentsOf: fixture.root.appending(path: "steam-installations-\(accountID).json")))
         XCTAssertTrue(stored.isEmpty)
         fixture.model.open(fixtureGames[0])
         try await eventually { fixture.model.details != nil }
-        XCTAssertEqual(fixture.model.primaryActionTitle, L10n.string("model.steam.download"))
-        XCTAssertTrue(fixture.model.primaryActionAvailable)
+        XCTAssertEqual(fixture.model.installations.primaryActionTitle, L10n.string("model.game.download"))
+        XCTAssertTrue(fixture.model.installations.primaryActionAvailable)
     }
 
     @MainActor
     func testUninstallKeepsSteamReceiptAfterFilesystemLockFailure() async throws {
         let fixture = try await launchFixture()
         defer { fixture.cleanUp() }
-        let receipt = try XCTUnwrap(fixture.model.selectedInstallation)
+        let receipt = try XCTUnwrap(fixture.model.installations.selectedReceipt)
         let descriptor = Darwin.open(URL(fileURLWithPath: receipt.directory).appending(path: ".forge-install.lock").path,
                                      O_RDWR | O_CREAT, S_IRUSR | S_IWUSR)
         XCTAssertGreaterThanOrEqual(descriptor, 0)
         defer { Darwin.close(descriptor) }
         XCTAssertEqual(flock(descriptor, LOCK_EX | LOCK_NB), 0)
-        fixture.model.uninstall(receipt)
-        try await eventually { !fixture.model.isUninstalling }
-        XCTAssertEqual(fixture.model.selectedInstallation, receipt)
+        fixture.model.installations.uninstall(receipt)
+        try await eventually { !fixture.model.installations.isUninstalling }
+        XCTAssertEqual(fixture.model.installations.selectedReceipt, receipt)
         XCTAssertNotNil(fixture.model.errorMessage)
         XCTAssertTrue(FileManager.default.fileExists(atPath: receipt.directory))
-        XCTAssertTrue(fixture.model.canUninstallSelectedGame)
+        XCTAssertTrue(fixture.model.installations.canUninstallSelectedGame)
     }
 
     @MainActor
     func testUninstallRejectsSteamStaleReceiptAndActiveLaunch() async throws {
         let fixture = try await launchFixture()
         defer { fixture.cleanUp() }
-        let receipt = try XCTUnwrap(fixture.model.selectedInstallation)
+        let receipt = try XCTUnwrap(fixture.model.installations.selectedReceipt)
         let forged = SteamInstallReceipt(appId: receipt.appId, name: receipt.name, directory: fixture.root.path,
                                          platform: receipt.platform, language: receipt.language, totalBytes: receipt.totalBytes)
-        fixture.model.uninstall(forged)
-        XCTAssertFalse(fixture.model.isUninstalling)
-        fixture.model.primaryAction()
-        fixture.model.uninstall(receipt)
-        XCTAssertFalse(fixture.model.isUninstalling)
-        XCTAssertFalse(fixture.model.canUninstallSelectedGame)
-        fixture.model.cancelDownload()
-        try await eventually { !fixture.model.isLaunching }
-        XCTAssertEqual(fixture.model.selectedInstallation, receipt)
+        fixture.model.installations.uninstall(forged)
+        XCTAssertFalse(fixture.model.installations.isUninstalling)
+        fixture.model.installations.primaryAction()
+        fixture.model.installations.uninstall(receipt)
+        XCTAssertFalse(fixture.model.installations.isUninstalling)
+        XCTAssertFalse(fixture.model.installations.canUninstallSelectedGame)
+        fixture.model.installations.cancelDownload()
+        try await eventually { !fixture.model.installations.isLaunching }
+        XCTAssertEqual(fixture.model.installations.selectedReceipt, receipt)
         XCTAssertTrue(FileManager.default.fileExists(atPath: receipt.directory))
     }
 
@@ -678,29 +678,29 @@ final class SteamPresentationTests: XCTestCase {
         let accountID: UInt64 = 0x0110_0001_0000_002a
         let fixture = try await launchFixture(accountID: accountID)
         defer { fixture.cleanUp() }
-        let receipt = try XCTUnwrap(fixture.model.selectedInstallation)
+        let receipt = try XCTUnwrap(fixture.model.installations.selectedReceipt)
         let receiptFile = fixture.root.appending(path: "steam-installations-\(accountID).json")
         try FileManager.default.removeItem(at: receiptFile)
         try FileManager.default.createDirectory(at: receiptFile, withIntermediateDirectories: true)
-        fixture.model.uninstall(receipt)
-        try await eventually { !fixture.model.isUninstalling }
+        fixture.model.installations.uninstall(receipt)
+        try await eventually { !fixture.model.installations.isUninstalling }
         XCTAssertFalse(FileManager.default.fileExists(atPath: receipt.directory))
-        XCTAssertNil(fixture.model.selectedInstallation)
+        XCTAssertNil(fixture.model.installations.selectedReceipt)
         XCTAssertNotNil(fixture.model.errorMessage)
-        XCTAssertEqual(fixture.model.primaryActionTitle, L10n.string("model.steam.download"))
-        XCTAssertTrue(fixture.model.primaryActionAvailable)
+        XCTAssertEqual(fixture.model.installations.primaryActionTitle, L10n.string("model.game.download"))
+        XCTAssertTrue(fixture.model.installations.primaryActionAvailable)
     }
 
     @MainActor
     func testSignOutBeforeSteamUninstallTaskStartsPreservesGameAndReceipt() async throws {
         let fixture = try await launchFixture()
         defer { fixture.cleanUp() }
-        let receipt = try XCTUnwrap(fixture.model.selectedInstallation)
-        fixture.model.uninstall(receipt)
+        let receipt = try XCTUnwrap(fixture.model.installations.selectedReceipt)
+        fixture.model.installations.uninstall(receipt)
         fixture.model.signOut()
-        try await eventually { !fixture.model.isUninstalling }
+        try await eventually { !fixture.model.installations.isUninstalling }
         XCTAssertFalse(fixture.model.isConnected)
-        XCTAssertTrue(fixture.model.installations.isEmpty)
+        XCTAssertTrue(fixture.model.installations.receipts.isEmpty)
         XCTAssertTrue(FileManager.default.fileExists(atPath: receipt.directory))
         let stored = try JSONDecoder().decode([SteamInstallReceipt].self, from: Data(contentsOf: fixture.root.appending(path: "steam-installations-42.json")))
         XCTAssertEqual(stored, [receipt])
@@ -712,12 +712,12 @@ final class SteamPresentationTests: XCTestCase {
         let fixture = try await launchFixture(verify: false, game: game)
         defer { fixture.cleanUp() }
         let model = fixture.model
-        model.primaryAction()
+        model.installations.primaryAction()
         try await eventually { model.cloud.canCancelSynchronization(for: 620) }
 
-        XCTAssertTrue(model.isSynchronizingSaves)
-        XCTAssertEqual(model.primaryActionTitle, L10n.string("ui.cloud.sync_short"))
-        XCTAssertFalse(model.primaryActionAvailable)
+        XCTAssertTrue(model.installations.isSynchronizingSaves)
+        XCTAssertEqual(model.installations.primaryActionTitle, L10n.string("ui.cloud.sync_short"))
+        XCTAssertFalse(model.installations.primaryActionAvailable)
         XCTAssertFalse(model.cloud.promptPresented)
         XCTAssertFalse(model.cloud.failurePresented)
         XCTAssertFalse(model.cloud.isSynchronizing(for: 570))
@@ -732,7 +732,7 @@ final class SteamPresentationTests: XCTestCase {
                           allowedChoices: [.retry, .cancel, .launchAnyway])
         try await eventually { model.cloud.failurePresented }
         XCTAssertFalse(model.cloud.promptPresented)
-        XCTAssertFalse(model.isSynchronizingSaves)
+        XCTAssertFalse(model.installations.isSynchronizingSaves)
         XCTAssertTrue(model.cloud.canLaunchAnyway)
         // Error text never grants permission; only the supervisor's choices do.
         await game.update(cloudPhase: .failed, cloudError: "backend.steam.cloud.network",
@@ -751,23 +751,23 @@ final class SteamPresentationTests: XCTestCase {
         model.cloud.respond(.cloud)
         try await eventually { await game.cloudChoices.last?.choice == .cloud }
         await game.update(cloudPhase: .checking)
-        try await eventually { model.isSynchronizingSaves && !model.cloud.promptPresented }
+        try await eventually { model.installations.isSynchronizingSaves && !model.cloud.promptPresented }
 
         await game.update(phase: .running, cloudPhase: .ready)
         try await eventually { model.gameSessions.active?.running == true }
-        XCTAssertFalse(model.isSynchronizingSaves)
-        XCTAssertEqual(model.primaryActionTitle, L10n.string("model.steam.running"))
+        XCTAssertFalse(model.installations.isSynchronizingSaves)
+        XCTAssertEqual(model.installations.primaryActionTitle, L10n.string("model.game.running"))
         await game.update(phase: .finalizing, cloudPhase: .syncing)
-        try await eventually { model.isSynchronizingSaves }
-        XCTAssertEqual(model.primaryActionTitle, L10n.string("ui.cloud.sync_short"))
+        try await eventually { model.installations.isSynchronizingSaves }
+        XCTAssertEqual(model.installations.primaryActionTitle, L10n.string("ui.cloud.sync_short"))
         XCTAssertFalse(model.cloud.promptPresented)
         XCTAssertFalse(model.cloud.canCancelSynchronization(for: 620))
         await game.update(cloudPhase: .synced)
         await game.finish()
         try await eventually { !model.gameSessions.isBusy }
-        XCTAssertFalse(model.isSynchronizingSaves)
-        XCTAssertEqual(model.primaryActionTitle, L10n.string("model.steam.launch"))
-        XCTAssertTrue(model.primaryActionAvailable)
+        XCTAssertFalse(model.installations.isSynchronizingSaves)
+        XCTAssertEqual(model.installations.primaryActionTitle, L10n.string("model.game.launch"))
+        XCTAssertTrue(model.installations.primaryActionAvailable)
     }
 
     @MainActor
@@ -777,23 +777,23 @@ final class SteamPresentationTests: XCTestCase {
         let fixture = try await launchFixture(verify: false, game: game)
         defer { fixture.cleanUp() }
         let model = fixture.model
-        model.primaryAction()
+        model.installations.primaryAction()
         try await eventually { model.rosetta.prompt != nil }
         let prompt = model.rosetta.prompt
-        XCTAssertFalse(model.primaryActionAvailable)
-        XCTAssertFalse(model.canUninstallSelectedGame)
+        XCTAssertFalse(model.installations.primaryActionAvailable)
+        XCTAssertFalse(model.installations.canUninstallSelectedGame)
         model.backToLibrary()
         XCTAssertEqual(model.rosetta.prompt, prompt)
         model.open(fixtureGames[1])
         XCTAssertEqual(model.rosetta.prompt, prompt)
-        model.primaryAction()
+        model.installations.primaryAction()
         XCTAssertEqual(model.gameSessions.active?.game, 620)
         model.rosetta.cancel()
         try await eventually { await game.cancellations == 1 }
         XCTAssertNil(model.rosetta.prompt)
         XCTAssertTrue(model.gameSessions.isBusy)
         await game.fail(reason: "backend.steam.runtime.cancelled")
-        try await eventually { !model.gameSessions.isBusy && !model.isLaunching }
+        try await eventually { !model.gameSessions.isBusy && !model.installations.isLaunching }
         XCTAssertNil(model.errorMessage)
     }
 
@@ -804,7 +804,7 @@ final class SteamPresentationTests: XCTestCase {
         let fixture = try await launchFixture(verify: false, game: game)
         defer { fixture.cleanUp() }
         let model = fixture.model
-        model.primaryAction()
+        model.installations.primaryAction()
         try await eventually { model.rosetta.prompt != nil }
         model.signOut()
         XCTAssertNil(model.rosetta.prompt)
@@ -813,7 +813,7 @@ final class SteamPresentationTests: XCTestCase {
         await game.fail(reason: "backend.steam.runtime.cancelled")
         try await eventually { !model.gameSessions.isBusy }
         XCTAssertNil(model.errorMessage)
-        XCTAssertFalse(model.isLaunching)
+        XCTAssertFalse(model.installations.isLaunching)
     }
 
     @MainActor
@@ -822,7 +822,7 @@ final class SteamPresentationTests: XCTestCase {
         let fixture = try await launchFixture(verify: false, game: game)
         defer { fixture.cleanUp() }
         let model = fixture.model
-        model.primaryAction()
+        model.installations.primaryAction()
         try await eventually { model.gameSessions.active?.running == true }
         await game.update(phase: .finalizing, cloudPhase: .conflict, cloudError: "backend.steam.cloud.conflict",
                           decisionID: 4, allowedChoices: [.local, .cloud, .cancel])
@@ -849,7 +849,7 @@ final class SteamPresentationTests: XCTestCase {
         let fixture = try await launchFixture(verify: false, game: game)
         defer { fixture.cleanUp() }
         let model = fixture.model
-        model.primaryAction()
+        model.installations.primaryAction()
         try await eventually { model.gameSessions.active?.cloud.phase == .checking }
         await game.update(cloudPhase: .conflict, cloudError: "backend.steam.cloud.conflict",
                           decisionID: 4, allowedChoices: [.local, .cloud, .cancel])
@@ -859,10 +859,10 @@ final class SteamPresentationTests: XCTestCase {
         try await eventually { await game.cloudChoices.map(\.choice) == [.cancel] }
         // The supervisor types its cancellation; Forge never reads its message.
         await game.fail(reason: "backend.steam.runtime.cancelled", cancelled: true)
-        try await eventually { !model.gameSessions.isBusy && !model.isLaunching }
+        try await eventually { !model.gameSessions.isBusy && !model.installations.isLaunching }
         XCTAssertNil(model.errorMessage)
         XCTAssertNil(model.gameSessions.recoveryError)
-        XCTAssertTrue(model.primaryActionAvailable)
+        XCTAssertTrue(model.installations.primaryActionAvailable)
     }
 
     @MainActor
@@ -874,9 +874,9 @@ final class SteamPresentationTests: XCTestCase {
         let fixture = try await launchFixture(verify: false, game: game, cloudServices: services.steam)
         defer { fixture.cleanUp() }
         let model = fixture.model
-        try await eventually { model.cloudIndicator?.value == L10n.string("ui.cloud.indicator.unavailable") }
-        XCTAssertTrue(model.canSyncCloud, "Cloud found unavailable can be checked again")
-        XCTAssertTrue(model.primaryActionAvailable)
+        try await eventually { model.installations.cloudIndicator?.value == L10n.string("ui.cloud.indicator.unavailable") }
+        XCTAssertTrue(model.installations.canSyncCloud, "Cloud found unavailable can be checked again")
+        XCTAssertTrue(model.installations.primaryActionAvailable)
 
         model.syncCloud()
 
@@ -884,24 +884,24 @@ final class SteamPresentationTests: XCTestCase {
         try await eventually { services.steamMaintenance.count == 1 }
         XCTAssertEqual(services.steamMaintenance.last?.request.appId, 620)
         XCTAssertNotNil(services.steamMaintenance.last?.request.install)
-        XCTAssertFalse(model.primaryActionAvailable, "Maintenance holds the game's Reservation")
-        XCTAssertFalse(model.canUninstallSelectedGame)
-        XCTAssertFalse(model.canSyncCloud)
-        XCTAssertEqual(model.cloudIndicator?.value, L10n.string("ui.cloud.indicator.syncing"))
+        XCTAssertFalse(model.installations.primaryActionAvailable, "Maintenance holds the game's Reservation")
+        XCTAssertFalse(model.installations.canUninstallSelectedGame)
+        XCTAssertFalse(model.installations.canSyncCloud)
+        XCTAssertEqual(model.installations.cloudIndicator?.value, L10n.string("ui.cloud.indicator.syncing"))
         services.steamMaintenance.last?.attempt.finish(.unavailable)
         try await eventually { !model.cloud.isMaintaining }
-        XCTAssertTrue(model.primaryActionAvailable)
-        XCTAssertTrue(model.canSyncCloud)
+        XCTAssertTrue(model.installations.primaryActionAvailable)
+        XCTAssertTrue(model.installations.canSyncCloud)
 
-        model.primaryAction()
+        model.installations.primaryAction()
         try await eventually { model.gameSessions.active?.running == true }
-        XCTAssertFalse(model.canSyncCloud, "A running Steam game keeps Steam Cloud maintenance closed")
+        XCTAssertFalse(model.installations.canSyncCloud, "A running Steam game keeps Steam Cloud maintenance closed")
         await game.finish()
         try await eventually { !model.gameSessions.isBusy }
-        XCTAssertTrue(model.canSyncCloud)
+        XCTAssertTrue(model.installations.canSyncCloud)
         model.signOut()
-        XCTAssertFalse(model.canSyncCloud)
-        XCTAssertNil(model.cloudIndicator)
+        XCTAssertFalse(model.installations.canSyncCloud)
+        XCTAssertNil(model.installations.cloudIndicator)
     }
 
     @MainActor
@@ -917,7 +917,7 @@ final class SteamPresentationTests: XCTestCase {
 
         try await eventually { !model.cloud.isMaintaining }
         XCTAssertFalse(model.cloud.failurePresented)
-        XCTAssertTrue(model.canSyncCloud, "Sync now is the retry")
+        XCTAssertTrue(model.installations.canSyncCloud, "Sync now is the retry")
         model.syncCloud()
         try await eventually { services.steamMaintenance.count == 2 }
     }
@@ -951,21 +951,21 @@ final class SteamPresentationTests: XCTestCase {
         let game = RecoveredGameFixture(appID: 620)
         let fixture = try await launchFixture(verify: false, game: game)
         defer { fixture.cleanUp() }
-        fixture.model.primaryAction()
-        fixture.model.primaryAction()
+        fixture.model.installations.primaryAction()
+        fixture.model.installations.primaryAction()
         try await eventually { fixture.model.gameSessions.active?.running == true }
-        XCTAssertFalse(fixture.model.isLaunching)
-        XCTAssertEqual(fixture.model.primaryActionTitle, L10n.string("model.steam.running"))
-        XCTAssertFalse(fixture.model.primaryActionAvailable)
-        XCTAssertFalse(fixture.model.canUninstallSelectedGame)
-        let receipt = try XCTUnwrap(fixture.model.selectedInstallation)
-        fixture.model.primaryAction()
-        fixture.model.uninstall(receipt)
-        fixture.model.downloadSelected()
-        fixture.model.download(fixtureGames[0], platform: "macos", language: "french", directory: fixture.root)
-        XCTAssertFalse(fixture.model.isDownloading)
-        XCTAssertFalse(fixture.model.isUninstalling)
-        XCTAssertNotNil(fixture.model.selectedInstallation)
+        XCTAssertFalse(fixture.model.installations.isLaunching)
+        XCTAssertEqual(fixture.model.installations.primaryActionTitle, L10n.string("model.game.running"))
+        XCTAssertFalse(fixture.model.installations.primaryActionAvailable)
+        XCTAssertFalse(fixture.model.installations.canUninstallSelectedGame)
+        let receipt = try XCTUnwrap(fixture.model.installations.selectedReceipt)
+        fixture.model.installations.primaryAction()
+        fixture.model.installations.uninstall(receipt)
+        fixture.model.installations.downloadSelected()
+        fixture.model.installations.download(SteamDownload(game: fixtureGames[0], platform: "macos", language: "french", directory: fixture.root))
+        XCTAssertFalse(fixture.model.installations.isDownloading)
+        XCTAssertFalse(fixture.model.installations.isUninstalling)
+        XCTAssertNotNil(fixture.model.installations.selectedReceipt)
         await game.update(host: .disconnected)
         try await eventually { fixture.model.gameSessions.active?.host == .disconnected }
         XCTAssertEqual(fixture.model.gameSessionMessage, L10n.string("model.steam.gameDisconnected"))
@@ -975,14 +975,14 @@ final class SteamPresentationTests: XCTestCase {
         await game.update(host: .lost)
         try await eventually { fixture.model.gameSessions.active?.host == .lost }
         XCTAssertEqual(fixture.model.gameSessionMessage, L10n.string("model.steam.gameHostLost"))
-        XCTAssertFalse(fixture.model.primaryActionAvailable)
+        XCTAssertFalse(fixture.model.installations.primaryActionAvailable)
         XCTAssertTrue(fixture.model.gameSessions.isBusy)
         let events = await fixture.events.snapshot()
         XCTAssertEqual(events, ["plan:620", "execute:620"])
         await game.finish()
         try await eventually { !fixture.model.gameSessions.isBusy }
-        XCTAssertTrue(fixture.model.primaryActionAvailable)
-        XCTAssertTrue(fixture.model.canUninstallSelectedGame)
+        XCTAssertTrue(fixture.model.installations.primaryActionAvailable)
+        XCTAssertTrue(fixture.model.installations.canUninstallSelectedGame)
         XCTAssertNil(fixture.model.gameSessionMessage)
     }
 
@@ -993,22 +993,22 @@ final class SteamPresentationTests: XCTestCase {
         let fixture = try await launchFixture(verify: false, sessions: sessions)
         defer { fixture.cleanUp() }
         try await eventually { sessions.active?.running == true }
-        XCTAssertEqual(fixture.model.primaryActionTitle, L10n.string("model.steam.running"))
-        XCTAssertFalse(fixture.model.primaryActionAvailable)
-        XCTAssertFalse(fixture.model.canUninstallSelectedGame)
-        fixture.model.primaryAction()
-        fixture.model.uninstall(try XCTUnwrap(fixture.model.selectedInstallation))
-        fixture.model.downloadSelected()
-        fixture.model.download(fixtureGames[0], platform: "macos", language: "french", directory: fixture.root)
-        XCTAssertFalse(fixture.model.isDownloading)
-        XCTAssertFalse(fixture.model.isUninstalling)
+        XCTAssertEqual(fixture.model.installations.primaryActionTitle, L10n.string("model.game.running"))
+        XCTAssertFalse(fixture.model.installations.primaryActionAvailable)
+        XCTAssertFalse(fixture.model.installations.canUninstallSelectedGame)
+        fixture.model.installations.primaryAction()
+        fixture.model.installations.uninstall(try XCTUnwrap(fixture.model.installations.selectedReceipt))
+        fixture.model.installations.downloadSelected()
+        fixture.model.installations.download(SteamDownload(game: fixtureGames[0], platform: "macos", language: "french", directory: fixture.root))
+        XCTAssertFalse(fixture.model.installations.isDownloading)
+        XCTAssertFalse(fixture.model.installations.isUninstalling)
         let events = await fixture.events.snapshot()
         XCTAssertTrue(events.isEmpty)
         await game.finish()
         try await eventually { !sessions.isBusy }
-        XCTAssertEqual(fixture.model.primaryActionTitle, L10n.string("model.steam.launch"))
-        XCTAssertTrue(fixture.model.primaryActionAvailable)
-        XCTAssertTrue(fixture.model.canUninstallSelectedGame)
+        XCTAssertEqual(fixture.model.installations.primaryActionTitle, L10n.string("model.game.launch"))
+        XCTAssertTrue(fixture.model.installations.primaryActionAvailable)
+        XCTAssertTrue(fixture.model.installations.canUninstallSelectedGame)
     }
 
     @MainActor
@@ -1016,7 +1016,7 @@ final class SteamPresentationTests: XCTestCase {
         let game = RecoveredGameFixture(appID: 620)
         let fixture = try await launchFixture(verify: false, game: game)
         defer { fixture.cleanUp() }
-        fixture.model.primaryAction()
+        fixture.model.installations.primaryAction()
         try await eventually { fixture.model.gameSessions.active?.running == true }
         fixture.model.signOut()
         XCTAssertTrue(fixture.model.gameSessions.isBusy)
@@ -1025,7 +1025,7 @@ final class SteamPresentationTests: XCTestCase {
         XCTAssertTrue(replacement.gameSessions.isBusy)
         await game.finish()
         try await eventually { !replacement.gameSessions.isBusy }
-        XCTAssertFalse(fixture.model.isLaunching)
+        XCTAssertFalse(fixture.model.installations.isLaunching)
         XCTAssertNil(fixture.model.errorMessage)
     }
 
@@ -1040,34 +1040,34 @@ final class SteamPresentationTests: XCTestCase {
             throw GameHandoffFailure(cause: SteamError.Failure(reason: "backend.steam.runtime.unavailable"))
         })
         defer { fixture.cleanUp() }
-        let receipt = try XCTUnwrap(fixture.model.selectedInstallation)
-        fixture.model.primaryAction()
+        let receipt = try XCTUnwrap(fixture.model.installations.selectedReceipt)
+        fixture.model.installations.primaryAction()
         XCTAssertTrue(sessions.protects(620))
         try await eventually { await recovery.requests == 1 }
-        XCTAssertEqual(fixture.model.primaryActionTitle, L10n.string("model.steam.recoveringSession"))
-        XCTAssertFalse(fixture.model.primaryActionAvailable)
-        XCTAssertFalse(fixture.model.canUninstallSelectedGame)
-        fixture.model.primaryAction()
-        fixture.model.downloadSelected()
-        fixture.model.download(fixtureGames[0], platform: "macos", language: "french", directory: fixture.root)
-        fixture.model.resumeDownload()
-        fixture.model.uninstall(receipt)
-        XCTAssertFalse(fixture.model.isDownloading)
-        XCTAssertFalse(fixture.model.isUninstalling)
+        XCTAssertEqual(fixture.model.installations.primaryActionTitle, L10n.string("model.steam.recoveringSession"))
+        XCTAssertFalse(fixture.model.installations.primaryActionAvailable)
+        XCTAssertFalse(fixture.model.installations.canUninstallSelectedGame)
+        fixture.model.installations.primaryAction()
+        fixture.model.installations.downloadSelected()
+        fixture.model.installations.download(SteamDownload(game: fixtureGames[0], platform: "macos", language: "french", directory: fixture.root))
+        fixture.model.installations.resumeDownload()
+        fixture.model.installations.uninstall(receipt)
+        XCTAssertFalse(fixture.model.installations.isDownloading)
+        XCTAssertFalse(fixture.model.installations.isUninstalling)
         XCTAssertTrue(FileManager.default.fileExists(atPath: receipt.directory))
-        XCTAssertEqual(fixture.model.selectedInstallation, receipt)
+        XCTAssertEqual(fixture.model.installations.selectedReceipt, receipt)
         XCTAssertTrue(sessions.protects(620))
         await recovery.resolve(game)
         try await eventually { sessions.active?.running == true }
-        XCTAssertEqual(fixture.model.primaryActionTitle, L10n.string("model.steam.running"))
-        XCTAssertFalse(fixture.model.isLaunching)
-        XCTAssertFalse(fixture.model.canUninstallSelectedGame)
+        XCTAssertEqual(fixture.model.installations.primaryActionTitle, L10n.string("model.game.running"))
+        XCTAssertFalse(fixture.model.installations.isLaunching)
+        XCTAssertFalse(fixture.model.installations.canUninstallSelectedGame)
         XCTAssertNil(fixture.model.errorMessage)
         XCTAssertEqual(starts, 1)
         await game.finish()
         try await eventually { !sessions.isBusy }
-        XCTAssertTrue(fixture.model.primaryActionAvailable)
-        XCTAssertTrue(fixture.model.canUninstallSelectedGame)
+        XCTAssertTrue(fixture.model.installations.primaryActionAvailable)
+        XCTAssertTrue(fixture.model.installations.canUninstallSelectedGame)
         XCTAssertNil(fixture.model.errorMessage)
         XCTAssertNil(fixture.model.gameSessionMessage)
     }
@@ -1082,25 +1082,25 @@ final class SteamPresentationTests: XCTestCase {
         }
         let original = try await launchFixture(verify: false, sessions: sessions, startGame: handoffLost)
         defer { original.cleanUp() }
-        original.model.primaryAction()
+        original.model.installations.primaryAction()
         try await eventually { await recovery.requests == 1 }
         original.model.signOut()
         XCTAssertTrue(sessions.protects(620))
         let replacement = try await launchFixture(verify: false, sessions: sessions, startGame: handoffLost)
         defer { replacement.cleanUp() }
-        XCTAssertFalse(replacement.model.primaryActionAvailable)
-        XCTAssertFalse(replacement.model.canUninstallSelectedGame)
+        XCTAssertFalse(replacement.model.installations.primaryActionAvailable)
+        XCTAssertFalse(replacement.model.installations.canUninstallSelectedGame)
         await recovery.resolve(game)
         try await eventually { sessions.active?.running == true }
         try await eventually { await game.cancellations == 1 }
-        XCTAssertEqual(replacement.model.primaryActionTitle, L10n.string("model.steam.running"))
-        XCTAssertFalse(replacement.model.canUninstallSelectedGame)
-        XCTAssertFalse(original.model.isLaunching)
+        XCTAssertEqual(replacement.model.installations.primaryActionTitle, L10n.string("model.game.running"))
+        XCTAssertFalse(replacement.model.installations.canUninstallSelectedGame)
+        XCTAssertFalse(original.model.installations.isLaunching)
         XCTAssertNil(original.model.errorMessage)
         await game.finish()
         try await eventually { !sessions.isBusy }
-        XCTAssertTrue(replacement.model.primaryActionAvailable)
-        XCTAssertTrue(replacement.model.canUninstallSelectedGame)
+        XCTAssertTrue(replacement.model.installations.primaryActionAvailable)
+        XCTAssertTrue(replacement.model.installations.canUninstallSelectedGame)
         XCTAssertNil(original.model.errorMessage)
     }
 
@@ -1108,10 +1108,10 @@ final class SteamPresentationTests: XCTestCase {
     func testFailedProcessStartReleasesReservationAndReportsError() async throws {
         let fixture = try await launchFixture(verify: false, failLaunch: true)
         defer { fixture.cleanUp() }
-        fixture.model.primaryAction()
+        fixture.model.installations.primaryAction()
         try await eventually { !fixture.model.gameSessions.isBusy }
         XCTAssertNotNil(fixture.model.errorMessage)
-        XCTAssertTrue(fixture.model.primaryActionAvailable)
+        XCTAssertTrue(fixture.model.installations.primaryActionAvailable)
     }
 
     @MainActor
@@ -1266,7 +1266,7 @@ final class SteamPresentationTests: XCTestCase {
 
         let installed = try await launchFixture()
         defer { installed.cleanUp() }
-        XCTAssertEqual(installed.model.primaryActionTitle, L10n.string("model.steam.launch"))
+        XCTAssertEqual(installed.model.installations.primaryActionTitle, L10n.string("model.game.launch"))
         try await render(installed.model, to: output.appending(path: "steam-detail-installed-fixture.png"))
     }
 

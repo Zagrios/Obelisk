@@ -5,15 +5,17 @@ struct SteamGameDetailView: View {
     let game: SteamGame
     @Environment(\.colorScheme) private var colorScheme
 
+    private var installations: SteamInstallations { model.installations }
+
     // This view is only shown for `model.selectedGame`, so the receipts agree.
-    private var receipt: SteamInstallReceipt? { model.selectedInstallation }
+    private var receipt: SteamInstallReceipt? { installations.selectedReceipt }
 
     private var estimatedBytes: UInt64 {
         model.platform == "macos" ? model.details?.macosBytes ?? 0 : model.details?.windowsBytes ?? 0
     }
 
     private var gameTransfer: GameTransfer? {
-        model.transfer.flatMap { $0.game == String(game.appId) ? $0 : nil }
+        installations.transferGame == game.appId ? installations.transfer : nil
     }
 
     var body: some View {
@@ -28,8 +30,8 @@ struct SteamGameDetailView: View {
                 back: model.backToLibrary,
                 additionalMetrics: {
                     GameAchievementsButton(model: achievements)
-                    if let cloud = model.cloudIndicator {
-                        CloudIndicatorButton(presentation: cloud, canSync: model.canSyncCloud, sync: model.syncCloud)
+                    if let cloud = installations.cloudIndicator {
+                        CloudIndicatorButton(presentation: cloud, canSync: installations.canSyncCloud, sync: model.syncCloud)
                     }
                 }
             ) {
@@ -38,24 +40,25 @@ struct SteamGameDetailView: View {
                 HStack(spacing: 10) {
                     let cancelsSynchronization = model.cloud.canCancelSynchronization(for: game.appId)
                     GameActionButton(
-                        title: model.primaryActionTitle,
-                        symbol: model.primaryActionSymbol,
+                        title: installations.primaryActionTitle,
+                        symbol: installations.primaryActionSymbol,
                         transfer: gameTransfer,
-                        isTransferring: model.activeTransferAppId == game.appId,
-                        isAvailable: model.primaryActionAvailable,
-                        action: model.primaryAction,
+                        isTransferring: installations.activeTransferGame == game.appId,
+                        isAvailable: installations.primaryActionAvailable,
+                        action: installations.primaryAction,
                         cancel: {
                             if cancelsSynchronization { model.cloud.respond(.cancel) }
-                            else { model.cancelDownload() }
+                            else { installations.cancelDownload() }
                         },
-                        isCancellable: cancelsSynchronization,
-                        isIndeterminate: model.isSynchronizingSaves
+                        isCancellable: cancelsSynchronization
+                            || (installations.isLaunching && installations.launchGame == game.appId),
+                        isIndeterminate: installations.isSynchronizingSaves
                     )
                     if let receipt {
                         GameManagementButton(
                             gameName: game.name,
-                            isAvailable: model.canUninstallSelectedGame,
-                            uninstall: { model.uninstall(receipt) },
+                            isAvailable: installations.canUninstallSelectedGame,
+                            uninstall: { installations.uninstall(receipt) },
                             directory: receipt.directory
                         )
                         .id(receipt.id + receipt.directory)
@@ -81,7 +84,8 @@ struct SteamGameDetailView: View {
             if let transfer = gameTransfer, transfer.state == .failed || transfer.state == .cancelled {
                 Text(transfer.message.isEmpty ? transfer.activityTitle : L10n.message(transfer.message))
                     .font(.system(size: 12)).foregroundStyle(.secondary)
-            } else if let activeAppId = model.activeTransferAppId, activeAppId != game.appId {
+            } else if let activeAppId = installations.activeTransferGame ?? installations.launchGame,
+                      activeAppId != game.appId {
                 Text(L10n.string("ui.steam.other_game_operation"))
                     .font(.system(size: 12)).foregroundStyle(.secondary)
             }

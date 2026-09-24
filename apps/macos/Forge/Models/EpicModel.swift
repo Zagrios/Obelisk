@@ -4,16 +4,17 @@ import Observation
 /// Epic library entries are unique per namespace and app name across platforms.
 func epicLibraryID(namespace: String, appName: String) -> String { "\(namespace):\(appName)" }
 
-struct EpicInstallReceipt: InstallReceipt, Identifiable {
+struct EpicInstallReceipt: InstallReceipt {
     var id: String { "\(namespace):\(appName):\(platform)" }
     var libraryID: String { epicLibraryID(namespace: namespace, appName: appName) }
+    var gameID: String { libraryID }
     let namespace: String
     let appName: String
     let name: String
     let directory: String
     let platform: String
     let totalBytes: UInt64
-    var needsVerification = false
+    var needsVerification: Bool? = false
 }
 
 @MainActor
@@ -34,6 +35,7 @@ final class EpicModel {
     @ObservationIgnored private let maintainCloud: @MainActor (any EpicSessionProtocol, EpicCloudConfiguration) async -> any CloudMaintenanceProtocol
     let cloud: EpicCloudModel
     let rosetta: EpicRosettaModel
+    let installations: EpicInstallations
 
     let achievements = GameAchievementsModel(storeID: "epic", describe: EpicModel.message)
     private(set) var selectedGame: EpicGame?
@@ -44,16 +46,6 @@ final class EpicModel {
     private(set) var isLoadingGames = false
     private(set) var isSigningOut = false
     private(set) var canRetryRestore = false
-    private(set) var transfer: GameTransfer?
-    private(set) var transferLibraryID: String?
-    private(set) var isDownloading = false
-    private(set) var isLaunching = false
-    private(set) var isUninstalling = false
-    private(set) var isVerifyingBeforeLaunch = false
-    private(set) var launchLibraryID: String?
-    private(set) var installations: [EpicInstallReceipt] = [] {
-        didSet { filteredLibraryCache = nil }
-    }
     var errorMessage: String?
     var storageWarning: String? {
         get { rememberedSession.storageWarning }
@@ -86,14 +78,10 @@ final class EpicModel {
     @ObservationIgnored private var libraryTask: Task<Void, Never>?
     @ObservationIgnored private var detailsTask: Task<Void, Never>?
     @ObservationIgnored private var detailsGeneration = 0
-    @ObservationIgnored private var downloadTask: Task<Void, Never>?
-    @ObservationIgnored private var uninstallTask: Task<Void, Never>?
-    @ObservationIgnored private var uninstallLibraryID: String?
-    @ObservationIgnored private var progressTask: Task<Void, Never>?
-    @ObservationIgnored private var downloadCancellationRequested = false
-    @ObservationIgnored private var lastDownload: (game: EpicGame, platform: String, directory: URL)?
     @ObservationIgnored private var libraryOrderCache: [EpicGame]?
-    @ObservationIgnored private var filteredLibraryCache: (query: String, filter: StorefrontLibraryFilter, games: [EpicGame])?
+    @ObservationIgnored private var filteredLibraryCache: (
+        query: String, filter: StorefrontLibraryFilter, installed: Set<String>, games: [EpicGame]
+    )?
 
     init(
         directory: URL = AppIdentity.libraryDirectory,
@@ -124,9 +112,11 @@ final class EpicModel {
         self.cloud = EpicCloudModel(root: SteamGameLauncher.cloudDirectory(in: directory),
                                     sessionDirectory: EpicGames.sessionDirectory(in: directory),
                                     sessions: gameSessions, indicators: cloudServices.indicators)
+        self.installations = EpicInstallations(directory: directory, sessions: gameSessions, cloud: cloud)
         wakeObserver = SystemWakeObservation { [weak self] in
             Task { @MainActor [weak self] in self?.retryFriends() }
         }
+        installations.selection = { [weak self] in self?.installationSelection }
     }
 
     deinit {
@@ -136,58 +126,20 @@ final class EpicModel {
     // Always read the observable account, even before the unobserved session exists.
     var isConnected: Bool { accountName != nil && session != nil }
 
-    var activeTransferLibraryID: String? { isDownloading ? transferLibraryID : nil }
-
-    var canResumeDownload: Bool {
-        canModifyInstallation(of: lastDownload?.game.libraryID) && lastDownload != nil
-            && lastDownload?.game.libraryID == selectedGame?.libraryID
+    /// The game on screen, for its installation actions.
+    private var installationSelection: InstallationSelection<EpicGames>? {
+        guard let game = selectedGame else { return nil }
+        return InstallationSelection(
+            game: game.libraryID, platform: game.preferredPlatform, installable: game.macos || game.windows,
+            request: { receipt, directory in
+                EpicDownload(game: game, platform: receipt?.platform ?? game.preferredPlatform, directory: directory)
+            }
+        )
     }
-
-    var selectedInstallation: EpicInstallReceipt? {
-        guard let selectedGame else { return nil }
-        return installations.first { $0.libraryID == selectedGame.libraryID && $0.platform == selectedGame.preferredPlatform }
-    }
-
-    var canUninstallSelectedGame: Bool {
-        isConnected && selectedInstallation != nil && canModifyInstallation(of: selectedGame?.libraryID)
-    }
-
-    var primaryActionAvailable: Bool {
-        guard isConnected, let selectedGame else { return false }
-        return canModifyInstallation(of: selectedGame.libraryID)
-            && !(selectedInstallation != nil && gameSessions.isBusy)
-            && (selectedGame.macos || selectedGame.windows)
-    }
-
-    /// Every installation-mutating entry point asks this, so a new one cannot
-    /// silently gain permission to touch a running game's files. Cloud
-    /// maintenance holds the game's Reservation; its idle guard also excludes
-    /// every other Epic launch, so the whole storefront waits.
-    func canModifyInstallation(of libraryID: String?) -> Bool {
-        !isDownloading && !isLaunching && !isUninstalling && !cloud.isMaintaining && !gameSessions.protects(libraryID)
-    }
-
-    /// The selected game's Cloud indicator, or nil when it is hidden.
-    var cloudIndicator: CloudIndicatorPresentation? {
-        guard let game = selectedGame, isConnected else { return nil }
-        let playing = gameSessions.active.map { $0.game == game.libraryID && $0.account == accountID } ?? false
-        return CloudIndicatorPresentation.make(saved: cloud.indicator(for: game.libraryID),
-                                               isSyncing: isSynchronizingSaves, isPlaying: playing,
-                                               isInstalled: selectedInstallation != nil)
-    }
-
-    /// One Epic Cloud operation at a time: a game session or maintenance of
-    /// any Epic game, or this game's Transfer or uninstall, keeps it closed.
-    private func canMaintainCloud(_ libraryID: String) -> Bool {
-        isConnected && !gameSessions.isBusy && !cloud.isMaintaining && !isLaunching
-            && activeTransferLibraryID != libraryID && !(isUninstalling && uninstallLibraryID == libraryID)
-    }
-
-    var canSyncCloud: Bool { selectedGame.map { canMaintainCloud($0.libraryID) } ?? false }
 
     func syncCloud() {
-        guard canSyncCloud, let game = selectedGame else { return }
-        let configuration = selectedInstallation.map {
+        guard installations.canSyncCloud, let game = selectedGame else { return }
+        let configuration = installations.selectedReceipt.map {
             cloud.configuration(game: game, receipt: $0, language: launchLanguage)
         } ?? cloud.savedConfiguration(for: game.libraryID)
         guard let configuration else { return }
@@ -204,13 +156,9 @@ final class EpicModel {
         let title = L10n.string("ui.epic.cloud.title")
         guard let libraryID else { return title }
         let name = games.first { $0.libraryID == libraryID }?.title
-            ?? installations.first { $0.libraryID == libraryID }?.name
+            ?? installations.receipts.first { $0.libraryID == libraryID }?.name
             ?? libraryID
         return "\(title) · \(name)"
-    }
-
-    var isSynchronizingSaves: Bool {
-        selectedGame.map { cloud.isSynchronizing(for: $0.libraryID) } ?? false
     }
 
     private var selectedGameSession: EpicGameSessions.Session? {
@@ -230,40 +178,15 @@ final class EpicModel {
         return nil
     }
 
-    var primaryActionTitle: String {
-        if isSynchronizingSaves { return L10n.string("ui.cloud.sync_short") }
-        if gameSessions.isRecovering { return L10n.string("model.epic.recoveringSession") }
-        if selectedGameSession?.phase == .running { return L10n.string("model.steam.running") }
-        if isUninstalling && uninstallLibraryID == selectedGame?.libraryID { return L10n.string("model.game.uninstalling") }
-        if isLaunching && launchLibraryID == selectedGame?.libraryID {
-            return L10n.string(isVerifyingBeforeLaunch ? "model.steam.verifying" : "model.steam.launching")
-        }
-        if selectedGameSession != nil { return L10n.string("model.steam.launching") }
-        if selectedInstallation != nil { return L10n.string("model.steam.launch") }
-        if canResumeDownload { return L10n.string("model.steam.resume") }
-        return L10n.string("ui.game.download")
-    }
-
-    var primaryActionSymbol: String { selectedInstallation == nil ? "arrow.down" : "play.fill" }
-
-    func primaryAction() {
-        guard primaryActionAvailable, let game = selectedGame else { return }
-        if let receipt = selectedInstallation {
-            let destination = URL(fileURLWithPath: receipt.directory).deletingLastPathComponent()
-            download(game, platform: receipt.platform, directory: destination, launchAfterDownload: true)
-        } else {
-            downloadSelected()
-        }
-    }
-
     /// Search and filters reuse the library's name order.
     var filteredGames: [EpicGame] {
         // Observe dependencies even when the cached result is reused.
         let source = games
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         let selectedFilter = filter
-        let receipts = selectedFilter == .installed ? installations : []
-        if let cached = filteredLibraryCache, cached.query == query, cached.filter == selectedFilter {
+        let installedLibraryIDs = selectedFilter == .installed ? Set(installations.receipts.map(\.libraryID)) : []
+        if let cached = filteredLibraryCache, cached.query == query, cached.filter == selectedFilter,
+           cached.installed == installedLibraryIDs {
             return cached.games
         }
         let ordered: [EpicGame]
@@ -276,7 +199,6 @@ final class EpicModel {
             }
             libraryOrderCache = ordered
         }
-        let installedLibraryIDs = Set(receipts.map(\.libraryID))
         let filtered = query.isEmpty && selectedFilter == .all ? ordered : ordered.filter { game in
             guard query.isEmpty || game.title.localizedStandardContains(query) else { return false }
             switch selectedFilter {
@@ -286,7 +208,7 @@ final class EpicModel {
             case .macOS: return game.macos
             }
         }
-        filteredLibraryCache = (query, selectedFilter, filtered)
+        filteredLibraryCache = (query, selectedFilter, installedLibraryIDs, filtered)
         return filtered
     }
 
@@ -405,9 +327,10 @@ final class EpicModel {
             cloud.connect(account: credentials.accountId) { configuration in
                 await maintainCloud(connected, configuration)
             }
+            installations.connect(account: credentials.accountId, receipts: receiptsFile(for: credentials.accountId),
+                                  port: installationPort())
 
             await reloadGames(connected, generation: current)
-            if current == generation { loadInstallations() }
         } catch {
             await disconnectAbandonedSession(connected)
             guard current == generation && !Task.isCancelled else { return }
@@ -454,6 +377,7 @@ final class EpicModel {
         let current = generation
         let disconnected = session
         rosetta.connect(accountId: nil)
+        installations.signedOut()
         cloud.signedOut()
         let removal = rememberedSession.forget()
         friendsObservationGeneration += 1
@@ -461,13 +385,6 @@ final class EpicModel {
         friendsTask = nil
         friends = nil
         isFriendsPresented = false
-        disconnected?.cancelDownload()
-        downloadCancellationRequested = true
-        downloadTask?.cancel()
-        uninstallTask?.cancel()
-        progressTask?.cancel()
-        downloadTask = nil
-        progressTask = nil
         authenticationTask?.cancel()
         libraryTask?.cancel()
         authenticationTask = nil
@@ -476,14 +393,6 @@ final class EpicModel {
         accountID = nil
         accountName = nil
         games = []
-        installations = []
-        transfer = nil
-        transferLibraryID = nil
-        lastDownload = nil
-        isDownloading = false
-        isLaunching = false
-        isVerifyingBeforeLaunch = false
-        launchLibraryID = nil
         closeGame()
         searchText = ""
         filter = .all
@@ -604,106 +513,6 @@ final class EpicModel {
         }
     }
 
-    func downloadSelected() {
-        guard primaryActionAvailable, let game = selectedGame else { return }
-        if canResumeDownload { resumeDownload(); return }
-        let destination = selectedInstallation.map { URL(fileURLWithPath: $0.directory).deletingLastPathComponent() }
-            ?? directory.appending(path: "Games/Epic", directoryHint: .isDirectory)
-        download(game, platform: game.preferredPlatform, directory: destination)
-    }
-
-    private func download(_ game: EpicGame, platform: String, directory destination: URL, launchAfterDownload: Bool = false) {
-        guard let session, let accountID, canModifyInstallation(of: game.libraryID),
-              !(launchAfterDownload && gameSessions.isBusy) else { return }
-        do {
-            try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
-        } catch {
-            errorMessage = L10n.string("model.epic.downloadDirectoryFailed", error.localizedDescription)
-            return
-        }
-        let current = generation
-        lastDownload = (game, platform, destination)
-        transferLibraryID = game.libraryID
-        transfer = GameTransfer(game: game.appName, state: .preparing, completedBytes: 0, totalBytes: 0,
-                                networkBytes: 0, contentBytes: 0, currentFile: "", message: "")
-        isDownloading = true
-        isLaunching = launchAfterDownload
-        isVerifyingBeforeLaunch = launchAfterDownload
-        launchLibraryID = launchAfterDownload ? game.libraryID : nil
-        downloadCancellationRequested = false
-        errorMessage = nil
-        if let index = installations.firstIndex(where: { $0.libraryID == game.libraryID && $0.platform == platform }) {
-            installations[index].needsVerification = true
-            saveInstallations()
-        }
-        if launchAfterDownload {
-            // The shared session store outlives this model: a strong capture
-            // here would pin the whole library graph for the game's lifetime.
-            downloadTask = gameSessions.launch(game: game.libraryID, account: accountID, prepare: { [weak self] in
-                guard let self else { throw CancellationError() }
-                let receipt = try await self.performDownload(game, platform: platform, directory: destination, session: session, generation: current)
-                try self.requireCurrentDownload(generation: current)
-                self.saveInstallations()
-                self.isDownloading = false
-                self.isVerifyingBeforeLaunch = false
-                let configuration = self.cloud.configuration(game: game, receipt: receipt, language: self.launchLanguage)
-                return try await self.supervise(on: session, accountId: accountID, generation: current, preparing: false) { [weak self] in
-                    guard let self else { throw CancellationError() }
-                    try self.requireCurrentDownload(generation: current)
-                    do { return try await self.launchGame(session, configuration) }
-                    catch { throw GameHandoffFailure(cause: error) }
-                }
-            }, onRunning: { [weak self] in
-                guard let self, current == self.generation else { return }
-                self.isLaunching = false
-            }, onCompletion: { [weak self] error in
-                guard let self else { return }
-                guard current == self.generation else { return }
-                self.isDownloading = false
-                self.isLaunching = false
-                self.isVerifyingBeforeLaunch = false
-                self.launchLibraryID = nil
-                self.downloadTask = nil
-                self.saveInstallations()
-                if let error, !(error is CancellationError), !self.downloadCancellationRequested {
-                    if case EpicError.Unauthorized = error { self.signOut() }
-                    self.errorMessage = Self.message(error)
-                }
-            })
-            return
-        }
-        downloadTask = Task {
-            defer {
-                if current == generation {
-                    isDownloading = false
-                    isLaunching = false
-                    isVerifyingBeforeLaunch = false
-                    launchLibraryID = nil
-                    downloadTask = nil
-                }
-            }
-            do {
-                _ = try await performDownload(game, platform: platform, directory: destination, session: session, generation: current)
-                try requireCurrentDownload(generation: current)
-                saveInstallations()
-                isDownloading = false
-            } catch {
-                guard current == generation else { return }
-                saveInstallations()
-                if !(error is CancellationError) && !downloadCancellationRequested {
-                    if case EpicError.Unauthorized = error { signOut() }
-                    errorMessage = Self.message(error)
-                }
-            }
-        }
-    }
-
-    private func requireCurrentDownload(generation current: Int) throws {
-        guard current == generation && !Task.isCancelled && !downloadCancellationRequested else {
-            throw CancellationError()
-        }
-    }
-
     private func supervise(on session: any EpicSessionProtocol, accountId: String, generation current: Int,
                            preparing: Bool = true,
                            create: @MainActor () async throws -> any GameSessionProtocol) async throws -> any GameSessionProtocol {
@@ -723,149 +532,75 @@ final class EpicModel {
         }
     }
 
-    /// Download, resume and every launch share the same verified installation path.
-    private func performDownload(_ game: EpicGame, platform: String, directory destination: URL,
-                                 session: any EpicSessionProtocol, generation current: Int) async throws -> EpicInstallReceipt {
-        var terminalState: TransferState = .failed
-        var startedDownload = false
-        var finishedProgress = false
-        func finishProgress() {
-            if current == generation && !finishedProgress {
-                finishedProgress = true
-                progressTask?.cancel()
-                progressTask = nil
-                if startedDownload, let snapshot = session.downloadProgress(), snapshot.game == game.appName, snapshot.state == terminalState {
-                    transfer = snapshot
-                } else {
-                    transfer?.message = ""
-                }
-                transfer?.state = terminalState
-            }
-        }
-        defer { finishProgress() }
-        do {
-            try requireCurrentDownload(generation: current)
-            return try await rememberedSession.perform(on: session) {
-                try requireCurrentDownload(generation: current)
-                progressTask = Task {
-                    while current == generation && !Task.isCancelled {
-                        if let snapshot = session.downloadProgress(), snapshot.game == game.appName,
-                           snapshot.state == .preparing || snapshot.state == .verifying || snapshot.state == .downloading {
-                            if snapshot != transfer { transfer = snapshot }
-                        }
-                        try? await Task.sleep(for: .milliseconds(250))
-                    }
-                }
-                startedDownload = true
-                let installed = try await session.download(namespace: game.namespace, catalogItemId: game.catalogItemId,
-                                                           appName: game.appName, platform: platform, directory: destination.path)
-                try requireCurrentDownload(generation: current)
-                guard session.downloadProgress()?.state != .cancelled else { throw CancellationError() }
-                let receipt = EpicInstallReceipt(namespace: game.namespace, appName: installed.appName, name: game.title,
-                                                 directory: installed.directory, platform: installed.platform, totalBytes: installed.totalBytes)
-                installations.removeAll { $0.id == receipt.id }
-                installations.append(receipt)
-                saveInstallations()
-                lastDownload = nil
-                terminalState = .complete
-                finishProgress()
-                return receipt
-            }
-        } catch {
-            let cancelled = error is CancellationError || downloadCancellationRequested
-                || (startedDownload && session.downloadProgress()?.state == .cancelled)
-            terminalState = cancelled ? .cancelled : .failed
-            if cancelled { throw CancellationError() }
-            throw error
-        }
-    }
-
-    func cancelDownload() {
-        guard isDownloading || isLaunching else { return }
-        downloadCancellationRequested = true
-        session?.cancelDownload()
-        if isLaunching && !isDownloading { downloadTask?.cancel() }
-    }
-
-    func resumeDownload() {
-        guard canResumeDownload, let previous = lastDownload else { return }
-        download(previous.game, platform: previous.platform, directory: previous.directory)
-    }
-
-    func uninstall(_ receipt: EpicInstallReceipt) {
-        guard isConnected, let session, let removalAccount = accountID, canModifyInstallation(of: receipt.libraryID),
-              installations.contains(receipt), let file = receiptsURL,
-              let game = games.first(where: { $0.libraryID == receipt.libraryID }) else { return }
-        let current = generation
-        let remaining = installations.filter { $0 != receipt }
-        isUninstalling = true
-        uninstallLibraryID = receipt.libraryID
-        errorMessage = nil
-        uninstallTask = Task {
-            defer {
-                isUninstalling = false
-                uninstallLibraryID = nil
-                uninstallTask = nil
-            }
-            do {
-                guard current == generation && !Task.isCancelled else { return }
-                let configuration = cloud.configuration(game: game, receipt: receipt, language: launchLanguage)
-                try await rememberedSession.perform(on: session) {
-                    try await session.archiveCloud(configuration: configuration)
-                }
-                guard current == generation && !Task.isCancelled else { return }
-                // The engine owns the directory naming scheme; never re-derive it here.
-                let name = epicInstallationDirectoryName(
-                    namespace: receipt.namespace, catalogItemId: game.catalogItemId,
-                    appName: receipt.appName, platform: receipt.platform
-                )
-                try await GameInstallationManager.uninstall(
-                    directory: receipt.directory, expectedDirectoryName: name,
-                    protecting: directory, receiptFile: file, remaining: remaining
-                )
-                // Persist removal even if sign-out occurred during the file operation.
-                try await Task.detached {
-                    try await epicCloudRemoved(configuration: configuration, accountId: removalAccount)
-                }.value
-                guard current == generation else {
-                    if isConnected { loadInstallations() }
-                    return
-                }
-                installations = remaining
-                if lastDownload?.game.libraryID == receipt.libraryID && lastDownload?.platform == receipt.platform {
-                    lastDownload = nil
-                }
-                if transferLibraryID == receipt.libraryID {
-                    transfer = nil
-                    transferLibraryID = nil
-                }
-            } catch {
-                guard current == generation && !(error is CancellationError) else { return }
-                installations = InstallationReceipts.retainingExistingDirectories(installations)
-                errorMessage = L10n.string("model.game.uninstallFailed", error.localizedDescription)
-            }
-        }
-    }
-
-    private var receiptsURL: URL? {
+    private func receiptsFile(for account: String) -> URL {
         // Account identifiers are opaque. Encode them before using them in a file name.
-        accountID.map { account in
-            let component = account.utf8.map { String(format: "%02x", $0) }.joined()
-            return directory.appending(path: "epic-installations-\(component).json")
-        }
+        let component = account.utf8.map { String(format: "%02x", $0) }.joined()
+        return directory.appending(path: "epic-installations-\(component).json")
     }
 
-    private func loadInstallations() {
-        installations = []
-        guard let file = receiptsURL else { return }
-        do { installations = try InstallationReceipts.load(EpicInstallReceipt.self, from: file) }
-        catch { storageWarning = L10n.string("model.epic.receiptsUnavailable") }
-    }
-
-    private func saveInstallations() {
-        guard let file = receiptsURL else { return }
-        do { try InstallationReceipts.save(installations, to: file) }
-        catch { storageWarning = L10n.string("model.epic.receiptsNotSaved") }
+    /// Epic's operations for the installation actions. Every account call
+    /// goes through the remembered session, so rotated credentials persist in order.
+    private func installationPort() -> InstallationPort<EpicGames> {
+        let remembered = rememberedSession
+        let launchGame = launchGame
+        return InstallationPort(
+            session: { [weak self] in
+                guard let session = self?.session else { return nil }
+                return InstallationSession(
+                    download: { request, events in
+                        let game = request.game
+                        try await remembered.perform(on: session) {
+                            try events.started()
+                            let installed = try await session.download(
+                                namespace: game.namespace, catalogItemId: game.catalogItemId, appName: game.appName,
+                                platform: request.platform, directory: request.directory.path
+                            )
+                            try events.installed(EpicInstallReceipt(
+                                namespace: game.namespace, appName: installed.appName, name: game.title,
+                                directory: installed.directory, platform: installed.platform, totalBytes: installed.totalBytes
+                            ))
+                        }
+                    },
+                    progress: { session.downloadProgress() },
+                    cancel: { session.cancelDownload() },
+                    start: { [weak self] receipt, proceed in
+                        guard let self, let accountID,
+                              let game = games.first(where: { $0.libraryID == receipt.libraryID }) else {
+                            throw CancellationError()
+                        }
+                        let configuration = cloud.configuration(game: game, receipt: receipt, language: launchLanguage)
+                        return try await supervise(on: session, accountId: accountID, generation: generation,
+                                                   preparing: false) {
+                            try proceed()
+                            do { return try await launchGame(session, configuration) }
+                            catch { throw GameHandoffFailure(cause: error) }
+                        }
+                    }
+                )
+            },
+            verifiesBeforeLaunch: { true },
+            uninstall: { [weak self] receipt in
+                guard let self, let session, let account = accountID,
+                      let game = games.first(where: { $0.libraryID == receipt.libraryID }) else { return nil }
+                let configuration = cloud.configuration(game: game, receipt: receipt, language: launchLanguage)
+                return GameUninstall(
+                    // The engine owns the directory naming scheme; never re-derive it here.
+                    directoryName: epicInstallationDirectoryName(
+                        namespace: receipt.namespace, catalogItemId: game.catalogItemId,
+                        appName: receipt.appName, platform: receipt.platform
+                    ),
+                    archive: { try await remembered.perform(on: session) { try await session.archiveCloud(configuration: configuration) } },
+                    removed: { try await epicCloudRemoved(configuration: configuration, accountId: account) }
+                )
+            },
+            report: { [weak self] error in
+                guard let self else { return }
+                guard let error else { return errorMessage = nil }
+                if case EpicError.Unauthorized = error { signOut() }
+                errorMessage = Self.message(error)
+            },
+            warn: { [weak self] in self?.storageWarning = $0 }
+        )
     }
 
     static func message(_ error: Error) -> String {
@@ -877,6 +612,7 @@ final class EpicModel {
         case let EpicError.Service(message): L10n.message(message)
         case let browserError as EpicWebAuthenticationError: browserError.localizedDescription
         case let launchError as GameLaunchFailure: launchError.localizedDescription
+        case let failure as GameInstallationFailure: failure.localizedDescription
         default: L10n.string("model.epic.failure")
         }
     }

@@ -4200,23 +4200,6 @@
         }
       }
     },
-    "model.epic.downloadDirectoryFailed": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Unable to create the download folder: %@"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Impossible de créer le dossier de téléchargement : %@"
-          }
-        }
-      }
-    },
     "model.epic.failure": {
       "extractionState": "manual",
       "localizations": {
@@ -5016,74 +4999,6 @@
         }
       }
     },
-    "model.steam.download": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Download"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Télécharger"
-          }
-        }
-      }
-    },
-    "model.steam.downloadDirectoryFailed": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Unable to prepare the download folder.\n%@"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Impossible de préparer le dossier de téléchargement.\n%@"
-          }
-        }
-      }
-    },
-    "model.steam.launch": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Launch"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Lancer"
-          }
-        }
-      }
-    },
-    "model.steam.launching": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Launching…"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Lancement…"
-          }
-        }
-      }
-    },
     "model.steam.receiptsNotSaved": {
       "extractionState": "manual",
       "localizations": {
@@ -5114,23 +5029,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Le catalogue des téléchargements Steam n’a pas pu être lu."
-          }
-        }
-      }
-    },
-    "model.steam.resume": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Resume"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Reprendre"
           }
         }
       }
@@ -5267,23 +5165,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Trier par temps de jeu"
-          }
-        }
-      }
-    },
-    "model.steam.verifying": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Verifying…"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Vérification…"
           }
         }
       }
@@ -6539,23 +6420,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Configurez un moteur compatible pour lancer les jeux Windows."
-          }
-        }
-      }
-    },
-    "ui.game.download": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Download"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Télécharger"
           }
         }
       }
@@ -8787,23 +8651,6 @@
         }
       }
     },
-    "model.steam.running": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Running"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "En cours"
-          }
-        }
-      }
-    },
     "model.steam.otherGameRunning": {
       "extractionState": "manual",
       "localizations": {
@@ -10026,6 +9873,125 @@
           "stringUnit": {
             "state": "translated",
             "value": "Téléchargement arrêté. Les données vérifiées seront réutilisées à la reprise."
+          }
+        }
+      }
+    },
+    "model.game.launch": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Launch"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lancer"
+          }
+        }
+      }
+    },
+    "model.game.running": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Running"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En cours"
+          }
+        }
+      }
+    },
+    "model.game.launching": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Launching…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lancement…"
+          }
+        }
+      }
+    },
+    "model.game.verifying": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verifying…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vérification…"
+          }
+        }
+      }
+    },
+    "model.game.resume": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resume"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reprendre"
+          }
+        }
+      }
+    },
+    "model.game.download": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Télécharger"
+          }
+        }
+      }
+    },
+    "model.game.downloadDirectoryFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unable to create the download folder: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de créer le dossier de téléchargement : %@"
           }
         }
       }

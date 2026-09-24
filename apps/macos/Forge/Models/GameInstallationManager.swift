@@ -2,8 +2,14 @@ import Darwin
 import Foundation
 
 /// A storefront's dedicated installation, recorded per account once every file succeeded.
-protocol InstallReceipt: Codable, Equatable, Sendable {
+protocol InstallReceipt: Codable, Equatable, Sendable, Identifiable {
+    associatedtype GameID: Hashable & Sendable
+    var gameID: GameID { get }
+    var platform: String { get }
     var directory: String { get }
+    var totalBytes: UInt64 { get }
+    /// A Transfer started over this installation and has not succeeded since.
+    var needsVerification: Bool? { get set }
 }
 
 /// One JSON receipt file per store and account. Receipts whose directory has
@@ -35,11 +41,15 @@ extension FileManager {
 enum GameInstallationFailure: LocalizedError {
     case unsafeDirectory
     case busy
+    case downloadDirectory(Error)
+    case uninstall(Error)
 
     var errorDescription: String? {
         switch self {
         case .unsafeDirectory: L10n.string("model.game.unsafeInstallation")
         case .busy: L10n.string("model.game.installationBusy")
+        case let .downloadDirectory(error): L10n.string("model.game.downloadDirectoryFailed", error.localizedDescription)
+        case let .uninstall(error): L10n.string("model.game.uninstallFailed", error.localizedDescription)
         }
     }
 }

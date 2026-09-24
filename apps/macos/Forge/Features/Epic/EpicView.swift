@@ -67,8 +67,8 @@ struct EpicView: View {
 
     private var library: some View {
         VStack(alignment: .leading, spacing: 24) {
-            if let transfer = model.transfer, model.isDownloading {
-                SteamTransferView(transfer: transfer, isDownloading: model.isDownloading, cancel: model.cancelDownload)
+            if let transfer = model.installations.transfer, model.installations.isDownloading {
+                SteamTransferView(transfer: transfer, isDownloading: true, cancel: model.installations.cancelDownload)
             }
             let filtered = model.filteredGames
             if model.isLoadingGames && model.games.isEmpty {

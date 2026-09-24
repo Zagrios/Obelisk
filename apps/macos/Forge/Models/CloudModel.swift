@@ -129,7 +129,7 @@ final class CloudModel<Store: CloudStorefront> {
     }
 
     func indicator(for game: Store.GameID) -> CloudIndicator? {
-        indicators[game].map(Store.cloud(of:))
+        indicators[game].map { Store.cloud(of: $0) }
     }
 
     /// Reads the journals off the main thread. Never polls: callers refresh

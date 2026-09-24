@@ -45,7 +45,7 @@ final class GameManagementButtonTests: XCTestCase {
         let fixture = ManagementButtonWindow(
             HStack(spacing: 10) {
                 GameActionButton(
-                    title: L10n.string("model.steam.launch"), symbol: "play.fill", transfer: nil,
+                    title: L10n.string("model.game.launch"), symbol: "play.fill", transfer: nil,
                     isTransferring: false, isAvailable: true, action: {}, cancel: {}
                 )
                 GameManagementButton(gameName: "Portal 2", isAvailable: true, uninstall: {}, directory: "/Applications")

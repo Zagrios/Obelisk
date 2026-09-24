@@ -32,8 +32,9 @@ enum SteamLoginStart: Sendable, Equatable {
     case credentials(account: String, password: String)
 }
 
-struct SteamInstallReceipt: InstallReceipt, Identifiable {
+struct SteamInstallReceipt: InstallReceipt {
     var id: String { "\(appId)-\(platform)" }
+    var gameID: UInt32 { appId }
     let appId: UInt32
     let name: String
     let directory: String
@@ -91,21 +92,14 @@ final class SteamModel {
         if let details, details.appId == selectedGame?.appId { return details.preferredPlatform }
         // Installation receipts are available before remote details. Never use
         // the previous game's platform to present the newly selected game.
-        return installations.contains { $0.appId == selectedGame?.appId && $0.platform == "macos" }
+        return installations.receipts.contains { $0.appId == selectedGame?.appId && $0.platform == "macos" }
             ? "macos" : "windows"
     }
     private(set) var language: String
-    private(set) var transfer: GameTransfer?
-    private(set) var isDownloading = false
-    private(set) var isLaunching = false
-    private(set) var isUninstalling = false
-    private(set) var isVerifyingBeforeLaunch = false
     var verifyBeforeLaunch: Bool {
         didSet { preferences.set(verifyBeforeLaunch, forKey: Self.verifyBeforeLaunchPreferenceKey) }
     }
-    private(set) var installations: [SteamInstallReceipt] = [] {
-        didSet { filteredLibraryCache = nil }
-    }
+    let installations: SteamInstallations
 
     @ObservationIgnored private let directory: URL
     @ObservationIgnored private let keychain: any SteamCredentialStore
@@ -115,9 +109,6 @@ final class SteamModel {
     let gameSessions: SteamGameSessions
     @ObservationIgnored private let startGame: @MainActor (SteamLaunchPlan, SteamCredentials) async throws -> any GameSessionProtocol
     @ObservationIgnored private let startCloudMaintenance: @MainActor @Sendable (SteamCredentials, SteamCloudMaintenanceRequest) -> any CloudMaintenanceProtocol
-    /// A DEBUG Cloud diagnostic fences game admission like a session would.
-    private var cloudProbeReserved = false
-    private var sessionsBusy: Bool { gameSessions.isBusy || cloudProbeReserved }
     let cloud: SteamCloudModel
     let rosetta: SteamRosettaModel
     let libraryPlatforms = SteamLibraryPlatforms()
@@ -139,18 +130,10 @@ final class SteamModel {
     @ObservationIgnored private var wakeObserver: SystemWakeObservation?
     @ObservationIgnored private var connectionTask: Task<any SteamSessionProtocol, Error>?
     @ObservationIgnored private var pollingActive = false
-    @ObservationIgnored private var downloadTask: Task<Void, Never>?
-    @ObservationIgnored private var launchTask: Task<Void, Never>?
-    @ObservationIgnored private var uninstallTask: Task<Void, Never>?
-    @ObservationIgnored private var uninstallAppId: UInt32?
-    @ObservationIgnored private var launchAppId: UInt32?
-    @ObservationIgnored private var downloadCancellationRequested = false
-    @ObservationIgnored private var progressTask: Task<Void, Never>?
-    @ObservationIgnored private var lastDownload: (game: SteamGame, platform: String, language: String, directory: URL)?
     @ObservationIgnored private var libraryOrderCache: [SteamLibrarySort: [SteamGame]] = [:]
     @ObservationIgnored private var filteredLibraryCache: (
         query: String, sort: SteamLibrarySort, filter: StorefrontLibraryFilter,
-        platforms: [UInt32: [String]], games: [SteamGame]
+        installed: Set<UInt32>, platforms: [UInt32: [String]], games: [SteamGame]
     )?
 
     init(
@@ -194,9 +177,11 @@ final class SteamModel {
                                      sessionDirectory: SteamGameLauncher.sessionDirectory,
                                      sessions: gameSessions, indicators: cloudServices.indicators)
         self.rosetta = SteamRosettaModel(sessions: gameSessions)
+        self.installations = SteamInstallations(directory: directory, sessions: gameSessions, cloud: cloud)
         wakeObserver = SystemWakeObservation { [weak self] in
             Task { @MainActor [weak self] in self?.retryFriends() }
         }
+        installations.selection = { [weak self] in self?.installationSelection }
     }
 
     deinit {
@@ -208,42 +193,9 @@ final class SteamModel {
 
     var isConnected: Bool { sessionCredentials != nil }
 
-    /// Identifies the operation before its first progress snapshot is available.
-    var activeTransferAppId: UInt32? {
-        if isDownloading { return lastDownload?.game.appId }
-        if isLaunching && isVerifyingBeforeLaunch { return launchAppId }
-        return nil
-    }
-
-    /// Every installation-mutating entry point asks this, so a new one cannot
-    /// silently gain permission to touch a running game's files. Cloud
-    /// maintenance holds the game's Reservation; its idle guard also excludes
-    /// every other Steam launch, so the whole storefront waits.
-    private func canModifyInstallation(of appId: UInt32?) -> Bool {
-        !isDownloading && !isLaunching && !isUninstalling && !cloud.isMaintaining && !cloudProbeReserved
-            && !gameSessions.protects(appId)
-    }
-
-    /// The selected game's Cloud indicator, or nil when it is hidden.
-    var cloudIndicator: CloudIndicatorPresentation? {
-        guard let game = selectedGame, isConnected else { return nil }
-        let playing = gameSessions.active.map { $0.game == game.appId && $0.account == steamId } ?? false
-        return CloudIndicatorPresentation.make(saved: cloud.indicator(for: game.appId), isSyncing: isSynchronizingSaves,
-                                               isPlaying: playing, isInstalled: selectedInstallation != nil)
-    }
-
-    /// One Steam Cloud operation at a time: a game session or maintenance of
-    /// any Steam game, or this game's Transfer or uninstall, keeps it closed.
-    private func canMaintainCloud(_ appId: UInt32) -> Bool {
-        isConnected && !sessionsBusy && !cloud.isMaintaining && !isLaunching
-            && activeTransferAppId != appId && !(isUninstalling && uninstallAppId == appId)
-    }
-
-    var canSyncCloud: Bool { selectedGame.map { canMaintainCloud($0.appId) } ?? false }
-
     func syncCloud() {
-        guard canSyncCloud, let game = selectedGame else { return }
-        cloud.startMaintenance(appId: game.appId, install: selectedInstallation?.directory)
+        guard installations.canSyncCloud, let game = selectedGame else { return }
+        cloud.startMaintenance(appId: game.appId, install: installations.selectedReceipt?.directory)
     }
 
     func refreshCloudIndicator() {
@@ -256,22 +208,25 @@ final class SteamModel {
         let title = L10n.string("ui.steam.cloud.title")
         guard let appId else { return title }
         let name = games.first { $0.appId == appId }?.name
-            ?? installations.first { $0.appId == appId }?.name
+            ?? installations.receipts.first { $0.appId == appId }?.name
             ?? String(appId)
         return "\(title) · \(name)"
     }
 
-    var canResumeDownload: Bool {
-        canModifyInstallation(of: lastDownload?.game.appId) && lastDownload != nil
-            && lastDownload?.game.appId == selectedGame?.appId
-    }
-
-    var selectedInstallation: SteamInstallReceipt? {
-        installations.first { $0.appId == selectedGame?.appId && $0.platform == platform }
-    }
-
-    var canUninstallSelectedGame: Bool {
-        isConnected && selectedInstallation != nil && canModifyInstallation(of: selectedGame?.appId)
+    /// The game on screen, for its installation actions. Only remote details
+    /// tell which builds the account can install.
+    private var installationSelection: InstallationSelection<SteamGames>? {
+        guard let game = selectedGame else { return nil }
+        let details = details?.appId == game.appId ? details : nil
+        let language = language
+        return InstallationSelection(
+            game: game.appId, platform: platform,
+            installable: !isLoadingDetails && (details?.macos == true || details?.windows == true),
+            request: { receipt, directory in
+                SteamDownload(game: game, platform: receipt?.platform ?? details?.preferredPlatform ?? "windows",
+                              language: receipt?.language ?? language, directory: directory)
+            }
+        )
     }
 
     /// The active session when it belongs to the game on screen.
@@ -293,41 +248,6 @@ final class SteamModel {
         }
     }
 
-    var isSynchronizingSaves: Bool {
-        selectedGame.map { cloud.isSynchronizing(for: $0.appId) } ?? false
-    }
-
-    var primaryActionTitle: String {
-        if isSynchronizingSaves { return L10n.string("ui.cloud.sync_short") }
-        if gameSessions.isRecovering { return L10n.string("model.steam.recoveringSession") }
-        if selectedGameSession?.running == true { return L10n.string("model.steam.running") }
-        if isUninstalling && uninstallAppId == selectedGame?.appId { return L10n.string("model.game.uninstalling") }
-        if isLaunching && launchAppId == selectedGame?.appId {
-            return isVerifyingBeforeLaunch ? L10n.string("model.steam.verifying") : L10n.string("model.steam.launching")
-        }
-        if selectedGameSession != nil { return L10n.string("model.steam.launching") }
-        if selectedInstallation != nil { return L10n.string("model.steam.launch") }
-        return canResumeDownload ? L10n.string("model.steam.resume") : L10n.string("model.steam.download")
-    }
-
-    var primaryActionSymbol: String {
-        if selectedGameSession != nil { return "play.fill" }
-        return selectedInstallation == nil ? "arrow.down" : "play.fill"
-    }
-
-    var primaryActionAvailable: Bool {
-        guard let selectedGame, let details, details.appId == selectedGame.appId else { return false }
-        return !isLoadingDetails && canModifyInstallation(of: selectedGame.appId)
-            && !(selectedInstallation != nil && sessionsBusy)
-            && (details.macos || details.windows)
-    }
-
-    func primaryAction() {
-        guard primaryActionAvailable, let game = selectedGame else { return }
-        if let receipt = selectedInstallation { launchGame(game, receipt: receipt) }
-        else { downloadSelected() }
-    }
-
     var filteredGames: [SteamGame] {
         // Read every observable input even on cache hits so the library keeps
         // updating after search, filters, installation changes or platform replies.
@@ -335,11 +255,11 @@ final class SteamModel {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         let order = sort
         let selectedFilter = filter
-        let receipts = selectedFilter == .installed ? installations : []
+        let installedAppIds = selectedFilter == .installed ? Set(installations.receipts.map(\.appId)) : []
         // Dictionary snapshots share storage until the next metadata batch changes it.
         let platforms = selectedFilter == .macOS ? libraryPlatforms.platforms : [:]
         if let cached = filteredLibraryCache, cached.query == query, cached.sort == order,
-           cached.filter == selectedFilter, cached.platforms == platforms {
+           cached.filter == selectedFilter, cached.installed == installedAppIds, cached.platforms == platforms {
             return cached.games
         }
         let ordered: [SteamGame]
@@ -349,7 +269,6 @@ final class SteamModel {
             ordered = Self.filterAndSort(source, query: "", sort: order)
             libraryOrderCache[order] = ordered
         }
-        let installedAppIds = Set(receipts.map(\.appId))
         let filtered = query.isEmpty && selectedFilter == .all ? ordered : ordered.filter { game in
             guard query.isEmpty || game.name.localizedStandardContains(query) else { return false }
             switch selectedFilter {
@@ -359,7 +278,7 @@ final class SteamModel {
             case .macOS: return platforms[game.appId]?.contains("macos") == true
             }
         }
-        filteredLibraryCache = (query, order, selectedFilter, platforms, filtered)
+        filteredLibraryCache = (query, order, selectedFilter, installedAppIds, platforms, filtered)
         return filtered
     }
 
@@ -540,7 +459,9 @@ final class SteamModel {
             errorMessage = nil
             isConnecting = false
             isRestoring = false
-            loadInstallations()
+            installations.connect(account: credentials.steamId,
+                                  receipts: directory.appending(path: "steam-installations-\(credentials.steamId).json"),
+                                  port: installationPort())
             let startMaintenance = startCloudMaintenance
             cloud.connect(account: credentials.steamId) { startMaintenance(credentials, $0) }
             rosetta.connect(accountId: credentials.steamId)
@@ -572,8 +493,8 @@ final class SteamModel {
     #if DEBUG
     /// A Cloud diagnostic needs the storefront idle, and keeps it fenced.
     private func reserveCloudProbe() -> Bool {
-        guard !sessionsBusy, gameSessions.recoveryError == nil else { return false }
-        cloudProbeReserved = true
+        guard !installations.isBusy, gameSessions.recoveryError == nil else { return false }
+        installations.diagnosticReservation = true
         return true
     }
 
@@ -614,10 +535,10 @@ final class SteamModel {
                 // Keep game admission fenced while the interrupted diagnostic
                 // awaits a process restart, including after a diagnostic error.
                 let result = try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
-                if result?["status"] as? String == "verified" { cloudProbeReserved = false }
+                if result?["status"] as? String == "verified" { installations.diagnosticReservation = false }
             case "--steam-cloud-transfer-probe":
                 guard reserveCloudProbe() else { throw CocoaError(.featureUnsupported) }
-                defer { cloudProbeReserved = false }
+                defer { installations.diagnosticReservation = false }
                 json = try await native.cloudTransferProbe(appId: appID, directory: directory.path)
             default:
                 json = try await native.cloudBackup(appId: appID, directory: directory.path)
@@ -818,6 +739,7 @@ final class SteamModel {
     func signOut() {
         libraryPlatforms.reset()
         rosetta.connect(accountId: nil)
+        installations.signedOut()
         cloud.signedOut()
         generation += 1
         detailGeneration += 1
@@ -831,22 +753,14 @@ final class SteamModel {
         connectionTask = nil
         profileTask?.cancel()
         profileTask = nil
-        session?.cancelDownload()
-        downloadTask?.cancel()
-        launchTask?.cancel()
-        uninstallTask?.cancel()
-        progressTask?.cancel()
         session = nil
         login = nil
         displayName = nil
         avatarURL = nil
         games = []
-        installations = []
         selectedGame = nil
         details = nil
         news = []
-        transfer = nil
-        lastDownload = nil
         challenge = nil
         searchText = ""
         filter = .all
@@ -854,11 +768,6 @@ final class SteamModel {
         storageWarning = nil
         isConnecting = false
         isLoadingGames = false
-        isDownloading = false
-        isLaunching = false
-        isVerifyingBeforeLaunch = false
-        launchAppId = nil
-        downloadCancellationRequested = true
         isRestoring = true
         let current = generation
         Task {
@@ -938,199 +847,47 @@ final class SteamModel {
         news = []
     }
 
-    func downloadSelected() {
-        guard let game = selectedGame, let details, details.appId == game.appId,
-              session != nil, canModifyInstallation(of: game.appId), details.macos || details.windows else { return }
-        if canResumeDownload {
-            resumeDownload()
-            return
-        }
-        // `platform` already follows these details (see `open`); `selectedInstallation` matches it.
-        let selectedPlatform = details.preferredPlatform
-        let destination = selectedInstallation.map { URL(fileURLWithPath: $0.directory).deletingLastPathComponent() }
-            ?? directory.appending(path: "Games/Steam", directoryHint: .isDirectory)
-        do {
-            try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
-            download(game, platform: selectedPlatform, language: language, directory: destination)
-        } catch {
-            errorMessage = L10n.string("model.steam.downloadDirectoryFailed", error.localizedDescription)
-        }
-    }
-
-    func download(_ game: SteamGame, platform: String, language: String, directory: URL) {
-        guard let session, canModifyInstallation(of: game.appId) else { return }
-        let current = generation
-        downloadCancellationRequested = false
-        beginTransfer(game, platform: platform, language: language, directory: directory, session: session, generation: current)
-        downloadTask = Task {
-            do {
-                _ = try await performDownload(game, platform: platform, language: language, directory: directory, session: session, generation: current)
-            } catch {
-                guard current == generation else { return }
-                if !(error is CancellationError) && !downloadCancellationRequested && transfer?.state != .cancelled {
-                    errorMessage = Self.message(error)
-                }
-            }
-        }
-    }
-
-    private func beginTransfer(_ game: SteamGame, platform: String, language: String, directory: URL, session: any SteamSessionProtocol, generation current: Int) {
-        lastDownload = (game, platform, language, directory)
-        isDownloading = true
-        transfer = nil
-        errorMessage = nil
-        if let index = installations.firstIndex(where: { $0.appId == game.appId && $0.platform == platform }) {
-            installations[index].needsVerification = true
-        }
-        saveInstallations()
-        progressTask?.cancel()
-        progressTask = Task {
-            while current == generation && !Task.isCancelled {
-                let snapshot = session.downloadProgress()
-                if snapshot != transfer { transfer = snapshot }
-                try? await Task.sleep(for: .milliseconds(250))
-            }
-        }
-    }
-
-    private func performDownload(_ game: SteamGame, platform: String, language: String, directory: URL, session: any SteamSessionProtocol, generation current: Int) async throws -> SteamInstallReceipt {
-        defer {
-            if current == generation {
-                progressTask?.cancel()
-                transfer = session.downloadProgress()
-                isDownloading = false
-            }
-        }
-        guard current == generation && !Task.isCancelled && !downloadCancellationRequested else { throw CancellationError() }
-        let installed = try await session.download(appId: game.appId, platform: platform, language: language, directory: directory.path)
-        guard current == generation && !Task.isCancelled && !downloadCancellationRequested
-                && session.downloadProgress()?.state != .cancelled else { throw CancellationError() }
-        let receipt = SteamInstallReceipt(appId: installed.appId, name: installed.name, directory: installed.directory, platform: installed.platform, language: installed.language, totalBytes: installed.totalBytes)
-        installations.removeAll { $0.appId == installed.appId && $0.platform == installed.platform }
-        installations.append(receipt)
-        lastDownload = nil
-        saveInstallations()
-        return receipt
-    }
-
-    private func launchGame(_ game: SteamGame, receipt: SteamInstallReceipt) {
-        guard let session, let steamId, canModifyInstallation(of: game.appId), !sessionsBusy else { return }
-        let current = generation
-        let mustVerify = verifyBeforeLaunch || receipt.needsVerification == true
-        isLaunching = true
-        isVerifyingBeforeLaunch = mustVerify
-        launchAppId = game.appId
-        downloadCancellationRequested = false
-        errorMessage = nil
-        var gameWasRunning = false
-        launchTask = gameSessions.launch(game: game.appId, account: steamId, prepare: { [self] in
-            guard current == generation && !Task.isCancelled && !downloadCancellationRequested else { throw CancellationError() }
-            var ready = receipt
-            if mustVerify {
-                let parent = URL(fileURLWithPath: receipt.directory).deletingLastPathComponent()
-                beginTransfer(game, platform: receipt.platform, language: receipt.language, directory: parent, session: session, generation: current)
-                ready = try await performDownload(game, platform: receipt.platform, language: receipt.language, directory: parent, session: session, generation: current)
-            }
-            guard current == generation && !Task.isCancelled && !downloadCancellationRequested else { throw CancellationError() }
-            isVerifyingBeforeLaunch = false
-            let plan = try await session.launchPlan(appId: game.appId, platform: ready.platform, directory: ready.directory)
-            guard current == generation && !Task.isCancelled && !downloadCancellationRequested else { throw CancellationError() }
-            guard let credentials = sessionCredentials else { throw SteamError.AuthenticationRequired }
-            return try await startGame(plan, credentials)
-        }, onRunning: { [weak self] in
-            gameWasRunning = true
-            guard let self, self.generation == current else { return }
-            self.isLaunching = false
-        }, onCompletion: { [weak self] error in
-            guard let self, self.generation == current else { return }
-            self.isLaunching = false
-            self.isVerifyingBeforeLaunch = false
-            self.launchAppId = nil
-            self.launchTask = nil
-            guard let error, !(error is CancellationError),
-                  gameWasRunning || (!Task.isCancelled && !self.downloadCancellationRequested) else { return }
-            self.errorMessage = Self.message(error)
-        })
-    }
-
-    func cancelDownload() {
-        downloadCancellationRequested = true
-        session?.cancelDownload()
-    }
-
-    func resumeDownload() {
-        guard canResumeDownload, let previous = lastDownload else { return }
-        download(previous.game, platform: previous.platform, language: previous.language, directory: previous.directory)
-    }
-
-    func uninstall(_ receipt: SteamInstallReceipt) {
-        guard isConnected, let session, let removalAccount = steamId, canModifyInstallation(of: receipt.appId),
-              installations.contains(receipt), let file = receiptsURL else { return }
-        let current = generation
-        let remaining = installations.filter { $0 != receipt }
-        isUninstalling = true
-        uninstallAppId = receipt.appId
-        errorMessage = nil
-        uninstallTask = Task {
-            defer {
-                isUninstalling = false
-                uninstallAppId = nil
-                uninstallTask = nil
-            }
-            do {
-                guard current == generation && !Task.isCancelled else { return }
-                try await cloud.archive(receipt, session: session)
-                guard current == generation && !Task.isCancelled else { return }
-                do {
-                    try await GameInstallationManager.uninstall(
-                        directory: receipt.directory, expectedDirectoryName: "steam-\(receipt.appId)-\(receipt.platform)",
-                        protecting: directory, receiptFile: file, remaining: remaining
-                    )
-                } catch {
-                    // Receipt persistence can fail after the directory was
-                    // removed. The Cloud fence must still record that removal.
-                    if !FileManager.default.fileExists(atPath: receipt.directory) {
-                        try await cloud.removed(receipt, accountId: removalAccount)
+    /// Steam's operations for the installation actions, on the session
+    /// connected when each one starts.
+    private func installationPort() -> InstallationPort<SteamGames> {
+        let startGame = startGame
+        return InstallationPort(
+            session: { [weak self] in
+                guard let session = self?.session else { return nil }
+                return InstallationSession(
+                    download: { request, events in
+                        try events.started()
+                        let installed = try await session.download(appId: request.game.appId, platform: request.platform,
+                                                                   language: request.language, directory: request.directory.path)
+                        try events.installed(SteamInstallReceipt(
+                            appId: installed.appId, name: installed.name, directory: installed.directory,
+                            platform: installed.platform, language: installed.language, totalBytes: installed.totalBytes
+                        ))
+                    },
+                    progress: { session.downloadProgress() },
+                    cancel: { session.cancelDownload() },
+                    start: { [weak self] receipt, proceed in
+                        let plan = try await session.launchPlan(appId: receipt.appId, platform: receipt.platform,
+                                                                directory: receipt.directory)
+                        try proceed()
+                        guard let credentials = self?.sessionCredentials else { throw SteamError.AuthenticationRequired }
+                        return try await startGame(plan, credentials)
                     }
-                    throw error
-                }
-                // Record the original account even if it signed out while the
-                // file operation was completing. Removal is never a Cloud delete.
-                try await cloud.removed(receipt, accountId: removalAccount)
-                guard current == generation else {
-                    // A reconnected account may have loaded its receipts before
-                    // the removal completed. Refresh only its own receipt file.
-                    if isConnected { loadInstallations() }
-                    return
-                }
-                installations = remaining
-                if lastDownload?.game.appId == receipt.appId && lastDownload?.platform == receipt.platform {
-                    lastDownload = nil
-                }
-                if transfer?.game == String(receipt.appId) { transfer = nil }
-            } catch {
-                guard current == generation && !(error is CancellationError) else { return }
-                installations = InstallationReceipts.retainingExistingDirectories(installations)
-                errorMessage = L10n.string("model.game.uninstallFailed", error.localizedDescription)
-            }
-        }
-    }
-
-    private var receiptsURL: URL? {
-        steamId.map { directory.appending(path: "steam-installations-\($0).json") }
-    }
-
-    private func loadInstallations() {
-        installations = []
-        guard let file = receiptsURL else { return }
-        do { installations = try InstallationReceipts.load(SteamInstallReceipt.self, from: file) }
-        catch { storageWarning = L10n.string("model.steam.receiptsUnavailable") }
-    }
-
-    private func saveInstallations() {
-        guard let file = receiptsURL else { return }
-        do { try InstallationReceipts.save(installations, to: file) }
-        catch { storageWarning = L10n.string("model.steam.receiptsNotSaved") }
+                )
+            },
+            verifiesBeforeLaunch: { [weak self] in self?.verifyBeforeLaunch ?? true },
+            uninstall: { [weak self] receipt in
+                guard let self, let session, let account = steamId else { return nil }
+                let cloud = cloud
+                return GameUninstall(
+                    directoryName: "steam-\(receipt.appId)-\(receipt.platform)",
+                    archive: { try await cloud.archive(receipt, session: session) },
+                    removed: { try await cloud.removed(receipt, accountId: account) }
+                )
+            },
+            report: { [weak self] error in self?.errorMessage = error.map(Self.message) },
+            warn: { [weak self] in self?.storageWarning = $0 }
+        )
     }
 
     static func message(_ error: Error) -> String {

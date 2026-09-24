@@ -4,8 +4,10 @@ struct EpicGameDetailView: View {
     @Bindable var model: EpicModel
     let game: EpicGame
 
+    private var installations: EpicInstallations { model.installations }
+
     private var gameTransfer: GameTransfer? {
-        model.transferLibraryID == game.libraryID ? model.transfer : nil
+        installations.transferGame == game.libraryID ? installations.transfer : nil
     }
 
     var body: some View {
@@ -15,12 +17,12 @@ struct EpicGameDetailView: View {
                 title: game.title,
                 libraryTitle: L10n.string("ui.epic.library"),
                 playtime: model.selectedGameDetails?.playtimeSeconds.map(EpicFormatting.playtime),
-                size: (model.selectedInstallation?.totalBytes ?? model.selectedGameDetails?.installationBytes).map(SteamFormatting.bytes),
+                size: (installations.selectedReceipt?.totalBytes ?? model.selectedGameDetails?.installationBytes).map(SteamFormatting.bytes),
                 back: model.closeGame,
                 additionalMetrics: {
                     GameAchievementsButton(model: achievements)
-                    if let cloud = model.cloudIndicator {
-                        CloudIndicatorButton(presentation: cloud, canSync: model.canSyncCloud, sync: model.syncCloud,
+                    if let cloud = installations.cloudIndicator {
+                        CloudIndicatorButton(presentation: cloud, canSync: installations.canSyncCloud, sync: model.syncCloud,
                                              storefront: "epic")
                     }
                 }
@@ -30,24 +32,25 @@ struct EpicGameDetailView: View {
                 HStack(spacing: 10) {
                     let cancelsSynchronization = model.cloud.canCancelSynchronization(for: game.libraryID)
                     GameActionButton(
-                        title: model.primaryActionTitle,
-                        symbol: model.primaryActionSymbol,
+                        title: installations.primaryActionTitle,
+                        symbol: installations.primaryActionSymbol,
                         transfer: gameTransfer,
-                        isTransferring: model.activeTransferLibraryID == game.libraryID,
-                        isAvailable: model.primaryActionAvailable,
-                        action: model.primaryAction,
+                        isTransferring: installations.activeTransferGame == game.libraryID,
+                        isAvailable: installations.primaryActionAvailable,
+                        action: installations.primaryAction,
                         cancel: {
                             if cancelsSynchronization { model.cloud.respond(.cancel) }
-                            else { model.cancelDownload() }
+                            else { installations.cancelDownload() }
                         },
-                        isCancellable: cancelsSynchronization || (model.isLaunching && model.launchLibraryID == game.libraryID),
-                        isIndeterminate: model.isSynchronizingSaves
+                        isCancellable: cancelsSynchronization
+                            || (installations.isLaunching && installations.launchGame == game.libraryID),
+                        isIndeterminate: installations.isSynchronizingSaves
                     )
-                    if let receipt = model.selectedInstallation {
+                    if let receipt = installations.selectedReceipt {
                         GameManagementButton(
                             gameName: game.title,
-                            isAvailable: model.canUninstallSelectedGame,
-                            uninstall: { model.uninstall(receipt) },
+                            isAvailable: installations.canUninstallSelectedGame,
+                            uninstall: { installations.uninstall(receipt) },
                             directory: receipt.directory
                         )
                         .id(receipt.id + receipt.directory)
@@ -63,11 +66,12 @@ struct EpicGameDetailView: View {
             if let transfer = gameTransfer, transfer.state == .failed || transfer.state == .cancelled {
                 Text(transfer.message.isEmpty ? transfer.activityTitle : L10n.message(transfer.message))
                     .font(.system(size: 12)).foregroundStyle(.secondary)
-            } else if let activeGame = model.activeTransferLibraryID ?? model.launchLibraryID, activeGame != game.libraryID {
+            } else if let activeGame = installations.activeTransferGame ?? installations.launchGame,
+                      activeGame != game.libraryID {
                 Text(L10n.string("ui.epic.other_game_operation"))
                     .font(.system(size: 12)).foregroundStyle(.secondary)
-            } else if model.selectedInstallation?.needsVerification == true,
-                      !model.isDownloading, !model.isLaunching {
+            } else if installations.selectedReceipt?.needsVerification == true,
+                      !installations.isDownloading, !installations.isLaunching {
                 Label(L10n.string("ui.epic.verification_required"), systemImage: "checkmark.shield")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
             }
