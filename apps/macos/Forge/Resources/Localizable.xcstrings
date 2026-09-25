@@ -4591,6 +4591,23 @@
         }
       }
     },
+    "model.installations.prefixNotRemoved": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The game was uninstalled, but its Windows environment could not be deleted."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le jeu est désinstallé, mais son environnement Windows n’a pas pu être supprimé."
+          }
+        }
+      }
+    },
     "model.keychain.readFailed": {
       "extractionState": "manual",
       "localizations": {

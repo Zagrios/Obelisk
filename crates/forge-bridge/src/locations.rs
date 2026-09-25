@@ -1,5 +1,9 @@
 //! Every path Forge uses, named once, and the removal of an installation.
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    process::{Command, Stdio},
+};
 
 /// Where Forge keeps everything, derived from its library directory, its
 /// application bundle and the user's home.
@@ -96,9 +100,83 @@ pub fn remove_game_installation(
         })
 }
 
+/// Deletes the Wine prefix of the uninstalled Windows installation that was in
+/// `install_directory`, as Steam deletes a Proton prefix. A missing prefix is
+/// already gone; a link in its place is never followed.
+#[uniffi::export]
+pub fn remove_wine_prefix(
+    locations: ForgeLocations,
+    install_directory: String,
+) -> Result<(), RemovalError> {
+    if Path::new(&install_directory).file_name().is_none() {
+        return Err(RemovalError::Unsafe);
+    }
+    let prefix = PathBuf::from(prefix(&locations, &install_directory));
+    let storage = |error: std::io::Error| RemovalError::Storage {
+        message: error.to_string(),
+    };
+    match fs::symlink_metadata(&prefix) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(storage(error)),
+        Ok(metadata) if !metadata.is_dir() => return Err(RemovalError::Unsafe),
+        Ok(_) => {}
+    }
+    // A Wine server lingers a few seconds after its game and would write the
+    // registry back into the prefix.
+    let server = Path::new(&locations.wine_runtime).join("bin/wineserver");
+    if server.is_file() {
+        let _ = Command::new(server)
+            .arg("-k")
+            .env_clear()
+            .env("WINEPREFIX", &prefix)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    fs::remove_dir_all(&prefix).map_err(storage)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_uninstalled_windows_game_loses_its_prefix_but_never_what_a_link_points_to() {
+        let root = tempfile::tempdir().unwrap();
+        let library = root.path().join("library");
+        let locations = forge_locations(
+            library.to_string_lossy().into_owned(),
+            "/Forge.app".into(),
+            "/home".into(),
+        );
+        let install = |name: &str| {
+            library
+                .join("Games/Steam")
+                .join(name)
+                .to_string_lossy()
+                .into_owned()
+        };
+        let prefix = library.join("Prefixes/steam-42-windows");
+        fs::create_dir_all(prefix.join("drive_c/users")).unwrap();
+        fs::write(prefix.join("system.reg"), "registry").unwrap();
+        remove_wine_prefix(locations.clone(), install("steam-42-windows")).unwrap();
+        assert!(!prefix.exists());
+        remove_wine_prefix(locations.clone(), install("steam-42-windows")).unwrap();
+
+        let elsewhere = root.path().join("elsewhere");
+        fs::create_dir_all(&elsewhere).unwrap();
+        std::os::unix::fs::symlink(&elsewhere, library.join("Prefixes/steam-43-windows")).unwrap();
+        assert!(matches!(
+            remove_wine_prefix(locations.clone(), install("steam-43-windows")),
+            Err(RemovalError::Unsafe)
+        ));
+        assert!(elsewhere.is_dir());
+        assert!(matches!(
+            remove_wine_prefix(locations, "/".into()),
+            Err(RemovalError::Unsafe)
+        ));
+    }
 
     #[test]
     fn locations_name_every_folder_once() {

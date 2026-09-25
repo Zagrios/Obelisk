@@ -81,6 +81,8 @@ struct GameUninstall {
     let archive: @MainActor () async throws -> Void
     /// Records the removal for Cloud sync. Runs even after sign-out.
     let removed: @Sendable () async throws -> Void
+    /// Deletes a Windows installation's Wine prefix once its folder is gone.
+    var removePrefix: (@Sendable () throws -> Void)? = nil
 }
 
 /// One storefront's installed games and the actions on them: Transfers,
@@ -507,6 +509,11 @@ final class GameInstallations<Store: InstallationStorefront> {
                 // Record the original account even if it signed out while the
                 // file operation was completing. Removal is never a Cloud delete.
                 try await removal.removed()
+                // As Steam deletes a Proton prefix, the prefix goes with its game,
+                // after the Cloud archive above took its saves.
+                if let removePrefix = removal.removePrefix {
+                    do { try removePrefix() } catch { port.warn(L10n.string("model.installations.prefixNotRemoved")) }
+                }
                 guard current == generation else {
                     // A reconnected account may have loaded its receipts before
                     // the removal completed. Refresh only its own receipt file.

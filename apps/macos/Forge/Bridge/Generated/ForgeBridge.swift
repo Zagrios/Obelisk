@@ -8363,6 +8363,19 @@ public func removeGameInstallation(directory: String, expectedDirectoryName: Str
 }
 }
 /**
+ * Deletes the Wine prefix of the uninstalled Windows installation that was in
+ * `install_directory`, as Steam deletes a Proton prefix. A missing prefix is
+ * already gone; a link in its place is never followed.
+ */
+public func removeWinePrefix(locations: ForgeLocations, installDirectory: String)throws   {try rustCallWithError(FfiConverterTypeRemovalError_lift) {
+        uniffiCallStatus in
+    uniffi_forge_bridge_fn_func_remove_wine_prefix(
+        FfiConverterTypeForgeLocations_lower(locations),
+        FfiConverterString.lower(installDirectory),uniffiCallStatus
+    )
+}
+}
+/**
  * The Wine prefix of the Windows installation in `install_directory`,
  * named after the installation's folder.
  */
@@ -8475,6 +8488,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_forge_bridge_checksum_func_remove_game_installation() != 8109) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_forge_bridge_checksum_func_remove_wine_prefix() != 16813) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_forge_bridge_checksum_func_wine_prefix() != 11844) {

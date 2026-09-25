@@ -53,6 +53,25 @@ final class GameInstallationsTests: XCTestCase {
         XCTAssertTrue(installations.receipts.isEmpty, "A removed folder leaves no receipt")
     }
 
+    func testAnUninstallDeletesThePrefixLastAndOnlyWarnsWhenItCannot() async throws {
+        let fixture = try Fixture(game: game)
+        let removals = fixture.port.removals
+        fixture.port.removePrefix = {
+            removals.append("prefix")
+            throw CocoaError(.fileWriteNoPermission)
+        }
+        let installations = fixture.connect()
+        let receipt = try XCTUnwrap(installations.selectedReceipt)
+
+        installations.uninstall(receipt)
+
+        try await eventually { !installations.isUninstalling }
+        XCTAssertEqual(fixture.port.removals.values, ["steam-620-macos", "prefix"])
+        XCTAssertEqual(fixture.port.warnings, [L10n.string("model.installations.prefixNotRemoved")])
+        XCTAssertTrue(fixture.port.reported.isEmpty, "The game itself was uninstalled")
+        XCTAssertTrue(installations.receipts.isEmpty)
+    }
+
     func testAnInstallationLaunchesAndUpdatesBeforeTheStorefrontKnowsWhatItCanInstall() async throws {
         let fixture = try Fixture(game: game)
         var updated: SteamDownload?
@@ -139,10 +158,12 @@ private final class PortFixture {
     var start: @MainActor (SteamInstallReceipt, @MainActor () throws -> Void) async throws -> any GameSessionProtocol = {
         _, _ in throw CancellationError()
     }
+    var removePrefix: (@Sendable () throws -> Void)?
     let cancellations = LockedList<Int>()
     let removals = LockedList<String>()
     private(set) var archives = 0
     private(set) var reported: [String] = []
+    private(set) var warnings: [String] = []
 
     var port: InstallationPort<SteamGames> {
         let cancellations = cancellations
@@ -160,10 +181,11 @@ private final class PortFixture {
             uninstall: { [unowned self] receipt in
                 GameUninstall(directoryName: "steam-\(receipt.appId)-\(receipt.platform)",
                               archive: { [unowned self] in archives += 1 },
-                              removed: { removals.append("steam-\(receipt.appId)-\(receipt.platform)") })
+                              removed: { removals.append("steam-\(receipt.appId)-\(receipt.platform)") },
+                              removePrefix: removePrefix)
             },
             report: { [unowned self] error in if let error { reported.append(SteamModel.message(error)) } },
-            warn: { _ in }
+            warn: { [unowned self] in warnings.append($0) }
         )
     }
 }

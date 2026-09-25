@@ -882,10 +882,16 @@ final class SteamModel {
             uninstall: { [weak self] receipt in
                 guard let self, let session, let account = steamId else { return nil }
                 let cloud = cloud
+                var removePrefix: (@Sendable () throws -> Void)?
+                if receipt.platform == "windows" {
+                    let (locations, directory) = (ForgeLocations.live, receipt.directory)
+                    removePrefix = { try removeWinePrefix(locations: locations, installDirectory: directory) }
+                }
                 return GameUninstall(
                     directoryName: "steam-\(receipt.appId)-\(receipt.platform)",
                     archive: { try await cloud.archive(receipt, session: session) },
-                    removed: { try await cloud.removed(receipt, accountId: account) }
+                    removed: { try await cloud.removed(receipt, accountId: account) },
+                    removePrefix: removePrefix
                 )
             },
             report: { [weak self] error in self?.errorMessage = error.map(Self.message) },
