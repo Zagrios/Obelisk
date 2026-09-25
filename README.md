@@ -75,7 +75,7 @@ Launching uses the executable and arguments declared by Epic, a fresh exchange c
 
 ## Getting started
 
-You need macOS, Xcode with its command-line tools, stable Rust with Cargo, and a valid Apple Development identity with its private key in the Keychain. The app targets macOS 14 and later. Builds use the host Mac's architecture.
+You need macOS, Xcode with its command-line tools, stable Rust with Cargo, and a valid Apple Development identity with its private key in the Keychain. The app targets macOS 26 and later. Builds use the host Mac's architecture.
 
 Signing settings shared by Debug and Release live in `apps/macos/Config/Signing.xcconfig`. To select a specific certificate, copy `Signing.local.xcconfig.example` to `Signing.local.xcconfig` in the same directory, then set the certificate and team. Git ignores this local file. `security find-identity -v -p codesigning` lists available certificates. Use the fingerprint to avoid an ambiguous selection.
 

@@ -318,16 +318,8 @@ private struct StorefrontControlGlass: ViewModifier {
                     .fill(Color(nsColor: .controlBackgroundColor))
                     .overlay { outline }
             }
-        } else if #available(macOS 26.0, *) {
-            content.glassEffect(.regular.interactive(), in: Capsule())
         } else {
-            content.background {
-                Capsule()
-                    .fill(.ultraThinMaterial)
-                    .overlay { Capsule().fill(.white.opacity(colorScheme == .dark ? 0.065 : 0.2)) }
-                    .overlay { outline }
-                    .shadow(color: .black.opacity(colorScheme == .dark ? 0.2 : 0.08), radius: 3, y: 1)
-            }
+            content.glassEffect(.regular.interactive(), in: Capsule())
         }
     }
 
