@@ -42,8 +42,8 @@ impl Config {
         self.wine().is_file()
     }
 
-    /// D3DMetal ships apart from the runtime. When a runtime carries it,
-    /// CrossOver's Wine preloads libd3dshared for D3DMetal's DLLs.
+    /// Released runtimes carry D3DMetal. When one does, CrossOver's Wine
+    /// preloads libd3dshared for D3DMetal's DLLs.
     fn d3dmetal(&self) -> Option<PathBuf> {
         let library = self.runtime.join("lib/external/libd3dshared.dylib");
         library.is_file().then_some(library)
