@@ -483,8 +483,12 @@ impl<S: Storefront> CloudSync<S> {
                         }
                         _ => {
                             // Launch anyway: preserve today's saves for the next sync.
+                            // Rules the Cloud cannot follow find no saves to preserve.
                             self.problem = Some((ProblemKind::Failed, last.key()));
-                            self.capture_offline()?;
+                            match self.capture_offline() {
+                                Err(failure) if failure.kind() == Kind::Unavailable => {}
+                                captured => captured?,
+                            }
                             self.control.show(Phase::Pending, Some(last.key()));
                             return Ok(());
                         }

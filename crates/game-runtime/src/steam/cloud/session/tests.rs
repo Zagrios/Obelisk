@@ -3,7 +3,7 @@
 //! storage and upload transactions.
 use super::fake::{FakeSteamCloud, SLOT, save_rule};
 use super::*;
-use crate::cloud::sync::tests::{Harness, cloud_suite};
+use crate::cloud::sync::tests::{Harness, answer, cloud_suite};
 use crate::cloud::{Choice, Phase};
 use crate::cloud_status::{self, Indicator};
 use crate::supervisor::client::no_other_session;
@@ -300,6 +300,23 @@ async fn sdk_saves_download_into_the_cache_the_game_reads() {
     let saved = &context.bindings["slot.sav"].path;
     assert!(saved.starts_with(storage.cache_directory()));
     assert_eq!(fs::read(saved).unwrap(), b"cloud progress");
+}
+
+#[tokio::test]
+async fn launching_anyway_past_rules_forge_cannot_follow_starts_the_game() {
+    let game = SteamGame::game();
+    game.cloud.set_metadata(Some(CloudMetadata::Object(vec![(
+        "quota".into(),
+        CloudMetadata::Value("1000000".into()),
+    )])));
+    let answering = answer(&game.control, Choice::LaunchAnyway);
+
+    game.open().prepare(&no_other_session).await.unwrap();
+
+    answering.join().unwrap();
+    let status = game.control.status();
+    assert_eq!(status.phase, Phase::Pending);
+    assert_eq!(status.error.as_deref(), Some(Failure::Unsupported.key()));
 }
 
 #[test]

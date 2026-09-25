@@ -117,7 +117,7 @@ fn next_question(control: &Control, after: u64) -> Status {
 
 /// Answers the next Cloud question with `choice`, as the UI would. A
 /// question already shown when this starts is an older one.
-fn answer(control: &Arc<Control>, choice: Choice) -> std::thread::JoinHandle<()> {
+pub(crate) fn answer(control: &Arc<Control>, choice: Choice) -> std::thread::JoinHandle<()> {
     let control = Arc::clone(control);
     let shown = control.status().decision_id;
     std::thread::spawn(move || {
