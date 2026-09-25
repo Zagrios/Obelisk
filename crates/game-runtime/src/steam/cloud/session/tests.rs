@@ -303,6 +303,36 @@ async fn sdk_saves_download_into_the_cache_the_game_reads() {
 }
 
 #[tokio::test]
+async fn a_windows_game_reads_its_sdk_saves_from_the_same_native_storage() {
+    let mut game = SteamGame::game();
+    game.config.prefix = Some(game.config.root.with_file_name("prefix"));
+    game.cloud.set_metadata(Some(CloudMetadata::Object(vec![
+        ("quota".into(), CloudMetadata::Value("1000000".into())),
+        ("maxnumfiles".into(), CloudMetadata::Value("1000".into())),
+    ])));
+    game.cloud.publish_for("slot.sav", b"windows progress", 1);
+    game.cloud.publish_for("mac.sav", b"mac progress", 2);
+    let mut sync = game.open();
+
+    sync.prepare(&no_other_session).await.unwrap();
+
+    let storage = sync.store().native_storage().unwrap().unwrap();
+    assert_eq!(storage.platforms, 1);
+    let context = sync.store().context.as_ref().unwrap();
+    assert!(!context.bindings.contains_key("mac.sav"));
+    let saved = &context.bindings["slot.sav"].path;
+    assert!(saved.starts_with(storage.cache_directory()));
+    assert_eq!(fs::read(saved).unwrap(), b"windows progress");
+    let index = storage.cache_directory();
+    assert_eq!(
+        crate::native_cache_files(index, 42, storage.platforms)
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[tokio::test]
 async fn launching_anyway_past_rules_forge_cannot_follow_starts_the_game() {
     let game = SteamGame::game();
     game.cloud.set_metadata(Some(CloudMetadata::Object(vec![(

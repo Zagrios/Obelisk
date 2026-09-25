@@ -94,13 +94,11 @@ impl Context {
                 self.account_id as u32, self.config.app_id
             )),
             self.config.app_id,
+            self.config.platform().mask(),
         )?)
     }
     pub fn prepare_sdk(&self) -> Result<Option<crate::NativeStorage>, Failure> {
-        if self.config.prefix.is_some()
-            || (self.metadata.field("savefiles").is_some()
-                && self.metadata.field("quota").is_none())
-        {
+        if self.metadata.field("savefiles").is_some() && self.metadata.field("quota").is_none() {
             return Ok(None);
         }
         let paths = self.sdk_paths()?;
@@ -121,6 +119,7 @@ impl Context {
             home: self.sdk_home()?,
             account_id: self.account_id,
             app_id: self.config.app_id,
+            platforms: self.config.platform().mask(),
         }))
     }
 }

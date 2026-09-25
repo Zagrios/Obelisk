@@ -53,8 +53,8 @@ impl Drop for Executor {
 pub fn client_sha256() -> &'static str {
     &package::entry("steamclient.dylib").sha256
 }
-pub fn native_cache_checkpoint(directory: PathBuf, app_id: u32) -> bool {
-    native_cache_files(directory, app_id).is_ok()
+pub fn native_cache_checkpoint(directory: PathBuf, app_id: u32, platforms: u32) -> bool {
+    native_cache_files(directory, app_id, platforms).is_ok()
 }
 /// A published projection always carries its index, so a missing `remotecache.vdf`
 /// is an incomplete projection rather than an empty one. `SdkCloudPaths::records`
@@ -62,11 +62,12 @@ pub fn native_cache_checkpoint(directory: PathBuf, app_id: u32) -> bool {
 pub fn native_cache_files(
     directory: PathBuf,
     app_id: u32,
+    platforms: u32,
 ) -> Result<Vec<steam_kit::cloud::LocalCloudFile>, Error> {
     if !directory.join("remotecache.vdf").is_file() {
         return Err(Error::Storage);
     }
-    steam_kit::cloud::SdkCloudPaths::new(directory, app_id)
+    steam_kit::cloud::SdkCloudPaths::new(directory, app_id, platforms)
         .and_then(|paths| paths.local_files(&[]))
         .map_err(|_| Error::Storage)
 }
@@ -144,6 +145,9 @@ pub struct NativeStorage {
     pub home: PathBuf,
     pub account_id: u64,
     pub app_id: u32,
+    /// The game's platform, as a Cloud platform mask. A Windows game's SDK
+    /// files live in the macOS Steam engine's storage too.
+    pub platforms: u32,
 }
 impl NativeStorage {
     pub fn steam_directory(&self) -> PathBuf {

@@ -69,8 +69,13 @@ impl FakeSteamCloud {
 
     /// Another device publishes this file.
     pub(crate) fn publish(&self, name: &str, bytes: &[u8]) {
+        self.publish_for(name, bytes, 2);
+    }
+
+    /// Another device publishes this file for these platforms only.
+    pub(crate) fn publish_for(&self, name: &str, bytes: &[u8], platforms: u32) {
         let mut state = self.state.lock().unwrap();
-        state.files.insert(name.into(), (bytes.to_vec(), 2));
+        state.files.insert(name.into(), (bytes.to_vec(), platforms));
         state.change_number += 1;
     }
 

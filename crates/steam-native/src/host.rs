@@ -192,14 +192,18 @@ pub fn serve(
             mach::destroy(&mut reply);
         }
     }
-    if std::env::var_os("FORGE_STORAGE_METADATA").is_some() {
+    if let Some(platforms) = std::env::var_os("FORGE_STORAGE_METADATA") {
+        let platforms: u32 = platforms
+            .to_str()
+            .and_then(|mask| mask.parse().ok())
+            .ok_or("Native storage platform invalid")?;
         let home = std::env::var_os("HOME").ok_or("Native storage HOME missing")?;
         let cache = std::path::PathBuf::from(home).join(format!(
             "Library/Application Support/Steam/userdata/{}/{app}",
             expected_id as u32
         ));
         let started = Instant::now();
-        while !game_runtime::native_cache_checkpoint(cache.clone(), app) {
+        while !game_runtime::native_cache_checkpoint(cache.clone(), app, platforms) {
             if started.elapsed() > Duration::from_millis(500) {
                 return Err("Native storage index incomplete".into());
             }

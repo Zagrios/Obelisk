@@ -61,10 +61,11 @@ fn storage(root: &std::path::Path) -> (NativeStorage, PathBuf) {
         home: root.join("native-home"),
         account_id: credentials().steam_id,
         app_id: 42,
+        platforms: 2,
     };
     let cache = storage.cache_directory();
     fs::create_dir_all(cache.join("remote")).unwrap();
-    let paths = steam_kit::cloud::SdkCloudPaths::new(cache.clone(), 42).unwrap();
+    let paths = steam_kit::cloud::SdkCloudPaths::new(cache.clone(), 42, 2).unwrap();
     let save = paths.destination("slot.sav", 7).unwrap().unwrap();
     fs::write(&save, b"reconciled save").unwrap();
     paths
@@ -101,9 +102,9 @@ fn local_storage_is_validated_before_host_start_without_an_sdk_consumer() {
         process::Child::host_command(&runtime._prepared, &config, "fixture")
             .get_envs()
             .any(|(key, value)| key == "FORGE_STORAGE_METADATA"
-                && value == Some(std::ffi::OsStr::new("1")))
+                && value == Some(std::ffi::OsStr::new("2")))
     );
-    assert_eq!(native_cache_files(cache.clone(), 42).unwrap().len(), 1);
+    assert_eq!(native_cache_files(cache.clone(), 42, 2).unwrap().len(), 1);
     runtime.stopped(None);
     drop(runtime);
     assert_eq!(

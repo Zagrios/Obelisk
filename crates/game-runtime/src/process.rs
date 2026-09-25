@@ -64,8 +64,9 @@ impl Child {
             .env("TMPDIR", prepared.run_directory.join("tmp"));
         // Host and game must connect to the same private IPC.
         command.envs(prepared.endpoints.iter().map(|(key, value)| (key, value)));
-        if prepared.storage.is_some() {
-            command.env("FORGE_STORAGE_METADATA", "1");
+        // The host checks the SDK projection under the game's platform.
+        if let Some(storage) = &prepared.storage {
+            command.env("FORGE_STORAGE_METADATA", storage.platforms.to_string());
         }
         command
     }

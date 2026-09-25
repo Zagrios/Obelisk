@@ -12,21 +12,28 @@ use std::{
 pub struct SdkCloudPaths {
     directory: PathBuf,
     app_id: u32,
+    mask: u32,
 }
 impl SdkCloudPaths {
-    pub fn new(directory: PathBuf, app_id: u32) -> Result<Self, CloudError> {
-        if app_id == 0 || !directory.is_absolute() {
+    /// `mask` is the platform of the game, as a `CloudPlatform` mask. A file
+    /// synced to other platforms only stays in the Cloud.
+    pub fn new(directory: PathBuf, app_id: u32, mask: u32) -> Result<Self, CloudError> {
+        if app_id == 0 || mask == 0 || !directory.is_absolute() {
             return Err(CloudError::Invalid("SDK cache scope"));
         }
         super::paths::plain_path(&directory)?;
-        Ok(Self { directory, app_id })
+        Ok(Self {
+            directory,
+            app_id,
+            mask,
+        })
     }
     pub fn destination(&self, name: &str, platforms: u32) -> Result<Option<PathBuf>, CloudError> {
         let normalized = super::paths::relative(name, false)?;
         if normalized != name {
             return Err(CloudError::Invalid("SDK filename alias"));
         }
-        if platforms & 2 == 0 {
+        if platforms & self.mask == 0 {
             return Ok(None);
         }
         let path = self.directory.join("remote").join(name);
@@ -115,7 +122,7 @@ impl SdkCloudPaths {
         for (name, platforms, state) in self.records()? {
             if known
                 .iter()
-                .any(|file| file.name == name && file.platforms & 2 == 0)
+                .any(|file| file.name == name && file.platforms & self.mask == 0)
             {
                 return Err(CloudError::Invalid(
                     "SDK local record conflicts with foreign platform",
@@ -224,7 +231,7 @@ mod tests {
     fn fixture() -> (tempfile::TempDir, SdkCloudPaths, LocalCloudFile) {
         let temp = tempfile::tempdir().unwrap();
         let directory = temp.path().canonicalize().unwrap();
-        let paths = SdkCloudPaths::new(directory, 42).unwrap();
+        let paths = SdkCloudPaths::new(directory, 42, 2).unwrap();
         let path = paths.destination("nested/slot.dat", 7).unwrap().unwrap();
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, b"fixture").unwrap();
@@ -260,6 +267,30 @@ mod tests {
             assert!(paths.destination(name, 7).is_err());
         }
         assert_eq!(paths.destination("foreign.dat", 1).unwrap(), None);
+    }
+    #[test]
+    fn a_windows_game_keeps_windows_files_and_leaves_mac_only_files_in_the_cloud() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = SdkCloudPaths::new(temp.path().canonicalize().unwrap(), 42, 1).unwrap();
+        assert!(paths.destination("windows.dat", 1).unwrap().is_some());
+        assert!(
+            paths
+                .destination("everywhere.dat", u32::MAX)
+                .unwrap()
+                .is_some()
+        );
+        assert_eq!(paths.destination("mac.dat", 2).unwrap(), None);
+        let mac = CloudFile {
+            name: "mac.dat".into(),
+            sha1: String::new(),
+            size: 0,
+            timestamp: 0,
+            persist_state: 0,
+            platforms: 2,
+            reupload_requested: false,
+        };
+        paths.prepare_index(&[]).unwrap();
+        assert_eq!(paths.local_files(&[mac]).unwrap(), vec![]);
     }
     #[test]
     fn changed_app_scope_duplicate_records_and_symbolic_links_are_rejected() {

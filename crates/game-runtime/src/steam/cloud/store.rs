@@ -196,13 +196,9 @@ impl Context {
         )
     }
     pub fn paths(&self) -> Result<Paths, Failure> {
-        // RemoteStorage files belong to a macOS SDK's native storage. A Windows
-        // game keeps Auto-Cloud only, and any SDK file in its listing is unmapped.
-        let windows = self.config.prefix.is_some();
+        // RemoteStorage files live in the macOS Steam engine's storage, whatever
+        // the game's platform: a Windows game reaches it through lsteamclient.
         if self.metadata.field("savefiles").is_none() {
-            if windows {
-                return Err(Failure::Unsupported);
-            }
             return Ok(Paths::Sdk(self.sdk_paths()?));
         }
         let auto = AutoCloudPaths::new(
@@ -211,7 +207,7 @@ impl Context {
             &self.config.platform(),
             &self.config.install,
         )?;
-        if self.metadata.field("quota").is_some() && !windows {
+        if self.metadata.field("quota").is_some() {
             Ok(Paths::Mixed(auto, self.sdk_paths()?))
         } else {
             Ok(Paths::Auto(auto))

@@ -34,7 +34,7 @@ impl Prepared {
         // The coordinator must publish a complete local projection before a
         // native host starts. Validate it without loading the game's SDK. SDK
         // quota/readback readiness now belongs to the game's own attachment.
-        crate::native_cache_files(app.clone(), storage.app_id)?;
+        crate::native_cache_files(app.clone(), storage.app_id, storage.platforms)?;
         use std::io::Write;
         let extra = format!(
             "\n(allow file-read* (subpath {}))\n(allow file-write* (subpath {}) (subpath {}))\n",
@@ -276,12 +276,13 @@ mod atomic_tests {
             home: config.home.join("sdk"),
             account_id: 0x011000010000002a,
             app_id: 42,
+            platforms: 2,
         };
         let steam = storage.home.join("Library/Application Support/Steam");
         for path in ["userdata/42/43", "userdata/43/42", "config"] {
             fs::create_dir_all(steam.join(path)).unwrap();
         }
-        steam_kit::cloud::SdkCloudPaths::new(steam.join("userdata/42/42"), 42)
+        steam_kit::cloud::SdkCloudPaths::new(steam.join("userdata/42/42"), 42, 2)
             .unwrap()
             .prepare_index(&[])
             .unwrap();
