@@ -138,6 +138,11 @@ pub(super) fn parse_manifest(data: &[u8], key: &[u8; 32]) -> Result<Manifest, Co
         }
         file.name = file.name.replace('\\', "/");
         file.chunks.sort_by_key(|chunk| chunk.offset);
+        // Steam lists an empty file with a zero SHA-1, not the SHA-1 of no
+        // bytes that every check here computes.
+        if !file.is_directory() && file.size == 0 && file.sha == [0; 20] {
+            file.sha = Sha1::digest([]).to_vec();
+        }
     }
     Ok(Manifest {
         depot_id: metadata.depot_id,

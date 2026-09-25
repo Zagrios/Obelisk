@@ -483,6 +483,26 @@ fn routes(item: ManifestFile, pieces: &[&[u8]]) -> HashMap<String, Vec<u8>> {
 }
 
 #[tokio::test]
+async fn an_empty_file_listed_with_a_zero_checksum_installs_and_verifies() {
+    let directory = tempfile::tempdir().unwrap();
+    let item = ManifestFile {
+        name: "empty.dat".into(),
+        sha: vec![0; 20],
+        ..Default::default()
+    };
+    let fixture = CdnFixture::new(routes(item, &[]));
+    let client = fixture.client();
+    for _ in 0..2 {
+        let result = client
+            .download_depot(&plan(directory.path()), &CancelToken::new(), |_| {})
+            .await
+            .unwrap();
+        assert_eq!(result.completed_files, 1);
+        assert_eq!(fs::read(directory.path().join("empty.dat")).unwrap(), b"");
+    }
+}
+
+#[tokio::test]
 async fn downloads_atomically_and_reuses_verified_files_on_next_invocation() {
     let directory = tempfile::tempdir().unwrap();
     let pieces: &[&[u8]] = &[b"first chunk", b"second chunk"];
