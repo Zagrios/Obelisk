@@ -483,6 +483,27 @@ fn routes(item: ManifestFile, pieces: &[&[u8]]) -> HashMap<String, Vec<u8>> {
 }
 
 #[tokio::test]
+async fn an_installed_depot_names_the_install_scripts_its_manifest_flags() {
+    let directory = tempfile::tempdir().unwrap();
+    let pieces: &[&[u8]] = &[b"\"installscript\" { }"];
+    let mut item = file("_CommonRedist/vcredist/2022/installscript.vdf", pieces);
+    item.flags = 256;
+    let fixture = CdnFixture::new(routes(item, pieces));
+    let client = fixture.client();
+    client
+        .download_depot(&plan(directory.path()), &CancelToken::new(), |_| {})
+        .await
+        .unwrap();
+    assert_eq!(
+        client
+            .install_scripts(directory.path(), 42, 99, &KEY)
+            .await
+            .unwrap(),
+        ["_CommonRedist/vcredist/2022/installscript.vdf"]
+    );
+}
+
+#[tokio::test]
 async fn an_empty_file_listed_with_a_zero_checksum_installs_and_verifies() {
     let directory = tempfile::tempdir().unwrap();
     let item = ManifestFile {

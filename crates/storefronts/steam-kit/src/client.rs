@@ -127,6 +127,17 @@ pub struct InstalledDepot {
 }
 
 // Intentionally no Debug: depot keys are credentials.
+/// Steamworks Common Redistributables, free to every account. Windows games
+/// name its depots, such as Visual C++ or DirectX, for Steam to install and run
+/// before their first launch.
+const COMMON_REDISTRIBUTABLES: u32 = 228_980;
+/// Its depots a download leaves out. Visual C++, 228981 to 228989: games run on
+/// Wine's runtime, as under Proton, whatever its installer adds to a prefix.
+/// .NET Framework and XNA, which needs it, 229000 to 229012: their installers
+/// do not work in Wine.
+const SKIPPED_REDISTRIBUTABLES: [std::ops::RangeInclusive<u32>; 2] =
+    [228_981..=228_989, 229_000..=229_012];
+
 struct PreparedDepot {
     depot_id: u32,
     manifest_id: u64,
@@ -556,6 +567,22 @@ impl Client {
                 manifest_id: depot.manifest_id,
             });
         }
+        let mut scripts = Vec::new();
+        for depot in &prepared.depots {
+            scripts.extend(
+                content
+                    .install_scripts(destination, depot.depot_id, depot.manifest_id, &depot.key)
+                    .await
+                    .map_err(client_error)?,
+            );
+        }
+        scripts.sort();
+        forge_core::install::write_cached_file(
+            destination,
+            Path::new(crate::install_script::LIST),
+            scripts.join("\n").as_bytes(),
+        )
+        .map_err(|error| client_error(ContentError::from(error)))?;
         Ok(InstalledFiles {
             receipt: Installation {
                 app_id,
@@ -627,8 +654,13 @@ impl Client {
                     })?,
                 None => continue,
             };
+            let key_app = if depot.shared_from_app == Some(COMMON_REDISTRIBUTABLES) {
+                COMMON_REDISTRIBUTABLES
+            } else {
+                app_id
+            };
             let key = cm
-                .depot_key(depot.depot_id, app_id)
+                .depot_key(depot.depot_id, key_app)
                 .await
                 .map_err(client_error)?;
             let key: [u8; 32] = key
@@ -767,8 +799,15 @@ fn select_depots<'a>(
         .depots
         .iter()
         .filter(|depot| {
+            let redistributable = depot.shared_from_app == Some(COMMON_REDISTRIBUTABLES);
             supports_platform(&depot.os_list, platform)
-                && (app.free_to_download || owned.depots.contains(&depot.depot_id))
+                && !(redistributable
+                    && SKIPPED_REDISTRIBUTABLES
+                        .iter()
+                        .any(|skipped| skipped.contains(&depot.depot_id)))
+                && (app.free_to_download
+                    || owned.depots.contains(&depot.depot_id)
+                    || redistributable)
                 && depot.dlc_app_id.is_none_or(|dlc| owned.apps.contains(&dlc))
                 && (depot.public_manifest.is_some() || depot.shared_from_app.is_some())
         })
@@ -1150,6 +1189,37 @@ mod tests {
             select_depots(&app, &licenses([1], [1, 2, 3, 4, 5]), "windows", "french")[0].depot_id,
             3
         );
+    }
+    #[test]
+    fn a_windows_game_gets_the_common_redistributables_it_names_without_owning_them() {
+        let mut directx = depot(228_990, "windows", None, None);
+        directx.shared_from_app = Some(COMMON_REDISTRIBUTABLES);
+        directx.public_manifest = None;
+        let mut visual_cpp = depot(228_989, "windows", None, None);
+        visual_cpp.shared_from_app = Some(COMMON_REDISTRIBUTABLES);
+        let mut dotnet = depot(229_005, "windows", None, None);
+        dotnet.shared_from_app = Some(COMMON_REDISTRIBUTABLES);
+        let mut other = depot(3, "windows", None, None);
+        other.shared_from_app = Some(99);
+        other.public_manifest = None;
+        let app = app(vec![
+            depot(2, "windows", None, None),
+            directx,
+            visual_cpp,
+            dotnet,
+            other,
+        ]);
+        let selected: Vec<_> = select_depots(
+            &app,
+            &licenses([1], [2, 228_989, 229_005]),
+            "windows",
+            "english",
+        )
+        .iter()
+        .map(|depot| depot.depot_id)
+        .collect();
+        assert_eq!(selected, [2, 228_990]);
+        assert!(select_depots(&app, &licenses([1], [2]), "macos", "english").is_empty());
     }
     #[test]
     fn free_to_download_shared_depots_use_the_requesting_app_for_authorization() {

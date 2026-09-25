@@ -200,3 +200,127 @@ fn a_windows_game_saves_under_its_prefix_profile() {
     );
     assert_eq!(cloud.platform().mask(), 1);
 }
+
+/// A runtime whose wine records each call in `calls` beside the prefix, and
+/// fails for any program named `fail`.
+fn recording_runtime(root: &Path) -> Config {
+    let config = config(root);
+    let bin = config.runtime.join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    fs::create_dir_all(&config.prefix).unwrap();
+    for (name, body) in [
+        (
+            "wine",
+            "printf '%s\\n' \"$*\" >> \"$WINEPREFIX/../calls\"\ncase \"$*\" in *fail*) exit 1;; esac\n",
+        ),
+        ("wineserver", ""),
+    ] {
+        let path = bin.join(name);
+        fs::write(&path, format!("#!/bin/sh\n{body}")).unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    config
+}
+
+fn calls(root: &Path) -> Vec<String> {
+    fs::read_to_string(root.join("calls"))
+        .unwrap_or_default()
+        .lines()
+        .map(str::to_owned)
+        .collect()
+}
+
+#[test]
+fn a_steam_installation_lists_the_steps_of_its_install_scripts() {
+    let (_directory, root) = installation();
+    let install = root.join("game");
+    let redist = install.join("_CommonRedist/vcredist/2022");
+    fs::create_dir_all(&redist).unwrap();
+    fs::create_dir_all(install.join(".forge-content")).unwrap();
+    fs::write(
+        install.join(steam_kit::install_script::LIST),
+        "_CommonRedist/missing/installscript.vdf\n_CommonRedist/vcredist/2022/installscript.vdf",
+    )
+    .unwrap();
+    fs::write(
+        redist.join("installscript.vdf"),
+        r#""installscript" { "Run Process" { "x64 14.51" {
+            "HasRunKey" "HKEY_LOCAL_MACHINE\\Software\\Valve\\Steam\\Apps\\CommonRedist\\vcredist\\2022"
+            "process 1" "%INSTALLDIR%\\_CommonRedist\\vcredist\\2022\\VC_redist.x64.exe"
+            "command 1" "/q /norestart"
+        } } }"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        steam_prerequisites(&install).unwrap(),
+        [Prerequisite {
+            id:
+                r"HKEY_LOCAL_MACHINE\Software\Valve\Steam\Apps\CommonRedist\vcredist\2022\x64 14.51"
+                    .into(),
+            programs: vec![(redist.join("VC_redist.x64.exe"), "/q /norestart".into())],
+        }]
+    );
+    assert_eq!(steam_prerequisites(&root).unwrap(), []);
+}
+
+#[test]
+fn each_prerequisite_runs_once_and_a_failed_one_again_on_the_next_launch() {
+    let (_directory, root) = installation();
+    let config = recording_runtime(&root);
+    let redist = root.join("game/redist");
+    fs::create_dir_all(&redist).unwrap();
+    for name in ["vc_redist.x64.exe", "Visual C++ x64.cmd", "fail.exe"] {
+        fs::write(redist.join(name), "").unwrap();
+    }
+    let prerequisites = [
+        Prerequisite {
+            id: "vcredist".into(),
+            programs: vec![
+                (redist.join("Visual C++ x64.cmd"), String::new()),
+                (
+                    redist.join("vc_redist.x64.exe"),
+                    r#"/q "/log=C:\a b.txt""#.into(),
+                ),
+            ],
+        },
+        Prerequisite {
+            id: "broken".into(),
+            programs: vec![(redist.join("fail.exe"), String::new())],
+        },
+    ];
+
+    install_prerequisites(&config, &root, &prerequisites).unwrap();
+    install_prerequisites(&config, &root, &prerequisites).unwrap();
+
+    let script = windows_path(&redist.join("Visual C++ x64.cmd"));
+    let program = redist.join("vc_redist.x64.exe");
+    let failing = redist.join("fail.exe");
+    assert_eq!(
+        calls(&root),
+        [
+            format!("cmd /c {script}"),
+            format!("{} /q /log=C:\\a b.txt", program.display()),
+            failing.display().to_string(),
+            failing.display().to_string(),
+        ]
+    );
+    assert_eq!(
+        fs::read_to_string(config.prefix.join(PREREQUISITES)).unwrap(),
+        "vcredist"
+    );
+}
+
+#[test]
+fn a_missing_program_leaves_its_prerequisite_pending() {
+    let (_directory, root) = installation();
+    let config = recording_runtime(&root);
+    let prerequisite = Prerequisite {
+        id: "missing".into(),
+        programs: vec![(root.join("game/absent.exe"), String::new())],
+    };
+    install_prerequisites(&config, &root, &[prerequisite]).unwrap();
+    assert!(calls(&root).is_empty());
+    assert!(!config.prefix.join(PREREQUISITES).exists());
+}

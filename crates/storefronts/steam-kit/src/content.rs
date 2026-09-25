@@ -133,6 +133,28 @@ impl ContentClient {
         .map_err(|_| invalid("backend.steam.content.manifestReadInterrupted"))?
     }
 
+    /// The installation paths of the install scripts an installed depot carries,
+    /// from the manifest its installation cached.
+    pub async fn install_scripts(
+        &self,
+        destination: &Path,
+        depot_id: u32,
+        manifest_id: u64,
+        key: &[u8; 32],
+    ) -> Result<Vec<String>, ContentError> {
+        let cached = self
+            .cached_manifest(destination, depot_id, manifest_id, key)
+            .await?
+            .ok_or_else(|| invalid("backend.steam.content.manifestReadInterrupted"))?;
+        Ok(cached
+            .manifest
+            .files
+            .iter()
+            .filter(|file| !file.is_directory() && file.flags & crate::install_script::FLAG != 0)
+            .map(|file| file.name.clone())
+            .collect())
+    }
+
     /// Opt-in protocol smoke test: validates the smallest real file (up to 8 MiB)
     /// without installing a depot or writing any game files.
     #[cfg(test)]

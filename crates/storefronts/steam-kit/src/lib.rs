@@ -7,6 +7,7 @@ pub mod cloud;
 pub mod cm;
 pub mod content;
 pub mod friends;
+pub mod install_script;
 mod kv;
 pub mod language;
 pub mod launch;
