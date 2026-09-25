@@ -241,6 +241,7 @@ pub(crate) fn target(directory: &Path, script: &Script) -> Target {
         arguments: vec![directory.join("game.sh").to_string_lossy().into()],
         working_directory: directory.into(),
         environment: [("PATH".to_string(), "/usr/bin:/bin".to_string())].into(),
+        log: None,
     }
 }
 

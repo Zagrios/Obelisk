@@ -52,6 +52,7 @@ impl Harness for SteamHarness {
                     home: directory.into(),
                     install: directory.into(),
                     app_id: 42,
+                    prefix: None,
                 }),
             },
         )
@@ -95,6 +96,7 @@ fn config(directory: &Path) -> Config {
         cache: directory.join("runtime"),
         diagnostics: directory.join("diagnostics"),
         steam_api: directory.join("libsteam_api.dylib"),
+        wine: None,
         home: directory.into(),
         app_id: 42,
         cloud_save_roots: vec![],

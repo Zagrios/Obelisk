@@ -80,6 +80,7 @@ pub fn target(
             arguments: target.arguments.clone(),
             working_directory: target.working_directory.clone().into(),
             environment: crate::native::environment(home),
+            log: None,
         },
         steam_api,
     ))

@@ -48,8 +48,36 @@ impl SteamNativeLaunch {
         let request = tokio::task::spawn_blocking(move || {
             let install = PathBuf::from(&plan.install_directory);
             let home = PathBuf::from(&locations.home);
-            let (target, steam_api) =
-                game_runtime::steam::target(&install, &plan.target.into(), &home)?;
+            let target = plan.target.into();
+            // A Windows installation runs in Wine, in the prefix named after it.
+            let wine = match (plan.platform == "windows", install.file_name()) {
+                (false, _) => None,
+                (true, Some(_)) => Some(game_runtime::wine::Config {
+                    runtime: PathBuf::from(&locations.wine_runtime),
+                    prefix: crate::locations::prefix(&locations, &plan.install_directory).into(),
+                }),
+                (true, None) => return Err(game_runtime::Error::NotExecutable),
+            };
+            let (target, steam_api) = match &wine {
+                Some(wine) => {
+                    let (mut target, steam_api) =
+                        game_runtime::wine::steam_target(&install, &target, &home, wine)?;
+                    game_runtime::wine::prepare(wine, &home)?;
+                    target.log = Some(
+                        PathBuf::from(&locations.steam_diagnostics)
+                            .join(format!("wine-{}.log", plan.app_id)),
+                    );
+                    (target, steam_api)
+                }
+                None => game_runtime::steam::target(&install, &target, &home)?,
+            };
+            let cloud = Some(game_runtime::steam::cloud::Config {
+                root: locations.cloud_archive.into(),
+                home: home.clone(),
+                install: install.clone(),
+                app_id: plan.app_id,
+                prefix: wine.as_ref().map(|wine| wine.prefix.clone()),
+            });
             Ok::<_, game_runtime::Error>(game_runtime::steam::Request {
                 root: locations.steam_sessions.into(),
                 id: String::new(),
@@ -61,14 +89,10 @@ impl SteamNativeLaunch {
                     cache: locations.steam_runtime_cache.into(),
                     diagnostics: locations.steam_diagnostics.into(),
                     steam_api,
-                    home: home.clone(),
-                },
-                cloud: Some(game_runtime::steam::cloud::Config {
-                    root: locations.cloud_archive.into(),
                     home,
-                    install,
-                    app_id: plan.app_id,
-                }),
+                    wine,
+                },
+                cloud,
                 target,
             })
         })
@@ -122,6 +146,8 @@ pub struct SteamCloudConfiguration {
     pub home: String,
     pub install: String,
     pub app_id: u32,
+    /// The Wine prefix of a Windows installation, where its saves live.
+    pub prefix: Option<String>,
 }
 
 impl From<SteamCloudConfiguration> for game_runtime::steam::cloud::Config {
@@ -131,6 +157,7 @@ impl From<SteamCloudConfiguration> for game_runtime::steam::cloud::Config {
             home: config.home.into(),
             install: config.install.into(),
             app_id: config.app_id,
+            prefix: config.prefix.map(Into::into),
         }
     }
 }

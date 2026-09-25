@@ -20,6 +20,23 @@ pub struct Config {
     pub home: PathBuf,
     pub install: PathBuf,
     pub app_id: u32,
+    /// Set for a Windows game: its saves live in this Wine prefix.
+    #[serde(default)]
+    pub prefix: Option<PathBuf>,
+}
+
+impl Config {
+    /// The build whose saves this Cloud manages, and where its roots are.
+    pub(crate) fn platform(&self) -> steam_kit::cloud::CloudPlatform {
+        match &self.prefix {
+            Some(prefix) => steam_kit::cloud::CloudPlatform::Windows {
+                profile: crate::wine::profile(prefix),
+            },
+            None => steam_kit::cloud::CloudPlatform::Mac {
+                home: self.home.clone(),
+            },
+        }
+    }
 }
 
 /// What Cloud maintenance syncs: an installed game, or an uninstalled game

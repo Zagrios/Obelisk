@@ -37,6 +37,10 @@ pub(crate) trait Machine: Send + Sync + 'static {
 pub(crate) struct Mac;
 impl Machine for Mac {
     fn select(target: &Target, config: &Config) -> Result<Option<Architecture>, Error> {
+        // Wine is an Intel program: Rosetta runs it and the Windows game inside it.
+        if config.wine.is_some() {
+            return Ok(Some(Architecture::Intel));
+        }
         Architecture::select(&target.executable, &config.steam_api).map(Some)
     }
     fn prepare(
@@ -200,6 +204,13 @@ impl<M: Machine> session::Launch for Launch<M> {
         environment.extend(runtime.environment());
         environment.insert("SteamAppId".into(), app_id.clone());
         environment.insert("SteamGameId".into(), app_id);
+        if self.request.config.wine.is_some() {
+            // lsteamclient loads the Intel slice of the host's steamclient.dylib.
+            environment.insert(
+                "STEAM_COMPAT_CLIENT_INSTALL_PATH".into(),
+                runtime._prepared.directory.to_string_lossy().into_owned(),
+            );
+        }
         Ok(Prepared {
             host: runtime,
             helper,
@@ -268,7 +279,15 @@ impl<M: Machine> session::Launch for Launch<M> {
 /// Games ship the Steam API library beside their executable or inside their
 /// bundle. Links are never followed, and the search stays bounded.
 pub(crate) fn steam_api(target: &forge_core::launch::LaunchTarget) -> Result<PathBuf, Error> {
-    const LIBRARY: &str = "libsteam_api.dylib";
+    library(target, &["libsteam_api.dylib"])
+}
+
+/// The first file under the game's directory named like one of `names`,
+/// ignoring case as Windows file names do.
+pub(crate) fn library(
+    target: &forge_core::launch::LaunchTarget,
+    names: &[&str],
+) -> Result<PathBuf, Error> {
     const MAX_ENTRIES: usize = 20_000;
     let executable = Path::new(&target.executable)
         .canonicalize()
@@ -301,7 +320,9 @@ pub(crate) fn steam_api(target: &forge_core::launch::LaunchTarget) -> Result<Pat
             if kind.is_dir() {
                 pending.push(entry.path());
             } else if kind.is_file()
-                && name == LIBRARY
+                && names
+                    .iter()
+                    .any(|library| name.to_string_lossy().eq_ignore_ascii_case(library))
                 && let Ok(library) = entry.path().canonicalize()
                 && library.starts_with(&directory)
             {

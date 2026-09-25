@@ -194,7 +194,7 @@ final class SteamModel {
 
     func syncCloud() {
         guard installations.canSyncCloud, let game = selectedGame else { return }
-        cloud.startMaintenance(appId: game.appId, install: installations.selectedReceipt?.directory)
+        cloud.startMaintenance(appId: game.appId, receipt: installations.selectedReceipt)
     }
 
     func refreshCloudIndicator() {

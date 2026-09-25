@@ -8,7 +8,7 @@ use std::path::Path;
 /// game its supervisor admits on stdin. No shell or platform wrapper gets a
 /// chance to strip the game's dyld variables.
 pub fn exec_game() -> std::io::Result<()> {
-    use std::{fs::File, os::fd::AsRawFd};
+    use std::{fs::File, os::fd::AsRawFd, os::unix::fs::OpenOptionsExt};
     // The confirmation descriptor closes atomically on exec, while the game
     // itself gets null stdout.
     game_runtime::protocol::exec_or_report(|| {
@@ -24,6 +24,19 @@ pub fn exec_game() -> std::io::Result<()> {
         // private admission pipe or any bytes remaining in it.
         if unsafe { libc::dup2(null.as_raw_fd(), 0) } < 0 {
             return Err(std::io::Error::last_os_error());
+        }
+        if let Some(log) = &admission.log {
+            let log = std::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(log)?;
+            // SAFETY: valid writable descriptor, replacing only standard error,
+            // which the supervisor left discarded.
+            if unsafe { libc::dup2(log.as_raw_fd(), 2) } < 0 {
+                return Err(std::io::Error::last_os_error());
+            }
         }
         std::env::set_current_dir(&admission.working_directory)?;
         let mut arguments = vec![admission.executable.into_os_string()];

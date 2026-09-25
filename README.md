@@ -21,9 +21,9 @@ A macOS game library app. **Forge is a working name.** The interface uses SwiftU
 - Epic BuildPatch downloads in Rust, sharing Steam's progress controls, cancellation, file verification, and resumable installation behavior.
 - Epic macOS game launches, with automatic file verification and updates before each launch.
 
-GOG sign-in is still to be implemented. Launching Windows games requires the planned Wine engine. Multiplayer and controller support will have separate modules.
+Windows Steam games run in Forge's Wine runtime, built from the separate [forge-runtime](https://github.com/Zagrios/forge-runtime) repository. Each installation gets its own Wine prefix, the game reaches Forge's Steam host through Proton's lsteamclient, and Steam Auto-Cloud syncs the saves inside the prefix. Development builds use a runtime installed by hand with forge-runtime's `install-dev.sh`; released builds will download it. GOG sign-in is still to be implemented. Multiplayer and controller support will have separate modules.
 
-Steam Cloud's [Rust coordinator](docs/steam-cloud-coordinator.md) synchronizes supported macOS AutoCloud saves before launch and after game exit. The detached supervisor completes the exit check even when Forge is closed. Divergent saves require an explicit Local/Cloud choice. An [authenticated lifecycle validation](docs/steam-cloud-lifecycle.md) exercised Silksong with the interface closed. SDK RemoteStorage persistence, FileShare and Dynamic Cloud remain unsupported.
+Steam Cloud's [Rust coordinator](docs/steam-cloud-coordinator.md) synchronizes supported AutoCloud saves before launch and after game exit: macOS games in the player's home, Windows games in their Wine prefix. The detached supervisor completes the exit check even when Forge is closed. Divergent saves require an explicit Local/Cloud choice. An [authenticated lifecycle validation](docs/steam-cloud-lifecycle.md) exercised Silksong with the interface closed. SDK RemoteStorage persistence, FileShare and Dynamic Cloud remain unsupported.
 
 ## Languages
 
@@ -71,7 +71,7 @@ The library shows owned games, their cover art, and the metadata available from 
 
 Epic and Steam share the verification scheduler, with up to four disk readers and accelerated SHA-1 on Apple Silicon. Epic retains validated manifests on disk across app restarts. Each verification checks ownership and the current manifest hash with Epic before reusing the cache. A changed hash or corrupt cache triggers a fresh manifest download; a response without a manifest hash is downloaded without cache reuse. Cached manifests do not skip checking the game files, and cached bytes are not counted as network traffic.
 
-Launching uses the executable and arguments declared by Epic, a fresh exchange code for the current account, and an ownership token when required by the game. Steam and Epic share the native process launcher. Windows games remain downloadable, but running them requires the planned Wine engine.
+Launching uses the executable and arguments declared by Epic, a fresh exchange code for the current account, and an ownership token when required by the game. Steam and Epic share the native process launcher. Epic's Windows games remain downloadable, but launching them through Wine is not wired yet.
 
 ## Getting started
 

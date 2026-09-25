@@ -514,6 +514,7 @@ async fn run<L: Launch>(
                     executable: target.executable.clone(),
                     arguments: target.arguments.clone(),
                     working_directory: target.working_directory.clone(),
+                    log: target.log.clone(),
                 },
             )
             .map_err(|_| Error::StartFailed)?;

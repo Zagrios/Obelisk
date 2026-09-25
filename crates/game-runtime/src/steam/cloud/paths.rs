@@ -3,12 +3,12 @@ use super::{
     store::{Context, directory},
 };
 use std::path::PathBuf;
-use steam_kit::cloud::{CloudError, CloudFile, LocalCloudFile, MacCloudPaths, SdkCloudPaths};
+use steam_kit::cloud::{AutoCloudPaths, CloudError, CloudFile, LocalCloudFile, SdkCloudPaths};
 
 pub(super) enum Paths {
-    Auto(MacCloudPaths),
+    Auto(AutoCloudPaths),
     Sdk(SdkCloudPaths),
-    Mixed(MacCloudPaths, SdkCloudPaths),
+    Mixed(AutoCloudPaths, SdkCloudPaths),
 }
 impl Paths {
     pub fn existing_file(&self, file: &CloudFile) -> Result<Option<PathBuf>, CloudError> {
@@ -97,7 +97,10 @@ impl Context {
         )?)
     }
     pub fn prepare_sdk(&self) -> Result<Option<crate::NativeStorage>, Failure> {
-        if self.metadata.field("savefiles").is_some() && self.metadata.field("quota").is_none() {
+        if self.config.prefix.is_some()
+            || (self.metadata.field("savefiles").is_some()
+                && self.metadata.field("quota").is_none())
+        {
             return Ok(None);
         }
         let paths = self.sdk_paths()?;
@@ -141,6 +144,7 @@ mod tests {
             home: base.join("home"),
             install: base.join("game"),
             app_id: 42,
+            prefix: None,
         };
         let first = Context::new(&config, 0x011000010000002a, metadata());
         let paths = first.sdk_paths().unwrap();
@@ -186,6 +190,7 @@ mod tests {
             home: base.join("home"),
             install: base.join("game"),
             app_id: 42,
+            prefix: None,
         };
         for metadata in [
             CloudMetadata::Object(vec![]),

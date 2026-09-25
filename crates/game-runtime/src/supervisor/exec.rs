@@ -17,6 +17,8 @@ pub struct Admission {
     pub executable: PathBuf,
     pub arguments: Vec<String>,
     pub working_directory: PathBuf,
+    #[serde(default)]
+    pub log: Option<PathBuf>,
 }
 
 /// Game arguments are bounded like the kernel's ARG_MAX, not like a record.
@@ -42,10 +44,28 @@ pub fn receive(input: impl Read) -> io::Result<Admission> {
     }
     let admission: Admission =
         serde_json::from_slice(&bytes).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
-    if !admission.executable.is_absolute() || !admission.working_directory.is_absolute() {
+    if !admission.executable.is_absolute()
+        || !admission.working_directory.is_absolute()
+        || admission.log.as_ref().is_some_and(|log| !log.is_absolute())
+    {
         return Err(io::ErrorKind::InvalidInput.into());
     }
     Ok(admission)
+}
+
+/// The game's standard error: its log, emptied for this launch, or nothing.
+pub fn standard_error(admission: &Admission) -> io::Result<Stdio> {
+    use std::os::unix::fs::OpenOptionsExt;
+    Ok(match &admission.log {
+        Some(log) => std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(log)?
+            .into(),
+        None => Stdio::null(),
+    })
 }
 
 /// The arm64 helper. `std` exec restores the default SIGPIPE disposition
@@ -61,6 +81,6 @@ fn exec(input: impl Read) -> io::Result<()> {
         .current_dir(&admission.working_directory)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(standard_error(&admission)?)
         .exec())
 }

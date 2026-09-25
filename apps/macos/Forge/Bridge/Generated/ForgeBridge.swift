@@ -3792,6 +3792,14 @@ public struct ForgeLocations: Equatable, Hashable {
     public var steamRuntimePackage: String
     public var steamRuntimeCache: String
     public var steamDiagnostics: String
+    /**
+     * Forge's Wine runtime, which runs Windows games.
+     */
+    public var wineRuntime: String
+    /**
+     * One Wine prefix per Windows installation, named after its folder.
+     */
+    public var winePrefixes: String
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -3802,7 +3810,13 @@ public struct ForgeLocations: Equatable, Hashable {
          */cloudArchive: String, steamSessions: String, epicSessions: String, 
         /**
          * The bundled native host every supervisor runs as.
-         */helper: String, helpers: String, steamRuntimePackage: String, steamRuntimeCache: String, steamDiagnostics: String) {
+         */helper: String, helpers: String, steamRuntimePackage: String, steamRuntimeCache: String, steamDiagnostics: String, 
+        /**
+         * Forge's Wine runtime, which runs Windows games.
+         */wineRuntime: String, 
+        /**
+         * One Wine prefix per Windows installation, named after its folder.
+         */winePrefixes: String) {
         self.library = library
         self.home = home
         self.cloudArchive = cloudArchive
@@ -3813,6 +3827,8 @@ public struct ForgeLocations: Equatable, Hashable {
         self.steamRuntimePackage = steamRuntimePackage
         self.steamRuntimeCache = steamRuntimeCache
         self.steamDiagnostics = steamDiagnostics
+        self.wineRuntime = wineRuntime
+        self.winePrefixes = winePrefixes
     }
 
     
@@ -3840,7 +3856,9 @@ public struct FfiConverterTypeForgeLocations: FfiConverterRustBuffer {
                 helpers: FfiConverterString.read(from: &buf), 
                 steamRuntimePackage: FfiConverterString.read(from: &buf), 
                 steamRuntimeCache: FfiConverterString.read(from: &buf), 
-                steamDiagnostics: FfiConverterString.read(from: &buf)
+                steamDiagnostics: FfiConverterString.read(from: &buf), 
+                wineRuntime: FfiConverterString.read(from: &buf), 
+                winePrefixes: FfiConverterString.read(from: &buf)
         )
     }
 
@@ -3855,6 +3873,8 @@ public struct FfiConverterTypeForgeLocations: FfiConverterRustBuffer {
         FfiConverterString.write(value.steamRuntimePackage, into: &buf)
         FfiConverterString.write(value.steamRuntimeCache, into: &buf)
         FfiConverterString.write(value.steamDiagnostics, into: &buf)
+        FfiConverterString.write(value.wineRuntime, into: &buf)
+        FfiConverterString.write(value.winePrefixes, into: &buf)
     }
 }
 
@@ -4397,14 +4417,22 @@ public struct SteamCloudConfiguration: Equatable, Hashable {
     public var home: String
     public var install: String
     public var appId: UInt32
+    /**
+     * The Wine prefix of a Windows installation, where its saves live.
+     */
+    public var prefix: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(root: String, home: String, install: String, appId: UInt32) {
+    public init(root: String, home: String, install: String, appId: UInt32, 
+        /**
+         * The Wine prefix of a Windows installation, where its saves live.
+         */prefix: String?) {
         self.root = root
         self.home = home
         self.install = install
         self.appId = appId
+        self.prefix = prefix
     }
 
     
@@ -4426,7 +4454,8 @@ public struct FfiConverterTypeSteamCloudConfiguration: FfiConverterRustBuffer {
                 root: FfiConverterString.read(from: &buf), 
                 home: FfiConverterString.read(from: &buf), 
                 install: FfiConverterString.read(from: &buf), 
-                appId: FfiConverterUInt32.read(from: &buf)
+                appId: FfiConverterUInt32.read(from: &buf), 
+                prefix: FfiConverterOptionString.read(from: &buf)
         )
     }
 
@@ -4435,6 +4464,7 @@ public struct FfiConverterTypeSteamCloudConfiguration: FfiConverterRustBuffer {
         FfiConverterString.write(value.home, into: &buf)
         FfiConverterString.write(value.install, into: &buf)
         FfiConverterUInt32.write(value.appId, into: &buf)
+        FfiConverterOptionString.write(value.prefix, into: &buf)
     }
 }
 
@@ -4515,6 +4545,10 @@ public struct SteamCloudMaintenanceRequest: Equatable, Hashable {
      * `None` for an uninstalled game: its saved context names the rest.
      */
     public var install: String?
+    /**
+     * The Wine prefix of a Windows installation, where its saves live.
+     */
+    public var prefix: String?
     public var appId: UInt32
     public var sessionDirectory: String
     public var helper: String
@@ -4524,10 +4558,14 @@ public struct SteamCloudMaintenanceRequest: Equatable, Hashable {
     public init(root: String, home: String, 
         /**
          * `None` for an uninstalled game: its saved context names the rest.
-         */install: String?, appId: UInt32, sessionDirectory: String, helper: String) {
+         */install: String?, 
+        /**
+         * The Wine prefix of a Windows installation, where its saves live.
+         */prefix: String?, appId: UInt32, sessionDirectory: String, helper: String) {
         self.root = root
         self.home = home
         self.install = install
+        self.prefix = prefix
         self.appId = appId
         self.sessionDirectory = sessionDirectory
         self.helper = helper
@@ -4552,6 +4590,7 @@ public struct FfiConverterTypeSteamCloudMaintenanceRequest: FfiConverterRustBuff
                 root: FfiConverterString.read(from: &buf), 
                 home: FfiConverterString.read(from: &buf), 
                 install: FfiConverterOptionString.read(from: &buf), 
+                prefix: FfiConverterOptionString.read(from: &buf), 
                 appId: FfiConverterUInt32.read(from: &buf), 
                 sessionDirectory: FfiConverterString.read(from: &buf), 
                 helper: FfiConverterString.read(from: &buf)
@@ -4562,6 +4601,7 @@ public struct FfiConverterTypeSteamCloudMaintenanceRequest: FfiConverterRustBuff
         FfiConverterString.write(value.root, into: &buf)
         FfiConverterString.write(value.home, into: &buf)
         FfiConverterOptionString.write(value.install, into: &buf)
+        FfiConverterOptionString.write(value.prefix, into: &buf)
         FfiConverterUInt32.write(value.appId, into: &buf)
         FfiConverterString.write(value.sessionDirectory, into: &buf)
         FfiConverterString.write(value.helper, into: &buf)
@@ -8322,6 +8362,19 @@ public func removeGameInstallation(directory: String, expectedDirectoryName: Str
     )
 }
 }
+/**
+ * The Wine prefix of the Windows installation in `install_directory`,
+ * named after the installation's folder.
+ */
+public func winePrefix(locations: ForgeLocations, installDirectory: String) -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_forge_bridge_fn_func_wine_prefix(
+        FfiConverterTypeForgeLocations_lower(locations),
+        FfiConverterString.lower(installDirectory),uniffiCallStatus
+    )
+})
+}
 public func steamLanguage(locale: String) -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
         uniffiCallStatus in
@@ -8422,6 +8475,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_forge_bridge_checksum_func_remove_game_installation() != 8109) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_forge_bridge_checksum_func_wine_prefix() != 11844) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_forge_bridge_checksum_func_steam_language() != 4891) {

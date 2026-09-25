@@ -91,7 +91,10 @@ pub(crate) fn prepare(
     ];
     // Refuse an unsupported or malformed SDK library before anything is written.
     // The selected slice itself is owned by Launch, which the supervisor reads.
-    crate::supervisor::architecture::Architecture::preferred(&config.steam_api)?;
+    // A Windows game's library is a PE file that only Wine loads.
+    if config.wine.is_none() {
+        crate::supervisor::architecture::Architecture::preferred(&config.steam_api)?;
+    }
     let prepared = Prepared {
         storage: None,
         directory,
@@ -246,6 +249,7 @@ mod atomic_tests {
             cache: home.join("cache"),
             diagnostics: root.join("logs"),
             steam_api: root.join("unused"),
+            wine: None,
             home,
             app_id: 42,
             cloud_save_roots: vec![],

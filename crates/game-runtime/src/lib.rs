@@ -11,6 +11,7 @@ mod process;
 pub mod protocol;
 pub mod steam;
 pub mod supervisor;
+pub mod wine;
 use protocol::{Credentials, Event};
 use std::{
     path::PathBuf,
@@ -129,6 +130,9 @@ pub struct Config {
     pub app_id: u32,
     #[serde(default)]
     pub cloud_save_roots: Vec<PathBuf>,
+    /// Set for a Windows game, which runs in Forge's Wine runtime.
+    #[serde(default)]
+    pub wine: Option<wine::Config>,
 }
 
 pub struct Launch {

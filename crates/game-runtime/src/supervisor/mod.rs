@@ -43,6 +43,10 @@ pub struct Target {
     pub arguments: Vec<String>,
     pub working_directory: PathBuf,
     pub environment: HashMap<String, String>,
+    /// Where the game's standard error goes, replaced on each launch. Wine
+    /// writes its diagnostics there. Without it, standard error is discarded.
+    #[serde(default)]
+    pub log: Option<PathBuf>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]

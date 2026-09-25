@@ -92,11 +92,12 @@ final class SteamCloudModelTests: XCTestCase {
         let model = model(directory, services: services)
         connect(model, services)
 
-        model.startMaintenance(appId: 42, install: "/fixture/steam-42-macos")
+        model.startMaintenance(appId: 42, receipt: receipt(platform: "macos"))
 
         XCTAssertTrue(model.isMaintaining, "The Reservation holds before the attempt exists")
         try await eventually { services.steamMaintenance.count == 1 }
         XCTAssertEqual(services.steamMaintenance.last?.request.install, "/fixture/steam-42-macos")
+        XCTAssertNil(services.steamMaintenance.last?.request.prefix)
         XCTAssertEqual(services.steamMaintenance.last?.request.root, ForgeLocations.of(library: directory).cloudArchive)
         XCTAssertEqual(services.steamMaintenance.last?.credentials.steamId, accountID)
         let attempt = try XCTUnwrap(services.steamMaintenance.last?.attempt)
@@ -119,12 +120,34 @@ final class SteamCloudModelTests: XCTestCase {
     }
 
     @MainActor
+    func testAWindowsInstallationSyncsTheSavesOfItsWinePrefix() async throws {
+        let directory = try temporaryDirectory()
+        let services = CloudServicesFixture()
+        let model = model(directory, services: services)
+        connect(model, services)
+
+        model.startMaintenance(appId: 42, receipt: receipt(platform: "windows"))
+
+        try await eventually { services.steamMaintenance.count == 1 }
+        XCTAssertEqual(services.steamMaintenance.last?.request.install, "/fixture/steam-42-windows")
+        XCTAssertEqual(services.steamMaintenance.last?.request.prefix,
+                       ForgeLocations.of(library: directory).winePrefixes + "/steam-42-windows")
+        try XCTUnwrap(services.steamMaintenance.last?.attempt).finish(.synced)
+        try await eventually { !model.isMaintaining }
+    }
+
+    private func receipt(platform: String) -> SteamInstallReceipt {
+        SteamInstallReceipt(appId: 42, name: "Fixture", directory: "/fixture/steam-42-\(platform)",
+                            platform: platform, language: "english", totalBytes: 0)
+    }
+
+    @MainActor
     func testAFailedMaintenanceShowsNoBannerAndSyncNowStartsTheNextAttempt() async throws {
         let directory = try temporaryDirectory()
         let services = CloudServicesFixture()
         let model = model(directory, services: services)
         connect(model, services)
-        model.startMaintenance(appId: 42, install: nil)
+        model.startMaintenance(appId: 42, receipt: nil)
         try await eventually { services.steamMaintenance.count == 1 }
         let first = try XCTUnwrap(services.steamMaintenance.last?.attempt)
 
@@ -133,7 +156,7 @@ final class SteamCloudModelTests: XCTestCase {
         try await eventually { !model.isMaintaining }
         XCTAssertFalse(model.failurePresented, "Only a launch check shows a banner")
         XCTAssertEqual(model.promptMessage, L10n.string("ui.cloud.working"))
-        model.startMaintenance(appId: 42, install: nil)
+        model.startMaintenance(appId: 42, receipt: nil)
         try await eventually { services.steamMaintenance.count == 2 }
         XCTAssertNil(services.steamMaintenance.last?.request.install)
     }
@@ -144,7 +167,7 @@ final class SteamCloudModelTests: XCTestCase {
         let services = CloudServicesFixture()
         let model = model(directory, services: services)
         connect(model, services)
-        model.startMaintenance(appId: 42, install: nil)
+        model.startMaintenance(appId: 42, receipt: nil)
         try await eventually { services.steamMaintenance.count == 1 }
         let attempt = try XCTUnwrap(services.steamMaintenance.last?.attempt)
         attempt.publish(.conflict, decisionId: 4, choices: [.local, .cancel], error: "backend.steam.cloud.conflict")
@@ -164,7 +187,7 @@ final class SteamCloudModelTests: XCTestCase {
         let services = CloudServicesFixture()
         let model = model(directory, services: services)
         connect(model, services)
-        model.startMaintenance(appId: 42, install: nil)
+        model.startMaintenance(appId: 42, receipt: nil)
         try await eventually { services.steamMaintenance.count == 1 }
         let attempt = try XCTUnwrap(services.steamMaintenance.last?.attempt)
         attempt.publish(.conflict, decisionId: 2, choices: [.local, .cloud, .cancel])

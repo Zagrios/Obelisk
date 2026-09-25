@@ -18,6 +18,10 @@ pub struct ForgeLocations {
     pub steam_runtime_package: String,
     pub steam_runtime_cache: String,
     pub steam_diagnostics: String,
+    /// Forge's Wine runtime, which runs Windows games.
+    pub wine_runtime: String,
+    /// One Wine prefix per Windows installation, named after its folder.
+    pub wine_prefixes: String,
 }
 
 #[uniffi::export]
@@ -38,9 +42,29 @@ pub fn forge_locations(library: String, bundle: String, home: String) -> ForgeLo
         steam_runtime_package: path(bundle.join("Contents/Resources/SteamRuntime/runtime.zip")),
         steam_runtime_cache: path(home.join("Library/Caches/com.zagrios.forge/SteamRuntime")),
         steam_diagnostics: path(home.join("Library/Logs/Forge/Steam")),
+        wine_runtime: path(library.join("WineRuntime/current")),
+        wine_prefixes: path(library.join("Prefixes")),
         library: path(library),
         home: path(home),
     }
+}
+
+/// The Wine prefix of the Windows installation in `install_directory`,
+/// named after the installation's folder.
+#[uniffi::export]
+pub fn wine_prefix(locations: ForgeLocations, install_directory: String) -> String {
+    prefix(&locations, &install_directory)
+}
+
+pub(crate) fn prefix(locations: &ForgeLocations, install_directory: &str) -> String {
+    let name = Path::new(install_directory)
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy();
+    Path::new(&locations.wine_prefixes)
+        .join(name.as_ref())
+        .to_string_lossy()
+        .into_owned()
 }
 
 #[derive(Debug, thiserror::Error, uniffi::Error)]
@@ -98,6 +122,12 @@ mod tests {
         assert_eq!(
             locations.steam_diagnostics,
             "/home/Library/Logs/Forge/Steam"
+        );
+        assert_eq!(locations.wine_runtime, "/library/WineRuntime/current");
+        assert_eq!(locations.wine_prefixes, "/library/Prefixes");
+        assert_eq!(
+            wine_prefix(locations, "/library/Games/Steam/steam-42-windows".into()),
+            "/library/Prefixes/steam-42-windows"
         );
     }
 }

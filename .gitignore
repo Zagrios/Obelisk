@@ -7,3 +7,4 @@ xcuserdata/
 .swiftpm/
 .build/
 /apps/macos/Config/Signing.local.xcconfig
+/.claude/settings.local.json

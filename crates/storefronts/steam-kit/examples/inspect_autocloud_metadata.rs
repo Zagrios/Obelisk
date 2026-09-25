@@ -1,6 +1,6 @@
 //! Parse a read-only Forge metadata report without accessing actual save paths.
 use std::{fs, path::Path};
-use steam_kit::cloud::{CloudListing, MacCloudPaths};
+use steam_kit::cloud::{AutoCloudPaths, CloudListing};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let path = std::env::args_os()
         .nth(1)
@@ -17,7 +17,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let listing: Option<CloudListing> = serde_json::from_value(app["listing"].clone())?;
         // Fixture roots exercise parsing only. No filesystem scan. Existing
         // names use the manifest's authenticated identity for substitutions.
-        let result = MacCloudPaths::new(
+        let result = AutoCloudPaths::mac(
             &metadata,
             listing.as_ref().map_or(0x011000010000002a, |l| l.steam_id),
             Path::new("/Users/fixture"),

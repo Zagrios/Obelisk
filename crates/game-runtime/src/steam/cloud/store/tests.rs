@@ -20,6 +20,7 @@ impl Fixture {
             home: directory.join("home"),
             install: directory.join("game"),
             app_id: APP,
+            prefix: None,
         };
         for path in [&config.root, &config.home, &config.install] {
             crate::files::private_directory(path).unwrap();

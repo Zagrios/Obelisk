@@ -298,6 +298,8 @@ pub struct SteamCloudMaintenanceRequest {
     pub home: String,
     /// `None` for an uninstalled game: its saved context names the rest.
     pub install: Option<String>,
+    /// The Wine prefix of a Windows installation, where its saves live.
+    pub prefix: Option<String>,
     pub app_id: u32,
     pub session_directory: String,
     pub helper: String,
@@ -347,6 +349,7 @@ fn steam_maintenance(
             home: request.home.into(),
             install: install.into(),
             app_id: request.app_id,
+            prefix: request.prefix.map(Into::into),
         }),
         None => steam::cloud::MaintenanceTarget::Uninstalled {
             root,

@@ -189,6 +189,7 @@ mod tests {
             cache: temporary.path().into(),
             diagnostics: temporary.path().into(),
             steam_api: temporary.path().join("libsteam_api.dylib"),
+            wine: None,
             home: temporary.path().into(),
             app_id: 1030300,
         };

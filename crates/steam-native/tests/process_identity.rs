@@ -68,6 +68,7 @@ fn native_supervisor_acknowledges_and_reports_preparation_failure_without_valve(
                 cache: root.0.join("cache"),
                 diagnostics: root.0.join("logs"),
                 steam_api: root.0.join("missing-api.dylib"),
+                wine: None,
                 home: root.0.clone(),
             },
             target: Target {
@@ -75,6 +76,7 @@ fn native_supervisor_acknowledges_and_reports_preparation_failure_without_valve(
                 arguments: vec![],
                 working_directory: root.0.clone(),
                 environment: Default::default(),
+                log: None,
             },
         })
         .unwrap();

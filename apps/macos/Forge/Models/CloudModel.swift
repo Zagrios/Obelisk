@@ -252,11 +252,11 @@ final class CloudModel<Store: CloudStorefront> {
 }
 
 extension CloudModel where Store == SteamGames {
-    /// Starts Cloud maintenance. `install` is nil for an uninstalled game.
-    func startMaintenance(appId: UInt32, install: String?) {
-        startMaintenance(SteamCloudMaintenanceRequest(root: root, home: locations.home, install: install,
-                                                      appId: appId, sessionDirectory: sessionDirectory,
-                                                      helper: locations.helper))
+    /// Starts Cloud maintenance. `receipt` is nil for an uninstalled game.
+    func startMaintenance(appId: UInt32, receipt: SteamInstallReceipt?) {
+        startMaintenance(SteamCloudMaintenanceRequest(root: root, home: locations.home, install: receipt?.directory,
+                                                      prefix: receipt.flatMap(prefix), appId: appId,
+                                                      sessionDirectory: sessionDirectory, helper: locations.helper))
     }
 
     func archive(_ receipt: SteamInstallReceipt, session: any SteamSessionProtocol) async throws {
@@ -269,7 +269,13 @@ extension CloudModel where Store == SteamGames {
     }
 
     private func configuration(_ receipt: SteamInstallReceipt) -> SteamCloudConfiguration {
-        SteamCloudConfiguration(root: root, home: locations.home, install: receipt.directory, appId: receipt.appId)
+        SteamCloudConfiguration(root: root, home: locations.home, install: receipt.directory, appId: receipt.appId,
+                                prefix: prefix(receipt))
+    }
+
+    /// A Windows installation keeps its saves in its Wine prefix.
+    private func prefix(_ receipt: SteamInstallReceipt) -> String? {
+        receipt.platform == "windows" ? winePrefix(locations: locations, installDirectory: receipt.directory) : nil
     }
 }
 

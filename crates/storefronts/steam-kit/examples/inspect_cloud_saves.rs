@@ -7,7 +7,7 @@ use std::{
     os::unix::fs::PermissionsExt,
     path::Path,
 };
-use steam_kit::cloud::{CloudListing, CloudMetadata, MacCloudPaths};
+use steam_kit::cloud::{AutoCloudPaths, CloudListing, CloudMetadata};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args_os().collect();
@@ -23,7 +23,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         return Err("backup identity mismatch".into());
     }
-    let paths = MacCloudPaths::new(
+    let paths = AutoCloudPaths::mac(
         &metadata,
         listing.steam_id,
         Path::new(&args[2]),

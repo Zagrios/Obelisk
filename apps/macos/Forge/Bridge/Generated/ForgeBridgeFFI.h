@@ -748,6 +748,11 @@ RustBuffer uniffi_forge_bridge_fn_func_forge_locations(RustBuffer library, RustB
 void uniffi_forge_bridge_fn_func_remove_game_installation(RustBuffer directory, RustBuffer expected_directory_name, RustBuffer protected, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_FORGE_BRIDGE_FN_FUNC_WINE_PREFIX
+#define UNIFFI_FFIDEF_UNIFFI_FORGE_BRIDGE_FN_FUNC_WINE_PREFIX
+RustBuffer uniffi_forge_bridge_fn_func_wine_prefix(RustBuffer locations, RustBuffer install_directory, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_FORGE_BRIDGE_FN_FUNC_STEAM_LANGUAGE
 #define UNIFFI_FFIDEF_UNIFFI_FORGE_BRIDGE_FN_FUNC_STEAM_LANGUAGE
 RustBuffer uniffi_forge_bridge_fn_func_steam_language(RustBuffer locale, RustCallStatus *_Nonnull out_status
@@ -1097,6 +1102,12 @@ uint16_t uniffi_forge_bridge_checksum_func_forge_locations(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_FORGE_BRIDGE_CHECKSUM_FUNC_REMOVE_GAME_INSTALLATION
 #define UNIFFI_FFIDEF_UNIFFI_FORGE_BRIDGE_CHECKSUM_FUNC_REMOVE_GAME_INSTALLATION
 uint16_t uniffi_forge_bridge_checksum_func_remove_game_installation(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_FORGE_BRIDGE_CHECKSUM_FUNC_WINE_PREFIX
+#define UNIFFI_FFIDEF_UNIFFI_FORGE_BRIDGE_CHECKSUM_FUNC_WINE_PREFIX
+uint16_t uniffi_forge_bridge_checksum_func_wine_prefix(void
     
 );
 #endif

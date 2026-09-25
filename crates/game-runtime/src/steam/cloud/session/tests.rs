@@ -68,6 +68,7 @@ impl Harness for SteamGame {
             home: base.join("home"),
             install: base.join("game"),
             app_id: 42,
+            prefix: None,
         };
         for path in [&config.root, &config.home, &config.install] {
             crate::files::private_directory(path).unwrap();

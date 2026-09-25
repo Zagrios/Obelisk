@@ -71,6 +71,7 @@ fn a_failed_exec_reports_failure_without_starting_a_replacement() {
                 executable: "/forge-missing-game-fixture".into(),
                 arguments: vec![],
                 working_directory: "/tmp".into(),
+                log: None,
             },
         );
         let result = child.wait_with_output().unwrap();
@@ -86,12 +87,14 @@ fn a_missing_or_invalid_admission_never_executes_the_target() {
         executable: "/usr/bin/touch".into(),
         arguments: vec![marker.to_string_lossy().into_owned()],
         working_directory: "/tmp".into(),
+        log: None,
     })
     .unwrap();
     let relative = serde_json::to_vec(&Admission {
         executable: "touch".into(),
         arguments: vec![marker.to_string_lossy().into_owned()],
         working_directory: "/tmp".into(),
+        log: None,
     })
     .unwrap();
     // Losing the supervisor before admission closes the pipe mid-message.
@@ -169,6 +172,7 @@ fn the_game_keeps_the_helper_pid_its_environment_and_default_signals() {
                 executable: executable.clone(),
                 arguments: vec!["a b".into(), "$not-a-shell".into()],
                 working_directory: directory.clone(),
+                log: None,
             },
         );
         let (handshake, running, status) = confirm_replacement(&mut child, &directory);

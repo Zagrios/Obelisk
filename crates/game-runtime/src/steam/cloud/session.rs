@@ -247,10 +247,10 @@ impl<R: CloudRemote> Storefront for Adapter<R> {
             return Ok(Availability::Unavailable(UnavailableReason::Unsupported));
         }
         if metadata.field("savefiles").is_some() {
-            steam_kit::cloud::MacCloudPaths::new(
+            steam_kit::cloud::AutoCloudPaths::new(
                 &metadata,
                 self.credentials.steam_id,
-                &self.config.home,
+                &self.config.platform(),
                 &self.config.install,
             )?;
         }

@@ -5,7 +5,7 @@ use crate::cloud_status;
 use cloud_vault::{Bindings, Manifest, RemoteView, SelectedFile, Vault};
 use serde::de::DeserializeOwned;
 use std::{fs, path::Path};
-use steam_kit::cloud::{CloudListing, CloudMetadata, MacCloudPaths};
+use steam_kit::cloud::{AutoCloudPaths, CloudListing, CloudMetadata};
 
 #[cfg(test)]
 mod tests;
@@ -196,16 +196,22 @@ impl Context {
         )
     }
     pub fn paths(&self) -> Result<Paths, Failure> {
+        // RemoteStorage files belong to a macOS SDK's native storage. A Windows
+        // game keeps Auto-Cloud only, and any SDK file in its listing is unmapped.
+        let windows = self.config.prefix.is_some();
         if self.metadata.field("savefiles").is_none() {
+            if windows {
+                return Err(Failure::Unsupported);
+            }
             return Ok(Paths::Sdk(self.sdk_paths()?));
         }
-        let auto = MacCloudPaths::new(
+        let auto = AutoCloudPaths::new(
             &self.metadata,
             self.account_id,
-            &self.config.home,
+            &self.config.platform(),
             &self.config.install,
         )?;
-        if self.metadata.field("quota").is_some() {
+        if self.metadata.field("quota").is_some() && !windows {
             Ok(Paths::Mixed(auto, self.sdk_paths()?))
         } else {
             Ok(Paths::Auto(auto))
@@ -215,9 +221,10 @@ impl Context {
         let paths = self.paths()?;
         let selected = paths.local_files(&self.listing.files)?;
         let mut foreign_paths = std::collections::BTreeSet::new();
+        let mask = self.config.platform().mask();
         for file in &self.listing.files {
-            if file.platforms & 2 == 0
-                && let Some(path) = paths.destination(&file.name, 2)?
+            if file.platforms & mask == 0
+                && let Some(path) = paths.destination(&file.name, mask)?
             {
                 foreign_paths.insert(path);
             }
@@ -459,6 +466,7 @@ mod removal_tests {
             home: base.join("home"),
             install: base.join("game"),
             app_id: 42,
+            prefix: None,
         };
         for path in [&config.root, &config.home, &config.install.join("saves")] {
             crate::files::private_directory(path).unwrap();
@@ -559,6 +567,7 @@ mod removal_tests {
             home: base.join("home"),
             install: base.join("game"),
             app_id: 42,
+            prefix: None,
         };
         for path in [&config.root, &config.home, &config.install] {
             crate::files::private_directory(path).unwrap();
@@ -627,6 +636,7 @@ mod removal_tests {
             home: base.join("home"),
             install: base.join("game"),
             app_id: 42,
+            prefix: None,
         };
         for path in [&config.root, &config.home, &config.install] {
             crate::files::private_directory(path).unwrap();

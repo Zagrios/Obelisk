@@ -305,6 +305,7 @@ pub(super) fn native_target(
             arguments,
             working_directory: plan.target.working_directory.clone().into(),
             environment: environment.clone(),
+            log: None,
         },
         architecture,
         ownership,

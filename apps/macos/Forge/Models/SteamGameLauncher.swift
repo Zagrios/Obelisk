@@ -5,7 +5,11 @@ enum SteamGameLauncher {
     /// Rust resolves the game inside its installation, then hands it to a
     /// supervisor that owns its Steam session.
     static func start(_ plan: SteamLaunchPlan, credentials: SteamCredentials) async throws -> any GameSessionProtocol {
-        guard plan.platform == "macos" else { throw GameLaunchFailure.windowsRuntimeUnavailable }
+        // Windows games run in Forge's Wine runtime, which is installed apart from the app.
+        let wine = ForgeLocations.live.wineRuntime + "/bin/wine"
+        guard plan.platform == "macos" || FileManager.default.isExecutableFile(atPath: wine) else {
+            throw GameLaunchFailure.windowsRuntimeUnavailable
+        }
         try Task.checkCancellation()
         let attempt = SteamNativeLaunch(credentials: credentials)
         try await withTaskCancellationHandler {

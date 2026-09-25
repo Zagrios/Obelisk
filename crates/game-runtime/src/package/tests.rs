@@ -17,6 +17,7 @@ impl Fixture {
             diagnostics: root.path().join("logs"),
             home: root.path().join("home"),
             steam_api: root.path().join("libsteam_api.dylib"),
+            wine: None,
             app_id: 42,
         };
         fs::create_dir_all(&config.helpers).unwrap();
@@ -313,6 +314,7 @@ fn bundled_runtime_loads_without_steam_installation_access() {
         diagnostics: root.path().join("logs"),
         home: root.path().join("home"),
         steam_api: root.path().join("unused"),
+        wine: None,
         app_id: 0,
     };
     let directory = prepare(&config, &AtomicBool::new(false)).unwrap();

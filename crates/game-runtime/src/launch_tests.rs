@@ -16,6 +16,7 @@ fn fixture(root: &std::path::Path) -> (Config, files::Prepared) {
         cache: root.into(),
         diagnostics: root.into(),
         steam_api: root.join("libsteam_api.dylib"),
+        wine: None,
         home: root.into(),
         app_id: 42,
         cloud_save_roots: vec![],

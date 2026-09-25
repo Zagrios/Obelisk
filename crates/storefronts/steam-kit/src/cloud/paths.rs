@@ -8,9 +8,63 @@ use std::{
 
 /// Resolves and discovers Auto-Cloud files. This is not a RemoteStorage cache
 /// adapter. Unsupported metadata cannot produce an empty set.
-pub struct MacCloudPaths {
+pub struct AutoCloudPaths {
     rules: Vec<Rule>,
     foreign: Vec<(String, String, bool)>,
+    mask: u32,
+}
+
+/// The build of a game that runs, and where its Auto-Cloud roots live.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CloudPlatform {
+    /// A macOS build: its roots are under the player's home.
+    Mac { home: PathBuf },
+    /// A Windows build running in Wine: its roots are under the user profile
+    /// of its prefix.
+    Windows { profile: PathBuf },
+}
+
+impl CloudPlatform {
+    /// This platform's bit in a Cloud file's platform mask.
+    pub fn mask(&self) -> u32 {
+        match self {
+            Self::Mac { .. } => 2,
+            Self::Windows { .. } => 1,
+        }
+    }
+
+    /// The name root overrides compare against.
+    fn os(&self) -> &'static str {
+        match self {
+            Self::Mac { .. } => "MacOS",
+            Self::Windows { .. } => "Windows",
+        }
+    }
+
+    fn base(&self) -> &Path {
+        match self {
+            Self::Mac { home } => home,
+            Self::Windows { profile } => profile,
+        }
+    }
+
+    fn root(&self, name: &str, install: &Path) -> Result<PathBuf, CloudError> {
+        if canonical_root(name) == "GameInstall" {
+            return Ok(install.to_owned());
+        }
+        let folder = match (self, name) {
+            (Self::Mac { .. }, "MacHome") => "",
+            (Self::Mac { .. }, "MacAppSupport") => "Library/Application Support",
+            (Self::Mac { .. }, "MacDocuments") => "Documents",
+            (Self::Windows { .. }, "WinMyDocuments") => "Documents",
+            (Self::Windows { .. }, "WinAppDataLocal") => "AppData/Local",
+            (Self::Windows { .. }, "WinAppDataLocalLow") => "AppData/LocalLow",
+            (Self::Windows { .. }, "WinAppDataRoaming") => "AppData/Roaming",
+            (Self::Windows { .. }, "WinSavedGames") => "Saved Games",
+            _ => return Err(CloudError::Invalid("unsupported Auto-Cloud root")),
+        };
+        Ok(self.base().join(folder))
+    }
 }
 
 fn canonical_root(name: &str) -> &str {
@@ -143,23 +197,29 @@ fn substitute(value: &str, steam_id: u64) -> String {
         .replace("{Steam3AccountID}", &(steam_id as u32).to_string())
 }
 
-fn root(name: &str, home: &Path, install: &Path) -> Result<PathBuf, CloudError> {
-    match name {
-        "MacHome" => Ok(home.to_owned()),
-        "MacAppSupport" => Ok(home.join("Library/Application Support")),
-        "MacDocuments" => Ok(home.join("Documents")),
-        "GameInstall" | "gameinstall" => Ok(install.to_owned()),
-        _ => Err(CloudError::Invalid("unsupported macOS Auto-Cloud root")),
-    }
-}
-
-impl MacCloudPaths {
-    pub fn new(
+impl AutoCloudPaths {
+    /// The paths of a macOS build whose roots are under `home`.
+    pub fn mac(
         metadata: &CloudMetadata,
         steam_id: u64,
         home: &Path,
         install: &Path,
     ) -> Result<Self, CloudError> {
+        Self::new(
+            metadata,
+            steam_id,
+            &CloudPlatform::Mac { home: home.into() },
+            install,
+        )
+    }
+
+    pub fn new(
+        metadata: &CloudMetadata,
+        steam_id: u64,
+        platform: &CloudPlatform,
+        install: &Path,
+    ) -> Result<Self, CloudError> {
+        let mask = platform.mask();
         let mut keys = std::collections::BTreeSet::new();
         for (key, _) in metadata
             .entries()
@@ -171,7 +231,7 @@ impl MacCloudPaths {
         }
         if steam_id >> 32 != 0x0110_0001
             || steam_id as u32 == 0
-            || !home.is_absolute()
+            || !platform.base().is_absolute()
             || !install.is_absolute()
         {
             return Err(CloudError::Invalid("Auto-Cloud identity or roots"));
@@ -214,7 +274,7 @@ impl MacCloudPaths {
                 Some(Some("1")) => true,
                 _ => return Err(CloudError::Invalid("Auto-Cloud recursion")),
             };
-            if platforms & 2 == 0 {
+            if platforms & mask == 0 {
                 foreign.push((
                     canonical_root(source_root).to_owned(),
                     publisher_path(source_path, steam_id)?,
@@ -230,8 +290,7 @@ impl MacCloudPaths {
                     continue;
                 }
                 let applies = match (text(override_, "os")?, text(override_, "oscompare")?) {
-                    ("MacOS", "=") => true,
-                    ("Windows" | "Linux", "=") => false,
+                    (os @ ("MacOS" | "Windows" | "Linux"), "=") => os == platform.os(),
                     _ => return Err(CloudError::Invalid("unsupported Auto-Cloud OS comparison")),
                 };
                 if !applies {
@@ -298,7 +357,7 @@ impl MacCloudPaths {
             rules.push(Rule {
                 root: canonical_root(source_root).to_owned(),
                 source,
-                destination: root(local_root, home, install)?.join(local),
+                destination: platform.root(local_root, install)?.join(local),
                 recursive,
                 pattern: pattern.to_owned(),
                 platforms,
@@ -307,7 +366,11 @@ impl MacCloudPaths {
         if rules.is_empty() {
             return Err(CloudError::Invalid("empty Auto-Cloud rules"));
         }
-        Ok(Self { rules, foreign })
+        Ok(Self {
+            rules,
+            foreign,
+            mask,
+        })
     }
 
     /// Existing files can outlive a publisher's current wildcard. Keep their
@@ -321,9 +384,9 @@ impl MacCloudPaths {
     }
 
     /// The local path a remote name projects to, or `None` when the file is not
-    /// published for macOS. A name no rule maps is an error, not a skip.
+    /// published for this platform. A name no rule maps is an error, not a skip.
     pub fn destination(&self, name: &str, platforms: u32) -> Result<Option<PathBuf>, CloudError> {
-        if platforms & 2 == 0 {
+        if platforms & self.mask == 0 {
             return Ok(None);
         }
         if let Some(path) = self.path_for_name(name)? {
@@ -364,7 +427,7 @@ impl MacCloudPaths {
         let mut selected = BTreeMap::<PathBuf, LocalCloudFile>::new();
         let mut excluded = BTreeSet::new();
         for file in known {
-            let path = if file.persist_state != 0 && file.platforms & 2 != 0 {
+            let path = if file.persist_state != 0 && file.platforms & self.mask != 0 {
                 // A recreated save keeps its deleted remote identity, including
                 // its platform mask and historical wildcard exceptions.
                 self.path_for_name(&file.name)?
@@ -384,7 +447,7 @@ impl MacCloudPaths {
                     return Err(CloudError::Invalid("aliased Auto-Cloud identity"));
                 }
             } else if let Some(path) = self.path_for_name(&file.name)? {
-                // Foreign-platform identities are outside the managed Mac set.
+                // Foreign-platform identities are outside the managed set.
                 // Ignore matching local files instead of reclassifying them.
                 excluded.insert(path);
             }
@@ -568,7 +631,7 @@ mod tests {
         ] {
             let metadata = serde_json::from_str(json).unwrap();
             let home = Path::new("/Users/fixture");
-            let resolver = MacCloudPaths::new(
+            let resolver = AutoCloudPaths::mac(
                 &metadata,
                 0x011000010000002a,
                 home,
@@ -597,7 +660,7 @@ mod tests {
             ),
         ] {
             let metadata = serde_json::from_str(json).unwrap();
-            let resolver = MacCloudPaths::new(
+            let resolver = AutoCloudPaths::mac(
                 &metadata,
                 0x011000010000002a,
                 Path::new("/Users/fixture"),
@@ -612,6 +675,64 @@ mod tests {
     }
 
     #[test]
+    fn a_windows_build_finds_its_saves_in_its_prefix_and_ignores_mac_overrides() {
+        let temp = tempfile::tempdir().unwrap();
+        let profile = temp
+            .path()
+            .canonicalize()
+            .unwrap()
+            .join("drive_c/users/crossover");
+        let saves = profile.join("AppData/LocalLow/Studio/Game/42/nested");
+        fs::create_dir_all(&saves).unwrap();
+        fs::write(saves.join("slot.sav"), b"windows").unwrap();
+        let platform = CloudPlatform::Windows {
+            profile: profile.clone(),
+        };
+        let resolver =
+            AutoCloudPaths::new(&metadata(), 0x011000010000002a, &platform, temp.path()).unwrap();
+
+        assert_eq!(
+            resolver
+                .destination("%WinAppDataLocalLow%Studio/Game/42/slot.sav", u32::MAX)
+                .unwrap(),
+            Some(profile.join("AppData/LocalLow/Studio/Game/42/slot.sav"))
+        );
+        let selected = resolver.local_files(&[]).unwrap();
+        assert_eq!(selected.len(), 1);
+        assert_eq!(
+            selected[0].name,
+            "%WinAppDataLocalLow%Studio/Game/42/nested/slot.sav"
+        );
+        assert_eq!(selected[0].path, saves.join("slot.sav"));
+    }
+
+    #[test]
+    fn a_windows_build_keeps_only_windows_files_of_platform_specific_rules() {
+        let metadata = serde_json::from_str(include_str!("fixtures/774171.json")).unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let profile = temp
+            .path()
+            .canonicalize()
+            .unwrap()
+            .join("drive_c/users/crossover");
+        let platform = CloudPlatform::Windows {
+            profile: profile.clone(),
+        };
+        let resolver =
+            AutoCloudPaths::new(&metadata, 0x011000010000002a, &platform, temp.path()).unwrap();
+
+        let mut windows = file("%WinAppDataLocal%Steam/MuseDash/windows.sav");
+        windows.platforms = 1;
+        assert_eq!(
+            resolver.existing_file(&windows).unwrap(),
+            Some(profile.join("AppData/Local/Steam/MuseDash/windows.sav"))
+        );
+        let mut mac = file("%MacHome%Steam/MuseDash/slot.sav");
+        mac.platforms = 2;
+        assert_eq!(resolver.existing_file(&mac).unwrap(), None);
+    }
+
+    #[test]
     fn platform_specific_rules_discover_only_mac_files_with_mac_mask() {
         let metadata = serde_json::from_str(include_str!("fixtures/774171.json")).unwrap();
         let temp = tempfile::tempdir().unwrap();
@@ -619,7 +740,7 @@ mod tests {
         fs::create_dir_all(home.join("Steam/MuseDash/nested")).unwrap();
         fs::write(home.join("Steam/MuseDash/slot.sav"), b"mac").unwrap();
         fs::write(home.join("Steam/MuseDash/nested/slot.sav"), b"ignored").unwrap();
-        let resolver = MacCloudPaths::new(&metadata, 0x011000010000002a, &home, &home).unwrap();
+        let resolver = AutoCloudPaths::mac(&metadata, 0x011000010000002a, &home, &home).unwrap();
         let selected = resolver.local_files(&[]).unwrap();
         assert_eq!(selected.len(), 1);
         assert_eq!(selected[0].platforms, 2);
@@ -670,7 +791,7 @@ mod tests {
             };
             rule.push(("platforms".into(), list));
             assert!(
-                MacCloudPaths::new(
+                AutoCloudPaths::mac(
                     &metadata,
                     0x011000010000002a,
                     Path::new("/Users/fixture"),
@@ -755,7 +876,7 @@ mod tests {
         ] {
             fs::write(directory.join(name), b"data").unwrap();
         }
-        let resolver = MacCloudPaths::new(&metadata(), 0x011000010000002a, &home, &home).unwrap();
+        let resolver = AutoCloudPaths::mac(&metadata(), 0x011000010000002a, &home, &home).unwrap();
         let mut backup = file("%WinAppDataLocalLow%/Studio/Game/42/existing.sav.bak");
         backup.platforms = 7;
         let missing = file("%WinAppDataLocalLow%Studio/Game/42/deleted.sav");
@@ -793,7 +914,7 @@ mod tests {
         let home = temporary.path().canonicalize().unwrap();
         let directory = home.join("Library/Application Support/Studio.Game/42");
         fs::create_dir_all(&directory).unwrap();
-        let resolver = MacCloudPaths::new(&metadata(), 0x011000010000002a, &home, &home).unwrap();
+        let resolver = AutoCloudPaths::mac(&metadata(), 0x011000010000002a, &home, &home).unwrap();
         fs::write(directory.join("real.sav"), b"data").unwrap();
         std::os::unix::fs::symlink(directory.join("real.sav"), directory.join("alias.sav"))
             .unwrap();
@@ -821,7 +942,7 @@ mod tests {
         let directory = home.join("Library/Application Support/Studio.Game/42");
         fs::create_dir_all(&directory).unwrap();
         fs::write(directory.join("slot.sav"), b"local mac save").unwrap();
-        let resolver = MacCloudPaths::new(&metadata(), 0x011000010000002a, &home, &home).unwrap();
+        let resolver = AutoCloudPaths::mac(&metadata(), 0x011000010000002a, &home, &home).unwrap();
         for prefix in ["%WinAppDataLocalLow%", "%WinAppDataLocalLow%/"] {
             let mut windows = file(&format!("{prefix}Studio/Game/42/slot.sav"));
             windows.platforms = 1;
@@ -838,7 +959,7 @@ mod tests {
         let home = temporary.path().canonicalize().unwrap();
         let directory = home.join("Library/Application Support/Studio.Game/42");
         fs::create_dir_all(&directory).unwrap();
-        let resolver = MacCloudPaths::new(&metadata(), 0x011000010000002a, &home, &home).unwrap();
+        let resolver = AutoCloudPaths::mac(&metadata(), 0x011000010000002a, &home, &home).unwrap();
         for prefix in ["%WinAppDataLocalLow%", "%WinAppDataLocalLow%/"] {
             for name in ["slot.sav", "slot.sav.bak"] {
                 let path = directory.join(name);
@@ -867,7 +988,7 @@ mod tests {
         fs::create_dir_all(&directory).unwrap();
         let path = directory.join("slot.sav");
         fs::write(&path, b"mac save").unwrap();
-        let resolver = MacCloudPaths::new(&metadata(), 0x011000010000002a, &home, &home).unwrap();
+        let resolver = AutoCloudPaths::mac(&metadata(), 0x011000010000002a, &home, &home).unwrap();
         let mut windows = file("%WinAppDataLocalLow%Studio/Game/42/slot.sav");
         windows.platforms = 1;
         let mut mac = file("%WinAppDataLocalLow%/Studio/Game/42/slot.sav");
@@ -895,7 +1016,7 @@ mod tests {
     }
     #[test]
     fn maps_canonical_cross_platform_names_without_losing_backups() {
-        let resolver = MacCloudPaths::new(
+        let resolver = AutoCloudPaths::mac(
             &metadata(),
             0x0110_0001_0000_002a,
             Path::new("/Users/example"),
@@ -932,7 +1053,7 @@ mod tests {
             e.push(("appidredirect".into(), value("7")));
         }
         assert!(
-            MacCloudPaths::new(
+            AutoCloudPaths::mac(
                 &m,
                 0x0110_0001_0000_002a,
                 Path::new("/Users/example"),
@@ -971,7 +1092,7 @@ mod tests {
                     ]),
                 )]),
             )]);
-            let resolver = MacCloudPaths::new(
+            let resolver = AutoCloudPaths::mac(
                 &m,
                 id,
                 Path::new("/Users/example"),

@@ -10,7 +10,7 @@ pub(crate) mod preferences;
 mod read;
 pub(crate) mod upload;
 pub(crate) mod wire;
-pub use paths::{LocalCloudFile, MacCloudPaths};
+pub use paths::{AutoCloudPaths, CloudPlatform, LocalCloudFile};
 pub use preferences::{CloudPreferences, CloudPreferencesCache};
 pub use read::*;
 pub(crate) use read::{download, listing};
