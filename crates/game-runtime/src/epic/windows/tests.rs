@@ -59,7 +59,7 @@ fn prerequisite(ids: &[&str], path: &str) -> epic_kit::client::Prerequisite {
 }
 
 #[test]
-fn an_epic_prerequisite_runs_unless_it_only_installs_visual_cpp_or_leaves_the_installation() {
+fn an_epic_prerequisite_runs_unless_it_leaves_the_installation() {
     use wine::Storefront;
     let install = Path::new("/games/epic");
     let listed = |prerequisite: Option<&epic_kit::client::Prerequisite>| {
@@ -88,13 +88,19 @@ fn an_epic_prerequisite_runs_unless_it_only_installs_visual_cpp_or_leaves_the_in
         listed(Some(&prerequisite(&[], "Redist/setup.exe")))[0].id,
         "epic:Redist/setup.exe"
     );
-    for path in [
-        "Engine\\Extras\\Redist\\en-us\\UEPrereqSetup_x64.exe",
-        "Redist/vcredist_x64.exe",
-        "Redist/VC_redist.x64.exe",
-        "..\\outside.exe",
-        "/Applications/setup.exe",
-    ] {
+    // Visual C++ and Unreal's prerequisites install as under Proton.
+    assert_eq!(
+        listed(Some(&prerequisite(
+            &["ue"],
+            "Engine\\Extras\\Redist\\en-us\\UEPrereqSetup_x64.exe"
+        )))[0]
+            .programs,
+        [(
+            install.join("Engine/Extras/Redist/en-us/UEPrereqSetup_x64.exe"),
+            "/quiet /norestart".into()
+        )]
+    );
+    for path in ["..\\outside.exe", "/Applications/setup.exe"] {
         assert!(
             listed(Some(&prerequisite(&["a"], path))).is_empty(),
             "{path}"

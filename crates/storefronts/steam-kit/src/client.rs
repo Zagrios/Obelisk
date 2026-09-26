@@ -131,12 +131,11 @@ pub struct InstalledDepot {
 /// name its depots, such as Visual C++ or DirectX, for Steam to install and run
 /// before their first launch.
 const COMMON_REDISTRIBUTABLES: u32 = 228_980;
-/// Its depots a download leaves out. Visual C++, 228981 to 228989: games run on
-/// Wine's runtime, as under Proton, whatever its installer adds to a prefix.
-/// .NET Framework and XNA, which needs it, 229000 to 229012: their installers
-/// do not work in Wine.
-const SKIPPED_REDISTRIBUTABLES: [std::ops::RangeInclusive<u32>; 2] =
-    [228_981..=228_989, 229_000..=229_012];
+/// Its depots a download leaves out: .NET Framework and XNA, which needs it,
+/// 229000 to 229012. Their installers do not work in Wine, and .NET games run
+/// on Wine Mono instead. The others, such as Visual C++, install in the prefix
+/// as Steam installs them under Proton.
+const SKIPPED_REDISTRIBUTABLES: std::ops::RangeInclusive<u32> = 229_000..=229_012;
 
 struct PreparedDepot {
     depot_id: u32,
@@ -801,10 +800,7 @@ fn select_depots<'a>(
         .filter(|depot| {
             let redistributable = depot.shared_from_app == Some(COMMON_REDISTRIBUTABLES);
             supports_platform(&depot.os_list, platform)
-                && !(redistributable
-                    && SKIPPED_REDISTRIBUTABLES
-                        .iter()
-                        .any(|skipped| skipped.contains(&depot.depot_id)))
+                && !(redistributable && SKIPPED_REDISTRIBUTABLES.contains(&depot.depot_id))
                 && (app.free_to_download
                     || owned.depots.contains(&depot.depot_id)
                     || redistributable)
@@ -1218,7 +1214,7 @@ mod tests {
         .iter()
         .map(|depot| depot.depot_id)
         .collect();
-        assert_eq!(selected, [2, 228_990]);
+        assert_eq!(selected, [2, 228_990, 228_989]);
         assert!(select_depots(&app, &licenses([1], [2]), "macos", "english").is_empty());
     }
     #[test]

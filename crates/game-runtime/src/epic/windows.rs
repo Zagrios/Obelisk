@@ -51,8 +51,7 @@ struct Prefix<'a> {
 
 impl wine::Storefront for Prefix<'_> {
     /// The program the manifest names to run before its game first starts,
-    /// unless it only installs the Visual C++ runtime or leaves the
-    /// installation.
+    /// unless it leaves the installation.
     fn prerequisites(&self) -> std::result::Result<Vec<wine::Prerequisite>, crate::Error> {
         let Some(prerequisite) = self.prerequisite else {
             return Ok(Vec::new());
@@ -62,11 +61,7 @@ impl wine::Storefront for Prefix<'_> {
         let inside = relative
             .components()
             .all(|component| matches!(component, std::path::Component::Normal(_)));
-        let installer = relative
-            .file_name()
-            .and_then(|name| name.to_str())
-            .is_some_and(visual_cpp_installer);
-        if !inside || installer {
+        if !inside {
             return Ok(Vec::new());
         }
         let id = if prerequisite.ids.is_empty() {
@@ -79,15 +74,6 @@ impl wine::Storefront for Prefix<'_> {
             programs: vec![(self.install.join(relative), prerequisite.arguments.clone())],
         }])
     }
-}
-
-/// Installers that only lay down the Visual C++ runtime. Unreal's
-/// prerequisites installer is mostly that runtime.
-fn visual_cpp_installer(name: &str) -> bool {
-    let name = name.to_ascii_lowercase();
-    ["vcredist", "vc_redist", "ueprereqsetup"]
-        .iter()
-        .any(|prefix| name.starts_with(prefix))
 }
 
 #[cfg(test)]
