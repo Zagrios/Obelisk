@@ -160,6 +160,15 @@ fn wine_reports_its_errors_unless_the_runtime_names_other_channels() {
 }
 
 #[test]
+fn every_wine_command_syncs_through_mach_and_gives_32_bit_games_4_gb() {
+    let (_directory, root) = installation();
+    let environment = config(&root).environment();
+
+    assert_eq!(environment["WINEMSYNC"], "1");
+    assert_eq!(environment["WINE_LARGE_ADDRESS_AWARE"], "1");
+}
+
+#[test]
 fn a_prefix_profile_stops_linking_into_the_mac_home() {
     let (_directory, root) = installation();
     let home = root.join("home");

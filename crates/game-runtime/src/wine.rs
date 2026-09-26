@@ -83,6 +83,13 @@ impl Config {
                 "mscoree,mshtml=;winemenubuilder.exe=d".to_owned(),
             ),
             ("WINEDEBUG".to_owned(), self.debug_channels()),
+            // Events, mutexes and semaphores become Mach semaphores instead of
+            // wineserver requests. The server and every process of the prefix
+            // must agree on it, so every Wine command sets it.
+            ("WINEMSYNC".to_owned(), "1".to_owned()),
+            // 32-bit games get 4 GB of address space, as on 64-bit Windows,
+            // even when their executable does not ask for it.
+            ("WINE_LARGE_ADDRESS_AWARE".to_owned(), "1".to_owned()),
         ]);
         if let Some(library) = self.d3dmetal() {
             environment.insert(
