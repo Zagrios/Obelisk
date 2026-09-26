@@ -21,6 +21,8 @@ mod game_session;
 pub use game_session::*;
 mod locations;
 pub use locations::*;
+mod voile;
+pub use voile::*;
 
 uniffi::setup_scaffolding!();
 

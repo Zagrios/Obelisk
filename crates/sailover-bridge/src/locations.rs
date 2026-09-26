@@ -22,8 +22,9 @@ pub struct SailOverLocations {
     pub steam_runtime_package: String,
     pub steam_runtime_cache: String,
     pub steam_diagnostics: String,
-    /// SailOver's Wine runtime, which runs Windows games.
-    pub wine_runtime: String,
+    /// The Voile runtimes that run Windows games: the pinned release and a
+    /// development runtime.
+    pub voile: String,
     /// One Wine prefix per Windows installation, named after its folder.
     pub wine_prefixes: String,
 }
@@ -46,7 +47,7 @@ pub fn sailover_locations(library: String, bundle: String, home: String) -> Sail
         steam_runtime_package: path(bundle.join("Contents/Resources/SteamRuntime/runtime.zip")),
         steam_runtime_cache: path(home.join("Library/Caches/com.zagrios.sailover/SteamRuntime")),
         steam_diagnostics: path(home.join("Library/Logs/SailOver/Steam")),
-        wine_runtime: path(library.join("Voile/current")),
+        voile: path(library.join("Voile")),
         wine_prefixes: path(library.join("Prefixes")),
         library: path(library),
         home: path(home),
@@ -123,8 +124,9 @@ pub fn remove_wine_prefix(
     }
     // A Wine server lingers a few seconds after its game and would write the
     // registry back into the prefix.
-    let server = Path::new(&locations.wine_runtime).join("bin/wineserver");
-    if server.is_file() {
+    let server = game_runtime::voile::runtime(Path::new(&locations.voile))
+        .map(|runtime| runtime.join("bin/wineserver"));
+    if let Some(server) = server.filter(|server| server.is_file()) {
         let _ = Command::new(server)
             .arg("-k")
             .env_clear()
@@ -205,7 +207,7 @@ mod tests {
             locations.steam_diagnostics,
             "/home/Library/Logs/SailOver/Steam"
         );
-        assert_eq!(locations.wine_runtime, "/library/Voile/current");
+        assert_eq!(locations.voile, "/library/Voile");
         assert_eq!(locations.wine_prefixes, "/library/Prefixes");
         assert_eq!(
             wine_prefix(locations, "/library/Games/Steam/steam-42-windows".into()),

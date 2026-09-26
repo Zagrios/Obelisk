@@ -2745,6 +2745,175 @@ public func FfiConverterTypeSteamSession_lower(_ value: SteamSession) -> UInt64 
 
 
 
+
+
+/**
+ * One install of the pinned Voile release.
+ */
+public protocol VoileInstallProtocol: AnyObject, Sendable {
+    
+    func cancel() 
+    
+    func progress()  -> VoileProgress
+    
+    /**
+     * Installs the release unless a runtime is already in place, and returns
+     * the runtime. `archive`, a local copy of the release, replaces the
+     * download in development.
+     */
+    func run(locations: SailOverLocations, archive: String?) async throws  -> String
+    
+}
+/**
+ * One install of the pinned Voile release.
+ */
+open class VoileInstall: VoileInstallProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_sailover_bridge_fn_clone_voileinstall(self.handle, $0) }
+    }
+public convenience init() {
+    let handle =
+        try! rustCall() {
+        uniffiCallStatus in
+    uniffi_sailover_bridge_fn_constructor_voileinstall_new(uniffiCallStatus
+    )
+}
+    self.init(unsafeFromHandle: handle)
+}
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_sailover_bridge_fn_free_voileinstall(handle, $0) }
+    }
+
+    
+
+    
+open func cancel()  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_sailover_bridge_fn_method_voileinstall_cancel(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+}
+}
+    
+open func progress() -> VoileProgress  {
+    return try!  FfiConverterTypeVoileProgress_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_sailover_bridge_fn_method_voileinstall_progress(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Installs the release unless a runtime is already in place, and returns
+     * the runtime. `archive`, a local copy of the release, replaces the
+     * download in development.
+     */
+open func run(locations: SailOverLocations, archive: String?)async throws  -> String  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_sailover_bridge_fn_method_voileinstall_run(
+                        self.uniffiCloneHandle(),FfiConverterTypeSailOverLocations_lower(locations),FfiConverterOptionString.lower(archive)
+                )
+            },
+            pollFunc: ffi_sailover_bridge_rust_future_poll_rust_buffer,
+            completeFunc: ffi_sailover_bridge_rust_future_complete_rust_buffer,
+            freeFunc: ffi_sailover_bridge_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterString.lift,
+            errorHandler: FfiConverterTypeVoileError_lift
+        )
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeVoileInstall: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = VoileInstall
+
+    public static func lift(_ handle: UInt64) throws -> VoileInstall {
+        return VoileInstall(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: VoileInstall) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> VoileInstall {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: VoileInstall, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeVoileInstall_lift(_ handle: UInt64) throws -> VoileInstall {
+    return try FfiConverterTypeVoileInstall.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeVoileInstall_lower(_ value: VoileInstall) -> UInt64 {
+    return FfiConverterTypeVoileInstall.lower(value)
+}
+
+
+
+
 /**
  * A game's Cloud indicator from persisted state. Swift adds the live states:
  * a sync in progress, a running game, and a game guard with no live session.
@@ -4175,9 +4344,10 @@ public struct SailOverLocations: Equatable, Hashable {
     public var steamRuntimeCache: String
     public var steamDiagnostics: String
     /**
-     * SailOver's Wine runtime, which runs Windows games.
+     * The Voile runtimes that run Windows games: the pinned release and a
+     * development runtime.
      */
-    public var wineRuntime: String
+    public var voile: String
     /**
      * One Wine prefix per Windows installation, named after its folder.
      */
@@ -4194,8 +4364,9 @@ public struct SailOverLocations: Equatable, Hashable {
          * The bundled native host every supervisor runs as.
          */helper: String, helpers: String, steamRuntimePackage: String, steamRuntimeCache: String, steamDiagnostics: String, 
         /**
-         * SailOver's Wine runtime, which runs Windows games.
-         */wineRuntime: String, 
+         * The Voile runtimes that run Windows games: the pinned release and a
+         * development runtime.
+         */voile: String, 
         /**
          * One Wine prefix per Windows installation, named after its folder.
          */winePrefixes: String) {
@@ -4209,7 +4380,7 @@ public struct SailOverLocations: Equatable, Hashable {
         self.steamRuntimePackage = steamRuntimePackage
         self.steamRuntimeCache = steamRuntimeCache
         self.steamDiagnostics = steamDiagnostics
-        self.wineRuntime = wineRuntime
+        self.voile = voile
         self.winePrefixes = winePrefixes
     }
 
@@ -4239,7 +4410,7 @@ public struct FfiConverterTypeSailOverLocations: FfiConverterRustBuffer {
                 steamRuntimePackage: FfiConverterString.read(from: &buf), 
                 steamRuntimeCache: FfiConverterString.read(from: &buf), 
                 steamDiagnostics: FfiConverterString.read(from: &buf), 
-                wineRuntime: FfiConverterString.read(from: &buf), 
+                voile: FfiConverterString.read(from: &buf), 
                 winePrefixes: FfiConverterString.read(from: &buf)
         )
     }
@@ -4255,7 +4426,7 @@ public struct FfiConverterTypeSailOverLocations: FfiConverterRustBuffer {
         FfiConverterString.write(value.steamRuntimePackage, into: &buf)
         FfiConverterString.write(value.steamRuntimeCache, into: &buf)
         FfiConverterString.write(value.steamDiagnostics, into: &buf)
-        FfiConverterString.write(value.wineRuntime, into: &buf)
+        FfiConverterString.write(value.voile, into: &buf)
         FfiConverterString.write(value.winePrefixes, into: &buf)
     }
 }
@@ -5419,6 +5590,60 @@ public func FfiConverterTypeStorefrontInfo_lift(_ buf: RustBuffer) throws -> Sto
 #endif
 public func FfiConverterTypeStorefrontInfo_lower(_ value: StorefrontInfo) -> RustBuffer {
     return FfiConverterTypeStorefrontInfo.lower(value)
+}
+
+
+public struct VoileProgress: Equatable, Hashable {
+    public var receivedBytes: UInt64
+    public var totalBytes: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(receivedBytes: UInt64, totalBytes: UInt64) {
+        self.receivedBytes = receivedBytes
+        self.totalBytes = totalBytes
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension VoileProgress: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeVoileProgress: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> VoileProgress {
+        return
+            try VoileProgress(
+                receivedBytes: FfiConverterUInt64.read(from: &buf), 
+                totalBytes: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: VoileProgress, into buf: inout [UInt8]) {
+        FfiConverterUInt64.write(value.receivedBytes, into: &buf)
+        FfiConverterUInt64.write(value.totalBytes, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeVoileProgress_lift(_ buf: RustBuffer) throws -> VoileProgress {
+    return try FfiConverterTypeVoileProgress.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeVoileProgress_lower(_ value: VoileProgress) -> RustBuffer {
+    return FfiConverterTypeVoileProgress.lower(value)
 }
 
 
@@ -7443,6 +7668,87 @@ public func FfiConverterTypeTransferState_lower(_ value: TransferState) -> RustB
 }
 
 
+
+public 
+enum VoileError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+
+    
+    
+    case Cancelled
+    case Failure(reason: String
+    )
+
+    
+
+    
+
+    
+    public var errorDescription: String? {
+        String(reflecting: self)
+    }
+    
+}
+
+#if compiler(>=6)
+extension VoileError: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeVoileError: FfiConverterRustBuffer {
+    typealias SwiftType = VoileError
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> VoileError {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        
+
+        
+        case 1: return .Cancelled
+        case 2: return .Failure(
+            reason: try FfiConverterString.read(from: &buf)
+            )
+
+         default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: VoileError, into buf: inout [UInt8]) {
+        switch value {
+
+        
+
+        
+        
+        case .Cancelled:
+            writeInt(&buf, Int32(1))
+        
+        
+        case let .Failure(reason):
+            writeInt(&buf, Int32(2))
+            FfiConverterString.write(reason, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeVoileError_lift(_ buf: RustBuffer) throws -> VoileError {
+    return try FfiConverterTypeVoileError.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeVoileError_lower(_ value: VoileError) -> RustBuffer {
+    return FfiConverterTypeVoileError.lower(value)
+}
+
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
@@ -8438,6 +8744,17 @@ public func steamCloudRemoved(config: SteamCloudConfiguration, accountId: UInt64
             errorHandler: FfiConverterTypeSteamError_lift
         )
 }
+/**
+ * The runtime Windows games run in, or nil until it is installed.
+ */
+public func voileRuntime(locations: SailOverLocations) -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_sailover_bridge_fn_func_voile_runtime(
+        FfiConverterTypeSailOverLocations_lower(locations),uniffiCallStatus
+    )
+})
+}
 
 private enum InitializationResult {
     case ok
@@ -8506,6 +8823,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sailover_bridge_checksum_func_steam_cloud_removed() != 62949) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sailover_bridge_checksum_func_voile_runtime() != 110) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sailover_bridge_checksum_method_library_add_local_game() != 44772) {
@@ -8691,6 +9011,15 @@ private let initializationResult: InitializationResult = {
     if (uniffi_sailover_bridge_checksum_method_steamnativelaunch_start_game() != 24217) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_sailover_bridge_checksum_method_voileinstall_cancel() != 13489) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sailover_bridge_checksum_method_voileinstall_progress() != 39877) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sailover_bridge_checksum_method_voileinstall_run() != 4099) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_sailover_bridge_checksum_constructor_library_new() != 46201) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -8716,6 +9045,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sailover_bridge_checksum_constructor_steamnativelaunch_new() != 24964) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sailover_bridge_checksum_constructor_voileinstall_new() != 7855) {
         return InitializationResult.apiChecksumMismatch
     }
 

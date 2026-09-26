@@ -119,7 +119,8 @@ private struct GamePrimaryAction<Store: InstallationStorefront>: View {
             },
             isCancellable: cancelsSynchronization
                 || (installations.isLaunching && installations.launchGame == game),
-            isIndeterminate: installations.isSynchronizingSaves
+            isStep: installations.isSynchronizingSaves || installations.runtimeInstallFraction != nil,
+            stepFraction: installations.runtimeInstallFraction
         )
     }
 }

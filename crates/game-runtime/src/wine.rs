@@ -135,7 +135,7 @@ pub fn steam_target(
 /// steam_api.
 pub fn prepare(config: &Config, home: &Path) -> Result<(), Error> {
     if !config.installed() {
-        return Err(Error::Unavailable);
+        return Err(Error::WineUnavailable);
     }
     crate::files::private_directory(&config.prefix)?;
     if !config.prefix.join("system.reg").is_file() {

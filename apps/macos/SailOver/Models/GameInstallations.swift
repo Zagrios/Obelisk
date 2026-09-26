@@ -118,6 +118,7 @@ final class GameInstallations<Store: InstallationStorefront> {
 
     let sessions: GameSessions<Store>
     let cloud: CloudModel<Store>
+    @ObservationIgnored private let runtime: VoileRuntime
     @ObservationIgnored private let directory: URL
     private var account: Store.AccountID?
     @ObservationIgnored private var receiptsFile: URL?
@@ -132,10 +133,11 @@ final class GameInstallations<Store: InstallationStorefront> {
     @ObservationIgnored private var progressTask: Task<Void, Never>?
 
     /// `directory` is SailOver's library directory, which an uninstall never removes.
-    init(directory: URL, sessions: GameSessions<Store>, cloud: CloudModel<Store>) {
+    init(directory: URL, sessions: GameSessions<Store>, cloud: CloudModel<Store>, runtime: VoileRuntime = .live) {
         self.directory = directory
         self.sessions = sessions
         self.cloud = cloud
+        self.runtime = runtime
     }
 
     func connect(account: Store.AccountID, receipts file: URL, port: InstallationPort<Store>) {
@@ -259,11 +261,18 @@ final class GameInstallations<Store: InstallationStorefront> {
         if selectedSession?.running == true { return L10n.string("model.game.running") }
         if isUninstalling && uninstallGame == game { return L10n.string("model.game.uninstalling") }
         if isLaunching && launchGame == game {
+            if runtimeInstallFraction != nil { return L10n.string("model.game.installingVoile") }
             return L10n.string(isVerifyingBeforeLaunch ? "model.game.verifying" : "model.game.launching")
         }
         if selectedSession != nil { return L10n.string("model.game.launching") }
         if selectedReceipt != nil { return L10n.string("model.game.launch") }
         return L10n.string(canResumeDownload ? "model.game.resume" : "model.game.download")
+    }
+
+    /// How much of Voile has downloaded while the game on screen waits for it.
+    var runtimeInstallFraction: Double? {
+        guard isLaunching, launchGame == selection()?.game else { return nil }
+        return runtime.installFraction
     }
 
     /// Whether the primary action launches the game rather than installing it.

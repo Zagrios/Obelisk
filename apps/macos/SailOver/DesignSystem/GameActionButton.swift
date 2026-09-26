@@ -10,28 +10,31 @@ struct GameActionButton: View {
     let action: () -> Void
     let cancel: () -> Void
     var isCancellable = false
-    var isIndeterminate = false
+    /// A step outside any Transfer holds the button: a pre-launch Cloud sync,
+    /// or Voile installing before a Windows launch.
+    var isStep = false
+    /// The step's progress, when it has one.
+    var stepFraction: Double? = nil
 
-    /// An indeterminate step (a pre-launch Cloud sync) outranks a byte-counted
-    /// transfer: it has no fraction and no per-file title to show.
-    private enum Mode { case idle, transferring, indeterminate }
+    /// A step outranks a byte-counted transfer: it has no per-file title to show.
+    private enum Mode { case idle, transferring, step }
     private var mode: Mode {
-        if isIndeterminate { .indeterminate } else if isTransferring { .transferring } else { .idle }
+        if isStep { .step } else if isTransferring { .transferring } else { .idle }
     }
 
     private var showsProgress: Bool {
         switch mode {
-        case .indeterminate: true
+        case .step: true
         case .transferring: transfer?.isInProgress ?? true
         case .idle: false
         }
     }
     private var helpText: String {
-        mode == .indeterminate ? title : transfer?.progressSummary ?? title
+        mode == .step ? title : transfer?.progressSummary ?? title
     }
     private var accessibilityText: String {
         switch mode {
-        case .indeterminate: title
+        case .step: title
         case .transferring: transfer?.progressSummary ?? L10n.string("ui.transfer.preparing_accessibility")
         case .idle: ""
         }
@@ -42,7 +45,7 @@ struct GameActionButton: View {
             Button(action: action) {
                 Group {
                     switch mode {
-                    case .indeterminate:
+                    case .step:
                         Text(title)
                     case .transferring:
                         Text(transfer?.buttonTitle ?? L10n.string("ui.transfer.preparing_short"))
@@ -57,7 +60,7 @@ struct GameActionButton: View {
             .buttonStyle(GameActionButtonStyle(launches: launches, isBusy: mode != .idle))
             .overlay(alignment: .bottom) {
                 if showsProgress {
-                    GameButtonProgress(fraction: mode == .indeterminate ? nil : transfer?.progressFraction)
+                    GameButtonProgress(fraction: mode == .step ? stepFraction : transfer?.progressFraction)
                         .frame(height: 3)
                         .padding(.horizontal, 12)
                         .padding(.bottom, 5)

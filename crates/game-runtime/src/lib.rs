@@ -11,6 +11,7 @@ mod process;
 pub mod protocol;
 pub mod steam;
 pub mod supervisor;
+pub mod voile;
 pub mod wine;
 use protocol::{Credentials, Event};
 use std::{
@@ -113,6 +114,8 @@ pub enum Error {
     NotExecutable,
     #[error("backend.steam.runtime.apiMissing")]
     ApiMissing,
+    #[error("backend.runtime.wineUnavailable")]
+    WineUnavailable,
 }
 impl From<std::io::Error> for Error {
     fn from(_: std::io::Error) -> Self {

@@ -685,6 +685,37 @@ uint64_t uniffi_sailover_bridge_fn_method_steamnativelaunch_prepare(uint64_t ptr
 uint64_t uniffi_sailover_bridge_fn_method_steamnativelaunch_start_game(uint64_t ptr
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_CLONE_VOILEINSTALL
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_CLONE_VOILEINSTALL
+uint64_t uniffi_sailover_bridge_fn_clone_voileinstall(uint64_t handle, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FREE_VOILEINSTALL
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FREE_VOILEINSTALL
+void uniffi_sailover_bridge_fn_free_voileinstall(uint64_t handle, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_CONSTRUCTOR_VOILEINSTALL_NEW
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_CONSTRUCTOR_VOILEINSTALL_NEW
+uint64_t uniffi_sailover_bridge_fn_constructor_voileinstall_new(RustCallStatus *_Nonnull out_status
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_VOILEINSTALL_CANCEL
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_VOILEINSTALL_CANCEL
+void uniffi_sailover_bridge_fn_method_voileinstall_cancel(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_VOILEINSTALL_PROGRESS
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_VOILEINSTALL_PROGRESS
+RustBuffer uniffi_sailover_bridge_fn_method_voileinstall_progress(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_VOILEINSTALL_RUN
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_VOILEINSTALL_RUN
+uint64_t uniffi_sailover_bridge_fn_method_voileinstall_run(uint64_t ptr, RustBuffer locations, RustBuffer archive
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FUNC_CORE_VERSION
 #define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FUNC_CORE_VERSION
 RustBuffer uniffi_sailover_bridge_fn_func_core_version(RustCallStatus *_Nonnull out_status
@@ -776,6 +807,11 @@ uint64_t uniffi_sailover_bridge_fn_func_recover_steam_game_session(RustBuffer se
 #ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FUNC_STEAM_CLOUD_REMOVED
 #define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FUNC_STEAM_CLOUD_REMOVED
 uint64_t uniffi_sailover_bridge_fn_func_steam_cloud_removed(RustBuffer config, uint64_t account_id
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FUNC_VOILE_RUNTIME
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FUNC_VOILE_RUNTIME
+RustBuffer uniffi_sailover_bridge_fn_func_voile_runtime(RustBuffer locations, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_FFI_SAILOVER_BRIDGE_RUSTBUFFER_ALLOC
@@ -1146,6 +1182,12 @@ uint16_t uniffi_sailover_bridge_checksum_func_steam_cloud_removed(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_FUNC_VOILE_RUNTIME
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_FUNC_VOILE_RUNTIME
+uint16_t uniffi_sailover_bridge_checksum_func_voile_runtime(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_LIBRARY_ADD_LOCAL_GAME
 #define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_LIBRARY_ADD_LOCAL_GAME
 uint16_t uniffi_sailover_bridge_checksum_method_library_add_local_game(void
@@ -1512,6 +1554,24 @@ uint16_t uniffi_sailover_bridge_checksum_method_steamnativelaunch_start_game(voi
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_VOILEINSTALL_CANCEL
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_VOILEINSTALL_CANCEL
+uint16_t uniffi_sailover_bridge_checksum_method_voileinstall_cancel(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_VOILEINSTALL_PROGRESS
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_VOILEINSTALL_PROGRESS
+uint16_t uniffi_sailover_bridge_checksum_method_voileinstall_progress(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_VOILEINSTALL_RUN
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_VOILEINSTALL_RUN
+uint16_t uniffi_sailover_bridge_checksum_method_voileinstall_run(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_CONSTRUCTOR_LIBRARY_NEW
 #define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_CONSTRUCTOR_LIBRARY_NEW
 uint16_t uniffi_sailover_bridge_checksum_constructor_library_new(void
@@ -1563,6 +1623,12 @@ uint16_t uniffi_sailover_bridge_checksum_constructor_steamfriendsfixture_new(voi
 #ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_CONSTRUCTOR_STEAMNATIVELAUNCH_NEW
 #define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_CONSTRUCTOR_STEAMNATIVELAUNCH_NEW
 uint16_t uniffi_sailover_bridge_checksum_constructor_steamnativelaunch_new(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_CONSTRUCTOR_VOILEINSTALL_NEW
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_CONSTRUCTOR_VOILEINSTALL_NEW
+uint16_t uniffi_sailover_bridge_checksum_constructor_voileinstall_new(void
     
 );
 #endif

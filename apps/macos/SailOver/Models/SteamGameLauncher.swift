@@ -5,11 +5,8 @@ enum SteamGameLauncher {
     /// Rust resolves the game inside its installation, then hands it to a
     /// supervisor that owns its Steam session.
     static func start(_ plan: SteamLaunchPlan, credentials: SteamCredentials) async throws -> any GameSessionProtocol {
-        // Windows games run in SailOver's Wine runtime, which is installed apart from the app.
-        let wine = SailOverLocations.live.wineRuntime + "/bin/wine"
-        guard plan.platform == "macos" || FileManager.default.isExecutableFile(atPath: wine) else {
-            throw GameLaunchFailure.windowsRuntimeUnavailable
-        }
+        // Windows games run in SailOver's Wine runtime, installed apart from the app on first use.
+        if plan.platform == "windows" { try await VoileRuntime.live.prepare() }
         try Task.checkCancellation()
         let attempt = SteamNativeLaunch(credentials: credentials)
         try await withTaskCancellationHandler {
@@ -29,11 +26,12 @@ enum SteamGameLauncher {
 }
 
 enum GameLaunchFailure: LocalizedError {
-    case windowsRuntimeUnavailable
+    /// Wine, which runs Windows games, could not be installed.
+    case wineUnavailable(reason: String)
 
     var errorDescription: String? {
         switch self {
-        case .windowsRuntimeUnavailable: L10n.string("model.launch.windowsRuntimeUnavailable")
+        case let .wineUnavailable(reason): L10n.message(reason)
         }
     }
 }

@@ -140,7 +140,10 @@ fn a_missing_runtime_is_reported_before_any_prefix_is_created() {
     let (_directory, root) = installation();
     let config = config(&root);
 
-    assert!(matches!(prepare(&config, &root), Err(Error::Unavailable)));
+    assert!(matches!(
+        prepare(&config, &root),
+        Err(Error::WineUnavailable)
+    ));
     assert!(!config.prefix.exists());
 }
 

@@ -2,7 +2,7 @@
 //! It never queries Keychain, and cancellation crosses UniFFI explicitly.
 use crate::{GameSession, SailOverLocations, SteamCredentials, SteamError, SteamLaunchPlan};
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
 
@@ -53,7 +53,8 @@ impl SteamNativeLaunch {
             let wine = match (plan.platform == "windows", install.file_name()) {
                 (false, _) => None,
                 (true, Some(_)) => Some(game_runtime::wine::Config {
-                    runtime: PathBuf::from(&locations.wine_runtime),
+                    runtime: game_runtime::voile::runtime(Path::new(&locations.voile))
+                        .ok_or(game_runtime::Error::WineUnavailable)?,
                     prefix: crate::locations::prefix(&locations, &plan.install_directory).into(),
                 }),
                 (true, None) => return Err(game_runtime::Error::NotExecutable),

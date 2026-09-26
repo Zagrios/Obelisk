@@ -4659,23 +4659,6 @@
         }
       }
     },
-    "model.launch.windowsRuntimeUnavailable": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This game needs a Wine runtime to run on this Mac. SailOver does not support it yet."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ce jeu nécessite un moteur Wine pour être lancé sur ce Mac. Son intégration dans SailOver reste à faire."
-          }
-        }
-      }
-    },
     "model.library.corruptLibrary": {
       "extractionState": "manual",
       "localizations": {
@@ -10009,6 +9992,108 @@
           "stringUnit": {
             "state": "translated",
             "value": "Rosetta est requis pour lancer ce jeu. Réessayez son installation."
+          }
+        }
+      }
+    },
+    "backend.runtime.wineUnavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wine, which runs Windows games, is not installed. Launch the game again to install it."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wine, qui fait tourner les jeux Windows, n'est pas installé. Relancez le jeu pour l'installer."
+          }
+        }
+      }
+    },
+    "backend.voile.downloadFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SailOver could not download Wine, which runs Windows games. Check your connection and try again."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SailOver n'a pas pu télécharger Wine, qui fait tourner les jeux Windows. Vérifiez votre connexion et réessayez."
+          }
+        }
+      }
+    },
+    "backend.voile.damaged": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The downloaded copy of Wine is damaged. Launch the game again to download it anew."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La copie de Wine téléchargée est endommagée. Relancez le jeu pour la télécharger à nouveau."
+          }
+        }
+      }
+    },
+    "backend.voile.storageFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SailOver could not install Wine in its library. Check the available disk space and try again."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SailOver n'a pas pu installer Wine dans sa bibliothèque. Vérifiez l'espace disque disponible et réessayez."
+          }
+        }
+      }
+    },
+    "backend.voile.cancelled": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wine installation was cancelled."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'installation de Wine a été annulée."
+          }
+        }
+      }
+    },
+    "model.game.installingVoile": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Getting Voile…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajout de Voile…"
           }
         }
       }

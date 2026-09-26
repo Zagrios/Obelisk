@@ -108,7 +108,10 @@ final class SteamAchievementsTests: XCTestCase {
                              transfer: downloading, isTransferring: true, isAvailable: true, action: {}, cancel: {})
             GameActionButton(title: L10n.string("ui.cloud.sync_short"), launches: true, transfer: nil,
                              isTransferring: false, isAvailable: true, action: {}, cancel: {}, isCancellable: true,
-                             isIndeterminate: true)
+                             isStep: true)
+            GameActionButton(title: L10n.string("model.game.installingVoile"), launches: true, transfer: nil,
+                             isTransferring: false, isAvailable: true, action: {}, cancel: {}, isCancellable: true,
+                             isStep: true, stepFraction: 0.4)
         }
         try await render(buttons.padding(24).foregroundStyle(.white).environment(\.colorScheme, .dark).background(.black),
                          to: output.appending(path: "header-buttons.png"))

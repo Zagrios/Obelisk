@@ -47,7 +47,7 @@ final class GameSessionsTests: XCTestCase {
             recovered = true
             return nil
         })
-        let task = try XCTUnwrap(sessions.launch(game: 42, account: 42, prepare: { throw GameLaunchFailure.windowsRuntimeUnavailable },
+        let task = try XCTUnwrap(sessions.launch(game: 42, account: 42, prepare: { throw GameLaunchFailure.wineUnavailable(reason: "backend.voile.downloadFailed") },
                                                  onCompletion: { completion = $0 }))
         await task.value
         XCTAssertFalse(sessions.isBusy)
@@ -106,7 +106,7 @@ final class GameSessionsTests: XCTestCase {
         var completion: Error?
         let sessions = SteamGameSessions(recoverSession: { try await recovery.wait() })
         let task = try XCTUnwrap(sessions.launch(game: 42, account: 42, prepare: {
-            throw GameHandoffFailure(cause: GameLaunchFailure.windowsRuntimeUnavailable)
+            throw GameHandoffFailure(cause: GameLaunchFailure.wineUnavailable(reason: "backend.voile.downloadFailed"))
         }, onCompletion: { completion = $0 }))
         try await eventually { await recovery.requests == 1 }
         XCTAssertTrue(sessions.protects(42))
