@@ -15,7 +15,6 @@ protocol GameStorefront {
     static var invalidSession: String { get }
     /// Localization key shown while a session is being recovered.
     static var recoveringSession: String { get }
-    static var gameExited: String { get }
     /// A failed session that reported no reason.
     static var sessionFailed: String { get }
 }
@@ -29,7 +28,6 @@ enum SteamGames: GameStorefront {
     static func failure(_ key: String) -> Error { SteamError.Failure(reason: key) }
     static let invalidSession = "backend.steam.runtime.invalidSession"
     static let recoveringSession = "model.steam.recoveringSession"
-    static let gameExited = "model.steam.gameExited"
     static let sessionFailed = "backend.steam.runtime.startFailed"
 
     @MainActor static let sessions = GameSessions<SteamGames>(recoverExisting: true, recoverSession: recover)
@@ -49,7 +47,6 @@ enum EpicGames: GameStorefront {
     static func failure(_ key: String) -> Error { EpicError.Service(message: key) }
     static let invalidSession = "backend.epic.cloud.invalidSession"
     static let recoveringSession = "model.epic.recoveringSession"
-    static let gameExited = "model.epic.gameExited"
     static let sessionFailed = "backend.epic.cloud.failed"
 
     @MainActor static let sessions = GameSessions<EpicGames>(recoverExisting: true, recoverSession: recover)
@@ -326,7 +323,6 @@ final class GameSessions<Store: GameStorefront> {
                         if snapshot.failureReason == .cancelled { throw CancellationError() }
                         throw Store.failure(snapshot.error ?? Store.sessionFailed)
                     }
-                    if let code = snapshot.exitCode, code != 0 { throw Store.failure(Store.gameExited) }
                     return
                 }
                 if snapshot.phase == .running && !reportedRunning {

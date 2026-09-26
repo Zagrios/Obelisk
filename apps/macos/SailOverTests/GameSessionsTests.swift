@@ -184,9 +184,8 @@ final class GameSessionsTests: XCTestCase {
         await game.finish(exitCode: 7)
         await task.value
         XCTAssertTrue(completed)
-        let error = try XCTUnwrap(completion)
-        guard case let SteamError.Failure(reason) = error else { return XCTFail("Expected the terminal game error") }
-        XCTAssertEqual(reason, "model.steam.gameExited")
+        // Games often quit normally with a nonzero code, which launchers never report.
+        XCTAssertNil(completion)
         XCTAssertFalse(sessions.isBusy)
     }
 

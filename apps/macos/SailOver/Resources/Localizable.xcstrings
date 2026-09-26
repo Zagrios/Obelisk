@@ -8668,23 +8668,6 @@
         }
       }
     },
-    "model.steam.gameExited": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The game closed unexpectedly. You can launch it again."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Le jeu s’est fermé de manière inattendue. Vous pouvez le relancer."
-          }
-        }
-      }
-    },
     "backend.steam.runtime.sessionBusy": {
       "localizations": {
         "en": {
@@ -9550,23 +9533,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Une session de jeu Epic est encore active. Attendez sa fin avant de modifier les fichiers installés."
-          }
-        }
-      }
-    },
-    "model.epic.gameExited": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The Epic game exited unexpectedly."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Le jeu Epic s’est arrêté de manière inattendue."
           }
         }
       }

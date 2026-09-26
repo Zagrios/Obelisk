@@ -1230,7 +1230,7 @@ final class SteamPresentationTests: XCTestCase {
             let loads = await credentialStore.loadCount
             XCTAssertEqual(loads, 1, "Launching must reuse the connected session without reading Keychain again")
             await events.append("execute:\(plan.appId)")
-            if failLaunch { throw SteamError.Failure(reason: "model.steam.gameExited") }
+            if failLaunch { throw SteamError.Failure(reason: "backend.steam.runtime.startFailed") }
             if let game { return game }
             let completed = RecoveredGameFixture(appID: plan.appId)
             await completed.finish()
