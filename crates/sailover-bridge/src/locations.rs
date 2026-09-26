@@ -22,6 +22,8 @@ pub struct SailOverLocations {
     pub steam_runtime_package: String,
     pub steam_runtime_cache: String,
     pub steam_diagnostics: String,
+    /// Where Wine logs the Windows builds of Epic games.
+    pub epic_diagnostics: String,
     /// The Voile runtimes that run Windows games: the pinned release and a
     /// development runtime.
     pub voile: String,
@@ -47,6 +49,7 @@ pub fn sailover_locations(library: String, bundle: String, home: String) -> Sail
         steam_runtime_package: path(bundle.join("Contents/Resources/SteamRuntime/runtime.zip")),
         steam_runtime_cache: path(home.join("Library/Caches/com.zagrios.sailover/SteamRuntime")),
         steam_diagnostics: path(home.join("Library/Logs/SailOver/Steam")),
+        epic_diagnostics: path(home.join("Library/Logs/SailOver/Epic")),
         voile: path(library.join("Voile")),
         wine_prefixes: path(library.join("Prefixes")),
         library: path(library),
@@ -206,6 +209,10 @@ mod tests {
         assert_eq!(
             locations.steam_diagnostics,
             "/home/Library/Logs/SailOver/Steam"
+        );
+        assert_eq!(
+            locations.epic_diagnostics,
+            "/home/Library/Logs/SailOver/Epic"
         );
         assert_eq!(locations.voile, "/library/Voile");
         assert_eq!(locations.wine_prefixes, "/library/Prefixes");

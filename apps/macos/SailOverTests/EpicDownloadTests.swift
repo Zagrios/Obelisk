@@ -547,7 +547,7 @@ final class EpicDownloadTests: XCTestCase {
         let revocations = await game.revocations
         XCTAssertNil(saved)
         XCTAssertEqual(beginnings, 0)
-        XCTAssertEqual(revocations, ["download-account"])
+        XCTAssertEqual(revocations, [Self.account])
         XCTAssertFalse(fixture.model.installations.isLaunching)
         XCTAssertFalse(fixture.model.installations.isDownloading)
         XCTAssertTrue(fixture.model.installations.receipts.isEmpty)
@@ -741,7 +741,10 @@ final class EpicDownloadTests: XCTestCase {
                  description: "", imageUrl: nil, headerImageUrl: nil, developer: "", windows: true, macos: macos)
     }
 
-    private func credentials(_ token: String, account: String = "download-account") -> EpicCredentials {
+    /// Shaped like an Epic account id, which Cloud storage checks on uninstall.
+    private static let account = "0123456789abcdef0123456789abcdef"
+
+    private func credentials(_ token: String, account: String = EpicDownloadTests.account) -> EpicCredentials {
         EpicCredentials(accountId: account, displayName: account, refreshToken: token)
     }
 

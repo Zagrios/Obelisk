@@ -39,10 +39,33 @@ impl CloudGame<'_> {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CloudRules {
+    /// The Windows build's save folder.
     pub cloud_save_folder: Option<String>,
-    pub cloud_save_folder_mac: String,
+    /// The Mac build's save folder.
+    pub cloud_save_folder_mac: Option<String>,
     pub include: Vec<String>,
     pub exclude: Vec<String>,
+}
+
+/// The build of a game that runs, and where its save folder's variables point.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CloudPlatform {
+    /// A Mac build: its saves are under the player's home.
+    Mac { home: PathBuf },
+    /// A Windows build running in Wine: its saves are under the user profile
+    /// of its prefix.
+    Windows { profile: PathBuf },
+}
+
+impl CloudPlatform {
+    /// The catalog attribute naming this build's save folder.
+    fn attribute(platform: &str) -> Option<&'static str> {
+        match platform {
+            "Mac" => Some("CloudSaveFolder_MAC"),
+            "Windows" => Some("CloudSaveFolder"),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -61,8 +84,11 @@ pub struct Snapshot {
 }
 
 impl CloudRules {
+    /// The rules of the `platform` build ("Mac" or "Windows"), or `None` when
+    /// the catalog names no save folder for it.
     pub(crate) fn from_attributes(
         attributes: &BTreeMap<String, serde_json::Value>,
+        platform: &str,
     ) -> Result<Option<Self>, EpicError> {
         let attr = |key: &str| -> Result<Option<String>, EpicError> {
             attributes
@@ -77,15 +103,16 @@ impl CloudRules {
                 })
                 .transpose()
         };
-        let Some(mac) = attr("CloudSaveFolder_MAC")? else {
+        let key = CloudPlatform::attribute(platform).ok_or(EpicError::UnsupportedContent)?;
+        let Some(folder) = attr(key)? else {
             return Ok(None);
         };
-        if mac.trim().is_empty() {
+        if folder.trim().is_empty() {
             return Err(EpicError::UnsupportedContent);
         }
         let rules = Self {
             cloud_save_folder: attr("CloudSaveFolder")?,
-            cloud_save_folder_mac: mac,
+            cloud_save_folder_mac: attr("CloudSaveFolder_MAC")?,
             include: parse_filters(attr("CloudIncludeList")?)?,
             exclude: parse_filters(attr("CloudExcludeList")?)?,
         };
@@ -94,13 +121,12 @@ impl CloudRules {
     }
 
     pub(crate) fn validate(&self) -> Result<(), EpicError> {
-        if self.cloud_save_folder_mac.is_empty()
-            || self.cloud_save_folder_mac.len() > 16_384
-            || self.cloud_save_folder_mac.contains('\0')
-            || self
-                .cloud_save_folder
-                .as_ref()
-                .is_some_and(|v| v.len() > 16_384 || v.contains('\0'))
+        let folders = [&self.cloud_save_folder, &self.cloud_save_folder_mac];
+        if folders.iter().all(|folder| folder.is_none())
+            || folders
+                .iter()
+                .filter_map(|folder| folder.as_ref())
+                .any(|v| v.is_empty() || v.len() > 16_384 || v.contains('\0'))
         {
             return Err(EpicError::UnsupportedContent);
         }
@@ -115,12 +141,15 @@ impl CloudRules {
         Ok(())
     }
 
-    /// Resolves verified Mac variables only. AppData is deliberately unsupported:
-    /// the launcher and Legendary disagree about its native Mac base directory.
+    /// Resolves the save folder of `platform`'s build. On a Mac, AppData is
+    /// deliberately unsupported: the launcher and Legendary disagree about its
+    /// native Mac base directory. On Windows, variables follow the launcher's:
+    /// AppData is the profile's AppData/Local, which paths such as
+    /// `{AppData}/../LocalLow` leave within the profile.
     /// The caller must handle UnsupportedContent, never treat it as an empty tree.
     pub fn resolve(
         &self,
-        home: &Path,
+        platform: &CloudPlatform,
         install: &Path,
         account_id: &str,
         app_name: &str,
@@ -128,23 +157,59 @@ impl CloudRules {
         self.validate()?;
         identity(account_id)?;
         identity(app_name)?;
-        let home = home.canonicalize()?;
         let install = canonical_or_missing(install)?;
-        if !home.is_dir() {
-            return Err(EpicError::UnsupportedContent);
-        }
-        let source = self.cloud_save_folder_mac.replace('\\', "/");
-        let source = source
-            .strip_prefix("~/")
-            .map(|rest| format!("{{Home}}/{rest}"))
-            .unwrap_or(source);
-        let anchor = if source.to_ascii_lowercase().starts_with("{installdir}/") {
+        let (base, source, protected) = match platform {
+            CloudPlatform::Mac { home } => {
+                let home = home.canonicalize()?;
+                if !home.is_dir() {
+                    return Err(EpicError::UnsupportedContent);
+                }
+                let source = self
+                    .cloud_save_folder_mac
+                    .as_ref()
+                    .ok_or(EpicError::UnsupportedContent)?
+                    .replace('\\', "/");
+                let source = source
+                    .strip_prefix("~/")
+                    .map(|rest| format!("{{Home}}/{rest}"))
+                    .unwrap_or(source);
+                let protected: &[&str] = &["Library", "Documents", "Library/Application Support"];
+                (home, source, protected)
+            }
+            // A prefix that no wineboot created yet still resolves.
+            CloudPlatform::Windows { profile } => {
+                let source = self
+                    .cloud_save_folder
+                    .as_ref()
+                    .ok_or(EpicError::UnsupportedContent)?
+                    .replace('\\', "/");
+                let protected: &[&str] = &[
+                    "Documents",
+                    "AppData",
+                    "AppData/Local",
+                    "AppData/LocalLow",
+                    "AppData/Roaming",
+                    "Saved Games",
+                ];
+                (canonical_or_missing(profile)?, source, protected)
+            }
+        };
+        let lowercase = source.to_ascii_lowercase();
+        let personal: &[&str] = match platform {
+            CloudPlatform::Mac { .. } => {
+                &["{home}/", "{userprofile}/", "{userdir}/", "{userlibrary}/"]
+            }
+            CloudPlatform::Windows { .. } => &[
+                "{userprofile}/",
+                "{userdir}/",
+                "{appdata}/",
+                "{usersavedgames}/",
+            ],
+        };
+        let anchor = if lowercase.starts_with("{installdir}/") {
             &install
-        } else if ["{home}/", "{userprofile}/", "{userdir}/", "{userlibrary}/"]
-            .iter()
-            .any(|prefix| source.to_ascii_lowercase().starts_with(prefix))
-        {
-            &home
+        } else if personal.iter().any(|prefix| lowercase.starts_with(prefix)) {
+            &base
         } else {
             return Err(EpicError::UnsupportedContent);
         };
@@ -156,15 +221,19 @@ impl CloudRules {
                 .find('}')
                 .ok_or(EpicError::UnsupportedContent)?
                 + index;
-            let replacement = match rest[index + 1..end].to_ascii_lowercase().as_str() {
-                "home" | "userprofile" => home.to_string_lossy().into_owned(),
-                "userlibrary" => home.join("Library").to_string_lossy().into_owned(),
-                "userdir" => home.join("Documents").to_string_lossy().into_owned(),
-                "installdir" => install.to_string_lossy().into_owned(),
-                "epicid" => account_id.to_owned(),
-                "appname" => app_name.to_owned(),
+            let folder = |relative: &str| base.join(relative).to_string_lossy().into_owned();
+            let replacement = match (platform, rest[index + 1..end].to_ascii_lowercase().as_str()) {
+                (CloudPlatform::Mac { .. }, "home") | (_, "userprofile") => folder(""),
+                (CloudPlatform::Mac { .. }, "userlibrary") => folder("Library"),
+                (_, "userdir") => folder("Documents"),
+                (CloudPlatform::Windows { .. }, "appdata") => folder("AppData/Local"),
+                (CloudPlatform::Windows { .. }, "usersavedgames") => folder("Saved Games"),
+                (_, "installdir") => install.to_string_lossy().into_owned(),
+                (_, "epicid") => account_id.to_owned(),
+                (_, "appname") => app_name.to_owned(),
                 _ => return Err(EpicError::UnsupportedContent),
             };
+            let replacement = replacement.trim_end_matches('/').to_owned();
             expanded.push_str(&replacement);
             rest = &rest[end + 1..];
         }
@@ -184,12 +253,9 @@ impl CloudRules {
         }
         if !directory.starts_with(anchor)
             || directory == *anchor
-            || [
-                home.join("Library"),
-                home.join("Documents"),
-                home.join("Library/Application Support"),
-            ]
-            .contains(&directory)
+            || protected
+                .iter()
+                .any(|folder| directory == base.join(folder))
         {
             return Err(EpicError::UnsafePath(directory.display().to_string()));
         }

@@ -798,7 +798,7 @@ public protocol EpicSessionProtocol: AnyObject, Sendable {
     
     func archiveCloud(configuration: EpicCloudConfiguration) async throws 
     
-    func launchGame(configuration: EpicCloudConfiguration) async throws  -> GameSession
+    func launchGame(configuration: EpicCloudConfiguration, locations: SailOverLocations) async throws  -> GameSession
     
 }
 open class EpicSession: EpicSessionProtocol, @unchecked Sendable {
@@ -1149,12 +1149,12 @@ open func archiveCloud(configuration: EpicCloudConfiguration)async throws   {
         )
 }
     
-open func launchGame(configuration: EpicCloudConfiguration)async throws  -> GameSession  {
+open func launchGame(configuration: EpicCloudConfiguration, locations: SailOverLocations)async throws  -> GameSession  {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
                 uniffi_sailover_bridge_fn_method_epicsession_launch_game(
-                        self.uniffiCloneHandle(),FfiConverterTypeEpicCloudConfiguration_lower(configuration)
+                        self.uniffiCloneHandle(),FfiConverterTypeEpicCloudConfiguration_lower(configuration),FfiConverterTypeSailOverLocations_lower(locations)
                 )
             },
             pollFunc: ffi_sailover_bridge_rust_future_poll_u64,
@@ -3234,10 +3234,17 @@ public struct EpicCloudConfiguration: Equatable, Hashable {
     public var appName: String
     public var platform: String
     public var language: String
+    /**
+     * A Windows build's Wine prefix, where its saves live.
+     */
+    public var prefix: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(root: String, home: String, install: String, sessionDirectory: String, helper: String, namespace: String, catalogItemId: String, appName: String, platform: String, language: String) {
+    public init(root: String, home: String, install: String, sessionDirectory: String, helper: String, namespace: String, catalogItemId: String, appName: String, platform: String, language: String, 
+        /**
+         * A Windows build's Wine prefix, where its saves live.
+         */prefix: String?) {
         self.root = root
         self.home = home
         self.install = install
@@ -3248,6 +3255,7 @@ public struct EpicCloudConfiguration: Equatable, Hashable {
         self.appName = appName
         self.platform = platform
         self.language = language
+        self.prefix = prefix
     }
 
     
@@ -3275,7 +3283,8 @@ public struct FfiConverterTypeEpicCloudConfiguration: FfiConverterRustBuffer {
                 catalogItemId: FfiConverterString.read(from: &buf), 
                 appName: FfiConverterString.read(from: &buf), 
                 platform: FfiConverterString.read(from: &buf), 
-                language: FfiConverterString.read(from: &buf)
+                language: FfiConverterString.read(from: &buf), 
+                prefix: FfiConverterOptionString.read(from: &buf)
         )
     }
 
@@ -3290,6 +3299,7 @@ public struct FfiConverterTypeEpicCloudConfiguration: FfiConverterRustBuffer {
         FfiConverterString.write(value.appName, into: &buf)
         FfiConverterString.write(value.platform, into: &buf)
         FfiConverterString.write(value.language, into: &buf)
+        FfiConverterOptionString.write(value.prefix, into: &buf)
     }
 }
 
@@ -4344,6 +4354,10 @@ public struct SailOverLocations: Equatable, Hashable {
     public var steamRuntimeCache: String
     public var steamDiagnostics: String
     /**
+     * Where Wine logs the Windows builds of Epic games.
+     */
+    public var epicDiagnostics: String
+    /**
      * The Voile runtimes that run Windows games: the pinned release and a
      * development runtime.
      */
@@ -4364,6 +4378,9 @@ public struct SailOverLocations: Equatable, Hashable {
          * The bundled native host every supervisor runs as.
          */helper: String, helpers: String, steamRuntimePackage: String, steamRuntimeCache: String, steamDiagnostics: String, 
         /**
+         * Where Wine logs the Windows builds of Epic games.
+         */epicDiagnostics: String, 
+        /**
          * The Voile runtimes that run Windows games: the pinned release and a
          * development runtime.
          */voile: String, 
@@ -4380,6 +4397,7 @@ public struct SailOverLocations: Equatable, Hashable {
         self.steamRuntimePackage = steamRuntimePackage
         self.steamRuntimeCache = steamRuntimeCache
         self.steamDiagnostics = steamDiagnostics
+        self.epicDiagnostics = epicDiagnostics
         self.voile = voile
         self.winePrefixes = winePrefixes
     }
@@ -4410,6 +4428,7 @@ public struct FfiConverterTypeSailOverLocations: FfiConverterRustBuffer {
                 steamRuntimePackage: FfiConverterString.read(from: &buf), 
                 steamRuntimeCache: FfiConverterString.read(from: &buf), 
                 steamDiagnostics: FfiConverterString.read(from: &buf), 
+                epicDiagnostics: FfiConverterString.read(from: &buf), 
                 voile: FfiConverterString.read(from: &buf), 
                 winePrefixes: FfiConverterString.read(from: &buf)
         )
@@ -4426,6 +4445,7 @@ public struct FfiConverterTypeSailOverLocations: FfiConverterRustBuffer {
         FfiConverterString.write(value.steamRuntimePackage, into: &buf)
         FfiConverterString.write(value.steamRuntimeCache, into: &buf)
         FfiConverterString.write(value.steamDiagnostics, into: &buf)
+        FfiConverterString.write(value.epicDiagnostics, into: &buf)
         FfiConverterString.write(value.voile, into: &buf)
         FfiConverterString.write(value.winePrefixes, into: &buf)
     }
@@ -8903,7 +8923,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_sailover_bridge_checksum_method_epicsession_archive_cloud() != 30689) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sailover_bridge_checksum_method_epicsession_launch_game() != 3628) {
+    if (uniffi_sailover_bridge_checksum_method_epicsession_launch_game() != 28616) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sailover_bridge_checksum_method_gamesession_begin() != 43478) {

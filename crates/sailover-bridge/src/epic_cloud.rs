@@ -1,5 +1,5 @@
 //! Presentation of the Rust-owned Epic supervisor and Cloud decisions.
-use crate::{EpicError, EpicSession, GameSession};
+use crate::{EpicError, EpicSession, GameSession, SailOverLocations};
 use game_runtime::epic;
 use std::{path::Path, sync::Arc};
 
@@ -23,6 +23,8 @@ pub struct EpicCloudConfiguration {
     pub app_name: String,
     pub platform: String,
     pub language: String,
+    /// A Windows build's Wine prefix, where its saves live.
+    pub prefix: Option<String>,
 }
 impl From<EpicCloudConfiguration> for epic::Configuration {
     fn from(c: EpicCloudConfiguration) -> Self {
@@ -37,6 +39,7 @@ impl From<EpicCloudConfiguration> for epic::Configuration {
             app_name: c.app_name,
             platform: c.platform,
             language: c.language,
+            prefix: c.prefix.map(Into::into),
         }
     }
 }
@@ -53,6 +56,7 @@ impl From<epic::Configuration> for EpicCloudConfiguration {
             app_name: c.app_name,
             platform: c.platform,
             language: c.language,
+            prefix: c.prefix.map(|prefix| prefix.to_string_lossy().into_owned()),
         }
     }
 }
@@ -87,6 +91,7 @@ impl EpicSession {
     pub async fn launch_game(
         &self,
         configuration: EpicCloudConfiguration,
+        locations: SailOverLocations,
     ) -> Result<Arc<GameSession>, EpicError> {
         let cancel = sailover_core::transfer::CancelToken::new();
         let client_slot = Arc::new(std::sync::Mutex::new(None));
@@ -95,6 +100,26 @@ impl EpicSession {
             client: Arc::clone(&client_slot),
             armed: true,
         };
+        let configuration: epic::Configuration = configuration.into();
+        // A Windows build runs in Wine, readied before any exchange code exists.
+        let wine = match configuration.prefix.is_some() {
+            false => None,
+            true => {
+                let configuration = configuration.clone();
+                Some(
+                    blocking(move || {
+                        let runtime = game_runtime::voile::runtime(Path::new(&locations.voile))
+                            .ok_or(epic::Error::WineUnavailable)?;
+                        epic::prepare_windows(
+                            &configuration,
+                            runtime,
+                            Path::new(&locations.epic_diagnostics),
+                        )
+                    })
+                    .await?,
+                )
+            }
+        };
         let account = self.client.credentials().await?.account_id;
         let exchange = self.client.exchange_code().await?;
         if self.client.credentials().await?.account_id != account {
@@ -102,9 +127,10 @@ impl EpicSession {
         }
         let session = tokio::task::spawn_blocking(move || {
             let session = GameSession::epic(epic::start(
-                configuration.into(),
+                configuration,
                 account,
                 exchange,
+                wine,
                 cancel.clone(),
             )?);
             *client_slot.lock().unwrap() = Some(Arc::clone(&session));

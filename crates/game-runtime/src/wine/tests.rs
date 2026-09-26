@@ -2,7 +2,7 @@ use super::*;
 
 /// The smallest file `portable_executable` accepts: a DOS header whose last
 /// field points just past it, at a PE signature.
-fn pe() -> Vec<u8> {
+pub(crate) fn pe() -> Vec<u8> {
     let mut bytes = vec![0u8; 64];
     bytes[..2].copy_from_slice(b"MZ");
     bytes[60..64].copy_from_slice(&64u32.to_le_bytes());
@@ -75,6 +75,81 @@ fn a_windows_game_starts_behind_steam_exe_in_its_prefix() {
         steam_api,
         install.join("Game_Data/Plugins/x86_64/steam_api64.dll")
     );
+}
+
+#[test]
+fn a_windows_game_starts_in_wine_itself_when_no_storefront_helper_stands_in() {
+    let (_directory, root) = installation();
+    let install = root.join("game");
+    fs::create_dir_all(install.join("Binaries")).unwrap();
+    fs::write(install.join("Binaries/Game.exe"), pe()).unwrap();
+    let config = config(&root);
+
+    let target = super::target(
+        &install,
+        &target(&install.join("Binaries/Game.exe"), &["-EpicPortal"]),
+        HashMap::from([("HOME".to_owned(), "/home".to_owned())]),
+        &config,
+    )
+    .unwrap();
+
+    assert_eq!(target.executable, root.join("runtime/bin/wine"));
+    assert_eq!(
+        target.arguments,
+        [
+            install.join("Binaries/Game.exe").to_string_lossy().as_ref(),
+            "-EpicPortal"
+        ]
+    );
+    assert_eq!(target.working_directory, install.join("Binaries"));
+    assert_eq!(target.environment["HOME"], "/home");
+    assert_eq!(target.environment["WINEMSYNC"], "1");
+    assert_eq!(
+        target.environment["WINEPREFIX"],
+        root.join("prefix").to_string_lossy()
+    );
+}
+
+#[test]
+fn an_epic_prerequisite_runs_unless_it_only_installs_visual_cpp_or_leaves_the_installation() {
+    let install = Path::new("/games/epic");
+    let prerequisite = |ids: &[&str], path: &str| epic_kit::client::Prerequisite {
+        ids: ids.iter().map(|id| (*id).into()).collect(),
+        name: "Prerequisites".into(),
+        path: path.into(),
+        arguments: "/quiet /norestart".into(),
+    };
+
+    assert_eq!(
+        epic_prerequisites(
+            install,
+            Some(&prerequisite(&["a", "b"], "Redist\\DirectX\\setup.exe"))
+        ),
+        [Prerequisite {
+            id: "epic:a,b".into(),
+            programs: vec![(
+                install.join("Redist/DirectX/setup.exe"),
+                "/quiet /norestart".into()
+            )],
+        }]
+    );
+    assert_eq!(
+        epic_prerequisites(install, Some(&prerequisite(&[], "Redist/setup.exe")))[0].id,
+        "epic:Redist/setup.exe"
+    );
+    for path in [
+        "Engine\\Extras\\Redist\\en-us\\UEPrereqSetup_x64.exe",
+        "Redist/vcredist_x64.exe",
+        "Redist/VC_redist.x64.exe",
+        "..\\outside.exe",
+        "/Applications/setup.exe",
+    ] {
+        assert!(
+            epic_prerequisites(install, Some(&prerequisite(&["a"], path))).is_empty(),
+            "{path}"
+        );
+    }
+    assert!(epic_prerequisites(install, None).is_empty());
 }
 
 #[test]

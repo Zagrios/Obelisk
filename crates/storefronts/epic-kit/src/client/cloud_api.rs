@@ -97,9 +97,6 @@ impl Client {
         platform: &str,
     ) -> Result<Option<CloudRules>, EpicError> {
         validate_identity(namespace, catalog_item_id, app_name, platform)?;
-        if platform != "Mac" {
-            return Err(EpicError::UnsupportedContent);
-        }
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]
         struct Catalog {
@@ -129,7 +126,7 @@ impl Client {
                 .append_pair("locale", "en");
             let mut catalog: BTreeMap<String, Catalog> = self.api.get(url, &token).await?;
             let item = catalog.remove(catalog_item_id).ok_or(EpicError::Protocol)?;
-            CloudRules::from_attributes(&item.custom_attributes)
+            CloudRules::from_attributes(&item.custom_attributes, platform)
         })
         .await
     }

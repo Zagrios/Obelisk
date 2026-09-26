@@ -334,7 +334,7 @@ final class EpicCloudTests: XCTestCase {
         cloud.connect(account: "account") { services.startEpicMaintenance($0) }
         let configuration = EpicCloudConfiguration(root: "/fixture-cloud", home: "/fixture-home", install: "/fixture-game",
             sessionDirectory: "/fixture-sessions", helper: "/fixture-helper", namespace: "sandbox", catalogItemId: "catalog",
-            appName: "game", platform: "Mac", language: "fr")
+            appName: "game", platform: "Mac", language: "fr", prefix: nil)
 
         cloud.startMaintenance(configuration)
 
@@ -366,7 +366,7 @@ final class EpicCloudTests: XCTestCase {
                              description: "", imageUrl: nil, headerImageUrl: nil, developer: "", windows: false, macos: true)
         let saved = EpicCloudConfiguration(root: "/old-cloud", home: "/fixture-home", install: "/removed-game",
             sessionDirectory: "/old-sessions", helper: "/old-helper", namespace: "sandbox", catalogItemId: "catalog",
-            appName: "game", platform: "Mac", language: "fr")
+            appName: "game", platform: "Mac", language: "fr", prefix: nil)
         let services = CloudServicesFixture()
         let sessions = EpicGameSessions(recoverSession: { nil })
         let model = EpicModel(directory: directory, keychain: EpicMemoryStore(credentials),
@@ -521,6 +521,23 @@ final class EpicCloudTests: XCTestCase {
         XCTAssertTrue(sessions.isBusy)
         await game.update(phase: .failed, error: "cancelled", failureReason: .cancelled)
         await task.value
+    }
+
+    func testAWindowsBuildKeepsItsSavesInItsWinePrefixAndAMacBuildHasNone() {
+        let cloud = makeCloud(EpicGameSessions(recoverSession: { nil }))
+        let game = EpicGame(appName: "game", namespace: "sandbox", catalogItemId: "catalog", title: "Fixture",
+                            description: "", imageUrl: nil, headerImageUrl: nil, developer: "", windows: true, macos: false)
+        let receipt = { (platform: String) in
+            EpicInstallReceipt(namespace: "sandbox", appName: "game", name: "Fixture",
+                               directory: "/fixture/Games/epic-hash-\(platform)", platform: platform, totalBytes: 0)
+        }
+
+        let windows = cloud.configuration(game: game, receipt: receipt("Windows"), language: "fr")
+        let mac = cloud.configuration(game: game, receipt: receipt("Mac"), language: "fr")
+
+        XCTAssertEqual(windows.platform, "Windows")
+        XCTAssertEqual(windows.prefix, "/fixture/Prefixes/epic-hash-Windows")
+        XCTAssertNil(mac.prefix)
     }
 
     private func makeCloud(_ sessions: EpicGameSessions) -> EpicCloudModel {

@@ -15,7 +15,7 @@ const OTHER: &str = "abcdef0123456789abcdef0123456789";
 pub(crate) fn rules() -> CloudRules {
     CloudRules {
         cloud_save_folder: None,
-        cloud_save_folder_mac: "{Home}/Saves".into(),
+        cloud_save_folder_mac: Some("{Home}/Saves".into()),
         include: vec!["*.sav".into()],
         exclude: Vec::new(),
     }
@@ -47,6 +47,7 @@ impl Harness for EpicGame {
             app_name: "game".into(),
             platform: "Mac".into(),
             language: "en".into(),
+            prefix: None,
         };
         for directory in [
             config.home.join("Saves"),
@@ -178,6 +179,7 @@ fn fixture() -> (tempfile::TempDir, Vault, Context) {
         app_name: "game".into(),
         platform: "Mac".into(),
         language: "en".into(),
+        prefix: None,
     };
     let mut vault = Vault::open(&config.root, config.scope(ACCOUNT)).unwrap();
     vault.set_preferences(Preferences {
@@ -189,7 +191,7 @@ fn fixture() -> (tempfile::TempDir, Vault, Context) {
         account_id: ACCOUNT.into(),
         rules: CloudRules {
             cloud_save_folder: None,
-            cloud_save_folder_mac: "{Home}/Saves".into(),
+            cloud_save_folder_mac: Some("{Home}/Saves".into()),
             include: vec!["*.sav".into()],
             exclude: vec!["excluded.sav".into()],
         },
@@ -378,7 +380,7 @@ fn save_name_scan_refuses_links_before_adopting_or_reading_bytes() {
 fn unsupported_mac_rules_allow_only_a_new_unmanaged_game_to_start_without_cloud() {
     let (_temporary, _vault, mut context) = fixture();
     let mut rules = context.rules.clone();
-    rules.cloud_save_folder_mac = "{AppData}/Game".into();
+    rules.cloud_save_folder_mac = Some("{AppData}/Game".into());
     context.config.root = context.config.root.with_file_name("fresh-archive");
     let mut vault = Vault::open(&context.config.root, context.config.scope(ACCOUNT)).unwrap();
     assert!(!supports_rules(&context.config, ACCOUNT, &rules, &vault, None).unwrap());

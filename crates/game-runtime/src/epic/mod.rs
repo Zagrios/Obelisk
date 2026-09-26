@@ -8,7 +8,7 @@ mod session;
 use crate::cloud::{Control, Phase as CloudPhase};
 use crate::supervisor::{self, Record, Target};
 pub use crate::supervisor::{FailureReason, Phase};
-pub use client::start;
+pub use client::{prepare_windows, start};
 pub use launch::serve;
 use sailover_core::transfer::CancelToken;
 use serde::{Deserialize, Serialize};
@@ -36,6 +36,8 @@ pub enum Error {
     SharedSaves,
     #[error("backend.runtime.rosettaUnavailable")]
     RosettaUnavailable,
+    #[error("backend.runtime.wineUnavailable")]
+    WineUnavailable,
     #[error("{0}")]
     Epic(#[from] epic_kit::EpicError),
     #[error("backend.epic.cloud.storage")]
@@ -75,6 +77,7 @@ impl From<crate::Error> for Error {
     fn from(error: crate::Error) -> Self {
         match error {
             crate::Error::RosettaUnavailable => Self::RosettaUnavailable,
+            crate::Error::WineUnavailable => Self::WineUnavailable,
             crate::Error::IncompatibleArchitecture
             | crate::Error::InvalidApplication
             | crate::Error::NotExecutable => Self::Unsupported,
@@ -97,6 +100,10 @@ pub struct Configuration {
     pub app_name: String,
     pub platform: String,
     pub language: String,
+    /// Set for a Windows build, which runs in Wine: its saves live in this
+    /// prefix.
+    #[serde(default)]
+    pub prefix: Option<PathBuf>,
 }
 impl Configuration {
     fn scope(&self, account: &str) -> cloud_vault::EpicScope {
@@ -106,8 +113,25 @@ impl Configuration {
             app_name: self.app_name.clone(),
         }
     }
+    /// The build whose saves this Cloud manages, and where they are.
+    fn cloud_platform(&self) -> epic_kit::cloud::CloudPlatform {
+        match &self.prefix {
+            Some(prefix) => epic_kit::cloud::CloudPlatform::Windows {
+                profile: crate::wine::profile(prefix),
+            },
+            None => epic_kit::cloud::CloudPlatform::Mac {
+                home: self.home.clone(),
+            },
+        }
+    }
     fn validate(&self, account: &str) -> Result<()> {
         cloud_vault::StoreScope::from(self.scope(account)).validate()?;
+        // A Mac build runs natively; a Windows build in its prefix.
+        let prefix = match (self.platform.as_str(), &self.prefix) {
+            ("Mac", None) => None,
+            ("Windows", Some(prefix)) => Some(prefix),
+            _ => return Err(Error::Unsupported),
+        };
         if [
             &self.root,
             &self.home,
@@ -116,13 +140,13 @@ impl Configuration {
             &self.helper,
         ]
         .into_iter()
+        .chain(prefix)
         .any(|p| {
             !p.is_absolute()
                 || p.components()
                     .any(|c| matches!(c, std::path::Component::ParentDir))
         }) || self.catalog_item_id.is_empty()
             || self.catalog_item_id.len() > 256
-            || self.platform != "Mac"
             || self.language.len() > 128
         {
             return Err(Error::Unsupported);
@@ -197,4 +221,14 @@ struct Request {
     /// Built in SailOver's process: a supervisor starts without any environment.
     #[serde(default)]
     environment: std::collections::HashMap<String, String>,
+    /// How a Windows build runs.
+    #[serde(default)]
+    wine: Option<Wine>,
+}
+
+/// The Wine runtime a Windows build runs in, and the log Wine writes.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Wine {
+    pub runtime: PathBuf,
+    pub log: PathBuf,
 }

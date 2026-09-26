@@ -9,7 +9,7 @@ use std::{
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{
-    Deserialize, Deserializer,
+    Deserialize, Deserializer, Serialize,
     de::{MapAccess, Visitor},
 };
 use sha1::{Digest, Sha1};
@@ -33,6 +33,31 @@ pub(crate) struct Manifest {
     pub chunks: BTreeMap<ChunkGuid, Chunk>,
     pub feature_level: u32,
     pub custom_fields: BTreeMap<String, String>,
+    pub prerequisite: Option<Prerequisite>,
+}
+
+/// The program a build asks to run once before its game first starts, such as
+/// a runtime installer.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Prerequisite {
+    pub ids: Vec<String>,
+    pub name: String,
+    /// Relative to the installation, with Windows separators.
+    pub path: String,
+    /// Its Windows command line.
+    pub arguments: String,
+}
+
+impl Prerequisite {
+    /// A build without a prerequisite program names none.
+    fn named(ids: Vec<String>, name: String, path: String, arguments: String) -> Option<Self> {
+        (!path.trim().is_empty()).then_some(Self {
+            ids,
+            name,
+            path,
+            arguments,
+        })
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -317,12 +342,16 @@ fn metadata(mut reader: Reader<'_>) -> Result<Manifest, EpicError> {
     let build_version = reader.string()?;
     let launch_executable = reader.string()?;
     let launch_command = reader.string()?;
+    let mut prerequisite_ids = Vec::new();
     for _ in 0..reader.count(4)? {
-        reader.string()?; // Prerequisite IDs.
+        prerequisite_ids.push(reader.string()?);
     }
-    for _ in 0..3 {
-        reader.string()?; // Prerequisite name, executable, arguments.
-    }
+    let prerequisite = Prerequisite::named(
+        prerequisite_ids,
+        reader.string()?,
+        reader.string()?,
+        reader.string()?,
+    );
     if version >= 1 {
         reader.string()?; // Build ID.
     }
@@ -340,6 +369,7 @@ fn metadata(mut reader: Reader<'_>) -> Result<Manifest, EpicError> {
         chunks: BTreeMap::new(),
         feature_level,
         custom_fields: BTreeMap::new(),
+        prerequisite,
     })
 }
 
@@ -589,6 +619,14 @@ struct JsonManifest {
     launch_executable: String,
     #[serde(rename = "LaunchCommand", default)]
     launch_command: String,
+    #[serde(rename = "PrereqIds", default)]
+    prerequisite_ids: Vec<String>,
+    #[serde(rename = "PrereqName", default)]
+    prerequisite_name: String,
+    #[serde(rename = "PrereqPath", default)]
+    prerequisite_path: String,
+    #[serde(rename = "PrereqArgs", default)]
+    prerequisite_arguments: String,
     #[serde(rename = "FileManifestList")]
     files: Vec<JsonFile>,
     #[serde(rename = "ChunkFilesizeList", deserialize_with = "unique_map")]
@@ -703,6 +741,12 @@ fn json_manifest(data: &[u8]) -> Result<Manifest, EpicError> {
         chunks,
         feature_level,
         custom_fields: json.custom_fields,
+        prerequisite: Prerequisite::named(
+            json.prerequisite_ids,
+            json.prerequisite_name,
+            json.prerequisite_path,
+            json.prerequisite_arguments,
+        ),
     })
 }
 
@@ -951,6 +995,27 @@ mod tests {
         }
         result.extend(payload);
         result
+    }
+
+    #[test]
+    fn a_manifest_keeps_its_prerequisite_program_and_a_build_without_one_names_none() {
+        let expected = Some(Prerequisite {
+            ids: vec!["prerequisite-id".into()],
+            name: "runtime".into(),
+            path: "support/setup.exe".into(),
+            arguments: "-silent".into(),
+        });
+        let manifest = parse(&binary(&body(20, 2, 2), 20, false)).unwrap();
+        assert_eq!(manifest.prerequisite, expected);
+
+        let mut json = json_fixture();
+        assert_eq!(parse_json(&json).unwrap().prerequisite, None);
+        let object = json.as_object_mut().unwrap();
+        object.insert("PrereqIds".into(), serde_json::json!(["prerequisite-id"]));
+        object.insert("PrereqName".into(), "runtime".into());
+        object.insert("PrereqPath".into(), "support/setup.exe".into());
+        object.insert("PrereqArgs".into(), "-silent".into());
+        assert_eq!(parse_json(&json).unwrap().prerequisite, expected);
     }
 
     #[test]

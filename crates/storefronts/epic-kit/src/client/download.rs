@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
 
 use super::{Client, validate_identity};
+pub use crate::content_manifest::Prerequisite;
 use crate::{EpicError, content::ContentClient, details};
 
 pub use sailover_core::{installation::TransferProgress, transfer::TransferState};
@@ -29,6 +30,9 @@ pub struct Installation {
     pub launch_command: String,
     #[serde(default)]
     pub deployment_id: Option<String>,
+    /// What the build asks to run once before its game first starts.
+    #[serde(default)]
+    pub prerequisite: Option<Prerequisite>,
 }
 
 pub(super) type Downloads = Transfers<TransferProgress>;
@@ -188,6 +192,7 @@ impl Client {
                 launch_executable: manifest.launch_executable.clone(),
                 launch_command: manifest.launch_command.clone(),
                 deployment_id: fetched.deployment_id,
+                prerequisite: manifest.prerequisite.clone(),
             },
             total_bytes: summary.total_bytes,
             network_bytes: network_bytes.saturating_add(summary.downloaded_bytes),

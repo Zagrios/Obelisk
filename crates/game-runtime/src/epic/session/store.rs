@@ -53,7 +53,7 @@ impl Context {
     }
     pub fn resolve(&self) -> Result<ResolvedCloudRules> {
         Ok(self.rules.resolve(
-            &self.config.home,
+            &self.config.cloud_platform(),
             &self.config.install,
             &self.account_id,
             &self.config.app_name,

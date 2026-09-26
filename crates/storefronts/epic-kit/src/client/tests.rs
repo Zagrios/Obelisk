@@ -233,15 +233,35 @@ async fn supervisor_exchange_rejects_and_revokes_an_unexpected_account() {
 }
 
 #[tokio::test]
-async fn cloud_configuration_requires_ownership_and_distinguishes_missing_from_malformed_mac_rules()
-{
-    for (attributes, expected) in [
-        (json!({}), "none"),
+async fn cloud_configuration_requires_ownership_and_reads_the_rules_of_the_platform_build() {
+    for (platform, attributes, expected) in [
+        ("Mac", json!({}), "none"),
         (
+            "Mac",
             json!({"CloudSaveFolder_MAC":{"value":"{Home}/Game"},"CloudExcludeList":{"value":"*.log"}}),
             "some",
         ),
-        (json!({"CloudSaveFolder_MAC":{"value":false}}), "error"),
+        (
+            "Mac",
+            json!({"CloudSaveFolder_MAC":{"value":false}}),
+            "error",
+        ),
+        (
+            "Mac",
+            json!({"CloudSaveFolder":{"value":"{AppData}/Game"}}),
+            "none",
+        ),
+        (
+            "Windows",
+            json!({"CloudSaveFolder":{"value":"{AppData}/Game"}}),
+            "some",
+        ),
+        (
+            "Windows",
+            json!({"CloudSaveFolder_MAC":{"value":"{Home}/Game"}}),
+            "none",
+        ),
+        ("Windows", json!({"CloudSaveFolder":{"value":""}}), "error"),
     ] {
         let mock = Mock::new(vec![
             reply(
@@ -257,7 +277,7 @@ async fn cloud_configuration_requires_ownership_and_distinguishes_missing_from_m
         ]);
         let result = mock
             .client(false)
-            .cloud_configuration("space", "item", "app", "Mac")
+            .cloud_configuration("space", "item", "app", platform)
             .await;
         match expected {
             "none" => assert!(result.unwrap().is_none()),
@@ -1233,6 +1253,7 @@ fn launch_installation(directory: &std::path::Path) -> Installation {
         launch_executable: executable.into(),
         launch_command: "--title \"My game\" --literal '$HOME'".into(),
         deployment_id: Some("deployment-fixture".into()),
+        prerequisite: None,
     };
     write_launch_receipt(&installation);
     installation
@@ -1486,6 +1507,27 @@ async fn launch_fetches_required_ownership_token_as_raw_bytes_and_never_swallows
             [("nsCatalogItemId".into(), "space:base".into())]
         );
     }
+}
+
+#[test]
+fn an_installation_names_its_prerequisite_from_its_own_receipt_only() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut installation = launch_installation(temp.path());
+    let directory = std::path::PathBuf::from(&installation.directory);
+    let read = |app: &str, platform: &str| {
+        super::installed_prerequisite("space", "base", app, platform, &directory)
+    };
+    assert_eq!(read("game", "Mac").unwrap(), None);
+    installation.prerequisite = Some(Prerequisite {
+        ids: vec!["ue".into()],
+        name: "Prerequisites".into(),
+        path: "Engine\\Extras\\Redist\\en-us\\setup.exe".into(),
+        arguments: "/quiet".into(),
+    });
+    write_launch_receipt(&installation);
+    assert_eq!(read("game", "Mac").unwrap(), installation.prerequisite);
+    assert!(read("other", "Mac").is_err());
+    assert!(read("game", "Windows").is_err());
 }
 
 #[tokio::test]

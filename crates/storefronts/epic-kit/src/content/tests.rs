@@ -235,6 +235,7 @@ fn fixture() -> (Manifest, HashMap<String, Vec<u8>>, Vec<u8>) {
         files,
         chunks: [(first.guid, first), (second.guid, second)].into(),
         feature_level: 18,
+        prerequisite: None,
     };
     (manifest, responses, output)
 }

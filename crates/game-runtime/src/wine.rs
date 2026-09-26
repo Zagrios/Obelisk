@@ -102,6 +102,34 @@ impl Config {
     }
 }
 
+/// The Windows game `target` names inside `install`, which Wine starts in the
+/// prefix with `environment` and Wine's own settings.
+pub fn target(
+    install: &Path,
+    target: &LaunchTarget,
+    environment: HashMap<String, String>,
+    config: &Config,
+) -> Result<Target, Error> {
+    let root = install.canonicalize()?;
+    let executable = Path::new(&target.executable)
+        .canonicalize()
+        .map_err(|_| Error::NotExecutable)?;
+    if !executable.starts_with(&root) || !portable_executable(&executable)? {
+        return Err(Error::NotExecutable);
+    }
+    let mut arguments = vec![executable.to_string_lossy().into_owned()];
+    arguments.extend(target.arguments.iter().cloned());
+    let mut environment = environment;
+    environment.extend(config.environment());
+    Ok(Target {
+        executable: config.wine(),
+        arguments,
+        working_directory: target.working_directory.clone().into(),
+        environment,
+        log: None,
+    })
+}
+
 /// The Windows game `target` names inside `install`, started by steam.exe,
 /// and the Steam API library that shows the game uses Steamworks.
 pub fn steam_target(
@@ -110,36 +138,14 @@ pub fn steam_target(
     home: &Path,
     config: &Config,
 ) -> Result<(Target, PathBuf), Error> {
-    let root = install.canonicalize()?;
-    let executable = Path::new(&target.executable)
-        .canonicalize()
-        .map_err(|_| Error::NotExecutable)?;
-    if !executable.starts_with(&root) || !portable_executable(&executable)? {
-        return Err(Error::NotExecutable);
-    }
+    let mut game = self::target(install, target, crate::native::environment(home), config)?;
     let steam_api = crate::steam::launch::library(target, &["steam_api64.dll", "steam_api.dll"])?;
-    let mut arguments = vec![
-        STEAM_HELPER.to_owned(),
-        executable.to_string_lossy().into_owned(),
-    ];
-    arguments.extend(target.arguments.iter().cloned());
-    let mut environment = crate::native::environment(home);
-    environment.extend(config.environment());
-    Ok((
-        Target {
-            executable: config.wine(),
-            arguments,
-            working_directory: target.working_directory.clone().into(),
-            environment,
-            log: None,
-        },
-        steam_api,
-    ))
+    game.arguments.insert(0, STEAM_HELPER.to_owned());
+    Ok((game, steam_api))
 }
 
-/// Creates the prefix on first use, keeps its user folders apart from the Mac
-/// home, then places Valve's steamclient libraries where its registry points
-/// steam_api.
+/// Creates the prefix on first use and keeps its user folders apart from the
+/// Mac home.
 pub fn prepare(config: &Config, home: &Path) -> Result<(), Error> {
     if !config.installed() {
         return Err(Error::WineUnavailable);
@@ -165,7 +171,12 @@ pub fn prepare(config: &Config, home: &Path) -> Result<(), Error> {
             return Err(Error::StartFailed);
         }
     }
-    unlink_home_folders(&profile(&config.prefix))?;
+    unlink_home_folders(&profile(&config.prefix))
+}
+
+/// Places Valve's steamclient libraries where the prefix's registry points
+/// steam_api.
+pub fn place_steam_clients(config: &Config) -> Result<(), Error> {
     let steam = config.prefix.join("drive_c/Program Files (x86)/Steam");
     fs::create_dir_all(&steam)?;
     for name in STEAM_CLIENTS {
@@ -247,6 +258,49 @@ pub fn steam_prerequisites(install: &Path) -> Result<Vec<Prerequisite>, Error> {
         }));
     }
     Ok(prerequisites)
+}
+
+/// Installers that only lay down the Visual C++ runtime, which games get from
+/// Wine instead, as they do the Visual C++ packages Steam lists. Unreal's
+/// prerequisites installer is mostly that runtime.
+fn visual_cpp_installer(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    ["vcredist", "vc_redist", "ueprereqsetup"]
+        .iter()
+        .any(|prefix| name.starts_with(prefix))
+}
+
+/// The program an Epic installation names to run before its game first
+/// starts, unless it only installs the Visual C++ runtime or leaves the
+/// installation.
+pub fn epic_prerequisites(
+    install: &Path,
+    prerequisite: Option<&epic_kit::client::Prerequisite>,
+) -> Vec<Prerequisite> {
+    let Some(prerequisite) = prerequisite else {
+        return Vec::new();
+    };
+    let relative = prerequisite.path.replace('\\', "/");
+    let relative = Path::new(&relative);
+    let inside = relative
+        .components()
+        .all(|component| matches!(component, std::path::Component::Normal(_)));
+    let installer = relative
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(visual_cpp_installer);
+    if !inside || installer {
+        return Vec::new();
+    }
+    let id = if prerequisite.ids.is_empty() {
+        relative.to_string_lossy().into_owned()
+    } else {
+        prerequisite.ids.join(",")
+    };
+    vec![Prerequisite {
+        id: format!("epic:{id}"),
+        programs: vec![(install.join(relative), prerequisite.arguments.clone())],
+    }]
 }
 
 /// Runs, in order, the prerequisites this prefix has not run yet. One that
@@ -399,4 +453,4 @@ fn portable_executable(path: &Path) -> Result<bool, Error> {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

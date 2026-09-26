@@ -164,9 +164,10 @@ pub(crate) fn package(
             ),
             (
                 "CloudSaveFolder_MAC".into(),
-                rules.cloud_save_folder_mac.clone(),
+                rules.cloud_save_folder_mac.clone().unwrap_or_default(),
             ),
         ]),
+        prerequisite: None,
     };
     let mut encoded_chunks = BTreeMap::new();
     let mut buffer = Vec::with_capacity(CHUNK_SIZE);
@@ -473,6 +474,7 @@ mod identity_tests {
             chunks: BTreeMap::new(),
             feature_level: 18,
             custom_fields: BTreeMap::new(),
+            prerequisite: None,
         };
         encode_manifest(&manifest).unwrap()
     }

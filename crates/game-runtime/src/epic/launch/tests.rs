@@ -26,6 +26,7 @@ fn config(directory: &Path, sessions: &Path) -> Configuration {
         app_name: "game".into(),
         platform: "Mac".into(),
         language: "en".into(),
+        prefix: None,
     }
 }
 
@@ -52,6 +53,7 @@ impl Harness for EpicHarness {
                 account_id: ACCOUNT.into(),
                 exchange_code: "fixture-exchange-code".into(),
                 environment: crate::native::environment(directory),
+                wine: None,
             },
         )
     }
@@ -295,4 +297,71 @@ fn an_ownership_token_lives_as_long_as_its_prepared_game() {
     assert!(token.exists());
     drop(host);
     assert!(!token.exists());
+}
+
+#[test]
+fn a_windows_build_starts_in_wine_with_its_ownership_token_on_the_z_drive() {
+    let root = tempfile::tempdir().unwrap();
+    let directory = root.path().canonicalize().unwrap();
+    let mut config = config(&directory, &directory.join("sessions"));
+    config.platform = "Windows".into();
+    config.prefix = Some(directory.join("prefix"));
+    fs::create_dir_all(&config.install).unwrap();
+    fs::write(config.install.join("game"), crate::wine::tests::pe()).unwrap();
+    let mut plan = launch_plan(&config.install, &config.install);
+    plan.platform = "Windows".into();
+    plan.target.arguments = vec!["-AUTH_TYPE=exchangecode".into()];
+    plan.ownership_token = Some(b"ownership".to_vec());
+    let wine = Wine {
+        runtime: directory.join("runtime"),
+        log: directory.join("logs/wine-game.log"),
+    };
+    let prefix = directory.join("prefix");
+
+    let (target, architecture, ownership) =
+        windows_target(&plan, &config, &prefix, &wine, &HashMap::new()).unwrap();
+
+    assert_eq!(architecture, Architecture::Intel);
+    assert_eq!(target.executable, directory.join("runtime/bin/wine"));
+    assert_eq!(
+        target.arguments[..2],
+        [
+            config.install.join("game").to_string_lossy().into_owned(),
+            "-AUTH_TYPE=exchangecode".to_owned(),
+        ]
+    );
+    let token = target.arguments[2]
+        .strip_prefix("-epicovt=Z:")
+        .unwrap()
+        .replace('\\', "/");
+    assert_eq!(fs::read(&token).unwrap(), b"ownership");
+    assert_eq!(target.environment["WINEPREFIX"], prefix.to_string_lossy());
+    assert_eq!(target.log, Some(wine.log.clone()));
+    drop(ownership);
+    assert!(!Path::new(&token).exists());
+    // A Mac binary is no Windows build.
+    fs::write(config.install.join("game"), thin(INTEL, true)).unwrap();
+    assert!(windows_target(&plan, &config, &prefix, &wine, &HashMap::new()).is_err());
+}
+
+#[test]
+fn a_windows_build_runs_only_in_its_prefix_and_a_mac_build_never_does() {
+    let root = tempfile::tempdir().unwrap();
+    let directory = root.path().canonicalize().unwrap();
+    let mut config = config(&directory, &directory.join("sessions"));
+    assert!(config.validate(ACCOUNT).is_ok());
+    config.prefix = Some(directory.join("prefix"));
+    assert!(matches!(config.validate(ACCOUNT), Err(Error::Unsupported)));
+    config.platform = "Windows".into();
+    assert!(config.validate(ACCOUNT).is_ok());
+    assert_eq!(
+        config.cloud_platform(),
+        epic_kit::cloud::CloudPlatform::Windows {
+            profile: directory.join("prefix/drive_c/users/crossover"),
+        }
+    );
+    for prefix in [None, Some(PathBuf::from("relative/prefix"))] {
+        config.prefix = prefix;
+        assert!(matches!(config.validate(ACCOUNT), Err(Error::Unsupported)));
+    }
 }

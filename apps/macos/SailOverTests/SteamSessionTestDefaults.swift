@@ -44,7 +44,7 @@ extension SteamSessionProtocol {
 // Models take launches and Cloud maintenance as injected closures, so a fake
 // session never has to build a Rust-backed object.
 extension EpicSessionProtocol {
-    func launchGame(configuration: EpicCloudConfiguration) async throws -> GameSession {
+    func launchGame(configuration: EpicCloudConfiguration, locations: SailOverLocations) async throws -> GameSession {
         throw CocoaError(.featureUnsupported)
     }
     func archiveCloud(configuration: EpicCloudConfiguration) async throws {}

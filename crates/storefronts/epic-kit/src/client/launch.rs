@@ -8,7 +8,7 @@ use sailover_core::{
 };
 use serde::Deserialize;
 
-use super::{Client, Installation, endpoint, validate_identity};
+use super::{Client, Installation, Prerequisite, endpoint, validate_identity};
 use crate::{
     EpicError,
     friends::{Activity, publishable_text},
@@ -58,6 +58,36 @@ impl LaunchCatalogItem {
             })
             .transpose()
     }
+}
+
+/// What the installation in `directory` asks to run once before its game
+/// first starts. Only the local receipt is read, so this runs before any
+/// short-lived game credential exists.
+pub fn installed_prerequisite(
+    namespace: &str,
+    catalog_item_id: &str,
+    app_name: &str,
+    platform: &str,
+    directory: &Path,
+) -> Result<Option<Prerequisite>, EpicError> {
+    validate_identity(namespace, catalog_item_id, app_name, platform)?;
+    let installed =
+        installation::open::<Installation>(directory).map_err(|failure| match failure {
+            InstallFailure::Io(_) => launch_error("directoryUnreadable"),
+            failure => failure.into(),
+        })?;
+    let receipt = installed
+        .receipt
+        .as_ref()
+        .ok_or_else(|| launch_error("incompleteInstallation"))?;
+    if receipt.namespace != namespace
+        || receipt.catalog_item_id != catalog_item_id
+        || receipt.app_name != app_name
+        || receipt.platform != platform
+    {
+        return Err(launch_error("incompleteInstallation"));
+    }
+    Ok(receipt.prerequisite.clone())
 }
 
 impl Client {

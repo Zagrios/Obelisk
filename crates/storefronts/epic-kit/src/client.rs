@@ -22,8 +22,10 @@ mod cloud_api;
 pub use achievements::Achievement;
 mod download;
 mod launch;
-pub use download::{Installation, TransferProgress, TransferState, installation_directory_name};
-pub use launch::LaunchPlan;
+pub use download::{
+    Installation, Prerequisite, TransferProgress, TransferState, installation_directory_name,
+};
+pub use launch::{LaunchPlan, installed_prerequisite};
 
 const MAX_LIBRARY_PAGES: usize = 1000;
 const MAX_LIBRARY_RECORDS: usize = 100_000;

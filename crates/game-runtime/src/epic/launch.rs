@@ -131,7 +131,9 @@ impl<S: Services> lifecycle::Launch for Launch<S> {
     fn open(input: &mut dyn Read) -> Result<(Opening<Epic>, Self)> {
         let request: Request = storage::packet(input)?;
         request.config.validate(&request.account_id)?;
-        if uuid::Uuid::parse_str(&request.id).is_err() {
+        if uuid::Uuid::parse_str(&request.id).is_err()
+            || request.wine.is_some() != request.config.prefix.is_some()
+        {
             return Err(Error::Session);
         }
         let opening = Opening {
@@ -187,8 +189,13 @@ impl<S: Services> lifecycle::Launch for Launch<S> {
         let plan = self.api()?.launch_plan(&self.request.config).await?;
         session.cloud().check()?;
         // A fresh plan, after Rosetta was installed, drops the old token.
-        let (target, architecture, ownership) =
-            native_target(&plan, &self.request.config, &self.request.environment)?;
+        let request = &self.request;
+        let (target, architecture, ownership) = match (&request.config.prefix, &request.wine) {
+            (Some(prefix), Some(wine)) => {
+                windows_target(&plan, &request.config, prefix, wine, &request.environment)?
+            }
+            _ => native_target(&plan, &request.config, &request.environment)?,
+        };
         self.activity = plan.activity;
         self.ownership = ownership;
         Ok((target, Some(architecture)))
@@ -277,6 +284,50 @@ fn helpers(config: &Configuration) -> Result<PathBuf> {
         .into())
 }
 
+/// The plan's ownership token in a private folder that lives as long as the
+/// game, and the file that holds it.
+fn ownership_token(plan: &LaunchPlan) -> Result<Option<(tempfile::TempDir, PathBuf)>> {
+    let Some(bytes) = &plan.ownership_token else {
+        return Ok(None);
+    };
+    let directory = tempfile::Builder::new()
+        .prefix("sailover-epic-ownership-")
+        .permissions(std::fs::Permissions::from_mode(0o700))
+        .tempdir()?;
+    let path = directory.path().join("ownership.bin");
+    crate::files::atomic_write(&path, crate::files::Durability::FileSync, |f| {
+        f.write_all(bytes)?;
+        Ok(())
+    })?;
+    Ok(Some((directory, path)))
+}
+
+/// A Windows build, which Wine starts in its prefix. Wine is an Intel
+/// program: Rosetta runs it and the game inside it.
+pub(super) fn windows_target(
+    plan: &LaunchPlan,
+    config: &Configuration,
+    prefix: &Path,
+    wine: &Wine,
+    environment: &std::collections::HashMap<String, String>,
+) -> Result<(Target, Architecture, Option<tempfile::TempDir>)> {
+    let runtime = crate::wine::Config {
+        runtime: wine.runtime.clone(),
+        prefix: prefix.to_owned(),
+    };
+    let mut target =
+        crate::wine::target(&config.install, &plan.target, environment.clone(), &runtime)?;
+    let ownership = ownership_token(plan)?.map(|(directory, path)| {
+        // The game reads the token through Wine's view of the Mac's disk.
+        target
+            .arguments
+            .push(format!("-epicovt={}", crate::wine::windows_path(&path)));
+        directory
+    });
+    target.log = Some(wine.log.clone());
+    Ok((target, Architecture::Intel, ownership))
+}
+
 pub(super) fn native_target(
     plan: &LaunchPlan,
     config: &Configuration,
@@ -284,21 +335,10 @@ pub(super) fn native_target(
 ) -> Result<(Target, Architecture, Option<tempfile::TempDir>)> {
     let (executable, architecture) = crate::native::executable(&config.install, &plan.target)?;
     let mut arguments = plan.target.arguments.clone();
-    let ownership = if let Some(bytes) = &plan.ownership_token {
-        let directory = tempfile::Builder::new()
-            .prefix("sailover-epic-ownership-")
-            .permissions(std::fs::Permissions::from_mode(0o700))
-            .tempdir()?;
-        let path = directory.path().join("ownership.bin");
-        crate::files::atomic_write(&path, crate::files::Durability::FileSync, |f| {
-            f.write_all(bytes)?;
-            Ok(())
-        })?;
+    let ownership = ownership_token(plan)?.map(|(directory, path)| {
         arguments.push(format!("-epicovt={}", path.display()));
-        Some(directory)
-    } else {
-        None
-    };
+        directory
+    });
     Ok((
         Target {
             executable,

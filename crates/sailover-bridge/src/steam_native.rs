@@ -64,6 +64,7 @@ impl SteamNativeLaunch {
                     let (mut target, steam_api) =
                         game_runtime::wine::steam_target(&install, &target, &home, wine)?;
                     game_runtime::wine::prepare(wine, &home)?;
+                    game_runtime::wine::place_steam_clients(wine)?;
                     // What Steam runs before a first launch, such as Visual C++.
                     let prerequisites = game_runtime::wine::steam_prerequisites(&install)?;
                     game_runtime::wine::install_prerequisites(wine, &home, &prerequisites)?;

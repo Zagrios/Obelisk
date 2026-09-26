@@ -93,7 +93,7 @@ final class EpicModel {
         gameSessions: EpicGameSessions = .shared,
         cloudServices: EpicCloudServices = .live,
         launchGame: @escaping @MainActor (any EpicSessionProtocol, EpicCloudConfiguration) async throws -> any GameSessionProtocol = {
-            try await $0.launchGame(configuration: $1)
+            try await $0.launchGame(configuration: $1, locations: .live)
         },
         maintainCloud: @escaping @MainActor (any EpicSessionProtocol, EpicCloudConfiguration) async -> any CloudMaintenanceProtocol = {
             await $0.maintainCloud(configuration: $1)
@@ -571,6 +571,8 @@ final class EpicModel {
                         return try await supervise(on: session, accountId: accountID, generation: generation,
                                                    preparing: false) {
                             try proceed()
+                            // Windows builds run in SailOver's Wine runtime, installed apart from the app on first use.
+                            if receipt.platform == "Windows" { try await VoileRuntime.live.prepare() }
                             do { return try await launchGame(session, configuration) }
                             catch { throw GameHandoffFailure(cause: error) }
                         }
@@ -582,6 +584,11 @@ final class EpicModel {
                 guard let self, let session, let account = accountID,
                       let game = games.first(where: { $0.libraryID == receipt.libraryID }) else { return nil }
                 let configuration = cloud.configuration(game: game, receipt: receipt, language: launchLanguage)
+                var removePrefix: (@Sendable () throws -> Void)?
+                if configuration.prefix != nil {
+                    let (locations, directory) = (cloud.locations, receipt.directory)
+                    removePrefix = { try removeWinePrefix(locations: locations, installDirectory: directory) }
+                }
                 return GameUninstall(
                     // The engine owns the directory naming scheme; never re-derive it here.
                     directoryName: epicInstallationDirectoryName(
@@ -589,7 +596,8 @@ final class EpicModel {
                         appName: receipt.appName, platform: receipt.platform
                     ),
                     archive: { try await remembered.perform(on: session) { try await session.archiveCloud(configuration: configuration) } },
-                    removed: { try await epicCloudRemoved(configuration: configuration, accountId: account) }
+                    removed: { try await epicCloudRemoved(configuration: configuration, accountId: account) },
+                    removePrefix: removePrefix
                 )
             },
             report: { [weak self] error in

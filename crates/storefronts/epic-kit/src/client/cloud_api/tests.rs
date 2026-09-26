@@ -248,7 +248,7 @@ fn hex(bytes: &[u8]) -> String {
 fn rules() -> CloudRules {
     CloudRules {
         cloud_save_folder: None,
-        cloud_save_folder_mac: "{Home}/saves".into(),
+        cloud_save_folder_mac: Some("{Home}/saves".into()),
         include: vec![],
         exclude: vec![],
     }

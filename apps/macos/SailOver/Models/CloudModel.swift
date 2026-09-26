@@ -297,6 +297,12 @@ extension CloudModel where Store == EpicGames {
         EpicCloudConfiguration(root: root, home: locations.home, install: receipt.directory,
                                sessionDirectory: sessionDirectory, helper: locations.helper,
                                namespace: game.namespace, catalogItemId: game.catalogItemId,
-                               appName: game.appName, platform: receipt.platform, language: language)
+                               appName: game.appName, platform: receipt.platform, language: language,
+                               prefix: prefix(receipt))
+    }
+
+    /// A Windows build runs in Wine and keeps its saves in its prefix.
+    private func prefix(_ receipt: EpicInstallReceipt) -> String? {
+        receipt.platform == "Windows" ? winePrefix(locations: locations, installDirectory: receipt.directory) : nil
     }
 }

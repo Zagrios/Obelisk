@@ -482,9 +482,6 @@ pub async fn archive(config: Configuration, api: &EpicClient) -> Result<()> {
 }
 
 async fn archive_with(config: Configuration, api: &impl CloudRemote) -> Result<()> {
-    if config.platform == "Windows" {
-        return Ok(());
-    }
     let account = api.account_id().await?;
     config.validate(&account)?;
     store::safe(&config.root)?;
@@ -545,9 +542,6 @@ fn archive_context(vault: &mut Vault, context: &mut Context) -> Result<()> {
 }
 
 pub fn removed(config: &Configuration, account: &str) -> Result<()> {
-    if config.platform == "Windows" {
-        return Ok(());
-    }
     config.validate(account)?;
     store::safe(&config.root)?;
     let _vault = Vault::open(&config.root, config.scope(account))?;
@@ -576,7 +570,12 @@ fn supports_rules(
     vault: &Vault,
     saved: Option<&Context>,
 ) -> Result<bool> {
-    match rules.resolve(&config.home, &config.install, account, &config.app_name) {
+    match rules.resolve(
+        &config.cloud_platform(),
+        &config.install,
+        account,
+        &config.app_name,
+    ) {
         Ok(_) => Ok(true),
         Err(EpicError::UnsupportedContent) if !has_saved_state(vault, saved) => Ok(false),
         Err(error) => Err(error.into()),

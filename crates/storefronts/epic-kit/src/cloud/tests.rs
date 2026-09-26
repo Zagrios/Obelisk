@@ -5,17 +5,30 @@ use sailover_core::transfer::CancelToken;
 fn rules(path: &str) -> CloudRules {
     CloudRules {
         cloud_save_folder: Some("{AppData}/Game".into()),
-        cloud_save_folder_mac: path.into(),
+        cloud_save_folder_mac: Some(path.into()),
         include: vec![],
         exclude: vec![],
     }
+}
+
+fn windows_rules(path: &str) -> CloudRules {
+    CloudRules {
+        cloud_save_folder: Some(path.into()),
+        cloud_save_folder_mac: None,
+        include: vec![],
+        exclude: vec![],
+    }
+}
+
+fn mac(home: &Path) -> CloudPlatform {
+    CloudPlatform::Mac { home: home.into() }
 }
 
 #[test]
 fn mac_rules_require_explicit_metadata_and_preserve_both_platforms() {
     use serde_json::json;
     assert!(
-        CloudRules::from_attributes(&BTreeMap::new())
+        CloudRules::from_attributes(&BTreeMap::new(), "Mac")
             .unwrap()
             .is_none()
     );
@@ -34,7 +47,7 @@ fn mac_rules_require_explicit_metadata_and_preserve_both_platforms() {
             json!({"value":"*.bak,profile/cache/"}),
         ),
     ]);
-    let rules = CloudRules::from_attributes(&attrs).unwrap().unwrap();
+    let rules = CloudRules::from_attributes(&attrs, "Mac").unwrap().unwrap();
     assert!(rules.accepts("nested/one.sav").unwrap());
     assert!(rules.accepts("profile/options.json").unwrap());
     assert!(!rules.accepts("profile/cache/slot.sav").unwrap());
@@ -43,9 +56,9 @@ fn mac_rules_require_explicit_metadata_and_preserve_both_platforms() {
     assert!(rules.accepts("../foreign.sav").is_err());
     let mut bad = attrs.clone();
     bad.insert("CloudSaveFolder_MAC".into(), json!({"value":false}));
-    assert!(CloudRules::from_attributes(&bad).is_err());
+    assert!(CloudRules::from_attributes(&bad, "Mac").is_err());
     bad.insert("CloudSaveFolder_MAC".into(), json!({"value":""}));
-    assert!(CloudRules::from_attributes(&bad).is_err());
+    assert!(CloudRules::from_attributes(&bad, "Mac").is_err());
     assert!(parse_filters(Some("*.sav,,*.json".into())).is_err());
     assert!(parse_filters(Some("[0-9].sav".into())).is_err());
 }
@@ -57,7 +70,7 @@ fn resolver_confines_roots_and_keeps_missing_installation_recoverable() {
     fs::create_dir(&home).unwrap();
     let install = temp.path().join("deleted/game");
     let resolved = rules("{USERLIBRARY}/Application Support/{AppName}/{EpicId}")
-        .resolve(&home, &install, "account", "game")
+        .resolve(&mac(&home), &install, "account", "game")
         .unwrap();
     assert_eq!(
         resolved.directory,
@@ -75,16 +88,79 @@ fn resolver_confines_roots_and_keeps_missing_installation_recoverable() {
     ] {
         assert!(
             rules(path)
-                .resolve(&home, &install, "account", "game")
+                .resolve(&mac(&home), &install, "account", "game")
                 .is_err(),
             "{path}"
         );
     }
     let resolved = rules("{InstallDir}/saves")
-        .resolve(&home, &install, "account", "game")
+        .resolve(&mac(&home), &install, "account", "game")
         .unwrap();
     assert!(resolved.directory.ends_with("deleted/game/saves"));
     assert!(resolved.check_directory().is_ok());
+}
+
+#[test]
+fn windows_rules_resolve_like_the_launcher_inside_the_prefix_profile() {
+    let temp = tempfile::tempdir().unwrap();
+    let profile = temp.path().join("prefix/drive_c/users/crossover");
+    fs::create_dir_all(&profile).unwrap();
+    let install = temp.path().join("game");
+    let windows = CloudPlatform::Windows {
+        profile: profile.clone(),
+    };
+    let profile = profile.canonicalize().unwrap();
+    for (path, expected) in [
+        ("{AppData}/Game/Saved", "AppData/Local/Game/Saved"),
+        (
+            "{AppData}\\..\\LocalLow\\Studio\\Game",
+            "AppData/LocalLow/Studio/Game",
+        ),
+        ("{AppData}/../Roaming/Game", "AppData/Roaming/Game"),
+        (
+            "{UserDir}/My Games/Game/{EpicId}",
+            "Documents/My Games/Game/account",
+        ),
+        ("{UserSavedGames}/Game", "Saved Games/Game"),
+        ("{UserProfile}/.game", ".game"),
+    ] {
+        let resolved = windows_rules(path)
+            .resolve(&windows, &install, "account", "game")
+            .unwrap();
+        assert_eq!(resolved.directory, profile.join(expected), "{path}");
+    }
+    for path in [
+        "{AppData}",
+        "{AppData}/..",
+        "{AppData}/../Roaming",
+        "{AppData}/../../../foreign",
+        "{UserDir}/",
+        "{UserLibrary}/Game",
+        "{Home}/Game",
+        "C:/Games/Save",
+    ] {
+        assert!(
+            windows_rules(path)
+                .resolve(&windows, &install, "account", "game")
+                .is_err(),
+            "{path}"
+        );
+    }
+    let resolved = windows_rules("{InstallDir}/Saved")
+        .resolve(&windows, &install, "account", "game")
+        .unwrap();
+    assert!(resolved.directory.ends_with("game/Saved"));
+    // A Mac build's rules name no Windows folder, and the reverse.
+    let mut mac_only = rules("{Home}/Game");
+    mac_only.cloud_save_folder = None;
+    assert!(matches!(
+        mac_only.resolve(&windows, &install, "account", "game"),
+        Err(EpicError::UnsupportedContent)
+    ));
+    assert!(matches!(
+        windows_rules("{AppData}/Game").resolve(&mac(temp.path()), &install, "account", "game"),
+        Err(EpicError::UnsupportedContent)
+    ));
 }
 
 #[test]
@@ -93,7 +169,7 @@ fn replacement_of_root_with_symlink_is_rejected_after_resolution() {
     {
         let temp = tempfile::tempdir().unwrap();
         let resolved = rules("{Home}/saves/child")
-            .resolve(temp.path(), temp.path(), "account", "game")
+            .resolve(&mac(temp.path()), temp.path(), "account", "game")
             .unwrap();
         std::os::unix::fs::symlink(temp.path(), temp.path().join("saves")).unwrap();
         assert!(resolved.check_directory().is_err());
@@ -120,7 +196,7 @@ fn buildpatch_roundtrip_preserves_unicode_empty_files_and_chunk_boundaries() {
     assert_eq!(manifest.chunks.len(), 2);
     assert_eq!(
         manifest.custom_fields["CloudSaveFolder_MAC"],
-        rules.cloud_save_folder_mac
+        rules.cloud_save_folder_mac.unwrap()
     );
     assert_eq!(manifest.custom_fields["CloudSaveFolder"], "{AppData}/Game");
     let chunks: BTreeMap<_, _> = manifest
