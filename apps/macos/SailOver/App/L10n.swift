@@ -44,10 +44,11 @@ struct LocalizedStrings {
         return String(format: format, locale: locale ?? Locale(identifier: language), arguments: arguments)
     }
 
-    /// Rust passes stable keys and JSON arguments, never a sentence to translate by matching it.
-    /// Other values are filenames or diagnostics supplied by the OS or a remote service.
+    /// Rust passes stable keys and JSON arguments, never a sentence to translate by matching it,
+    /// and models reuse storefront errors for their own `model.` keys. Other values are
+    /// filenames or diagnostics supplied by the OS or a remote service.
     func message(_ value: String, locale: Locale? = nil) -> String {
-        if value.hasPrefix("backend."), !value.contains(where: \.isWhitespace) {
+        if value.hasPrefix("backend.") || value.hasPrefix("model."), !value.contains(where: \.isWhitespace) {
             return string(value, locale: locale)
         }
         guard value.hasPrefix("{"), let data = value.data(using: .utf8),

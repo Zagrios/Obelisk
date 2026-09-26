@@ -49,7 +49,9 @@ final class LocalizationTests: XCTestCase {
         let encoded = try XCTUnwrap(String(data: payload, encoding: .utf8))
         XCTAssertEqual(english.message(encoded), "Epic Games is unavailable for this request (HTTP 503).")
         XCTAssertEqual(french.message(encoded), "Epic Games est indisponible pour cette demande (HTTP 503).")
-        for raw in ["Game_Data/level1.bin", "An external diagnostic", "{malformed}"] {
+        XCTAssertEqual(french.message("model.epic.gameExited"), "Le jeu Epic s’est arrêté de manière inattendue.")
+        XCTAssertEqual(english.message("model.steam.gameExited"), "The game closed unexpectedly. You can launch it again.")
+        for raw in ["Game_Data/level1.bin", "An external diagnostic", "{malformed}", "model.bin"] {
             XCTAssertEqual(french.message(raw), raw)
         }
     }
