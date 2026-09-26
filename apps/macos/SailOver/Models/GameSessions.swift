@@ -29,7 +29,14 @@ enum SteamGames: GameStorefront {
         guard case let .steam(steamId) = account else { return nil }
         return steamId
     }
-    static func failure(_ key: String) -> Error { SteamError.Failure(reason: key) }
+    /// Steam's own errors keep their meaning, such as a sign-in to renew.
+    static func failure(_ key: String) -> Error {
+        switch key {
+        case "backend.steam.friends.authenticationRequired": SteamError.AuthenticationRequired
+        case "backend.steam.content.cancelled": SteamError.Cancelled
+        default: SteamError.Failure(reason: key)
+        }
+    }
     static let invalidSession = "backend.steam.runtime.invalidSession"
     static let recoveringSession = "model.steam.recoveringSession"
 
@@ -118,13 +125,14 @@ final class GameSessions<Store: GameStorefront> {
     var isBusy: Bool { active != nil || isRecovering }
     private var revokedAccounts: [Store.AccountID] = []
     private var rosetta: RosettaPrompt?
-    @ObservationIgnored private let core: any StorefrontSessionsProtocol
+    /// Rust's Game sessions, which the account's installations admit launches into.
+    @ObservationIgnored let core: StorefrontSessions
     @ObservationIgnored private var revision: UInt64 = 0
     @ObservationIgnored private var operation: Task<Void, Never>?
     /// Told once the launch's game runs.
     @ObservationIgnored private var onRunning: (@MainActor () -> Void)?
 
-    init(_ core: any StorefrontSessionsProtocol) {
+    init(_ core: StorefrontSessions) {
         self.core = core
         apply(core.state())
         let revision = revision
@@ -137,6 +145,12 @@ final class GameSessions<Store: GameStorefront> {
                 apply(state)
             }
         }
+    }
+
+    /// Shows Rust's state at once, such as an admission the account's
+    /// installations just made.
+    func refresh() {
+        apply(core.state())
     }
 
     private func apply(_ state: GameSessionsState) {

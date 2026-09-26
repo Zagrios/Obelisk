@@ -583,7 +583,7 @@ final class EpicDownloadTests: XCTestCase {
         try await eventually { !fixture.model.installations.isDownloading }
         await fixture.session.failNextDownload(rotated: credentials("verify-failure"))
         fixture.model.installations.primaryAction()
-        try await eventually { !fixture.model.gameSessions.isBusy }
+        try await eventually { !fixture.model.gameSessions.isBusy && !fixture.model.installations.isLaunching }
         let firstLaunches = await fixture.session.launchRequests
         XCTAssertTrue(firstLaunches.isEmpty)
         XCTAssertNotNil(fixture.model.errorMessage)
@@ -591,7 +591,8 @@ final class EpicDownloadTests: XCTestCase {
 
         await fixture.session.failNextLaunch(rotated: credentials("handoff-failure"))
         fixture.model.installations.primaryAction()
-        try await eventually { !fixture.model.gameSessions.isBusy }
+        try await eventually { !fixture.model.gameSessions.isBusy && !fixture.model.installations.isLaunching }
+        try await eventually { await fixture.store.value?.refreshToken == "handoff-failure" }
         let saved = await fixture.store.value
         let games = await fixture.session.launchedGames
         let events = await fixture.session.events
@@ -714,10 +715,8 @@ final class EpicDownloadTests: XCTestCase {
         let session = EpicDownloadSession(credentials: credential, game: owned, store: store)
         let model = EpicModel(directory: directory, keychain: store, restore: { _ in session }, language: "fr-FR",
                               gameSessions: EpicGameSessions(recoverSession: { nil }),
-                              launchGame: { _, admission, configuration, beforeStart in
-                                  try await admission.launch(handoff: TestHandoff {
-                                      try await session.startGame(configuration: configuration)
-                                  }, beforeStart: beforeStart)
+                              installations: EpicModel.installations(library: directory) { configuration in
+                                  try await session.startGame(configuration: configuration)
                               })
         await model.start()
         model.open(owned)

@@ -444,3 +444,27 @@ fn removal_waits_for_the_installation_lock() {
     remove(&game, "steam-620-macos", &[]).unwrap();
     assert!(!game.exists());
 }
+
+#[test]
+fn removal_accepts_both_spellings_of_the_system_temporary_folder() {
+    let component = format!("SailOverRemovalAliases-{}", std::process::id());
+    let temporary = std::env::temp_dir();
+    let temporary = temporary.to_string_lossy().trim_end_matches('/').to_owned();
+    let private = if temporary.starts_with("/var/") {
+        format!("/private{temporary}")
+    } else {
+        temporary.clone()
+    };
+    for parent in [
+        "/tmp".to_owned(),
+        "/private/tmp".to_owned(),
+        temporary,
+        private,
+    ] {
+        let root = Path::new(&parent).join(&component);
+        let game = installed(&root, "steam-620-macos");
+        remove(&game, "steam-620-macos", &[&root]).unwrap();
+        assert!(!game.exists(), "{parent}");
+        let _ = fs::remove_dir_all(&root);
+    }
+}

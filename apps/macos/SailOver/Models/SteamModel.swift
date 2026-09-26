@@ -107,7 +107,11 @@ final class SteamModel {
     @ObservationIgnored private let loadNews: @Sendable (UInt32) async throws -> [SteamNews]
     @ObservationIgnored private let beginLogin: @Sendable (SteamLoginStart) async throws -> any SteamLoginProtocol
     let gameSessions: SteamGameSessions
-    @ObservationIgnored private let startGame: @MainActor (GameAdmission, SteamLaunchPlan, SteamCredentials) async throws -> Void
+    /// The Rust installations of the account a session signed in, whose
+    /// receipts a file keeps.
+    typealias MakeInstallations = @MainActor (any SteamSessionProtocol, SteamCredentials, StorefrontSessions, URL)
+        -> any InstallationsBackend<SteamGames>
+    @ObservationIgnored private let makeInstallations: MakeInstallations
     @ObservationIgnored private let startCloudMaintenance: @MainActor @Sendable (SteamCredentials, SteamCloudMaintenanceRequest) -> any CloudMaintenanceProtocol
     let cloud: SteamCloudModel
     let rosetta: SteamRosettaModel
@@ -156,9 +160,7 @@ final class SteamModel {
         },
         gameSessions: SteamGameSessions = .shared,
         cloudServices: SteamCloudServices = .live,
-        startGame: @escaping @MainActor (GameAdmission, SteamLaunchPlan, SteamCredentials) async throws -> Void = {
-            try await launchSteamGame(admission: $0, plan: $1, credentials: $2, locations: .live)
-        }
+        installations makeInstallations: MakeInstallations? = nil
     ) {
         self.directory = directory
         self.keychain = keychain
@@ -171,7 +173,12 @@ final class SteamModel {
         self.verifyBeforeLaunch = preferences.object(forKey: Self.verifyBeforeLaunchPreferenceKey) == nil
             ? true : preferences.bool(forKey: Self.verifyBeforeLaunchPreferenceKey)
         self.gameSessions = gameSessions
-        self.startGame = startGame
+        let locations = SailOverLocations.of(library: directory)
+        self.makeInstallations = makeInstallations ?? { session, credentials, sessions, receipts in
+            SteamInstallationsBackend(try! Self.installations(of: session, credentials: credentials,
+                                                              sessions: sessions, receipts: receipts,
+                                                              locations: locations))
+        }
         self.startCloudMaintenance = cloudServices.startMaintenance
         self.cloud = SteamCloudModel(locations: .of(library: directory), sessions: gameSessions,
                                      indicators: cloudServices.indicators)
@@ -458,8 +465,9 @@ final class SteamModel {
             errorMessage = nil
             isConnecting = false
             isRestoring = false
+            let receipts = directory.appending(path: "steam-installations-\(credentials.steamId).json")
             installations.connect(account: credentials.steamId,
-                                  receipts: directory.appending(path: "steam-installations-\(credentials.steamId).json"),
+                                  backend: makeInstallations(connected, credentials, gameSessions.core, receipts),
                                   port: installationPort())
             let startMaintenance = startCloudMaintenance
             cloud.connect(account: credentials.steamId) { startMaintenance(credentials, $0) }
@@ -850,49 +858,34 @@ final class SteamModel {
         news = []
     }
 
-    /// Steam's operations for the installation actions, on the session
-    /// connected when each one starts.
+    /// Rust's installations of the account `session` signed in.
+    private static func installations(of session: any SteamSessionProtocol, credentials: SteamCredentials,
+                                      sessions: StorefrontSessions, receipts: URL,
+                                      locations: SailOverLocations) throws -> SteamAccountInstallations {
+        if let session = session as? SteamSession {
+            return try SteamAccountInstallations(session: session, credentials: credentials, sessions: sessions,
+                                                 receipts: receipts.path, locations: locations)
+        }
+        #if DEBUG
+        return try SteamAccountInstallations.withContent(
+            content: SessionSteamContent(session, start: { _ in
+                throw SteamError.Failure(reason: "backend.steam.runtime.startFailed")
+            }),
+            accountId: credentials.steamId, sessions: sessions, receipts: receipts.path, locations: locations
+        )
+        #else
+        preconditionFailure("Only a Rust session signs in")
+        #endif
+    }
+
+    /// Steam's part of the installation actions.
     private func installationPort() -> InstallationPort<SteamGames> {
-        let startGame = startGame
-        return InstallationPort(
-            session: { [weak self] in
-                guard let session = self?.session else { return nil }
-                return InstallationSession(
-                    download: { request, events in
-                        try events.started()
-                        let installed = try await session.download(appId: request.game.appId, platform: request.platform,
-                                                                   language: request.language, directory: request.directory.path)
-                        try events.installed(SteamInstallReceipt(
-                            appId: installed.appId, name: installed.name, directory: installed.directory,
-                            platform: installed.platform, language: installed.language, totalBytes: installed.totalBytes
-                        ))
-                    },
-                    progress: { session.downloadProgress() },
-                    cancel: { session.cancelDownload() },
-                    start: { [weak self] receipt, admission in
-                        let plan = try await session.launchPlan(appId: receipt.appId, platform: receipt.platform,
-                                                                directory: receipt.directory)
-                        try Task.checkCancellation()
-                        guard let credentials = self?.sessionCredentials else { throw SteamError.AuthenticationRequired }
-                        try await startGame(admission, plan, credentials)
-                    }
-                )
-            },
+        InstallationPort(
             verifiesBeforeLaunch: { [weak self] in self?.verifyBeforeLaunch ?? true },
-            uninstall: { [weak self] receipt in
-                guard let self, let session, let account = steamId else { return nil }
-                let cloud = cloud
-                var removePrefix: (@Sendable () throws -> Void)?
-                if receipt.platform == "windows" {
-                    let (locations, directory) = (SailOverLocations.live, receipt.directory)
-                    removePrefix = { try removeWinePrefix(locations: locations, installDirectory: directory) }
-                }
-                return GameUninstall(
-                    directoryName: "steam-\(receipt.appId)-\(receipt.platform)",
-                    archive: { try await cloud.archive(receipt, session: session) },
-                    removed: { try await cloud.removed(receipt, accountId: account) },
-                    removePrefix: removePrefix
-                )
+            uninstallRequest: { receipt in
+                SteamDownload(appId: receipt.appId, name: receipt.name, platform: receipt.platform,
+                              language: receipt.language,
+                              directory: URL(fileURLWithPath: receipt.directory).deletingLastPathComponent())
             },
             report: { [weak self] error in self?.errorMessage = error.map(Self.message) },
             warn: { [weak self] in self?.storageWarning = $0 },

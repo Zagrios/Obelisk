@@ -581,8 +581,10 @@ final class SteamPresentationTests: XCTestCase {
         XCTAssertFalse(fixture.model.installations.isLaunching)
         XCTAssertFalse(fixture.model.installations.isDownloading)
         XCTAssertTrue(fixture.model.installations.receipts.isEmpty)
+        // Rust may have started the verification already: signing out cancels
+        // it, and the game is never handed off.
         let events = await fixture.events.snapshot()
-        XCTAssertTrue(events.isEmpty, "A cancelled launch task must not even start verification after sign-out")
+        XCTAssertTrue(events.allSatisfy { $0.hasPrefix("verify:") }, "A signed-out launch never hands off: \(events)")
     }
 
     @MainActor
@@ -592,11 +594,14 @@ final class SteamPresentationTests: XCTestCase {
         fixture.model.installations.primaryAction()
         XCTAssertEqual(fixture.model.installations.activeTransferGame, 620)
         fixture.model.installations.cancelDownload()
+        // A verification Rust already started returns, and is refused.
+        await fixture.downloads.release(fixture.request, value: fixture.installation)
         try await eventually { !fixture.model.installations.isLaunching }
         XCTAssertFalse(fixture.model.installations.isDownloading)
         XCTAssertNil(fixture.model.installations.activeTransferGame)
+        XCTAssertNil(fixture.model.errorMessage)
         let events = await fixture.events.snapshot()
-        XCTAssertTrue(events.isEmpty)
+        XCTAssertTrue(events.allSatisfy { $0.hasPrefix("verify:") }, "A cancelled launch never hands off: \(events)")
     }
 
     @MainActor
@@ -673,8 +678,10 @@ final class SteamPresentationTests: XCTestCase {
         XCTAssertFalse(fixture.model.installations.isUninstalling)
         XCTAssertFalse(fixture.model.installations.canUninstallSelectedGame)
         fixture.model.installations.cancelDownload()
+        await fixture.downloads.release(fixture.request, value: fixture.installation)
         try await eventually { !fixture.model.installations.isLaunching }
-        XCTAssertEqual(fixture.model.installations.selectedReceipt, receipt)
+        // A verification Rust started before the cancellation marks the receipt.
+        XCTAssertEqual(fixture.model.installations.selectedReceipt?.directory, receipt.directory)
         XCTAssertTrue(FileManager.default.fileExists(atPath: receipt.directory))
     }
 
@@ -1039,7 +1046,7 @@ final class SteamPresentationTests: XCTestCase {
         let fixture = try await launchFixture(verify: false, failLaunch: true)
         defer { fixture.cleanUp() }
         fixture.model.installations.primaryAction()
-        try await eventually { !fixture.model.gameSessions.isBusy }
+        try await eventually { !fixture.model.gameSessions.isBusy && !fixture.model.installations.isLaunching }
         XCTAssertNotNil(fixture.model.errorMessage)
         XCTAssertTrue(fixture.model.installations.primaryActionAvailable)
     }
@@ -1148,10 +1155,7 @@ final class SteamPresentationTests: XCTestCase {
             return SteamLaunchPlan(appId: appId, platform: platform, installDirectory: directory, target: LaunchTarget(executable: directory + "/Game.app", arguments: [], workingDirectory: directory, isApplicationBundle: true))
         })
         let credentialStore = FixtureCredentialStore(value: SteamCredentials(accountName: "Test account", steamId: accountID, refreshToken: "fixture-only-never-sent"))
-        let startSupervisor = startGame ?? { plan, credentials in
-            XCTAssertEqual(credentials.steamId, accountID)
-            XCTAssertEqual(credentials.accountName, "Test account")
-            XCTAssertEqual(credentials.refreshToken, "fixture-only-never-sent")
+        let startSupervisor = startGame ?? { plan, _ in
             let loads = await credentialStore.loadCount
             XCTAssertEqual(loads, 1, "Launching must reuse the connected session without reading Keychain again")
             await events.append("execute:\(plan.appId)")
@@ -1161,16 +1165,14 @@ final class SteamPresentationTests: XCTestCase {
             await completed.finish()
             return completed
         }
-        let startGame: @MainActor (GameAdmission, SteamLaunchPlan, SteamCredentials) async throws -> Void = {
-            admission, plan, credentials in
-            try await admission.launch(handoff: TestHandoff { try await startSupervisor(plan, credentials) },
-                                       beforeStart: nil)
-        }
+        let credentials = SteamCredentials(accountName: "Test account", steamId: accountID,
+                                           refreshToken: "fixture-only-never-sent")
+        let startGame = SteamModel.installations(library: root) { plan in try await startSupervisor(plan, credentials) }
         let gameSessions = sessions ?? SteamGameSessions(recoverSession: {
             XCTFail("A confirmed local launch must not recover another session")
             return nil
         })
-        let model = SteamModel(directory: root, keychain: credentialStore, connect: { _ in session }, news: { _ in [] }, beginLogin: { _ in throw SteamError.Failure(reason: "Fixture: sign-in is offline in tests") }, localeIdentifier: "fr-FR", preferences: preferences, gameSessions: gameSessions, cloudServices: cloudServices, startGame: startGame)
+        let model = SteamModel(directory: root, keychain: credentialStore, connect: { _ in session }, news: { _ in [] }, beginLogin: { _ in throw SteamError.Failure(reason: "Fixture: sign-in is offline in tests") }, localeIdentifier: "fr-FR", preferences: preferences, gameSessions: gameSessions, cloudServices: cloudServices, installations: startGame)
         await model.start()
         model.open(fixtureGames[0])
         return LaunchFixture(root: root, model: model, preferences: preferences, suite: suite, downloads: downloads, events: events, request: DownloadRequest(appId: 620, platform: "macos", language: "french", directory: parent.path), installation: SteamInstallation(appId: 620, name: "Portal 2", directory: installedDirectory.path, platform: "macos", language: "french", totalBytes: 100))

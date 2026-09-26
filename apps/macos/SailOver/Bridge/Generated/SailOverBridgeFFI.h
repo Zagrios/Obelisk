@@ -306,6 +306,97 @@ typedef void (*UniffiCallbackInterfaceGameSupervisorMethod5)(uint64_t, RustBuffe
     );
 
 #endif
+#ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_EPIC_CONTENT_METHOD0
+#define UNIFFI_FFIDEF_CALLBACK_INTERFACE_EPIC_CONTENT_METHOD0
+typedef void (*UniffiCallbackInterfaceEpicContentMethod0)(uint64_t, void* _Nonnull, 
+        RustCallStatus *_Nonnull uniffiCallStatus
+    );
+
+#endif
+#ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_EPIC_CONTENT_METHOD1
+#define UNIFFI_FFIDEF_CALLBACK_INTERFACE_EPIC_CONTENT_METHOD1
+typedef void (*UniffiCallbackInterfaceEpicContentMethod1)(uint64_t, RustBuffer, RustBuffer, RustBuffer, RustBuffer, RustBuffer, RustBuffer* _Nonnull, 
+        RustCallStatus *_Nonnull uniffiCallStatus
+    );
+
+#endif
+#ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_EPIC_CONTENT_METHOD2
+#define UNIFFI_FFIDEF_CALLBACK_INTERFACE_EPIC_CONTENT_METHOD2
+typedef void (*UniffiCallbackInterfaceEpicContentMethod2)(uint64_t, RustBuffer* _Nonnull, 
+        RustCallStatus *_Nonnull uniffiCallStatus
+    );
+
+#endif
+#ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_EPIC_CONTENT_METHOD3
+#define UNIFFI_FFIDEF_CALLBACK_INTERFACE_EPIC_CONTENT_METHOD3
+typedef void (*UniffiCallbackInterfaceEpicContentMethod3)(uint64_t, void* _Nonnull, 
+        RustCallStatus *_Nonnull uniffiCallStatus
+    );
+
+#endif
+#ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_EPIC_CONTENT_METHOD4
+#define UNIFFI_FFIDEF_CALLBACK_INTERFACE_EPIC_CONTENT_METHOD4
+typedef void (*UniffiCallbackInterfaceEpicContentMethod4)(uint64_t, RustBuffer, uint64_t* _Nonnull, 
+        RustCallStatus *_Nonnull uniffiCallStatus
+    );
+
+#endif
+#ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_EPIC_CONTENT_METHOD5
+#define UNIFFI_FFIDEF_CALLBACK_INTERFACE_EPIC_CONTENT_METHOD5
+typedef void (*UniffiCallbackInterfaceEpicContentMethod5)(uint64_t, RustBuffer, void* _Nonnull, 
+        RustCallStatus *_Nonnull uniffiCallStatus
+    );
+
+#endif
+#ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_EPIC_CREDENTIAL_SAVE_METHOD0
+#define UNIFFI_FFIDEF_CALLBACK_INTERFACE_EPIC_CREDENTIAL_SAVE_METHOD0
+typedef void (*UniffiCallbackInterfaceEpicCredentialSaveMethod0)(uint64_t, void* _Nonnull, 
+        RustCallStatus *_Nonnull uniffiCallStatus
+    );
+
+#endif
+#ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_STEAM_CONTENT_METHOD0
+#define UNIFFI_FFIDEF_CALLBACK_INTERFACE_STEAM_CONTENT_METHOD0
+typedef void (*UniffiCallbackInterfaceSteamContentMethod0)(uint64_t, uint32_t, RustBuffer, RustBuffer, RustBuffer, RustBuffer* _Nonnull, 
+        RustCallStatus *_Nonnull uniffiCallStatus
+    );
+
+#endif
+#ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_STEAM_CONTENT_METHOD1
+#define UNIFFI_FFIDEF_CALLBACK_INTERFACE_STEAM_CONTENT_METHOD1
+typedef void (*UniffiCallbackInterfaceSteamContentMethod1)(uint64_t, RustBuffer* _Nonnull, 
+        RustCallStatus *_Nonnull uniffiCallStatus
+    );
+
+#endif
+#ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_STEAM_CONTENT_METHOD2
+#define UNIFFI_FFIDEF_CALLBACK_INTERFACE_STEAM_CONTENT_METHOD2
+typedef void (*UniffiCallbackInterfaceSteamContentMethod2)(uint64_t, void* _Nonnull, 
+        RustCallStatus *_Nonnull uniffiCallStatus
+    );
+
+#endif
+#ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_STEAM_CONTENT_METHOD3
+#define UNIFFI_FFIDEF_CALLBACK_INTERFACE_STEAM_CONTENT_METHOD3
+typedef void (*UniffiCallbackInterfaceSteamContentMethod3)(uint64_t, uint32_t, RustBuffer, RustBuffer, RustBuffer* _Nonnull, 
+        RustCallStatus *_Nonnull uniffiCallStatus
+    );
+
+#endif
+#ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_STEAM_CONTENT_METHOD4
+#define UNIFFI_FFIDEF_CALLBACK_INTERFACE_STEAM_CONTENT_METHOD4
+typedef void (*UniffiCallbackInterfaceSteamContentMethod4)(uint64_t, RustBuffer, uint64_t* _Nonnull, 
+        RustCallStatus *_Nonnull uniffiCallStatus
+    );
+
+#endif
+#ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_STEAM_CONTENT_METHOD5
+#define UNIFFI_FFIDEF_CALLBACK_INTERFACE_STEAM_CONTENT_METHOD5
+typedef void (*UniffiCallbackInterfaceSteamContentMethod5)(uint64_t, RustBuffer, void* _Nonnull, 
+        RustCallStatus *_Nonnull uniffiCallStatus
+    );
+
+#endif
 #ifndef UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_BEFORE_GAME_START
 #define UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_BEFORE_GAME_START
 typedef struct UniffiVTableCallbackInterfaceBeforeGameStart {
@@ -345,6 +436,43 @@ typedef struct UniffiVTableCallbackInterfaceGameSupervisor {
     UniffiCallbackInterfaceGameSupervisorMethod4 _Nonnull resumeAfterRosetta;
     UniffiCallbackInterfaceGameSupervisorMethod5 _Nonnull revoke;
 } UniffiVTableCallbackInterfaceGameSupervisor;
+
+#endif
+#ifndef UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_EPIC_CONTENT
+#define UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_EPIC_CONTENT
+typedef struct UniffiVTableCallbackInterfaceEpicContent {
+    UniffiCallbackInterfaceFree _Nonnull uniffiFree;
+    UniffiCallbackInterfaceClone _Nonnull uniffiClone;
+    UniffiCallbackInterfaceEpicContentMethod0 _Nonnull prepare;
+    UniffiCallbackInterfaceEpicContentMethod1 _Nonnull download;
+    UniffiCallbackInterfaceEpicContentMethod2 _Nonnull downloadProgress;
+    UniffiCallbackInterfaceEpicContentMethod3 _Nonnull cancelDownload;
+    UniffiCallbackInterfaceEpicContentMethod4 _Nonnull handOff;
+    UniffiCallbackInterfaceEpicContentMethod5 _Nonnull archiveCloud;
+} UniffiVTableCallbackInterfaceEpicContent;
+
+#endif
+#ifndef UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_EPIC_CREDENTIAL_SAVE
+#define UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_EPIC_CREDENTIAL_SAVE
+typedef struct UniffiVTableCallbackInterfaceEpicCredentialSave {
+    UniffiCallbackInterfaceFree _Nonnull uniffiFree;
+    UniffiCallbackInterfaceClone _Nonnull uniffiClone;
+    UniffiCallbackInterfaceEpicCredentialSaveMethod0 _Nonnull save;
+} UniffiVTableCallbackInterfaceEpicCredentialSave;
+
+#endif
+#ifndef UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_STEAM_CONTENT
+#define UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_STEAM_CONTENT
+typedef struct UniffiVTableCallbackInterfaceSteamContent {
+    UniffiCallbackInterfaceFree _Nonnull uniffiFree;
+    UniffiCallbackInterfaceClone _Nonnull uniffiClone;
+    UniffiCallbackInterfaceSteamContentMethod0 _Nonnull download;
+    UniffiCallbackInterfaceSteamContentMethod1 _Nonnull downloadProgress;
+    UniffiCallbackInterfaceSteamContentMethod2 _Nonnull cancelDownload;
+    UniffiCallbackInterfaceSteamContentMethod3 _Nonnull launchPlan;
+    UniffiCallbackInterfaceSteamContentMethod4 _Nonnull handOff;
+    UniffiCallbackInterfaceSteamContentMethod5 _Nonnull archiveCloud;
+} UniffiVTableCallbackInterfaceSteamContent;
 
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_CLONE_LIBRARY
@@ -515,11 +643,6 @@ void uniffi_sailover_bridge_fn_method_epicsession_stop_friends(uint64_t ptr, Rus
 #ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_EPICSESSION_ARCHIVE_CLOUD
 #define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_EPICSESSION_ARCHIVE_CLOUD
 uint64_t uniffi_sailover_bridge_fn_method_epicsession_archive_cloud(uint64_t ptr, RustBuffer configuration
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_EPICSESSION_LAUNCH_GAME
-#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_EPICSESSION_LAUNCH_GAME
-uint64_t uniffi_sailover_bridge_fn_method_epicsession_launch_game(uint64_t ptr, uint64_t admission, RustBuffer configuration, RustBuffer locations, uint64_t before_start
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_CLONE_BEFOREGAMESTART
@@ -700,6 +823,256 @@ void uniffi_sailover_bridge_fn_method_storefrontsessions_revoke(uint64_t ptr, Ru
 #ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_STOREFRONTSESSIONS_STATE
 #define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_STOREFRONTSESSIONS_STATE
 RustBuffer uniffi_sailover_bridge_fn_method_storefrontsessions_state(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_CLONE_EPICACCOUNTINSTALLATIONS
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_CLONE_EPICACCOUNTINSTALLATIONS
+uint64_t uniffi_sailover_bridge_fn_clone_epicaccountinstallations(uint64_t handle, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FREE_EPICACCOUNTINSTALLATIONS
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FREE_EPICACCOUNTINSTALLATIONS
+void uniffi_sailover_bridge_fn_free_epicaccountinstallations(uint64_t handle, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_CONSTRUCTOR_EPICACCOUNTINSTALLATIONS_NEW
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_CONSTRUCTOR_EPICACCOUNTINSTALLATIONS_NEW
+uint64_t uniffi_sailover_bridge_fn_constructor_epicaccountinstallations_new(uint64_t session, RustBuffer account_id, RustBuffer language, uint64_t credentials, uint64_t sessions, RustBuffer receipts, RustBuffer locations, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_CONSTRUCTOR_EPICACCOUNTINSTALLATIONS_WITH_CONTENT
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_CONSTRUCTOR_EPICACCOUNTINSTALLATIONS_WITH_CONTENT
+uint64_t uniffi_sailover_bridge_fn_constructor_epicaccountinstallations_with_content(uint64_t content, RustBuffer account_id, RustBuffer language, uint64_t credentials, uint64_t sessions, RustBuffer receipts, RustBuffer locations, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_EPICACCOUNTINSTALLATIONS_CAN_MODIFY
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_EPICACCOUNTINSTALLATIONS_CAN_MODIFY
+int8_t uniffi_sailover_bridge_fn_method_epicaccountinstallations_can_modify(uint64_t ptr, RustBuffer game, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_EPICACCOUNTINSTALLATIONS_CANCEL
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_EPICACCOUNTINSTALLATIONS_CANCEL
+void uniffi_sailover_bridge_fn_method_epicaccountinstallations_cancel(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_EPICACCOUNTINSTALLATIONS_CHANGED
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_EPICACCOUNTINSTALLATIONS_CHANGED
+uint64_t uniffi_sailover_bridge_fn_method_epicaccountinstallations_changed(uint64_t ptr, uint64_t after
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_EPICACCOUNTINSTALLATIONS_DOWNLOAD
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_EPICACCOUNTINSTALLATIONS_DOWNLOAD
+void uniffi_sailover_bridge_fn_method_epicaccountinstallations_download(uint64_t ptr, RustBuffer request, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_EPICACCOUNTINSTALLATIONS_LAUNCH
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_EPICACCOUNTINSTALLATIONS_LAUNCH
+void uniffi_sailover_bridge_fn_method_epicaccountinstallations_launch(uint64_t ptr, RustBuffer receipt, RustBuffer verification, int8_t verify, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_EPICACCOUNTINSTALLATIONS_RESUME_DOWNLOAD
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_EPICACCOUNTINSTALLATIONS_RESUME_DOWNLOAD
+void uniffi_sailover_bridge_fn_method_epicaccountinstallations_resume_download(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_EPICACCOUNTINSTALLATIONS_SET_DIAGNOSTIC
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_EPICACCOUNTINSTALLATIONS_SET_DIAGNOSTIC
+void uniffi_sailover_bridge_fn_method_epicaccountinstallations_set_diagnostic(uint64_t ptr, int8_t running, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_EPICACCOUNTINSTALLATIONS_SIGNED_OUT
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_EPICACCOUNTINSTALLATIONS_SIGNED_OUT
+void uniffi_sailover_bridge_fn_method_epicaccountinstallations_signed_out(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_EPICACCOUNTINSTALLATIONS_STATE
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_EPICACCOUNTINSTALLATIONS_STATE
+RustBuffer uniffi_sailover_bridge_fn_method_epicaccountinstallations_state(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_EPICACCOUNTINSTALLATIONS_UNINSTALL
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_EPICACCOUNTINSTALLATIONS_UNINSTALL
+void uniffi_sailover_bridge_fn_method_epicaccountinstallations_uninstall(uint64_t ptr, RustBuffer receipt, RustBuffer request, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_CLONE_EPICCONTENT
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_CLONE_EPICCONTENT
+uint64_t uniffi_sailover_bridge_fn_clone_epiccontent(uint64_t handle, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FREE_EPICCONTENT
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FREE_EPICCONTENT
+void uniffi_sailover_bridge_fn_free_epiccontent(uint64_t handle, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_INIT_CALLBACK_VTABLE_EPICCONTENT
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_INIT_CALLBACK_VTABLE_EPICCONTENT
+void uniffi_sailover_bridge_fn_init_callback_vtable_epiccontent(const UniffiVTableCallbackInterfaceEpicContent* _Nonnull vtable
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_EPICCONTENT_PREPARE
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_EPICCONTENT_PREPARE
+void uniffi_sailover_bridge_fn_method_epiccontent_prepare(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_EPICCONTENT_DOWNLOAD
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_EPICCONTENT_DOWNLOAD
+RustBuffer uniffi_sailover_bridge_fn_method_epiccontent_download(uint64_t ptr, RustBuffer namespace, RustBuffer catalog_item_id, RustBuffer app_name, RustBuffer platform, RustBuffer directory, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_EPICCONTENT_DOWNLOAD_PROGRESS
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_EPICCONTENT_DOWNLOAD_PROGRESS
+RustBuffer uniffi_sailover_bridge_fn_method_epiccontent_download_progress(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_EPICCONTENT_CANCEL_DOWNLOAD
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_EPICCONTENT_CANCEL_DOWNLOAD
+void uniffi_sailover_bridge_fn_method_epiccontent_cancel_download(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_EPICCONTENT_HAND_OFF
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_EPICCONTENT_HAND_OFF
+uint64_t uniffi_sailover_bridge_fn_method_epiccontent_hand_off(uint64_t ptr, RustBuffer configuration, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_EPICCONTENT_ARCHIVE_CLOUD
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_EPICCONTENT_ARCHIVE_CLOUD
+void uniffi_sailover_bridge_fn_method_epiccontent_archive_cloud(uint64_t ptr, RustBuffer configuration, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_CLONE_EPICCREDENTIALSAVE
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_CLONE_EPICCREDENTIALSAVE
+uint64_t uniffi_sailover_bridge_fn_clone_epiccredentialsave(uint64_t handle, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FREE_EPICCREDENTIALSAVE
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FREE_EPICCREDENTIALSAVE
+void uniffi_sailover_bridge_fn_free_epiccredentialsave(uint64_t handle, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_INIT_CALLBACK_VTABLE_EPICCREDENTIALSAVE
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_INIT_CALLBACK_VTABLE_EPICCREDENTIALSAVE
+void uniffi_sailover_bridge_fn_init_callback_vtable_epiccredentialsave(const UniffiVTableCallbackInterfaceEpicCredentialSave* _Nonnull vtable
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_EPICCREDENTIALSAVE_SAVE
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_EPICCREDENTIALSAVE_SAVE
+void uniffi_sailover_bridge_fn_method_epiccredentialsave_save(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_CLONE_STEAMACCOUNTINSTALLATIONS
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_CLONE_STEAMACCOUNTINSTALLATIONS
+uint64_t uniffi_sailover_bridge_fn_clone_steamaccountinstallations(uint64_t handle, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FREE_STEAMACCOUNTINSTALLATIONS
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FREE_STEAMACCOUNTINSTALLATIONS
+void uniffi_sailover_bridge_fn_free_steamaccountinstallations(uint64_t handle, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_CONSTRUCTOR_STEAMACCOUNTINSTALLATIONS_NEW
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_CONSTRUCTOR_STEAMACCOUNTINSTALLATIONS_NEW
+uint64_t uniffi_sailover_bridge_fn_constructor_steamaccountinstallations_new(uint64_t session, RustBuffer credentials, uint64_t sessions, RustBuffer receipts, RustBuffer locations, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_CONSTRUCTOR_STEAMACCOUNTINSTALLATIONS_WITH_CONTENT
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_CONSTRUCTOR_STEAMACCOUNTINSTALLATIONS_WITH_CONTENT
+uint64_t uniffi_sailover_bridge_fn_constructor_steamaccountinstallations_with_content(uint64_t content, uint64_t account_id, uint64_t sessions, RustBuffer receipts, RustBuffer locations, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_STEAMACCOUNTINSTALLATIONS_CAN_MODIFY
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_STEAMACCOUNTINSTALLATIONS_CAN_MODIFY
+int8_t uniffi_sailover_bridge_fn_method_steamaccountinstallations_can_modify(uint64_t ptr, uint32_t app_id, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_STEAMACCOUNTINSTALLATIONS_CANCEL
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_STEAMACCOUNTINSTALLATIONS_CANCEL
+void uniffi_sailover_bridge_fn_method_steamaccountinstallations_cancel(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_STEAMACCOUNTINSTALLATIONS_CHANGED
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_STEAMACCOUNTINSTALLATIONS_CHANGED
+uint64_t uniffi_sailover_bridge_fn_method_steamaccountinstallations_changed(uint64_t ptr, uint64_t after
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_STEAMACCOUNTINSTALLATIONS_DOWNLOAD
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_STEAMACCOUNTINSTALLATIONS_DOWNLOAD
+void uniffi_sailover_bridge_fn_method_steamaccountinstallations_download(uint64_t ptr, RustBuffer request, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_STEAMACCOUNTINSTALLATIONS_LAUNCH
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_STEAMACCOUNTINSTALLATIONS_LAUNCH
+void uniffi_sailover_bridge_fn_method_steamaccountinstallations_launch(uint64_t ptr, RustBuffer receipt, RustBuffer verification, int8_t verify, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_STEAMACCOUNTINSTALLATIONS_RESUME_DOWNLOAD
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_STEAMACCOUNTINSTALLATIONS_RESUME_DOWNLOAD
+void uniffi_sailover_bridge_fn_method_steamaccountinstallations_resume_download(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_STEAMACCOUNTINSTALLATIONS_SET_DIAGNOSTIC
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_STEAMACCOUNTINSTALLATIONS_SET_DIAGNOSTIC
+void uniffi_sailover_bridge_fn_method_steamaccountinstallations_set_diagnostic(uint64_t ptr, int8_t running, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_STEAMACCOUNTINSTALLATIONS_SIGNED_OUT
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_STEAMACCOUNTINSTALLATIONS_SIGNED_OUT
+void uniffi_sailover_bridge_fn_method_steamaccountinstallations_signed_out(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_STEAMACCOUNTINSTALLATIONS_STATE
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_STEAMACCOUNTINSTALLATIONS_STATE
+RustBuffer uniffi_sailover_bridge_fn_method_steamaccountinstallations_state(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_STEAMACCOUNTINSTALLATIONS_UNINSTALL
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_STEAMACCOUNTINSTALLATIONS_UNINSTALL
+void uniffi_sailover_bridge_fn_method_steamaccountinstallations_uninstall(uint64_t ptr, RustBuffer receipt, RustBuffer request, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_CLONE_STEAMCONTENT
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_CLONE_STEAMCONTENT
+uint64_t uniffi_sailover_bridge_fn_clone_steamcontent(uint64_t handle, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FREE_STEAMCONTENT
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FREE_STEAMCONTENT
+void uniffi_sailover_bridge_fn_free_steamcontent(uint64_t handle, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_INIT_CALLBACK_VTABLE_STEAMCONTENT
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_INIT_CALLBACK_VTABLE_STEAMCONTENT
+void uniffi_sailover_bridge_fn_init_callback_vtable_steamcontent(const UniffiVTableCallbackInterfaceSteamContent* _Nonnull vtable
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_STEAMCONTENT_DOWNLOAD
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_STEAMCONTENT_DOWNLOAD
+RustBuffer uniffi_sailover_bridge_fn_method_steamcontent_download(uint64_t ptr, uint32_t app_id, RustBuffer platform, RustBuffer language, RustBuffer directory, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_STEAMCONTENT_DOWNLOAD_PROGRESS
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_STEAMCONTENT_DOWNLOAD_PROGRESS
+RustBuffer uniffi_sailover_bridge_fn_method_steamcontent_download_progress(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_STEAMCONTENT_CANCEL_DOWNLOAD
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_STEAMCONTENT_CANCEL_DOWNLOAD
+void uniffi_sailover_bridge_fn_method_steamcontent_cancel_download(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_STEAMCONTENT_LAUNCH_PLAN
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_STEAMCONTENT_LAUNCH_PLAN
+RustBuffer uniffi_sailover_bridge_fn_method_steamcontent_launch_plan(uint64_t ptr, uint32_t app_id, RustBuffer platform, RustBuffer directory, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_STEAMCONTENT_HAND_OFF
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_STEAMCONTENT_HAND_OFF
+uint64_t uniffi_sailover_bridge_fn_method_steamcontent_hand_off(uint64_t ptr, RustBuffer plan, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_STEAMCONTENT_ARCHIVE_CLOUD
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_STEAMCONTENT_ARCHIVE_CLOUD
+void uniffi_sailover_bridge_fn_method_steamcontent_archive_cloud(uint64_t ptr, RustBuffer config, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_CLONE_STEAMLOGIN
@@ -899,37 +1272,6 @@ uint64_t uniffi_sailover_bridge_fn_method_steamfriendsfixture_next_friends(uint6
 void uniffi_sailover_bridge_fn_method_steamfriendsfixture_receive(uint64_t ptr, uint32_t kind, RustBuffer body, RustCallStatus *_Nonnull out_status
 );
 #endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_CLONE_VOILEINSTALL
-#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_CLONE_VOILEINSTALL
-uint64_t uniffi_sailover_bridge_fn_clone_voileinstall(uint64_t handle, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FREE_VOILEINSTALL
-#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FREE_VOILEINSTALL
-void uniffi_sailover_bridge_fn_free_voileinstall(uint64_t handle, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_CONSTRUCTOR_VOILEINSTALL_NEW
-#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_CONSTRUCTOR_VOILEINSTALL_NEW
-uint64_t uniffi_sailover_bridge_fn_constructor_voileinstall_new(RustCallStatus *_Nonnull out_status
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_VOILEINSTALL_CANCEL
-#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_VOILEINSTALL_CANCEL
-void uniffi_sailover_bridge_fn_method_voileinstall_cancel(uint64_t ptr, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_VOILEINSTALL_PROGRESS
-#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_VOILEINSTALL_PROGRESS
-RustBuffer uniffi_sailover_bridge_fn_method_voileinstall_progress(uint64_t ptr, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_VOILEINSTALL_RUN
-#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_VOILEINSTALL_RUN
-uint64_t uniffi_sailover_bridge_fn_method_voileinstall_run(uint64_t ptr, RustBuffer locations, RustBuffer archive
-);
-#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FUNC_CORE_VERSION
 #define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FUNC_CORE_VERSION
 RustBuffer uniffi_sailover_bridge_fn_func_core_version(RustCallStatus *_Nonnull out_status
@@ -973,29 +1315,19 @@ RustBuffer uniffi_sailover_bridge_fn_func_epic_login_url(RustCallStatus *_Nonnul
     
 );
 #endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FUNC_EPIC_CLOUD_REMOVED
-#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FUNC_EPIC_CLOUD_REMOVED
-uint64_t uniffi_sailover_bridge_fn_func_epic_cloud_removed(RustBuffer configuration, RustBuffer account_id
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FUNC_EPIC_CLOUD_CONFIGURATION
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FUNC_EPIC_CLOUD_CONFIGURATION
+RustBuffer uniffi_sailover_bridge_fn_func_epic_cloud_configuration(RustBuffer locations, RustBuffer request, RustBuffer install, RustBuffer language, RustCallStatus *_Nonnull out_status
 );
 #endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FUNC_REMOVE_GAME_INSTALLATION
-#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FUNC_REMOVE_GAME_INSTALLATION
-void uniffi_sailover_bridge_fn_func_remove_game_installation(RustBuffer directory, RustBuffer expected_directory_name, RustBuffer protected, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FUNC_REMOVE_WINE_PREFIX
-#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FUNC_REMOVE_WINE_PREFIX
-void uniffi_sailover_bridge_fn_func_remove_wine_prefix(RustBuffer locations, RustBuffer install_directory, RustCallStatus *_Nonnull out_status
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FUNC_STEAM_CLOUD_MAINTENANCE_REQUEST
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FUNC_STEAM_CLOUD_MAINTENANCE_REQUEST
+RustBuffer uniffi_sailover_bridge_fn_func_steam_cloud_maintenance_request(RustBuffer locations, uint32_t app_id, RustBuffer install, RustBuffer platform, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FUNC_SAILOVER_LOCATIONS
 #define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FUNC_SAILOVER_LOCATIONS
 RustBuffer uniffi_sailover_bridge_fn_func_sailover_locations(RustBuffer library, RustBuffer bundle, RustBuffer home, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FUNC_WINE_PREFIX
-#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FUNC_WINE_PREFIX
-RustBuffer uniffi_sailover_bridge_fn_func_wine_prefix(RustBuffer locations, RustBuffer install_directory, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FUNC_STEAM_LANGUAGE
@@ -1006,21 +1338,6 @@ RustBuffer uniffi_sailover_bridge_fn_func_steam_language(RustBuffer locale, Rust
 #ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FUNC_STEAM_NEWS
 #define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FUNC_STEAM_NEWS
 uint64_t uniffi_sailover_bridge_fn_func_steam_news(uint32_t app_id
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FUNC_LAUNCH_STEAM_GAME
-#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FUNC_LAUNCH_STEAM_GAME
-uint64_t uniffi_sailover_bridge_fn_func_launch_steam_game(uint64_t admission, RustBuffer plan, RustBuffer credentials, RustBuffer locations
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FUNC_STEAM_CLOUD_REMOVED
-#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FUNC_STEAM_CLOUD_REMOVED
-uint64_t uniffi_sailover_bridge_fn_func_steam_cloud_removed(RustBuffer config, uint64_t account_id
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FUNC_VOILE_RUNTIME
-#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FUNC_VOILE_RUNTIME
-RustBuffer uniffi_sailover_bridge_fn_func_voile_runtime(RustBuffer locations, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_FFI_SAILOVER_BRIDGE_RUSTBUFFER_ALLOC
@@ -1331,33 +1648,21 @@ uint16_t uniffi_sailover_bridge_checksum_func_epic_login_url(void
     
 );
 #endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_FUNC_EPIC_CLOUD_REMOVED
-#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_FUNC_EPIC_CLOUD_REMOVED
-uint16_t uniffi_sailover_bridge_checksum_func_epic_cloud_removed(void
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_FUNC_EPIC_CLOUD_CONFIGURATION
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_FUNC_EPIC_CLOUD_CONFIGURATION
+uint16_t uniffi_sailover_bridge_checksum_func_epic_cloud_configuration(void
     
 );
 #endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_FUNC_REMOVE_GAME_INSTALLATION
-#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_FUNC_REMOVE_GAME_INSTALLATION
-uint16_t uniffi_sailover_bridge_checksum_func_remove_game_installation(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_FUNC_REMOVE_WINE_PREFIX
-#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_FUNC_REMOVE_WINE_PREFIX
-uint16_t uniffi_sailover_bridge_checksum_func_remove_wine_prefix(void
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_FUNC_STEAM_CLOUD_MAINTENANCE_REQUEST
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_FUNC_STEAM_CLOUD_MAINTENANCE_REQUEST
+uint16_t uniffi_sailover_bridge_checksum_func_steam_cloud_maintenance_request(void
     
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_FUNC_SAILOVER_LOCATIONS
 #define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_FUNC_SAILOVER_LOCATIONS
 uint16_t uniffi_sailover_bridge_checksum_func_sailover_locations(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_FUNC_WINE_PREFIX
-#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_FUNC_WINE_PREFIX
-uint16_t uniffi_sailover_bridge_checksum_func_wine_prefix(void
     
 );
 #endif
@@ -1370,24 +1675,6 @@ uint16_t uniffi_sailover_bridge_checksum_func_steam_language(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_FUNC_STEAM_NEWS
 #define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_FUNC_STEAM_NEWS
 uint16_t uniffi_sailover_bridge_checksum_func_steam_news(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_FUNC_LAUNCH_STEAM_GAME
-#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_FUNC_LAUNCH_STEAM_GAME
-uint16_t uniffi_sailover_bridge_checksum_func_launch_steam_game(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_FUNC_STEAM_CLOUD_REMOVED
-#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_FUNC_STEAM_CLOUD_REMOVED
-uint16_t uniffi_sailover_bridge_checksum_func_steam_cloud_removed(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_FUNC_VOILE_RUNTIME
-#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_FUNC_VOILE_RUNTIME
-uint16_t uniffi_sailover_bridge_checksum_func_voile_runtime(void
     
 );
 #endif
@@ -1541,12 +1828,6 @@ uint16_t uniffi_sailover_bridge_checksum_method_epicsession_archive_cloud(void
     
 );
 #endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_EPICSESSION_LAUNCH_GAME
-#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_EPICSESSION_LAUNCH_GAME
-uint16_t uniffi_sailover_bridge_checksum_method_epicsession_launch_game(void
-    
-);
-#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_BEFOREGAMESTART_RUN
 #define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_BEFOREGAMESTART_RUN
 uint16_t uniffi_sailover_bridge_checksum_method_beforegamestart_run(void
@@ -1652,6 +1933,204 @@ uint16_t uniffi_sailover_bridge_checksum_method_storefrontsessions_revoke(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_STOREFRONTSESSIONS_STATE
 #define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_STOREFRONTSESSIONS_STATE
 uint16_t uniffi_sailover_bridge_checksum_method_storefrontsessions_state(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_EPICACCOUNTINSTALLATIONS_CAN_MODIFY
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_EPICACCOUNTINSTALLATIONS_CAN_MODIFY
+uint16_t uniffi_sailover_bridge_checksum_method_epicaccountinstallations_can_modify(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_EPICACCOUNTINSTALLATIONS_CANCEL
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_EPICACCOUNTINSTALLATIONS_CANCEL
+uint16_t uniffi_sailover_bridge_checksum_method_epicaccountinstallations_cancel(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_EPICACCOUNTINSTALLATIONS_CHANGED
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_EPICACCOUNTINSTALLATIONS_CHANGED
+uint16_t uniffi_sailover_bridge_checksum_method_epicaccountinstallations_changed(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_EPICACCOUNTINSTALLATIONS_DOWNLOAD
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_EPICACCOUNTINSTALLATIONS_DOWNLOAD
+uint16_t uniffi_sailover_bridge_checksum_method_epicaccountinstallations_download(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_EPICACCOUNTINSTALLATIONS_LAUNCH
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_EPICACCOUNTINSTALLATIONS_LAUNCH
+uint16_t uniffi_sailover_bridge_checksum_method_epicaccountinstallations_launch(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_EPICACCOUNTINSTALLATIONS_RESUME_DOWNLOAD
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_EPICACCOUNTINSTALLATIONS_RESUME_DOWNLOAD
+uint16_t uniffi_sailover_bridge_checksum_method_epicaccountinstallations_resume_download(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_EPICACCOUNTINSTALLATIONS_SET_DIAGNOSTIC
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_EPICACCOUNTINSTALLATIONS_SET_DIAGNOSTIC
+uint16_t uniffi_sailover_bridge_checksum_method_epicaccountinstallations_set_diagnostic(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_EPICACCOUNTINSTALLATIONS_SIGNED_OUT
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_EPICACCOUNTINSTALLATIONS_SIGNED_OUT
+uint16_t uniffi_sailover_bridge_checksum_method_epicaccountinstallations_signed_out(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_EPICACCOUNTINSTALLATIONS_STATE
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_EPICACCOUNTINSTALLATIONS_STATE
+uint16_t uniffi_sailover_bridge_checksum_method_epicaccountinstallations_state(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_EPICACCOUNTINSTALLATIONS_UNINSTALL
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_EPICACCOUNTINSTALLATIONS_UNINSTALL
+uint16_t uniffi_sailover_bridge_checksum_method_epicaccountinstallations_uninstall(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_EPICCONTENT_PREPARE
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_EPICCONTENT_PREPARE
+uint16_t uniffi_sailover_bridge_checksum_method_epiccontent_prepare(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_EPICCONTENT_DOWNLOAD
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_EPICCONTENT_DOWNLOAD
+uint16_t uniffi_sailover_bridge_checksum_method_epiccontent_download(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_EPICCONTENT_DOWNLOAD_PROGRESS
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_EPICCONTENT_DOWNLOAD_PROGRESS
+uint16_t uniffi_sailover_bridge_checksum_method_epiccontent_download_progress(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_EPICCONTENT_CANCEL_DOWNLOAD
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_EPICCONTENT_CANCEL_DOWNLOAD
+uint16_t uniffi_sailover_bridge_checksum_method_epiccontent_cancel_download(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_EPICCONTENT_HAND_OFF
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_EPICCONTENT_HAND_OFF
+uint16_t uniffi_sailover_bridge_checksum_method_epiccontent_hand_off(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_EPICCONTENT_ARCHIVE_CLOUD
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_EPICCONTENT_ARCHIVE_CLOUD
+uint16_t uniffi_sailover_bridge_checksum_method_epiccontent_archive_cloud(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_EPICCREDENTIALSAVE_SAVE
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_EPICCREDENTIALSAVE_SAVE
+uint16_t uniffi_sailover_bridge_checksum_method_epiccredentialsave_save(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_STEAMACCOUNTINSTALLATIONS_CAN_MODIFY
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_STEAMACCOUNTINSTALLATIONS_CAN_MODIFY
+uint16_t uniffi_sailover_bridge_checksum_method_steamaccountinstallations_can_modify(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_STEAMACCOUNTINSTALLATIONS_CANCEL
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_STEAMACCOUNTINSTALLATIONS_CANCEL
+uint16_t uniffi_sailover_bridge_checksum_method_steamaccountinstallations_cancel(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_STEAMACCOUNTINSTALLATIONS_CHANGED
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_STEAMACCOUNTINSTALLATIONS_CHANGED
+uint16_t uniffi_sailover_bridge_checksum_method_steamaccountinstallations_changed(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_STEAMACCOUNTINSTALLATIONS_DOWNLOAD
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_STEAMACCOUNTINSTALLATIONS_DOWNLOAD
+uint16_t uniffi_sailover_bridge_checksum_method_steamaccountinstallations_download(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_STEAMACCOUNTINSTALLATIONS_LAUNCH
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_STEAMACCOUNTINSTALLATIONS_LAUNCH
+uint16_t uniffi_sailover_bridge_checksum_method_steamaccountinstallations_launch(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_STEAMACCOUNTINSTALLATIONS_RESUME_DOWNLOAD
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_STEAMACCOUNTINSTALLATIONS_RESUME_DOWNLOAD
+uint16_t uniffi_sailover_bridge_checksum_method_steamaccountinstallations_resume_download(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_STEAMACCOUNTINSTALLATIONS_SET_DIAGNOSTIC
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_STEAMACCOUNTINSTALLATIONS_SET_DIAGNOSTIC
+uint16_t uniffi_sailover_bridge_checksum_method_steamaccountinstallations_set_diagnostic(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_STEAMACCOUNTINSTALLATIONS_SIGNED_OUT
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_STEAMACCOUNTINSTALLATIONS_SIGNED_OUT
+uint16_t uniffi_sailover_bridge_checksum_method_steamaccountinstallations_signed_out(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_STEAMACCOUNTINSTALLATIONS_STATE
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_STEAMACCOUNTINSTALLATIONS_STATE
+uint16_t uniffi_sailover_bridge_checksum_method_steamaccountinstallations_state(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_STEAMACCOUNTINSTALLATIONS_UNINSTALL
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_STEAMACCOUNTINSTALLATIONS_UNINSTALL
+uint16_t uniffi_sailover_bridge_checksum_method_steamaccountinstallations_uninstall(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_STEAMCONTENT_DOWNLOAD
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_STEAMCONTENT_DOWNLOAD
+uint16_t uniffi_sailover_bridge_checksum_method_steamcontent_download(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_STEAMCONTENT_DOWNLOAD_PROGRESS
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_STEAMCONTENT_DOWNLOAD_PROGRESS
+uint16_t uniffi_sailover_bridge_checksum_method_steamcontent_download_progress(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_STEAMCONTENT_CANCEL_DOWNLOAD
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_STEAMCONTENT_CANCEL_DOWNLOAD
+uint16_t uniffi_sailover_bridge_checksum_method_steamcontent_cancel_download(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_STEAMCONTENT_LAUNCH_PLAN
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_STEAMCONTENT_LAUNCH_PLAN
+uint16_t uniffi_sailover_bridge_checksum_method_steamcontent_launch_plan(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_STEAMCONTENT_HAND_OFF
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_STEAMCONTENT_HAND_OFF
+uint16_t uniffi_sailover_bridge_checksum_method_steamcontent_hand_off(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_STEAMCONTENT_ARCHIVE_CLOUD
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_STEAMCONTENT_ARCHIVE_CLOUD
+uint16_t uniffi_sailover_bridge_checksum_method_steamcontent_archive_cloud(void
     
 );
 #endif
@@ -1811,24 +2290,6 @@ uint16_t uniffi_sailover_bridge_checksum_method_steamfriendsfixture_receive(void
     
 );
 #endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_VOILEINSTALL_CANCEL
-#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_VOILEINSTALL_CANCEL
-uint16_t uniffi_sailover_bridge_checksum_method_voileinstall_cancel(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_VOILEINSTALL_PROGRESS
-#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_VOILEINSTALL_PROGRESS
-uint16_t uniffi_sailover_bridge_checksum_method_voileinstall_progress(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_VOILEINSTALL_RUN
-#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_VOILEINSTALL_RUN
-uint16_t uniffi_sailover_bridge_checksum_method_voileinstall_run(void
-    
-);
-#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_CONSTRUCTOR_LIBRARY_NEW
 #define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_CONSTRUCTOR_LIBRARY_NEW
 uint16_t uniffi_sailover_bridge_checksum_constructor_library_new(void
@@ -1859,6 +2320,30 @@ uint16_t uniffi_sailover_bridge_checksum_constructor_storefrontsessions_with_rec
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_CONSTRUCTOR_EPICACCOUNTINSTALLATIONS_NEW
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_CONSTRUCTOR_EPICACCOUNTINSTALLATIONS_NEW
+uint16_t uniffi_sailover_bridge_checksum_constructor_epicaccountinstallations_new(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_CONSTRUCTOR_EPICACCOUNTINSTALLATIONS_WITH_CONTENT
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_CONSTRUCTOR_EPICACCOUNTINSTALLATIONS_WITH_CONTENT
+uint16_t uniffi_sailover_bridge_checksum_constructor_epicaccountinstallations_with_content(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_CONSTRUCTOR_STEAMACCOUNTINSTALLATIONS_NEW
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_CONSTRUCTOR_STEAMACCOUNTINSTALLATIONS_NEW
+uint16_t uniffi_sailover_bridge_checksum_constructor_steamaccountinstallations_new(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_CONSTRUCTOR_STEAMACCOUNTINSTALLATIONS_WITH_CONTENT
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_CONSTRUCTOR_STEAMACCOUNTINSTALLATIONS_WITH_CONTENT
+uint16_t uniffi_sailover_bridge_checksum_constructor_steamaccountinstallations_with_content(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_CONSTRUCTOR_STEAMLOGIN_BEGIN_CREDENTIALS
 #define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_CONSTRUCTOR_STEAMLOGIN_BEGIN_CREDENTIALS
 uint16_t uniffi_sailover_bridge_checksum_constructor_steamlogin_begin_credentials(void
@@ -1886,12 +2371,6 @@ uint16_t uniffi_sailover_bridge_checksum_constructor_steamconnectionattempt_new(
 #ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_CONSTRUCTOR_STEAMFRIENDSFIXTURE_NEW
 #define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_CONSTRUCTOR_STEAMFRIENDSFIXTURE_NEW
 uint16_t uniffi_sailover_bridge_checksum_constructor_steamfriendsfixture_new(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_CONSTRUCTOR_VOILEINSTALL_NEW
-#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_CONSTRUCTOR_VOILEINSTALL_NEW
-uint16_t uniffi_sailover_bridge_checksum_constructor_voileinstall_new(void
     
 );
 #endif

@@ -259,7 +259,7 @@ pub struct SteamLaunchPlan {
 }
 #[derive(uniffi::Object)]
 pub struct SteamSession {
-    client: client::Client,
+    pub(crate) client: client::Client,
 }
 
 #[derive(Clone, Debug, uniffi::Record)]

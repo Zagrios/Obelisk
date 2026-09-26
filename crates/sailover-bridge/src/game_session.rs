@@ -255,7 +255,7 @@ pub trait GameRecovery: Send + Sync {
 }
 
 /// What the bridge adds to each storefront's Game sessions.
-trait Bridged: Storefront {
+pub(crate) trait Bridged: Storefront {
     fn account(account: GameAccount) -> Option<Self::Account>;
     fn game_account(account: &Self::Account) -> GameAccount;
     fn store(store: GameStore) -> Option<(Self::Account, Self::Store)>;
@@ -402,7 +402,7 @@ impl From<CloudPhase> for cloud::Phase {
 }
 
 /// A foreign supervisor as the Game sessions drive it.
-struct Foreign(Arc<dyn GameSupervisor>);
+pub(crate) struct Foreign(pub(crate) Arc<dyn GameSupervisor>);
 impl<P: Bridged> Supervised<P> for Foreign {
     fn snapshot(&self, after: Option<u64>) -> Result<Observation<P>, String> {
         let snapshot = self.0.snapshot(after)?;
@@ -572,9 +572,9 @@ where
     })
 }
 
-enum Storefronts {
-    Steam(Sessions<steam::Steam>),
-    Epic(Sessions<epic::Epic>),
+pub(crate) enum Storefronts {
+    Steam(Arc<Sessions<steam::Steam>>),
+    Epic(Arc<Sessions<epic::Epic>>),
 }
 impl Storefronts {
     /// A session call that failed without a reason of its own.
@@ -589,7 +589,7 @@ impl Storefronts {
 /// One storefront's Game sessions, for the whole life of SailOver.
 #[derive(uniffi::Object)]
 pub struct StorefrontSessions {
-    sessions: Arc<Storefronts>,
+    pub(crate) sessions: Arc<Storefronts>,
 }
 
 impl StorefrontSessions {
@@ -607,13 +607,11 @@ impl StorefrontSessions {
     pub fn new(storefront: SessionStorefront, locations: SailOverLocations) -> Arc<Self> {
         let helper = Path::new(&locations.helper);
         Self::with(match storefront {
-            SessionStorefront::Steam => Storefronts::Steam(Sessions::new(supervisor_recovery(
-                Path::new(&locations.steam_sessions),
-                helper,
+            SessionStorefront::Steam => Storefronts::Steam(Arc::new(Sessions::new(
+                supervisor_recovery(Path::new(&locations.steam_sessions), helper),
             ))),
-            SessionStorefront::Epic => Storefronts::Epic(Sessions::new(supervisor_recovery(
-                Path::new(&locations.epic_sessions),
-                helper,
+            SessionStorefront::Epic => Storefronts::Epic(Arc::new(Sessions::new(
+                supervisor_recovery(Path::new(&locations.epic_sessions), helper),
             ))),
         })
     }
@@ -625,8 +623,12 @@ impl StorefrontSessions {
         recovery: Arc<dyn GameRecovery>,
     ) -> Arc<Self> {
         Self::with(match storefront {
-            SessionStorefront::Steam => Storefronts::Steam(Sessions::new(self::recovery(recovery))),
-            SessionStorefront::Epic => Storefronts::Epic(Sessions::new(self::recovery(recovery))),
+            SessionStorefront::Steam => {
+                Storefronts::Steam(Arc::new(Sessions::new(self::recovery(recovery))))
+            }
+            SessionStorefront::Epic => {
+                Storefronts::Epic(Arc::new(Sessions::new(self::recovery(recovery))))
+            }
         })
     }
 

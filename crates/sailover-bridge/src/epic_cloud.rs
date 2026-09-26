@@ -1,9 +1,7 @@
 //! Presentation of the Rust-owned Epic supervisor and Cloud decisions.
-use crate::{
-    BeforeGameStart, EpicError, EpicSession, GameAdmission, GameSessionError, SailOverLocations,
-    game_session::Admitted,
-};
+use crate::{EpicError, EpicSession};
 use game_runtime::epic;
+use game_runtime::sessions::{Canceller, Failure, Handoff, Supervised};
 use std::sync::Arc;
 
 impl From<epic::Error> for EpicError {
@@ -74,85 +72,67 @@ async fn blocking<T: Send + 'static>(
         .map_err(Into::into)
 }
 
+/// Hands the build `configuration` names to its supervisor for `admission`,
+/// readying Voile and the prefix of a Windows build before any exchange code
+/// exists. A failure before the supervisor starts is definite.
+pub(crate) async fn hand_off(
+    client: Arc<epic_kit::client::Client>,
+    configuration: epic::Configuration,
+    locations: game_runtime::Locations,
+    admission: Canceller<epic::Epic>,
+) -> Result<Arc<dyn Supervised<epic::Epic>>, Handoff> {
+    let refused = |error: EpicError| Handoff::Refused(Failure::Failed(error.to_string()));
+    // A Windows build runs in Wine, readied before any exchange code exists.
+    let wine = match configuration.prefix.is_some() {
+        false => None,
+        true => {
+            admission
+                .install_runtime(&locations.voile)
+                .await
+                .map_err(Handoff::Refused)?;
+            let configuration = configuration.clone();
+            Some(
+                blocking(move || epic::prepare_windows(&configuration, &locations))
+                    .await
+                    .map_err(refused)?,
+            )
+        }
+    };
+    let account = client
+        .credentials()
+        .await
+        .map_err(|e| refused(e.into()))?
+        .account_id;
+    let exchange = client
+        .exchange_code()
+        .await
+        .map_err(|e| refused(e.into()))?;
+    if client
+        .credentials()
+        .await
+        .map_err(|e| refused(e.into()))?
+        .account_id
+        != account
+    {
+        return Err(refused(EpicError::Unauthorized));
+    }
+    if admission.cancelled() {
+        return Err(Handoff::Refused(Failure::Cancelled));
+    }
+    let cancel = sailover_core::transfer::CancelToken::new();
+    let token = cancel.clone();
+    admission.on_cancel(move || token.cancel());
+    let started = tokio::task::spawn_blocking(move || {
+        epic::start(configuration, account, exchange, wine, cancel)
+    })
+    .await
+    .map_err(|_| Handoff::Lost(epic::Error::Session.to_string()))?
+    .map_err(|error| Handoff::Lost(error.to_string()))?;
+    Ok(Arc::new(started) as Arc<dyn Supervised<epic::Epic>>)
+}
+
 #[uniffi::export(async_runtime = "tokio")]
 impl EpicSession {
-    /// Launches the build `configuration` names for its admission, readying
-    /// Voile and the prefix of a Windows build before any exchange code
-    /// exists, and runs `before_start`, which saves the credentials the
-    /// exchange rotated, before the game starts. Then follows its session
-    /// until it is finished.
-    pub async fn launch_game(
-        &self,
-        admission: Arc<GameAdmission>,
-        configuration: EpicCloudConfiguration,
-        locations: SailOverLocations,
-        before_start: Arc<dyn BeforeGameStart>,
-    ) -> Result<(), GameSessionError> {
-        use game_runtime::sessions::{Failure, Handoff};
-        let Admitted::Epic(slot) = &admission.admission else {
-            return Err(GameSessionError::new("backend.epic.cloud.invalidSession"));
-        };
-        let admission = slot.take()?;
-        let canceller = admission.canceller();
-        let client = self.client.clone();
-        let configuration: epic::Configuration = configuration.into();
-        let refused = |error: EpicError| Handoff::Refused(Failure::Failed(error.to_string()));
-        let handoff = async move {
-            // A Windows build runs in Wine, readied before any exchange code exists.
-            let wine = match configuration.prefix.is_some() {
-                false => None,
-                true => {
-                    let locations: game_runtime::Locations = (&locations).into();
-                    canceller
-                        .install_runtime(&locations.voile)
-                        .await
-                        .map_err(Handoff::Refused)?;
-                    let configuration = configuration.clone();
-                    Some(
-                        blocking(move || epic::prepare_windows(&configuration, &locations))
-                            .await
-                            .map_err(refused)?,
-                    )
-                }
-            };
-            let account = client
-                .credentials()
-                .await
-                .map_err(|e| refused(e.into()))?
-                .account_id;
-            let exchange = client
-                .exchange_code()
-                .await
-                .map_err(|e| refused(e.into()))?;
-            if client
-                .credentials()
-                .await
-                .map_err(|e| refused(e.into()))?
-                .account_id
-                != account
-            {
-                return Err(refused(EpicError::Unauthorized));
-            }
-            if canceller.cancelled() {
-                return Err(Handoff::Refused(Failure::Cancelled));
-            }
-            let cancel = sailover_core::transfer::CancelToken::new();
-            let token = cancel.clone();
-            canceller.on_cancel(move || token.cancel());
-            let started = tokio::task::spawn_blocking(move || {
-                epic::start(configuration, account, exchange, wine, cancel)
-            })
-            .await
-            .map_err(|_| Handoff::Lost(epic::Error::Session.to_string()))?
-            .map_err(|error| Handoff::Lost(error.to_string()))?;
-            Ok(Arc::new(started) as Arc<dyn game_runtime::sessions::Supervised<epic::Epic>>)
-        };
-        // The exchange code rotated the account's credentials: they are saved
-        // before the game starts.
-        Ok(admission
-            .launch_before(handoff, Box::new(move || before_start.run()))
-            .await?)
-    }
     pub async fn archive_cloud(
         &self,
         configuration: EpicCloudConfiguration,
@@ -161,14 +141,6 @@ impl EpicSession {
             .await
             .map_err(Into::into)
     }
-}
-
-#[uniffi::export(async_runtime = "tokio")]
-pub async fn epic_cloud_removed(
-    configuration: EpicCloudConfiguration,
-    account_id: String,
-) -> Result<(), EpicError> {
-    blocking(move || epic::removed(&configuration.into(), &account_id)).await
 }
 
 #[cfg(test)]

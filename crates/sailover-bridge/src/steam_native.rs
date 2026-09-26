@@ -1,10 +1,5 @@
-//! A Steam launch receives the session already loaded by SailOver. It never
-//! queries Keychain, and cancellation crosses UniFFI through its admission.
-use crate::{
-    GameAdmission, GameSessionError, SailOverLocations, SteamCredentials, SteamError,
-    SteamLaunchPlan, game_session::Admitted,
-};
-use std::path::PathBuf;
+//! What Steam's Game sessions and Cloud share across UniFFI.
+use crate::SteamError;
 
 impl From<game_runtime::Error> for SteamError {
     fn from(error: game_runtime::Error) -> Self {
@@ -12,37 +7,6 @@ impl From<game_runtime::Error> for SteamError {
             reason: error.to_string(),
         }
     }
-}
-
-/// Launches the game `plan` resolves for its admission, installing Voile first
-/// for a Windows game, then follows its session until it is finished.
-#[uniffi::export(async_runtime = "tokio")]
-pub async fn launch_steam_game(
-    admission: std::sync::Arc<GameAdmission>,
-    plan: SteamLaunchPlan,
-    credentials: SteamCredentials,
-    locations: SailOverLocations,
-) -> Result<(), GameSessionError> {
-    let Admitted::Steam(slot) = &admission.admission else {
-        return Err(GameSessionError::new(
-            "backend.steam.runtime.invalidSession",
-        ));
-    };
-    let admission = slot.take()?;
-    let handoff = game_runtime::steam::hand_off(
-        admission.canceller(),
-        (&locations).into(),
-        game_runtime::protocol::Credentials {
-            steam_id: credentials.steam_id,
-            account_name: credentials.account_name,
-            refresh_token: credentials.refresh_token,
-        },
-        plan.app_id,
-        plan.platform,
-        PathBuf::from(plan.install_directory),
-        plan.target.into(),
-    );
-    Ok(admission.launch(handoff).await?)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -92,16 +56,4 @@ impl From<game_runtime::steam::cloud::Failure> for SteamError {
             reason: failure.key().into(),
         }
     }
-}
-
-#[uniffi::export(async_runtime = "tokio")]
-pub async fn steam_cloud_removed(
-    config: SteamCloudConfiguration,
-    account_id: u64,
-) -> Result<(), SteamError> {
-    tokio::task::spawn_blocking(move || {
-        game_runtime::steam::cloud::removed(&config.into(), account_id).map_err(Into::into)
-    })
-    .await
-    .map_err(|_| game_runtime::Error::StartFailed)?
 }

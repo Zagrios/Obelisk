@@ -44,10 +44,6 @@ extension SteamSessionProtocol {
 // Models take launches and Cloud maintenance as injected closures, so a fake
 // session never has to build a Rust-backed object.
 extension EpicSessionProtocol {
-    func launchGame(admission: GameAdmission, configuration: EpicCloudConfiguration,
-                    locations: SailOverLocations, beforeStart: any BeforeGameStart) async throws {
-        throw CocoaError(.featureUnsupported)
-    }
     func archiveCloud(configuration: EpicCloudConfiguration) async throws {}
     func maintainCloud(configuration: EpicCloudConfiguration) async -> CloudMaintenance {
         fatalError("Tests inject Cloud maintenance into EpicModel")

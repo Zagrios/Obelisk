@@ -1842,3 +1842,11 @@ async fn achievements_retry_unauthorized_with_refreshed_credentials() {
     assert!(requests[2].contains("Bearer access-new"));
     assert!(requests[3].contains("Bearer access-new"));
 }
+
+#[test]
+fn an_installation_folder_is_named_after_its_identity_hash() {
+    assert_eq!(
+        super::installation_directory_name("namespace", "catalog", "app/name", "Mac"),
+        "epic-c5d3f0bff0a8491d3095fdd858bc870fe8416f60-Mac"
+    );
+}

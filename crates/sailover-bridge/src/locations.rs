@@ -69,105 +69,9 @@ impl From<&SailOverLocations> for game_runtime::Locations {
     }
 }
 
-/// The Wine prefix of the Windows installation in `install_directory`,
-/// named after the installation's folder.
-#[uniffi::export]
-pub fn wine_prefix(locations: SailOverLocations, install_directory: String) -> String {
-    game_runtime::wine::prefix(
-        Path::new(&locations.wine_prefixes),
-        Path::new(&install_directory),
-    )
-    .unwrap_or_else(|_| PathBuf::from(&locations.wine_prefixes))
-    .to_string_lossy()
-    .into_owned()
-}
-
-#[derive(Debug, thiserror::Error, uniffi::Error)]
-pub enum RemovalError {
-    #[error("not a dedicated installation folder")]
-    Unsafe,
-    #[error("the installation is in use")]
-    Busy,
-    #[error("{message}")]
-    Storage { message: String },
-}
-
-/// Removes a storefront's dedicated installation folder under the lock every
-/// Transfer and launch of it takes. `protected` folders are never removed.
-#[uniffi::export]
-pub fn remove_game_installation(
-    directory: String,
-    expected_directory_name: String,
-    protected: Vec<String>,
-) -> Result<(), RemovalError> {
-    let protected: Vec<&Path> = protected.iter().map(Path::new).collect();
-    sailover_core::installation::remove(Path::new(&directory), &expected_directory_name, &protected)
-        .map_err(removal_error)
-}
-
-/// Deletes the Wine prefix of the uninstalled Windows installation that was in
-/// `install_directory`, as Steam deletes a Proton prefix. A missing prefix is
-/// already gone; a link in its place is never followed.
-#[uniffi::export]
-pub fn remove_wine_prefix(
-    locations: SailOverLocations,
-    install_directory: String,
-) -> Result<(), RemovalError> {
-    game_runtime::wine::remove(&(&locations).into(), Path::new(&install_directory))
-        .map_err(removal_error)
-}
-
-fn removal_error(failure: sailover_core::installation::RemovalFailure) -> RemovalError {
-    match failure {
-        sailover_core::installation::RemovalFailure::Unsafe(_) => RemovalError::Unsafe,
-        sailover_core::installation::RemovalFailure::Busy => RemovalError::Busy,
-        sailover_core::installation::RemovalFailure::Io(error) => RemovalError::Storage {
-            message: error.to_string(),
-        },
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
-
-    #[test]
-    fn an_uninstalled_windows_game_loses_its_prefix_but_never_what_a_link_points_to() {
-        let root = tempfile::tempdir().unwrap();
-        let library = root.path().join("library");
-        let locations = sailover_locations(
-            library.to_string_lossy().into_owned(),
-            "/SailOver.app".into(),
-            "/home".into(),
-        );
-        let install = |name: &str| {
-            library
-                .join("Games/Steam")
-                .join(name)
-                .to_string_lossy()
-                .into_owned()
-        };
-        let prefix = library.join("Prefixes/steam-42-windows");
-        fs::create_dir_all(prefix.join("drive_c/users")).unwrap();
-        fs::write(prefix.join("system.reg"), "registry").unwrap();
-        remove_wine_prefix(locations.clone(), install("steam-42-windows")).unwrap();
-        assert!(!prefix.exists());
-        remove_wine_prefix(locations.clone(), install("steam-42-windows")).unwrap();
-
-        let elsewhere = root.path().join("elsewhere");
-        fs::create_dir_all(&elsewhere).unwrap();
-        std::os::unix::fs::symlink(&elsewhere, library.join("Prefixes/steam-43-windows")).unwrap();
-        assert!(matches!(
-            remove_wine_prefix(locations.clone(), install("steam-43-windows")),
-            Err(RemovalError::Unsafe)
-        ));
-        assert!(elsewhere.is_dir());
-        assert!(matches!(
-            remove_wine_prefix(locations, "/".into()),
-            Err(RemovalError::Unsafe)
-        ));
-    }
 
     #[test]
     fn locations_name_every_folder_once() {
@@ -203,8 +107,12 @@ mod tests {
         assert_eq!(locations.voile, "/library/Voile");
         assert_eq!(locations.wine_prefixes, "/library/Prefixes");
         assert_eq!(
-            wine_prefix(locations, "/library/Games/Steam/steam-42-windows".into()),
-            "/library/Prefixes/steam-42-windows"
+            game_runtime::wine::prefix(
+                &game_runtime::Locations::from(&locations).wine_prefixes,
+                Path::new("/library/Games/Steam/steam-42-windows")
+            )
+            .unwrap(),
+            Path::new("/library/Prefixes/steam-42-windows")
         );
     }
 }

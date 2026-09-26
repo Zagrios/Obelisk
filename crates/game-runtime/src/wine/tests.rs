@@ -385,3 +385,31 @@ fn a_missing_program_leaves_its_prerequisite_pending() {
     assert!(calls(&root).is_empty());
     assert!(!config.prefix.join(PREREQUISITES).exists());
 }
+
+#[test]
+fn an_uninstalled_windows_game_loses_its_prefix_but_never_what_a_link_points_to() {
+    use sailover_core::installation::RemovalFailure;
+    let (_directory, root) = installation();
+    let library = root.join("library");
+    let locations = crate::Locations::new(&library, Path::new("/SailOver.app"), Path::new("/home"));
+    let install = |name: &str| library.join("Games/Steam").join(name);
+    let prefix = library.join("Prefixes/steam-42-windows");
+    fs::create_dir_all(prefix.join("drive_c/users")).unwrap();
+    fs::write(prefix.join("system.reg"), "registry").unwrap();
+    remove(&locations, &install("steam-42-windows")).unwrap();
+    assert!(!prefix.exists());
+    remove(&locations, &install("steam-42-windows")).unwrap();
+
+    let elsewhere = root.join("elsewhere");
+    fs::create_dir_all(&elsewhere).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, library.join("Prefixes/steam-43-windows")).unwrap();
+    assert!(matches!(
+        remove(&locations, &install("steam-43-windows")),
+        Err(RemovalFailure::Unsafe(_))
+    ));
+    assert!(elsewhere.is_dir());
+    assert!(matches!(
+        remove(&locations, Path::new("/")),
+        Err(RemovalFailure::Unsafe(_))
+    ));
+}

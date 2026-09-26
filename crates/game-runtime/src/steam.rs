@@ -228,3 +228,66 @@ pub(crate) fn start_command(
         || cancelled.load(Ordering::Acquire),
     )?)
 }
+
+/// A Steam Installation receipt, as the account's receipt file records it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Receipt {
+    pub app_id: u32,
+    pub name: String,
+    pub directory: String,
+    pub platform: String,
+    pub language: String,
+    pub total_bytes: u64,
+    /// A Transfer started over this installation and has not succeeded since.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub needs_verification: Option<bool>,
+}
+
+/// A Steam Transfer: `language` picks the depots.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Download {
+    pub app_id: u32,
+    pub name: String,
+    pub platform: String,
+    pub language: String,
+    /// The parent folder the installation directory goes in.
+    pub directory: PathBuf,
+}
+
+impl crate::installations::Storefront for Steam {
+    type Receipt = Receipt;
+    type Request = Download;
+    const RECEIPTS_UNAVAILABLE: &'static str = "model.steam.receiptsUnavailable";
+    const RECEIPTS_NOT_SAVED: &'static str = "model.steam.receiptsNotSaved";
+    fn receipt_game(receipt: &Receipt) -> u32 {
+        receipt.app_id
+    }
+    fn receipt_id(receipt: &Receipt) -> String {
+        format!("{}-{}", receipt.app_id, receipt.platform)
+    }
+    fn receipt_platform(receipt: &Receipt) -> &str {
+        &receipt.platform
+    }
+    fn receipt_directory(receipt: &Receipt) -> &str {
+        &receipt.directory
+    }
+    fn needs_verification(receipt: &Receipt) -> bool {
+        receipt.needs_verification == Some(true)
+    }
+    fn mark_needs_verification(receipt: &mut Receipt) {
+        receipt.needs_verification = Some(true);
+    }
+    fn request_game(request: &Download) -> u32 {
+        request.app_id
+    }
+    fn request_platform(request: &Download) -> &str {
+        &request.platform
+    }
+    fn request_directory(request: &Download) -> &Path {
+        &request.directory
+    }
+    fn transfer_name(request: &Download) -> String {
+        request.app_id.to_string()
+    }
+}

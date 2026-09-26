@@ -31,8 +31,12 @@ final class EpicModel {
     }
 
     let gameSessions: EpicGameSessions
-    @ObservationIgnored private let launchGame: @MainActor (any EpicSessionProtocol, GameAdmission, EpicCloudConfiguration,
-                                                            any BeforeGameStart) async throws -> Void
+    /// The Rust installations of an account a session signed in: its id, the
+    /// language games launch in, what saves the credentials account calls
+    /// rotate, and the file its receipts keep.
+    typealias MakeInstallations = @MainActor (any EpicSessionProtocol, String, String, any EpicCredentialSave,
+                                              StorefrontSessions, URL) -> any InstallationsBackend<EpicGames>
+    @ObservationIgnored private let makeInstallations: MakeInstallations
     @ObservationIgnored private let maintainCloud: @MainActor (any EpicSessionProtocol, EpicCloudConfiguration) async -> any CloudMaintenanceProtocol
     let cloud: EpicCloudModel
     let rosetta: EpicRosettaModel
@@ -93,10 +97,7 @@ final class EpicModel {
         language: String = Locale.preferredLanguages.first ?? "en",
         gameSessions: EpicGameSessions = .shared,
         cloudServices: EpicCloudServices = .live,
-        launchGame: @escaping @MainActor (any EpicSessionProtocol, GameAdmission, EpicCloudConfiguration,
-                                          any BeforeGameStart) async throws -> Void = {
-            try await $0.launchGame(admission: $1, configuration: $2, locations: .live, beforeStart: $3)
-        },
+        installations makeInstallations: MakeInstallations? = nil,
         maintainCloud: @escaping @MainActor (any EpicSessionProtocol, EpicCloudConfiguration) async -> any CloudMaintenanceProtocol = {
             await $0.maintainCloud(configuration: $1)
         }
@@ -108,7 +109,12 @@ final class EpicModel {
         self.restoreSession = restore
         self.launchLanguage = language
         self.gameSessions = gameSessions
-        self.launchGame = launchGame
+        let locations = SailOverLocations.of(library: directory)
+        self.makeInstallations = makeInstallations ?? { session, account, language, credentials, sessions, receipts in
+            EpicInstallationsBackend(try! Self.installations(of: session, account: account, language: language,
+                                                             credentials: credentials, sessions: sessions,
+                                                             receipts: receipts, locations: locations))
+        }
         self.maintainCloud = maintainCloud
         self.rosetta = EpicRosettaModel(sessions: gameSessions)
         self.cloud = EpicCloudModel(locations: .of(library: directory), sessions: gameSessions,
@@ -328,8 +334,10 @@ final class EpicModel {
             cloud.connect(account: credentials.accountId) { configuration in
                 await maintainCloud(connected, configuration)
             }
-            installations.connect(account: credentials.accountId, receipts: receiptsFile(for: credentials.accountId),
-                                  port: installationPort())
+            let backend = makeInstallations(connected, credentials.accountId, launchLanguage,
+                                            RememberedCredentials(rememberedSession, session: connected),
+                                            gameSessions.core, receiptsFile(for: credentials.accountId))
+            installations.connect(account: credentials.accountId, backend: backend, port: installationPort())
 
             await reloadGames(connected, generation: current)
         } catch {
@@ -520,64 +528,36 @@ final class EpicModel {
         return directory.appending(path: "epic-installations-\(component).json")
     }
 
-    /// Epic's operations for the installation actions. Every account call
-    /// goes through the remembered session, so rotated credentials persist in order.
+    /// Rust's installations of the account `session` signed in.
+    private static func installations(of session: any EpicSessionProtocol, account: String, language: String,
+                                      credentials: any EpicCredentialSave, sessions: StorefrontSessions,
+                                      receipts: URL, locations: SailOverLocations) throws -> EpicAccountInstallations {
+        if let session = session as? EpicSession {
+            return try EpicAccountInstallations(session: session, accountId: account, language: language,
+                                                credentials: credentials, sessions: sessions,
+                                                receipts: receipts.path, locations: locations)
+        }
+        #if DEBUG
+        return try EpicAccountInstallations.withContent(
+            content: SessionEpicContent(session, start: { _ in
+                throw EpicError.Service(message: "backend.epic.cloud.failed")
+            }),
+            accountId: account, language: language, credentials: credentials, sessions: sessions,
+            receipts: receipts.path, locations: locations
+        )
+        #else
+        preconditionFailure("Only a Rust session signs in")
+        #endif
+    }
+
+    /// Epic's part of the installation actions.
     private func installationPort() -> InstallationPort<EpicGames> {
-        let remembered = rememberedSession
-        let launchGame = launchGame
-        return InstallationPort(
-            session: { [weak self] in
-                guard let session = self?.session else { return nil }
-                return InstallationSession(
-                    download: { request, events in
-                        let game = request.game
-                        try await remembered.perform(on: session) {
-                            try events.started()
-                            let installed = try await session.download(
-                                namespace: game.namespace, catalogItemId: game.catalogItemId, appName: game.appName,
-                                platform: request.platform, directory: request.directory.path
-                            )
-                            try events.installed(EpicInstallReceipt(
-                                namespace: game.namespace, appName: installed.appName, name: game.title,
-                                directory: installed.directory, platform: installed.platform, totalBytes: installed.totalBytes
-                            ))
-                        }
-                    },
-                    progress: { session.downloadProgress() },
-                    cancel: { session.cancelDownload() },
-                    start: { [weak self] receipt, admission in
-                        guard let self, let game = games.first(where: { $0.libraryID == receipt.libraryID }) else {
-                            throw CancellationError()
-                        }
-                        let configuration = cloud.configuration(game: game, receipt: receipt, language: launchLanguage)
-                        try await remembered.perform(on: session, preparing: false) {
-                            try Task.checkCancellation()
-                            try await launchGame(session, admission, configuration,
-                                                 RememberedCredentials(remembered, session: session))
-                        }
-                    }
-                )
-            },
+        InstallationPort(
             verifiesBeforeLaunch: { true },
-            uninstall: { [weak self] receipt in
-                guard let self, let session, let account = accountID,
-                      let game = games.first(where: { $0.libraryID == receipt.libraryID }) else { return nil }
-                let configuration = cloud.configuration(game: game, receipt: receipt, language: launchLanguage)
-                var removePrefix: (@Sendable () throws -> Void)?
-                if configuration.prefix != nil {
-                    let (locations, directory) = (cloud.locations, receipt.directory)
-                    removePrefix = { try removeWinePrefix(locations: locations, installDirectory: directory) }
-                }
-                return GameUninstall(
-                    // The engine owns the directory naming scheme; never re-derive it here.
-                    directoryName: epicInstallationDirectoryName(
-                        namespace: receipt.namespace, catalogItemId: game.catalogItemId,
-                        appName: receipt.appName, platform: receipt.platform
-                    ),
-                    archive: { try await remembered.perform(on: session) { try await session.archiveCloud(configuration: configuration) } },
-                    removed: { try await epicCloudRemoved(configuration: configuration, accountId: account) },
-                    removePrefix: removePrefix
-                )
+            uninstallRequest: { [weak self] receipt in
+                guard let game = self?.games.first(where: { $0.libraryID == receipt.libraryID }) else { return nil }
+                return EpicDownload(game: game, platform: receipt.platform,
+                                    directory: URL(fileURLWithPath: receipt.directory).deletingLastPathComponent())
             },
             report: { [weak self] error in
                 guard let self else { return }

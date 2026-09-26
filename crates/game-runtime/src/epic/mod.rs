@@ -232,3 +232,76 @@ struct Request {
     #[serde(default)]
     wine: Option<crate::wine::Config>,
 }
+
+/// An Epic Installation receipt, as the account's receipt file records it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Receipt {
+    pub namespace: String,
+    pub app_name: String,
+    pub name: String,
+    pub directory: String,
+    pub platform: String,
+    pub total_bytes: u64,
+    /// A Transfer started over this installation and has not succeeded since.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub needs_verification: Option<bool>,
+}
+
+/// An Epic Transfer of one game's build.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Download {
+    pub namespace: String,
+    pub catalog_item_id: String,
+    pub app_name: String,
+    pub title: String,
+    pub platform: String,
+    /// The parent folder the installation directory goes in.
+    pub directory: PathBuf,
+}
+
+impl crate::installations::Storefront for Epic {
+    type Receipt = Receipt;
+    type Request = Download;
+    const RECEIPTS_UNAVAILABLE: &'static str = "model.epic.receiptsUnavailable";
+    const RECEIPTS_NOT_SAVED: &'static str = "model.epic.receiptsNotSaved";
+    fn receipt_game(receipt: &Receipt) -> Store {
+        Store {
+            namespace: receipt.namespace.clone(),
+            app_name: receipt.app_name.clone(),
+        }
+    }
+    fn receipt_id(receipt: &Receipt) -> String {
+        format!(
+            "{}:{}:{}",
+            receipt.namespace, receipt.app_name, receipt.platform
+        )
+    }
+    fn receipt_platform(receipt: &Receipt) -> &str {
+        &receipt.platform
+    }
+    fn receipt_directory(receipt: &Receipt) -> &str {
+        &receipt.directory
+    }
+    fn needs_verification(receipt: &Receipt) -> bool {
+        receipt.needs_verification == Some(true)
+    }
+    fn mark_needs_verification(receipt: &mut Receipt) {
+        receipt.needs_verification = Some(true);
+    }
+    fn request_game(request: &Download) -> Store {
+        Store {
+            namespace: request.namespace.clone(),
+            app_name: request.app_name.clone(),
+        }
+    }
+    fn request_platform(request: &Download) -> &str {
+        &request.platform
+    }
+    fn request_directory(request: &Download) -> &std::path::Path {
+        &request.directory
+    }
+    fn transfer_name(request: &Download) -> String {
+        request.app_name.clone()
+    }
+}

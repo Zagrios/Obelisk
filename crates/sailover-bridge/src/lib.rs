@@ -21,8 +21,8 @@ mod game_session;
 pub use game_session::*;
 mod locations;
 pub use locations::*;
-mod voile;
-pub use voile::*;
+mod installations;
+pub use installations::*;
 
 uniffi::setup_scaffolding!();
 
@@ -118,6 +118,34 @@ pub struct GameTransfer {
     pub content_bytes: u64,
     pub current_file: String,
     pub message: String,
+}
+
+impl From<TransferState> for sailover_core::transfer::TransferState {
+    fn from(state: TransferState) -> Self {
+        match state {
+            TransferState::Preparing => Self::Preparing,
+            TransferState::Verifying => Self::Verifying,
+            TransferState::Downloading => Self::Downloading,
+            TransferState::Complete => Self::Complete,
+            TransferState::Cancelled => Self::Cancelled,
+            TransferState::Failed => Self::Failed,
+        }
+    }
+}
+
+impl From<GameTransfer> for sailover_core::installation::TransferProgress {
+    fn from(transfer: GameTransfer) -> Self {
+        Self {
+            game: transfer.game,
+            state: transfer.state.into(),
+            completed_bytes: transfer.completed_bytes,
+            total_bytes: transfer.total_bytes,
+            network_bytes: transfer.network_bytes,
+            content_bytes: transfer.content_bytes,
+            current_file: transfer.current_file,
+            message: transfer.message,
+        }
+    }
 }
 
 impl From<sailover_core::installation::TransferProgress> for GameTransfer {

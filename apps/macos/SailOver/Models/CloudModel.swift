@@ -254,28 +254,8 @@ final class CloudModel<Store: CloudStorefront> {
 extension CloudModel where Store == SteamGames {
     /// Starts Cloud maintenance. `receipt` is nil for an uninstalled game.
     func startMaintenance(appId: UInt32, receipt: SteamInstallReceipt?) {
-        startMaintenance(SteamCloudMaintenanceRequest(root: root, home: locations.home, install: receipt?.directory,
-                                                      prefix: receipt.flatMap(prefix), appId: appId,
-                                                      sessionDirectory: sessionDirectory, helper: locations.helper))
-    }
-
-    func archive(_ receipt: SteamInstallReceipt, session: any SteamSessionProtocol) async throws {
-        guard account != nil else { throw SteamError.AuthenticationRequired }
-        try await session.archiveCloud(config: configuration(receipt))
-    }
-
-    func removed(_ receipt: SteamInstallReceipt, accountId: UInt64) async throws {
-        try await steamCloudRemoved(config: configuration(receipt), accountId: accountId)
-    }
-
-    private func configuration(_ receipt: SteamInstallReceipt) -> SteamCloudConfiguration {
-        SteamCloudConfiguration(root: root, home: locations.home, install: receipt.directory, appId: receipt.appId,
-                                prefix: prefix(receipt))
-    }
-
-    /// A Windows installation keeps its saves in its Wine prefix.
-    private func prefix(_ receipt: SteamInstallReceipt) -> String? {
-        receipt.platform == "windows" ? winePrefix(locations: locations, installDirectory: receipt.directory) : nil
+        startMaintenance(steamCloudMaintenanceRequest(locations: locations, appId: appId,
+                                                      install: receipt?.directory, platform: receipt?.platform))
     }
 }
 
@@ -294,15 +274,9 @@ extension CloudModel where Store == EpicGames {
     }
 
     func configuration(game: EpicGame, receipt: EpicInstallReceipt, language: String) -> EpicCloudConfiguration {
-        EpicCloudConfiguration(root: root, home: locations.home, install: receipt.directory,
-                               sessionDirectory: sessionDirectory, helper: locations.helper,
-                               namespace: game.namespace, catalogItemId: game.catalogItemId,
-                               appName: game.appName, platform: receipt.platform, language: language,
-                               prefix: prefix(receipt))
-    }
-
-    /// A Windows build runs in Wine and keeps its saves in its prefix.
-    private func prefix(_ receipt: EpicInstallReceipt) -> String? {
-        receipt.platform == "Windows" ? winePrefix(locations: locations, installDirectory: receipt.directory) : nil
+        let build = EpicDownload(game: game, platform: receipt.platform,
+                                 directory: URL(fileURLWithPath: receipt.directory).deletingLastPathComponent())
+        return epicCloudConfiguration(locations: locations, request: EpicInstallationsBackend.request(build),
+                                      install: receipt.directory, language: language)
     }
 }

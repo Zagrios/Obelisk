@@ -152,9 +152,10 @@ final class EpicRememberedSession {
     }
 }
 
-/// Saves an Epic launch's rotated credentials before its game starts. Rust
-/// waits on its own thread while the save runs on the main actor.
-final class RememberedCredentials: BeforeGameStart, @unchecked Sendable {
+/// Saves the credentials Epic account calls rotate, such as a launch's
+/// exchange before its game starts. Rust waits on its own thread while the
+/// save runs on the main actor.
+final class RememberedCredentials: EpicCredentialSave, @unchecked Sendable {
     private let remembered: EpicRememberedSession
     private let session: any EpicSessionProtocol
 
@@ -163,7 +164,7 @@ final class RememberedCredentials: BeforeGameStart, @unchecked Sendable {
         self.session = session
     }
 
-    func run() {
+    func save() {
         let semaphore = DispatchSemaphore(value: 0)
         let (remembered, session) = (remembered, session)
         Task { @MainActor in

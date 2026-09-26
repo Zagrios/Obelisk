@@ -3,7 +3,7 @@ import Observation
 
 /// One Transfer the player asked for: a game's platform, installed under a
 /// parent folder.
-protocol GameTransferRequest: Sendable {
+protocol GameTransferRequest: Equatable, Sendable {
     associatedtype GameID: Hashable & Sendable
     var gameID: GameID { get }
     var platform: String { get }
@@ -15,14 +15,10 @@ protocol GameTransferRequest: Sendable {
 protocol InstallationStorefront: CloudStorefront {
     associatedtype Receipt: InstallReceipt where Receipt.GameID == GameID
     associatedtype Request: GameTransferRequest where Request.GameID == GameID
-    /// The name a Transfer's progress gives the game.
-    static func transferName(of request: Request) -> String
     /// The game and account a launch of `receipt` is admitted for.
     static func identity(of receipt: Receipt, account: AccountID) -> GameIdentity
     /// Where new installations go, inside SailOver's library directory.
     static var gamesDirectory: String { get }
-    static var receiptsUnavailable: String { get }
-    static var receiptsNotSaved: String { get }
     /// Shown on a game's page while another game's operation holds the storefront.
     static var otherGameOperation: String { get }
 }
@@ -40,11 +36,10 @@ struct InstallationSelection<Store: InstallationStorefront> {
 /// A signed-in account's storefront operations. Every closure belongs to one
 /// connection; signing out drops them.
 struct InstallationPort<Store: InstallationStorefront> {
-    /// The connected storefront session, or nil while it reconnects.
-    var session: @MainActor () -> InstallationSession<Store>?
     var verifiesBeforeLaunch: @MainActor () -> Bool
-    /// How the storefront removes an installation, or nil when it cannot.
-    var uninstall: @MainActor (Store.Receipt) -> GameUninstall?
+    /// The game `receipt` installs, as the storefront names it for an
+    /// uninstall, or nil when it cannot remove it.
+    var uninstallRequest: @MainActor (Store.Receipt) -> Store.Request?
     /// Presents a failure; nil clears the last one.
     var report: @MainActor (Error?) -> Void
     var warn: @MainActor (String) -> Void
@@ -52,44 +47,43 @@ struct InstallationPort<Store: InstallationStorefront> {
     var uninstalled: @MainActor (Store.GameID) -> Void = { _ in }
 }
 
-/// One storefront session's Transfer and launch operations. A Transfer keeps
-/// the session it started on, even when the storefront reconnects meanwhile.
-struct InstallationSession<Store: InstallationStorefront> {
-    /// Runs one Transfer, reporting it through `events`.
-    var download: @MainActor (Store.Request, TransferEvents<Store.Receipt>) async throws -> Void
-    var progress: @Sendable () -> GameTransfer?
-    var cancel: @Sendable () -> Void
-    /// Hands a verified installation to its supervisor for its admission,
-    /// and returns once the session is finished.
-    var start: @MainActor (Store.Receipt, GameAdmission) async throws -> Void
+/// Everything one account's installations present, as Rust keeps them.
+struct InstallationsSnapshot<Store: InstallationStorefront>: Equatable {
+    var revision: UInt64
+    var receipts: [Store.Receipt]
+    var transfer: GameTransfer?
+    var transferGame: Store.GameID?
+    var downloading: Bool
+    var launching: Bool
+    var verifyingBeforeLaunch: Bool
+    var launchGame: Store.GameID?
+    var uninstalling: Bool
+    var uninstallGame: Store.GameID?
+    var lastDownload: Store.Request?
+    var report: InstallationReport?
+    var warning: InstallationWarning?
 }
 
-/// What a storefront reports while it runs one Transfer.
-struct TransferEvents<Receipt> {
-    /// Call right before the storefront's Transfer starts. Throws when it was
-    /// cancelled meanwhile; from here on, its progress is this Transfer's.
-    let started: @MainActor () throws -> Void
-    /// Call with the new receipt as soon as the storefront returns it, before
-    /// any account bookkeeping. Throws when the Transfer was cancelled first.
-    let installed: @MainActor (Receipt) throws -> Void
+/// One account's installations of one storefront, in Rust. Each action
+/// returns at once; the snapshot tells how it goes.
+@MainActor
+protocol InstallationsBackend<Store>: AnyObject {
+    associatedtype Store: InstallationStorefront
+    func snapshot() -> InstallationsSnapshot<Store>
+    /// Waits for a revision newer than `after`.
+    func changed(after: UInt64) async -> InstallationsSnapshot<Store>
+    func setDiagnostic(_ running: Bool)
+    func download(_ request: Store.Request)
+    func resumeDownload()
+    func cancel()
+    func launch(_ receipt: Store.Receipt, verification: Store.Request, verify: Bool)
+    func uninstall(_ receipt: Store.Receipt, request: Store.Request)
+    func signedOut()
 }
 
-/// A storefront's part of an uninstall. SailOver removes the directory between
-/// `archive` and `removed`.
-struct GameUninstall {
-    /// The dedicated directory name the storefront installed into.
-    let directoryName: String
-    /// Saves the game's Cloud archive before its files go.
-    let archive: @MainActor () async throws -> Void
-    /// Records the removal for Cloud sync. Runs even after sign-out.
-    let removed: @Sendable () async throws -> Void
-    /// Deletes a Windows installation's Wine prefix once its folder is gone.
-    var removePrefix: (@Sendable () throws -> Void)? = nil
-}
-
-/// One storefront's installed games and the actions on them: Transfers,
-/// verified launches and uninstalls. Every action asks one Reservation gate,
-/// so a new one cannot touch a running game's files.
+/// One storefront's installed games and the actions on them, as Rust keeps
+/// them: Transfers, verified launches and uninstalls. This presents them for
+/// the game on screen and forwards the player's actions.
 @MainActor @Observable
 final class GameInstallations<Store: InstallationStorefront> {
     typealias Receipt = Store.Receipt
@@ -115,23 +109,21 @@ final class GameInstallations<Store: InstallationStorefront> {
     /// A Transfer that stopped before its receipt, which the player can resume.
     private(set) var lastDownload: Request?
     /// A DEBUG diagnostic fences the storefront like a Game session would.
-    var diagnosticReservation = false
+    var diagnosticReservation = false {
+        didSet { backend?.setDiagnostic(diagnosticReservation) }
+    }
     @ObservationIgnored var selection: @MainActor () -> InstallationSelection<Store>? = { nil }
 
     let sessions: GameSessions<Store>
     let cloud: CloudModel<Store>
     @ObservationIgnored private let directory: URL
     private var account: Store.AccountID?
-    @ObservationIgnored private var receiptsFile: URL?
+    @ObservationIgnored private var backend: (any InstallationsBackend<Store>)?
     @ObservationIgnored private var port: InstallationPort<Store>?
-    /// The session running the current Transfer, which cancellation reaches.
-    @ObservationIgnored private var transferSession: InstallationSession<Store>?
-    @ObservationIgnored private var generation = 0
-    @ObservationIgnored private var cancellationRequested = false
-    @ObservationIgnored private var downloadTask: Task<Void, Never>?
-    @ObservationIgnored private var launchTask: Task<Void, Never>?
-    @ObservationIgnored private var uninstallTask: Task<Void, Never>?
-    @ObservationIgnored private var progressTask: Task<Void, Never>?
+    @ObservationIgnored private var revision: UInt64 = 0
+    @ObservationIgnored private var report: InstallationReport?
+    @ObservationIgnored private var warning: InstallationWarning?
+    @ObservationIgnored private var observation: Task<Void, Never>?
 
     /// `directory` is SailOver's library directory, which an uninstall never removes.
     init(directory: URL, sessions: GameSessions<Store>, cloud: CloudModel<Store>) {
@@ -140,34 +132,39 @@ final class GameInstallations<Store: InstallationStorefront> {
         self.cloud = cloud
     }
 
-    func connect(account: Store.AccountID, receipts file: URL, port: InstallationPort<Store>) {
+    func connect(account: Store.AccountID, backend: any InstallationsBackend<Store>, port: InstallationPort<Store>) {
         reset()
         self.account = account
-        receiptsFile = file
+        self.backend = backend
         self.port = port
-        loadReceipts()
+        backend.setDiagnostic(diagnosticReservation)
+        apply(backend.snapshot())
+        observation = Task { [weak self, backend] in
+            var after = self?.revision ?? 0
+            while !Task.isCancelled {
+                let snapshot = await backend.changed(after: after)
+                guard let self, self.backend === backend else { return }
+                after = snapshot.revision
+                apply(snapshot)
+            }
+        }
     }
 
     /// Stops the account's Transfer. A running game keeps its Game session.
     func signedOut() {
-        (transferSession ?? port?.session())?.cancel()
+        backend?.signedOut()
         reset()
     }
 
     private func reset() {
-        generation += 1
-        cancellationRequested = true
-        downloadTask?.cancel()
-        launchTask?.cancel()
-        uninstallTask?.cancel()
-        progressTask?.cancel()
-        downloadTask = nil
-        launchTask = nil
-        progressTask = nil
+        observation?.cancel()
+        observation = nil
         port = nil
-        transferSession = nil
+        backend = nil
         account = nil
-        receiptsFile = nil
+        revision = 0
+        report = nil
+        warning = nil
         receipts = []
         transfer = nil
         transferGame = nil
@@ -176,6 +173,51 @@ final class GameInstallations<Store: InstallationStorefront> {
         isLaunching = false
         isVerifyingBeforeLaunch = false
         launchGame = nil
+        isUninstalling = false
+        uninstallGame = nil
+    }
+
+    private func apply(_ snapshot: InstallationsSnapshot<Store>) {
+        guard snapshot.revision > revision else { return }
+        revision = snapshot.revision
+        // Repeated snapshots do not invalidate unchanged presentation.
+        if receipts != snapshot.receipts { receipts = snapshot.receipts }
+        if transfer != snapshot.transfer { transfer = snapshot.transfer }
+        if transferGame != snapshot.transferGame { transferGame = snapshot.transferGame }
+        if isDownloading != snapshot.downloading { isDownloading = snapshot.downloading }
+        if isLaunching != snapshot.launching { isLaunching = snapshot.launching }
+        if isVerifyingBeforeLaunch != snapshot.verifyingBeforeLaunch {
+            isVerifyingBeforeLaunch = snapshot.verifyingBeforeLaunch
+        }
+        if launchGame != snapshot.launchGame { launchGame = snapshot.launchGame }
+        if isUninstalling != snapshot.uninstalling { isUninstalling = snapshot.uninstalling }
+        if uninstallGame != snapshot.uninstallGame { uninstallGame = snapshot.uninstallGame }
+        if lastDownload != snapshot.lastDownload { lastDownload = snapshot.lastDownload }
+        if report != snapshot.report {
+            report = snapshot.report
+            if let report { port?.report(Self.failure(report)) }
+        }
+        if warning != snapshot.warning {
+            warning = snapshot.warning
+            if let warning { port?.warn(L10n.string(warning.key)) }
+        }
+    }
+
+    private static func failure(_ report: InstallationReport) -> Error {
+        switch report {
+        case let .storefront(key): Store.failure(key)
+        case let .downloadDirectory(message): GameInstallationFailure.downloadDirectory(message)
+        case let .uninstall(reason): GameInstallationFailure.uninstall(reason)
+        }
+    }
+
+    /// Runs an action on the account's installations, then shows its state.
+    private func act(_ action: (any InstallationsBackend<Store>) -> Void) {
+        guard let backend else { return }
+        port?.report(nil)
+        action(backend)
+        apply(backend.snapshot())
+        sessions.refresh()
     }
 
     // MARK: Reservation gate
@@ -291,7 +333,10 @@ final class GameInstallations<Store: InstallationStorefront> {
     func primaryAction() {
         guard primaryActionAvailable, let selection = selection() else { return }
         if let receipt = selectedReceipt {
-            launch(receipt, verification: selection.request(receipt, parent(of: receipt)))
+            guard !isBusy, let port else { return }
+            let verify = port.verifiesBeforeLaunch()
+            let verification = selection.request(receipt, parent(of: receipt))
+            act { $0.launch(receipt, verification: verification, verify: verify) }
         } else {
             downloadSelected()
         }
@@ -316,249 +361,30 @@ final class GameInstallations<Store: InstallationStorefront> {
     // MARK: Transfers
 
     func download(_ request: Request) {
-        guard let port, let session = port.session(), canModify(request.gameID) else { return }
-        do {
-            try FileManager.default.createDirectory(at: request.directory, withIntermediateDirectories: true)
-        } catch {
-            port.report(GameInstallationFailure.downloadDirectory(error))
-            return
-        }
-        let current = generation
-        cancellationRequested = false
-        port.report(nil)
-        begin(request, on: session)
-        downloadTask = Task {
-            defer { if current == generation { downloadTask = nil } }
-            do {
-                _ = try await perform(request, on: session, generation: current)
-            } catch {
-                guard current == generation, !(error is CancellationError), !cancellationRequested else { return }
-                port.report(error)
-            }
-        }
+        guard canModify(request.gameID) else { return }
+        act { $0.download(request) }
     }
 
     func resumeDownload() {
-        guard canResumeDownload, let lastDownload else { return }
-        download(lastDownload)
+        guard canResumeDownload else { return }
+        act { $0.resumeDownload() }
     }
 
     /// Stops the Transfer, and a launch still preparing. A running game keeps
     /// its Game session.
     func cancelDownload() {
-        guard isDownloading || isLaunching else { return }
-        cancellationRequested = true
-        (transferSession ?? port?.session())?.cancel()
-        if isLaunching && !isDownloading { launchTask?.cancel() }
-    }
-
-    private func requireCurrent(_ current: Int) throws {
-        guard current == generation && !Task.isCancelled && !cancellationRequested else { throw CancellationError() }
-    }
-
-    /// Marks the Transfer's game before its first progress snapshot arrives.
-    private func begin(_ request: Request, on session: InstallationSession<Store>) {
-        transferSession = session
-        lastDownload = request
-        transferGame = request.gameID
-        transfer = GameTransfer(game: Store.transferName(of: request), state: .preparing, completedBytes: 0,
-                                totalBytes: 0, networkBytes: 0, contentBytes: 0, currentFile: "", message: "")
-        isDownloading = true
-        if let index = receipts.firstIndex(where: { $0.gameID == request.gameID && $0.platform == request.platform }) {
-            receipts[index].needsVerification = true
-            saveReceipts()
-        }
-    }
-
-    /// Download, resume and verification before launch share this path, after `begin`.
-    private func perform(_ request: Request, on session: InstallationSession<Store>,
-                         generation current: Int) async throws -> Receipt {
-        let name = Store.transferName(of: request)
-        var started = false
-        var installed: Receipt?
-        var settled = false
-        func settle(_ state: TransferState) {
-            guard current == generation, !settled else { return }
-            settled = true
-            progressTask?.cancel()
-            progressTask = nil
-            if started, let snapshot = session.progress(), snapshot.game == name, snapshot.state == state {
-                transfer = snapshot
-            } else {
-                transfer?.message = ""
-            }
-            transfer?.state = state
-        }
-        var terminal = TransferState.failed
-        defer {
-            settle(terminal)
-            if current == generation {
-                transferSession = nil
-                isDownloading = false
-            }
-        }
-        let events = TransferEvents<Receipt>(started: { [self] in
-            try requireCurrent(current)
-            started = true
-            progressTask?.cancel()
-            progressTask = Task {
-                while current == generation && !Task.isCancelled {
-                    if let snapshot = session.progress(), snapshot.game == name, snapshot.state.isActive,
-                       snapshot != transfer {
-                        transfer = snapshot
-                    }
-                    try? await Task.sleep(for: .milliseconds(250))
-                }
-            }
-        }, installed: { [self] receipt in
-            try requireCurrent(current)
-            guard session.progress()?.state != .cancelled else { throw CancellationError() }
-            receipts = receipts.filter { $0.id != receipt.id } + [receipt]
-            lastDownload = nil
-            saveReceipts()
-            installed = receipt
-            settle(.complete)
-        })
-        do {
-            try requireCurrent(current)
-            try await session.download(request, events)
-            guard let installed else { throw CancellationError() }
-            return installed
-        } catch {
-            // The installation stays complete whatever happens after its receipt.
-            if installed != nil {
-                terminal = .complete
-                throw error
-            }
-            let cancelled = error is CancellationError || cancellationRequested
-                || (started && session.progress()?.state == .cancelled)
-            terminal = cancelled ? .cancelled : .failed
-            throw cancelled ? CancellationError() : error
-        }
-    }
-
-    // MARK: Launch
-
-    /// Verifies the installation first when the storefront asks for it or the
-    /// receipt needs it, then hands it to a Game session.
-    private func launch(_ receipt: Receipt, verification: Request) {
-        guard let port, let session = port.session(), let account, canModify(receipt.gameID), !isBusy else { return }
-        let current = generation
-        let game = receipt.gameID
-        let mustVerify = port.verifiesBeforeLaunch() || receipt.needsVerification == true
-        isLaunching = true
-        isVerifyingBeforeLaunch = mustVerify
-        launchGame = game
-        cancellationRequested = false
-        port.report(nil)
-        var gameWasRunning = false
-        // The shared session store outlives this model: a strong capture here
-        // would pin the whole library graph for the game's lifetime.
-        launchTask = sessions.launch(Store.identity(of: receipt, account: account), run: { [weak self] admission in
-            guard let self else { throw CancellationError() }
-            try self.requireCurrent(current)
-            var ready = receipt
-            if mustVerify {
-                self.begin(verification, on: session)
-                ready = try await self.perform(verification, on: session, generation: current)
-            }
-            try self.requireCurrent(current)
-            self.isVerifyingBeforeLaunch = false
-            try await session.start(ready, admission)
-        }, onRunning: { [weak self] in
-            gameWasRunning = true
-            guard let self, self.generation == current else { return }
-            self.isLaunching = false
-        }, onCompletion: { [weak self] error in
-            guard let self, self.generation == current else { return }
-            self.isLaunching = false
-            self.isVerifyingBeforeLaunch = false
-            self.launchGame = nil
-            self.launchTask = nil
-            guard let error, !(error is CancellationError),
-                  gameWasRunning || (!Task.isCancelled && !self.cancellationRequested) else { return }
-            port.report(error)
-        })
+        guard isDownloading || isLaunching, let backend else { return }
+        backend.cancel()
+        apply(backend.snapshot())
+        sessions.refresh()
     }
 
     // MARK: Uninstall
 
     func uninstall(_ receipt: Receipt) {
-        guard let port, account != nil, canModify(receipt.gameID), receipts.contains(receipt),
-              let file = receiptsFile, let removal = port.uninstall(receipt) else { return }
-        let current = generation
-        let remaining = receipts.filter { $0 != receipt }
-        let game = receipt.gameID
-        isUninstalling = true
-        uninstallGame = game
-        port.report(nil)
-        uninstallTask = Task {
-            defer {
-                isUninstalling = false
-                uninstallGame = nil
-                uninstallTask = nil
-            }
-            do {
-                guard current == generation && !Task.isCancelled else { return }
-                try await removal.archive()
-                guard current == generation && !Task.isCancelled else { return }
-                do {
-                    try await GameInstallationManager.uninstall(
-                        directory: receipt.directory, expectedDirectoryName: removal.directoryName,
-                        protecting: directory, receiptFile: file, remaining: remaining
-                    )
-                } catch {
-                    // Receipt persistence can fail after the directory was
-                    // removed. The Cloud fence must still record that removal.
-                    if !FileManager.default.fileExists(atPath: receipt.directory) { try await removal.removed() }
-                    throw error
-                }
-                // Record the original account even if it signed out while the
-                // file operation was completing. Removal is never a Cloud delete.
-                try await removal.removed()
-                // As Steam deletes a Proton prefix, the prefix goes with its game,
-                // after the Cloud archive above took its saves.
-                if let removePrefix = removal.removePrefix {
-                    do { try removePrefix() } catch { port.warn(L10n.string("model.installations.prefixNotRemoved")) }
-                }
-                guard current == generation else {
-                    // A reconnected account may have loaded its receipts before
-                    // the removal completed. Refresh only its own receipt file.
-                    if receiptsFile != nil { loadReceipts() }
-                    return
-                }
-                receipts = remaining
-                if lastDownload?.gameID == game && lastDownload?.platform == receipt.platform { lastDownload = nil }
-                if transferGame == game {
-                    transfer = nil
-                    transferGame = nil
-                }
-            } catch {
-                guard current == generation && !(error is CancellationError) else { return }
-                receipts = InstallationReceipts.retainingExistingDirectories(receipts)
-                port.report(GameInstallationFailure.uninstall(error))
-            }
-        }
-    }
-
-    // MARK: Receipts
-
-    private func loadReceipts() {
-        guard let receiptsFile else {
-            receipts = []
-            return
-        }
-        do { receipts = try InstallationReceipts.load(Receipt.self, from: receiptsFile) }
-        catch {
-            receipts = []
-            port?.warn(L10n.string(Store.receiptsUnavailable))
-        }
-    }
-
-    private func saveReceipts() {
-        guard let receiptsFile else { return }
-        do { try InstallationReceipts.save(receipts, to: receiptsFile) }
-        catch { port?.warn(L10n.string(Store.receiptsNotSaved)) }
+        guard account != nil, canModify(receipt.gameID), receipts.contains(receipt),
+              let request = port?.uninstallRequest(receipt) else { return }
+        act { $0.uninstall(receipt, request: request) }
     }
 }
 
@@ -568,11 +394,23 @@ extension TransferState {
 
 /// A Steam Transfer: `language` picks the depots.
 struct SteamDownload: GameTransferRequest {
-    let game: SteamGame
+    let appId: UInt32
+    let name: String
     let platform: String
     let language: String
     let directory: URL
-    var gameID: UInt32 { game.appId }
+    var gameID: UInt32 { appId }
+
+    init(game: SteamGame, platform: String, language: String, directory: URL) {
+        self.init(appId: game.appId, name: game.name, platform: platform, language: language, directory: directory)
+    }
+    init(appId: UInt32, name: String, platform: String, language: String, directory: URL) {
+        self.appId = appId
+        self.name = name
+        self.platform = platform
+        self.language = language
+        self.directory = directory
+    }
 }
 
 extension SteamGames: InstallationStorefront {
@@ -581,18 +419,31 @@ extension SteamGames: InstallationStorefront {
     static func identity(of receipt: SteamInstallReceipt, account: UInt64) -> GameIdentity {
         .steam(appId: receipt.appId, accountId: account)
     }
-    static func transferName(of request: SteamDownload) -> String { String(request.game.appId) }
     static let gamesDirectory = "Games/Steam"
-    static let receiptsUnavailable = "model.steam.receiptsUnavailable"
-    static let receiptsNotSaved = "model.steam.receiptsNotSaved"
     static let otherGameOperation = "ui.steam.other_game_operation"
 }
 
 struct EpicDownload: GameTransferRequest {
-    let game: EpicGame
+    let namespace: String
+    let catalogItemId: String
+    let appName: String
+    let title: String
     let platform: String
     let directory: URL
-    var gameID: String { game.libraryID }
+    var gameID: String { epicLibraryID(namespace: namespace, appName: appName) }
+
+    init(game: EpicGame, platform: String, directory: URL) {
+        self.init(namespace: game.namespace, catalogItemId: game.catalogItemId, appName: game.appName,
+                  title: game.title, platform: platform, directory: directory)
+    }
+    init(namespace: String, catalogItemId: String, appName: String, title: String, platform: String, directory: URL) {
+        self.namespace = namespace
+        self.catalogItemId = catalogItemId
+        self.appName = appName
+        self.title = title
+        self.platform = platform
+        self.directory = directory
+    }
 }
 
 extension EpicGames: InstallationStorefront {
@@ -601,12 +452,118 @@ extension EpicGames: InstallationStorefront {
     static func identity(of receipt: EpicInstallReceipt, account: String) -> GameIdentity {
         .epic(accountId: account, namespace: receipt.namespace, appName: receipt.appName)
     }
-    static func transferName(of request: EpicDownload) -> String { request.game.appName }
     static let gamesDirectory = "Games/Epic"
-    static let receiptsUnavailable = "model.epic.receiptsUnavailable"
-    static let receiptsNotSaved = "model.epic.receiptsNotSaved"
     static let otherGameOperation = "ui.epic.other_game_operation"
 }
 
 typealias SteamInstallations = GameInstallations<SteamGames>
 typealias EpicInstallations = GameInstallations<EpicGames>
+
+/// A Steam account's installations in Rust.
+final class SteamInstallationsBackend: InstallationsBackend {
+    typealias Store = SteamGames
+    private let core: SteamAccountInstallations
+
+    init(_ core: SteamAccountInstallations) { self.core = core }
+
+    func snapshot() -> InstallationsSnapshot<SteamGames> { Self.snapshot(core.state()) }
+    func changed(after: UInt64) async -> InstallationsSnapshot<SteamGames> {
+        Self.snapshot(await core.changed(after: after))
+    }
+    func setDiagnostic(_ running: Bool) { core.setDiagnostic(running: running) }
+    func download(_ request: SteamDownload) { core.download(request: Self.request(request)) }
+    func resumeDownload() { core.resumeDownload() }
+    func cancel() { core.cancel() }
+    func launch(_ receipt: SteamInstallReceipt, verification: SteamDownload, verify: Bool) {
+        core.launch(receipt: Self.receipt(receipt), verification: Self.request(verification), verify: verify)
+    }
+    func uninstall(_ receipt: SteamInstallReceipt, request: SteamDownload) {
+        core.uninstall(receipt: Self.receipt(receipt), request: Self.request(request))
+    }
+    func signedOut() { core.signedOut() }
+
+    private static func snapshot(_ state: SteamInstallationsState) -> InstallationsSnapshot<SteamGames> {
+        InstallationsSnapshot(
+            revision: state.revision, receipts: state.receipts.map(receipt), transfer: state.transfer,
+            transferGame: state.transferGame, downloading: state.downloading, launching: state.launching,
+            verifyingBeforeLaunch: state.verifyingBeforeLaunch, launchGame: state.launchGame,
+            uninstalling: state.uninstalling, uninstallGame: state.uninstallGame,
+            lastDownload: state.lastDownload.map(request), report: state.report, warning: state.warning
+        )
+    }
+    private static func receipt(_ receipt: SteamReceipt) -> SteamInstallReceipt {
+        SteamInstallReceipt(appId: receipt.appId, name: receipt.name, directory: receipt.directory,
+                            platform: receipt.platform, language: receipt.language, totalBytes: receipt.totalBytes,
+                            needsVerification: receipt.needsVerification)
+    }
+    private static func receipt(_ receipt: SteamInstallReceipt) -> SteamReceipt {
+        SteamReceipt(appId: receipt.appId, name: receipt.name, directory: receipt.directory, platform: receipt.platform,
+                     language: receipt.language, totalBytes: receipt.totalBytes,
+                     needsVerification: receipt.needsVerification)
+    }
+    private static func request(_ request: SteamDownloadRequest) -> SteamDownload {
+        SteamDownload(appId: request.appId, name: request.name, platform: request.platform,
+                      language: request.language, directory: URL(fileURLWithPath: request.directory))
+    }
+    private static func request(_ request: SteamDownload) -> SteamDownloadRequest {
+        SteamDownloadRequest(appId: request.appId, name: request.name, platform: request.platform,
+                             language: request.language, directory: request.directory.path)
+    }
+}
+
+/// An Epic account's installations in Rust.
+final class EpicInstallationsBackend: InstallationsBackend {
+    typealias Store = EpicGames
+    private let core: EpicAccountInstallations
+
+    init(_ core: EpicAccountInstallations) { self.core = core }
+
+    func snapshot() -> InstallationsSnapshot<EpicGames> { Self.snapshot(core.state()) }
+    func changed(after: UInt64) async -> InstallationsSnapshot<EpicGames> {
+        Self.snapshot(await core.changed(after: after))
+    }
+    func setDiagnostic(_ running: Bool) { core.setDiagnostic(running: running) }
+    func download(_ request: EpicDownload) { core.download(request: Self.request(request)) }
+    func resumeDownload() { core.resumeDownload() }
+    func cancel() { core.cancel() }
+    func launch(_ receipt: EpicInstallReceipt, verification: EpicDownload, verify: Bool) {
+        core.launch(receipt: Self.receipt(receipt), verification: Self.request(verification), verify: verify)
+    }
+    func uninstall(_ receipt: EpicInstallReceipt, request: EpicDownload) {
+        core.uninstall(receipt: Self.receipt(receipt), request: Self.request(request))
+    }
+    func signedOut() { core.signedOut() }
+
+    private static func game(_ game: EpicGameId?) -> String? {
+        game.map { epicLibraryID(namespace: $0.namespace, appName: $0.appName) }
+    }
+    private static func snapshot(_ state: EpicInstallationsState) -> InstallationsSnapshot<EpicGames> {
+        InstallationsSnapshot(
+            revision: state.revision, receipts: state.receipts.map(receipt), transfer: state.transfer,
+            transferGame: game(state.transferGame), downloading: state.downloading, launching: state.launching,
+            verifyingBeforeLaunch: state.verifyingBeforeLaunch, launchGame: game(state.launchGame),
+            uninstalling: state.uninstalling, uninstallGame: game(state.uninstallGame),
+            lastDownload: state.lastDownload.map(request), report: state.report, warning: state.warning
+        )
+    }
+    private static func receipt(_ receipt: EpicReceipt) -> EpicInstallReceipt {
+        EpicInstallReceipt(namespace: receipt.namespace, appName: receipt.appName, name: receipt.name,
+                           directory: receipt.directory, platform: receipt.platform, totalBytes: receipt.totalBytes,
+                           needsVerification: receipt.needsVerification)
+    }
+    private static func receipt(_ receipt: EpicInstallReceipt) -> EpicReceipt {
+        EpicReceipt(namespace: receipt.namespace, appName: receipt.appName, name: receipt.name,
+                    directory: receipt.directory, platform: receipt.platform, totalBytes: receipt.totalBytes,
+                    needsVerification: receipt.needsVerification)
+    }
+    static func request(_ request: EpicDownloadRequest) -> EpicDownload {
+        EpicDownload(namespace: request.namespace, catalogItemId: request.catalogItemId, appName: request.appName,
+                     title: request.title, platform: request.platform,
+                     directory: URL(fileURLWithPath: request.directory))
+    }
+    static func request(_ request: EpicDownload) -> EpicDownloadRequest {
+        EpicDownloadRequest(namespace: request.namespace, catalogItemId: request.catalogItemId,
+                            appName: request.appName, title: request.title, platform: request.platform,
+                            directory: request.directory.path)
+    }
+}
