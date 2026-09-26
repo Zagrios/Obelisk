@@ -22,6 +22,8 @@ const STEAM_HELPER: &str = r"C:\windows\system32\steam.exe";
 const STEAM_CLIENTS: [&str; 2] = ["steamclient.dll", "steamclient64.dll"];
 /// The prerequisites a prefix ran, one id per line.
 const PREREQUISITES: &str = "sailover-prerequisites";
+/// The Wine Mono whose .NET registration the prefix holds.
+const MONO: &str = "sailover-mono";
 /// Their output, rewritten by each launch that runs one.
 const PREREQUISITES_LOG: &str = "sailover-prerequisites.log";
 /// An installer still running after this long is stopped.
@@ -61,11 +63,20 @@ impl Config {
         library.is_file().then_some(library)
     }
 
+    /// The Wine Mono the runtime carries, such as `wine-mono-10.4.1`.
+    fn mono(&self) -> Option<String> {
+        fs::read_dir(self.runtime.join("share/wine/mono"))
+            .ok()?
+            .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
+            .filter(|name| name.starts_with("wine-mono-"))
+            .max()
+    }
+
     /// No Gecko installer prompt and no menu entries. .NET games run on the
     /// Wine Mono a runtime carries; without it, mscoree stays off so that no
     /// Mono installer prompt appears either.
     fn dll_overrides(&self) -> &'static str {
-        if self.runtime.join("share/wine/mono").is_dir() {
+        if self.mono().is_some() {
             "mshtml=;winemenubuilder.exe=d"
         } else {
             "mscoree,mshtml=;winemenubuilder.exe=d"
@@ -154,34 +165,53 @@ pub fn steam_target(
     Ok((game, steam_api))
 }
 
-/// Creates the prefix on first use and keeps its user folders apart from the
-/// Mac home.
+/// Creates the prefix on first use, registers the runtime's Wine Mono in it,
+/// and keeps its user folders apart from the Mac home.
 pub fn prepare(config: &Config, home: &Path) -> Result<(), Error> {
     if !config.installed() {
         return Err(Error::WineUnavailable);
     }
     crate::files::private_directory(&config.prefix)?;
-    if !config.prefix.join("system.reg").is_file() {
-        let status = Command::new(config.wine())
-            .args(["wineboot", "--init"])
-            .env_clear()
-            .envs(crate::native::environment(home))
-            .envs(config.environment())
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()?;
-        // The game must not start while wineboot's server still writes the registry.
-        let server = Command::new(config.runtime.join("bin/wineserver"))
-            .arg("-w")
-            .env_clear()
-            .env("WINEPREFIX", &config.prefix)
-            .status()?;
-        if !status.success() || !server.success() {
-            return Err(Error::StartFailed);
+    let created = !config.prefix.join("system.reg").is_file();
+    if created {
+        wineboot(config, home, "--init")?;
+    }
+    // wineboot installs Mono's .NET registration when it creates a prefix.
+    // A prefix created by a runtime without Mono lacks it: updating the
+    // prefix once adds it.
+    if let Some(mono) = config.mono() {
+        let record = config.prefix.join(MONO);
+        if fs::read_to_string(&record).ok().as_deref() != Some(mono.as_str()) {
+            if !created {
+                wineboot(config, home, "--update")?;
+            }
+            fs::write(&record, &mono)?;
         }
     }
     unlink_home_folders(&profile(&config.prefix))
+}
+
+/// Runs wineboot in the prefix and waits until its server stops writing the
+/// registry, which the game must not start before.
+fn wineboot(config: &Config, home: &Path, argument: &str) -> Result<(), Error> {
+    let status = Command::new(config.wine())
+        .args(["wineboot", argument])
+        .env_clear()
+        .envs(crate::native::environment(home))
+        .envs(config.environment())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()?;
+    let server = Command::new(config.runtime.join("bin/wineserver"))
+        .arg("-w")
+        .env_clear()
+        .env("WINEPREFIX", &config.prefix)
+        .status()?;
+    if !status.success() || !server.success() {
+        return Err(Error::StartFailed);
+    }
+    Ok(())
 }
 
 /// Places Valve's steamclient libraries where the prefix's registry points

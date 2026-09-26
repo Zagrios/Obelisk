@@ -307,6 +307,42 @@ fn a_windows_game_saves_under_its_prefix_profile() {
 
 /// A runtime whose wine records each call in `calls` beside the prefix, and
 /// fails for any program named `fail`.
+#[test]
+fn a_prefix_registers_the_runtime_mono_once_even_when_an_older_runtime_created_it() {
+    let (_directory, root) = installation();
+    let config = recording_runtime(&root);
+    // A runtime without Mono only creates the prefix.
+    prepare(&config, &root).unwrap();
+    assert_eq!(calls(&root), ["wineboot --init"]);
+    assert!(!config.prefix.join(MONO).exists());
+
+    fs::write(config.prefix.join("system.reg"), "").unwrap();
+    fs::create_dir_all(config.runtime.join("share/wine/mono/wine-mono-10.4.1")).unwrap();
+    prepare(&config, &root).unwrap();
+    prepare(&config, &root).unwrap();
+
+    assert_eq!(calls(&root), ["wineboot --init", "wineboot --update"]);
+    assert_eq!(
+        fs::read_to_string(config.prefix.join(MONO)).unwrap(),
+        "wine-mono-10.4.1"
+    );
+}
+
+#[test]
+fn a_new_prefix_gets_mono_from_its_creation_alone() {
+    let (_directory, root) = installation();
+    let config = recording_runtime(&root);
+    fs::create_dir_all(config.runtime.join("share/wine/mono/wine-mono-10.4.1")).unwrap();
+
+    prepare(&config, &root).unwrap();
+
+    assert_eq!(calls(&root), ["wineboot --init"]);
+    assert_eq!(
+        fs::read_to_string(config.prefix.join(MONO)).unwrap(),
+        "wine-mono-10.4.1"
+    );
+}
+
 fn recording_runtime(root: &Path) -> Config {
     let config = config(root);
     let bin = config.runtime.join("bin");
