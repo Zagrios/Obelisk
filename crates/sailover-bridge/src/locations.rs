@@ -1,9 +1,5 @@
 //! Every path SailOver uses, named once, and the removal of an installation.
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    process::{Command, Stdio},
-};
+use std::path::{Path, PathBuf};
 
 /// Where SailOver keeps everything, derived from its library directory, its
 /// application bundle and the user's home.
@@ -33,27 +29,43 @@ pub struct SailOverLocations {
 
 #[uniffi::export]
 pub fn sailover_locations(library: String, bundle: String, home: String) -> SailOverLocations {
-    let (library, bundle, home) = (
-        PathBuf::from(library),
-        PathBuf::from(bundle),
-        PathBuf::from(home),
-    );
-    let helpers = bundle.join("Contents/Helpers/SteamNative");
+    let locations =
+        game_runtime::Locations::new(Path::new(&library), Path::new(&bundle), Path::new(&home));
     let path = |path: PathBuf| path.to_string_lossy().into_owned();
     SailOverLocations {
-        cloud_archive: path(library.join("SteamCloud")),
-        steam_sessions: path(library.join("SteamSessions")),
-        epic_sessions: path(library.join("EpicSessions")),
-        helper: path(helpers.join(game_runtime::package::HOST)),
-        helpers: path(helpers),
-        steam_runtime_package: path(bundle.join("Contents/Resources/SteamRuntime/runtime.zip")),
-        steam_runtime_cache: path(home.join("Library/Caches/com.zagrios.sailover/SteamRuntime")),
-        steam_diagnostics: path(home.join("Library/Logs/SailOver/Steam")),
-        epic_diagnostics: path(home.join("Library/Logs/SailOver/Epic")),
-        voile: path(library.join("Voile")),
-        wine_prefixes: path(library.join("Prefixes")),
-        library: path(library),
-        home: path(home),
+        library: path(locations.library),
+        home: path(locations.home),
+        cloud_archive: path(locations.cloud_archive),
+        steam_sessions: path(locations.steam_sessions),
+        epic_sessions: path(locations.epic_sessions),
+        helper: path(locations.helper),
+        helpers: path(locations.helpers),
+        steam_runtime_package: path(locations.steam_runtime_package),
+        steam_runtime_cache: path(locations.steam_runtime_cache),
+        steam_diagnostics: path(locations.steam_diagnostics),
+        epic_diagnostics: path(locations.epic_diagnostics),
+        voile: path(locations.voile),
+        wine_prefixes: path(locations.wine_prefixes),
+    }
+}
+
+impl From<&SailOverLocations> for game_runtime::Locations {
+    fn from(locations: &SailOverLocations) -> Self {
+        Self {
+            library: (&locations.library).into(),
+            home: (&locations.home).into(),
+            cloud_archive: (&locations.cloud_archive).into(),
+            steam_sessions: (&locations.steam_sessions).into(),
+            epic_sessions: (&locations.epic_sessions).into(),
+            helper: (&locations.helper).into(),
+            helpers: (&locations.helpers).into(),
+            steam_runtime_package: (&locations.steam_runtime_package).into(),
+            steam_runtime_cache: (&locations.steam_runtime_cache).into(),
+            steam_diagnostics: (&locations.steam_diagnostics).into(),
+            epic_diagnostics: (&locations.epic_diagnostics).into(),
+            voile: (&locations.voile).into(),
+            wine_prefixes: (&locations.wine_prefixes).into(),
+        }
     }
 }
 
@@ -61,18 +73,13 @@ pub fn sailover_locations(library: String, bundle: String, home: String) -> Sail
 /// named after the installation's folder.
 #[uniffi::export]
 pub fn wine_prefix(locations: SailOverLocations, install_directory: String) -> String {
-    prefix(&locations, &install_directory)
-}
-
-pub(crate) fn prefix(locations: &SailOverLocations, install_directory: &str) -> String {
-    let name = Path::new(install_directory)
-        .file_name()
-        .unwrap_or_default()
-        .to_string_lossy();
-    Path::new(&locations.wine_prefixes)
-        .join(name.as_ref())
-        .to_string_lossy()
-        .into_owned()
+    game_runtime::wine::prefix(
+        Path::new(&locations.wine_prefixes),
+        Path::new(&install_directory),
+    )
+    .unwrap_or_else(|_| PathBuf::from(&locations.wine_prefixes))
+    .to_string_lossy()
+    .into_owned()
 }
 
 #[derive(Debug, thiserror::Error, uniffi::Error)]
@@ -95,13 +102,7 @@ pub fn remove_game_installation(
 ) -> Result<(), RemovalError> {
     let protected: Vec<&Path> = protected.iter().map(Path::new).collect();
     sailover_core::installation::remove(Path::new(&directory), &expected_directory_name, &protected)
-        .map_err(|failure| match failure {
-            sailover_core::installation::RemovalFailure::Unsafe(_) => RemovalError::Unsafe,
-            sailover_core::installation::RemovalFailure::Busy => RemovalError::Busy,
-            sailover_core::installation::RemovalFailure::Io(error) => RemovalError::Storage {
-                message: error.to_string(),
-            },
-        })
+        .map_err(removal_error)
 }
 
 /// Deletes the Wine prefix of the uninstalled Windows installation that was in
@@ -112,39 +113,24 @@ pub fn remove_wine_prefix(
     locations: SailOverLocations,
     install_directory: String,
 ) -> Result<(), RemovalError> {
-    if Path::new(&install_directory).file_name().is_none() {
-        return Err(RemovalError::Unsafe);
+    game_runtime::wine::remove(&(&locations).into(), Path::new(&install_directory))
+        .map_err(removal_error)
+}
+
+fn removal_error(failure: sailover_core::installation::RemovalFailure) -> RemovalError {
+    match failure {
+        sailover_core::installation::RemovalFailure::Unsafe(_) => RemovalError::Unsafe,
+        sailover_core::installation::RemovalFailure::Busy => RemovalError::Busy,
+        sailover_core::installation::RemovalFailure::Io(error) => RemovalError::Storage {
+            message: error.to_string(),
+        },
     }
-    let prefix = PathBuf::from(prefix(&locations, &install_directory));
-    let storage = |error: std::io::Error| RemovalError::Storage {
-        message: error.to_string(),
-    };
-    match fs::symlink_metadata(&prefix) {
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(error) => return Err(storage(error)),
-        Ok(metadata) if !metadata.is_dir() => return Err(RemovalError::Unsafe),
-        Ok(_) => {}
-    }
-    // A Wine server lingers a few seconds after its game and would write the
-    // registry back into the prefix.
-    let server = game_runtime::voile::runtime(Path::new(&locations.voile))
-        .map(|runtime| runtime.join("bin/wineserver"));
-    if let Some(server) = server.filter(|server| server.is_file()) {
-        let _ = Command::new(server)
-            .arg("-k")
-            .env_clear()
-            .env("WINEPREFIX", &prefix)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-    }
-    fs::remove_dir_all(&prefix).map_err(storage)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     #[test]
     fn an_uninstalled_windows_game_loses_its_prefix_but_never_what_a_link_points_to() {

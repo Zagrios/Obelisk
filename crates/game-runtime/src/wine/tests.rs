@@ -10,13 +10,13 @@ pub(crate) fn pe() -> Vec<u8> {
     bytes
 }
 
-fn installation() -> (tempfile::TempDir, PathBuf) {
+pub(crate) fn installation() -> (tempfile::TempDir, PathBuf) {
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path().canonicalize().unwrap();
     (directory, root)
 }
 
-fn target(executable: &Path, arguments: &[&str]) -> LaunchTarget {
+pub(crate) fn target(executable: &Path, arguments: &[&str]) -> LaunchTarget {
     LaunchTarget {
         executable: executable.to_string_lossy().into_owned(),
         arguments: arguments
@@ -28,53 +28,44 @@ fn target(executable: &Path, arguments: &[&str]) -> LaunchTarget {
     }
 }
 
-fn config(root: &Path) -> Config {
+pub(crate) fn config(root: &Path) -> Config {
     Config {
         runtime: root.join("runtime"),
         prefix: root.join("prefix"),
+        log: root.join("logs/wine-game.log"),
     }
 }
 
-#[test]
-fn a_windows_game_starts_behind_steam_exe_in_its_prefix() {
-    let (_directory, root) = installation();
+/// A storefront that adds nothing, or the prerequisites it is given.
+#[derive(Default)]
+struct Plain {
+    prerequisites: Vec<Prerequisite>,
+}
+impl Storefront for Plain {
+    fn prerequisites(&self) -> Result<Vec<Prerequisite>, Error> {
+        Ok(self.prerequisites.clone())
+    }
+    fn furnish(&self, config: &Config) -> Result<(), Error> {
+        fs::write(config.prefix.join("furnished"), "")?;
+        Ok(())
+    }
+}
+
+/// A Windows game inside `root/game`, and its target.
+fn game(root: &Path) -> (PathBuf, LaunchTarget) {
     let install = root.join("game");
-    fs::create_dir_all(install.join("Game_Data/Plugins/x86_64")).unwrap();
+    fs::create_dir_all(&install).unwrap();
     fs::write(install.join("Game.exe"), pe()).unwrap();
-    fs::write(
-        install.join("Game_Data/Plugins/x86_64/steam_api64.dll"),
-        pe(),
-    )
-    .unwrap();
-    let config = config(&root);
+    let target = target(&install.join("Game.exe"), &[]);
+    (install, target)
+}
 
-    let (target, steam_api) = steam_target(
-        &install,
-        &target(&install.join("Game.exe"), &["-screen-fullscreen", "0"]),
-        &root,
-        &config,
-    )
-    .unwrap();
-
-    assert_eq!(target.executable, root.join("runtime/bin/wine"));
-    assert_eq!(
-        target.arguments,
-        [
-            STEAM_HELPER,
-            &install.join("Game.exe").to_string_lossy(),
-            "-screen-fullscreen",
-            "0",
-        ]
-    );
-    assert_eq!(target.working_directory, install);
-    assert_eq!(
-        target.environment["WINEPREFIX"],
-        root.join("prefix").to_string_lossy()
-    );
-    assert_eq!(
-        steam_api,
-        install.join("Game_Data/Plugins/x86_64/steam_api64.dll")
-    );
+/// The environment Wine commands of `config` run with.
+fn environment(config: &Config) -> HashMap<String, String> {
+    let (install, target) = game(config.prefix.parent().unwrap());
+    super::target(&install, &target, HashMap::new(), config)
+        .unwrap()
+        .environment
 }
 
 #[test]
@@ -108,101 +99,70 @@ fn a_windows_game_starts_in_wine_itself_when_no_storefront_helper_stands_in() {
         target.environment["WINEPREFIX"],
         root.join("prefix").to_string_lossy()
     );
+    assert_eq!(target.log, Some(root.join("logs/wine-game.log")));
 }
 
 #[test]
-fn an_epic_prerequisite_runs_unless_it_only_installs_visual_cpp_or_leaves_the_installation() {
-    let install = Path::new("/games/epic");
-    let prerequisite = |ids: &[&str], path: &str| epic_kit::client::Prerequisite {
-        ids: ids.iter().map(|id| (*id).into()).collect(),
-        name: "Prerequisites".into(),
-        path: path.into(),
-        arguments: "/quiet /norestart".into(),
-    };
-
-    assert_eq!(
-        epic_prerequisites(
-            install,
-            Some(&prerequisite(&["a", "b"], "Redist\\DirectX\\setup.exe"))
-        ),
-        [Prerequisite {
-            id: "epic:a,b".into(),
-            programs: vec![(
-                install.join("Redist/DirectX/setup.exe"),
-                "/quiet /norestart".into()
-            )],
-        }]
-    );
-    assert_eq!(
-        epic_prerequisites(install, Some(&prerequisite(&[], "Redist/setup.exe")))[0].id,
-        "epic:Redist/setup.exe"
-    );
-    for path in [
-        "Engine\\Extras\\Redist\\en-us\\UEPrereqSetup_x64.exe",
-        "Redist/vcredist_x64.exe",
-        "Redist/VC_redist.x64.exe",
-        "..\\outside.exe",
-        "/Applications/setup.exe",
-    ] {
-        assert!(
-            epic_prerequisites(install, Some(&prerequisite(&["a"], path))).is_empty(),
-            "{path}"
-        );
-    }
-    assert!(epic_prerequisites(install, None).is_empty());
-}
-
-#[test]
-fn only_a_windows_program_inside_the_installation_starts() {
+fn only_a_windows_program_inside_the_installation_starts_and_readies_a_prefix() {
     let (_directory, root) = installation();
+    let config = recording_runtime(&root);
     let install = root.join("game");
     fs::create_dir_all(&install).unwrap();
-    fs::write(install.join("steam_api.dll"), pe()).unwrap();
     fs::write(install.join("script.exe"), b"#!/bin/sh\n").unwrap();
     fs::write(root.join("outside.exe"), pe()).unwrap();
-    let config = config(&root);
 
     for executable in [install.join("script.exe"), root.join("outside.exe")] {
+        let target = target(&executable, &[]);
         assert!(matches!(
-            steam_target(&install, &target(&executable, &[]), &root, &config),
+            super::target(&install, &target, HashMap::new(), &config),
+            Err(Error::NotExecutable)
+        ));
+        assert!(matches!(
+            prepare(&config, &root, &install, &target, &Plain::default()),
             Err(Error::NotExecutable)
         ));
     }
+    assert!(calls(&root).is_empty());
+    assert!(!config.prefix.join("furnished").exists());
 }
 
 #[test]
-fn a_game_without_the_steam_api_is_refused() {
+fn a_prefix_is_booted_then_furnished_before_its_prerequisites_run_and_its_log_folder_exists() {
     let (_directory, root) = installation();
-    let install = root.join("game");
-    fs::create_dir_all(&install).unwrap();
-    fs::write(install.join("Game.exe"), pe()).unwrap();
+    let config = recording_runtime(&root);
+    let (install, target) = game(&root);
+    fs::write(install.join("setup.exe"), "").unwrap();
+    let storefront = Plain {
+        prerequisites: vec![Prerequisite {
+            id: "setup".into(),
+            programs: vec![(install.join("setup.exe"), "/quiet".into())],
+        }],
+    };
 
-    assert!(matches!(
-        steam_target(
-            &install,
-            &target(&install.join("Game.exe"), &[]),
-            &root,
-            &config(&root)
-        ),
-        Err(Error::ApiMissing)
-    ));
+    prepare(&config, &root, &install, &target, &storefront).unwrap();
+
+    assert_eq!(
+        calls(&root),
+        [
+            "wineboot --init".to_owned(),
+            format!("{} /quiet", install.join("setup.exe").display()),
+        ]
+    );
+    assert!(config.prefix.join("furnished").is_file());
+    assert!(root.join("logs").is_dir());
 }
 
 #[test]
 fn d3dmetal_is_selected_only_when_the_runtime_carries_it() {
     let (_directory, root) = installation();
     let config = config(&root);
-    assert!(
-        !config
-            .environment()
-            .contains_key("CX_ACTIVE_GRAPHICS_BACKEND")
-    );
+    assert!(!environment(&config).contains_key("CX_ACTIVE_GRAPHICS_BACKEND"));
 
     let library = root.join("runtime/lib/external/libd3dshared.dylib");
     fs::create_dir_all(library.parent().unwrap()).unwrap();
     fs::write(&library, b"").unwrap();
 
-    let environment = config.environment();
+    let environment = environment(&config);
     assert_eq!(environment["CX_ACTIVE_GRAPHICS_BACKEND"], "d3dmetal");
     assert_eq!(
         environment["CX_APPLEGPTK_LIBD3DSHARED_PATH"],
@@ -215,8 +175,9 @@ fn a_missing_runtime_is_reported_before_any_prefix_is_created() {
     let (_directory, root) = installation();
     let config = config(&root);
 
+    let (install, target) = game(&root);
     assert!(matches!(
-        prepare(&config, &root),
+        prepare(&config, &root, &install, &target, &Plain::default()),
         Err(Error::WineUnavailable)
     ));
     assert!(!config.prefix.exists());
@@ -226,12 +187,12 @@ fn a_missing_runtime_is_reported_before_any_prefix_is_created() {
 fn wine_reports_its_errors_unless_the_runtime_names_other_channels() {
     let (_directory, root) = installation();
     let config = config(&root);
-    assert_eq!(config.environment()["WINEDEBUG"], "err+all,fixme-all");
+    assert_eq!(environment(&config)["WINEDEBUG"], "err+all,fixme-all");
 
     fs::create_dir_all(&config.runtime).unwrap();
     fs::write(config.runtime.join("winedebug"), "+steamclient,err+all\n").unwrap();
 
-    assert_eq!(config.environment()["WINEDEBUG"], "+steamclient,err+all");
+    assert_eq!(environment(&config)["WINEDEBUG"], "+steamclient,err+all");
 }
 
 #[test]
@@ -239,14 +200,14 @@ fn dotnet_games_run_only_on_the_mono_a_runtime_carries() {
     let (_directory, root) = installation();
     let config = config(&root);
     assert_eq!(
-        config.environment()["WINEDLLOVERRIDES"],
+        environment(&config)["WINEDLLOVERRIDES"],
         "mscoree,mshtml=;winemenubuilder.exe=d"
     );
 
     fs::create_dir_all(config.runtime.join("share/wine/mono/wine-mono-10.4.1")).unwrap();
 
     assert_eq!(
-        config.environment()["WINEDLLOVERRIDES"],
+        environment(&config)["WINEDLLOVERRIDES"],
         "mshtml=;winemenubuilder.exe=d"
     );
 }
@@ -254,7 +215,7 @@ fn dotnet_games_run_only_on_the_mono_a_runtime_carries() {
 #[test]
 fn every_wine_command_syncs_through_mach_and_gives_32_bit_games_4_gb() {
     let (_directory, root) = installation();
-    let environment = config(&root).environment();
+    let environment = environment(&config(&root));
 
     assert_eq!(environment["WINEMSYNC"], "1");
     assert_eq!(environment["WINE_LARGE_ADDRESS_AWARE"], "1");
@@ -271,8 +232,11 @@ fn a_prefix_profile_stops_linking_into_the_mac_home() {
     fs::create_dir_all(profile.join("AppData/LocalLow")).unwrap();
     std::os::unix::fs::symlink(home.join("Documents"), profile.join("Documents")).unwrap();
     std::os::unix::fs::symlink(&home, profile.join("Desktop/My Mac Desktop")).unwrap();
+    let config = recording_runtime(&root);
+    fs::write(config.prefix.join("system.reg"), "").unwrap();
+    let (install, target) = game(&root);
 
-    unlink_home_folders(&profile).unwrap();
+    prepare(&config, &home, &install, &target, &Plain::default()).unwrap();
 
     assert!(
         fs::symlink_metadata(profile.join("Documents"))
@@ -286,40 +250,18 @@ fn a_prefix_profile_stops_linking_into_the_mac_home() {
 }
 
 #[test]
-fn a_windows_game_saves_under_its_prefix_profile() {
-    let (_directory, root) = installation();
-    let cloud = crate::steam::cloud::Config {
-        root: root.join("cloud"),
-        home: root.join("home"),
-        install: root.join("game"),
-        app_id: 42,
-        prefix: Some(root.join("prefix")),
-    };
-
-    assert_eq!(
-        cloud.platform(),
-        steam_kit::cloud::CloudPlatform::Windows {
-            profile: root.join("prefix/drive_c/users/crossover"),
-        }
-    );
-    assert_eq!(cloud.platform().mask(), 1);
-}
-
-/// A runtime whose wine records each call in `calls` beside the prefix, and
-/// fails for any program named `fail`.
-#[test]
 fn a_prefix_registers_the_runtime_mono_once_even_when_an_older_runtime_created_it() {
     let (_directory, root) = installation();
     let config = recording_runtime(&root);
     // A runtime without Mono only creates the prefix.
-    prepare(&config, &root).unwrap();
+    prepare_plain(&config, &root);
     assert_eq!(calls(&root), ["wineboot --init"]);
     assert!(!config.prefix.join(MONO).exists());
 
     fs::write(config.prefix.join("system.reg"), "").unwrap();
     fs::create_dir_all(config.runtime.join("share/wine/mono/wine-mono-10.4.1")).unwrap();
-    prepare(&config, &root).unwrap();
-    prepare(&config, &root).unwrap();
+    prepare_plain(&config, &root);
+    prepare_plain(&config, &root);
 
     assert_eq!(calls(&root), ["wineboot --init", "wineboot --update"]);
     assert_eq!(
@@ -334,7 +276,7 @@ fn a_new_prefix_gets_mono_from_its_creation_alone() {
     let config = recording_runtime(&root);
     fs::create_dir_all(config.runtime.join("share/wine/mono/wine-mono-10.4.1")).unwrap();
 
-    prepare(&config, &root).unwrap();
+    prepare_plain(&config, &root);
 
     assert_eq!(calls(&root), ["wineboot --init"]);
     assert_eq!(
@@ -343,11 +285,25 @@ fn a_new_prefix_gets_mono_from_its_creation_alone() {
     );
 }
 
-fn recording_runtime(root: &Path) -> Config {
+fn prepare_plain(config: &Config, root: &Path) {
+    let (install, target) = game(root);
+    prepare(config, root, &install, &target, &Plain::default()).unwrap();
+}
+
+/// A runtime whose wine records each call in `calls` beside the prefix, and
+/// fails for any program named `fail`.
+pub(crate) fn recording_runtime(root: &Path) -> Config {
     let config = config(root);
-    let bin = config.runtime.join("bin");
-    fs::create_dir_all(&bin).unwrap();
     fs::create_dir_all(&config.prefix).unwrap();
+    record_calls(&config.runtime);
+    config
+}
+
+/// Installs in `runtime` a wine that records each call in `calls` beside the
+/// prefix it runs, and fails for any program named `fail`.
+pub(crate) fn record_calls(runtime: &Path) {
+    let bin = runtime.join("bin");
+    fs::create_dir_all(&bin).unwrap();
     for (name, body) in [
         (
             "wine",
@@ -360,49 +316,14 @@ fn recording_runtime(root: &Path) -> Config {
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
     }
-    config
 }
 
-fn calls(root: &Path) -> Vec<String> {
+pub(crate) fn calls(root: &Path) -> Vec<String> {
     fs::read_to_string(root.join("calls"))
         .unwrap_or_default()
         .lines()
         .map(str::to_owned)
         .collect()
-}
-
-#[test]
-fn a_steam_installation_lists_the_steps_of_its_install_scripts() {
-    let (_directory, root) = installation();
-    let install = root.join("game");
-    let redist = install.join("_CommonRedist/vcredist/2022");
-    fs::create_dir_all(&redist).unwrap();
-    fs::create_dir_all(install.join(".sailover-content")).unwrap();
-    fs::write(
-        install.join(steam_kit::install_script::LIST),
-        "_CommonRedist/missing/installscript.vdf\n_CommonRedist/vcredist/2022/installscript.vdf",
-    )
-    .unwrap();
-    fs::write(
-        redist.join("installscript.vdf"),
-        r#""installscript" { "Run Process" { "x64 14.51" {
-            "HasRunKey" "HKEY_LOCAL_MACHINE\\Software\\Valve\\Steam\\Apps\\CommonRedist\\vcredist\\2022"
-            "process 1" "%INSTALLDIR%\\_CommonRedist\\vcredist\\2022\\VC_redist.x64.exe"
-            "command 1" "/q /norestart"
-        } } }"#,
-    )
-    .unwrap();
-
-    assert_eq!(
-        steam_prerequisites(&install).unwrap(),
-        [Prerequisite {
-            id:
-                r"HKEY_LOCAL_MACHINE\Software\Valve\Steam\Apps\CommonRedist\vcredist\2022\x64 14.51"
-                    .into(),
-            programs: vec![(redist.join("VC_redist.x64.exe"), "/q /norestart".into())],
-        }]
-    );
-    assert_eq!(steam_prerequisites(&root).unwrap(), []);
 }
 
 #[test]

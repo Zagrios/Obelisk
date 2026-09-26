@@ -132,7 +132,7 @@ impl<S: Services> lifecycle::Launch for Launch<S> {
         let request: Request = storage::packet(input)?;
         request.config.validate(&request.account_id)?;
         if uuid::Uuid::parse_str(&request.id).is_err()
-            || request.wine.is_some() != request.config.prefix.is_some()
+            || !request.config.runs_in(request.wine.as_ref())
         {
             return Err(Error::Session);
         }
@@ -190,11 +190,9 @@ impl<S: Services> lifecycle::Launch for Launch<S> {
         session.cloud().check()?;
         // A fresh plan, after Rosetta was installed, drops the old token.
         let request = &self.request;
-        let (target, architecture, ownership) = match (&request.config.prefix, &request.wine) {
-            (Some(prefix), Some(wine)) => {
-                windows_target(&plan, &request.config, prefix, wine, &request.environment)?
-            }
-            _ => native_target(&plan, &request.config, &request.environment)?,
+        let (target, architecture, ownership) = match &request.wine {
+            Some(wine) => windows_target(&plan, &request.config, wine, &request.environment)?,
+            None => native_target(&plan, &request.config, &request.environment)?,
         };
         self.activity = plan.activity;
         self.ownership = ownership;
@@ -302,21 +300,14 @@ fn ownership_token(plan: &LaunchPlan) -> Result<Option<(tempfile::TempDir, PathB
     Ok(Some((directory, path)))
 }
 
-/// A Windows build, which Wine starts in its prefix. Wine is an Intel
-/// program: Rosetta runs it and the game inside it.
+/// A Windows build, which Wine starts in its prefix.
 pub(super) fn windows_target(
     plan: &LaunchPlan,
     config: &Configuration,
-    prefix: &Path,
-    wine: &Wine,
+    wine: &crate::wine::Config,
     environment: &std::collections::HashMap<String, String>,
 ) -> Result<(Target, Architecture, Option<tempfile::TempDir>)> {
-    let runtime = crate::wine::Config {
-        runtime: wine.runtime.clone(),
-        prefix: prefix.to_owned(),
-    };
-    let mut target =
-        crate::wine::target(&config.install, &plan.target, environment.clone(), &runtime)?;
+    let mut target = crate::wine::target(&config.install, &plan.target, environment.clone(), wine)?;
     let ownership = ownership_token(plan)?.map(|(directory, path)| {
         // The game reads the token through Wine's view of the Mac's disk.
         target
@@ -324,8 +315,7 @@ pub(super) fn windows_target(
             .push(format!("-epicovt={}", crate::wine::windows_path(&path)));
         directory
     });
-    target.log = Some(wine.log.clone());
-    Ok((target, Architecture::Intel, ownership))
+    Ok((target, crate::wine::ARCHITECTURE, ownership))
 }
 
 pub(super) fn native_target(

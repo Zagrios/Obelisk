@@ -37,9 +37,8 @@ pub(crate) trait Machine: Send + Sync + 'static {
 pub(crate) struct Mac;
 impl Machine for Mac {
     fn select(target: &Target, config: &Config) -> Result<Option<Architecture>, Error> {
-        // Wine is an Intel program: Rosetta runs it and the Windows game inside it.
         if config.wine.is_some() {
-            return Ok(Some(Architecture::Intel));
+            return Ok(Some(crate::wine::ARCHITECTURE));
         }
         Architecture::select(&target.executable, &config.steam_api).map(Some)
     }
@@ -110,10 +109,11 @@ impl<M: Machine> session::Launch for Launch<M> {
         let request: Request = storage::packet(input)?;
         if uuid::Uuid::parse_str(&request.id).is_err()
             || request.config.app_id == 0
-            || request
-                .cloud
-                .as_ref()
-                .is_some_and(|cloud| cloud.app_id != request.config.app_id)
+            || request.cloud.as_ref().is_some_and(|cloud| {
+                cloud.app_id != request.config.app_id
+                    || cloud.prefix.as_ref()
+                        != request.config.wine.as_ref().map(|wine| &wine.prefix)
+            })
         {
             return Err(Error::InvalidSession);
         }

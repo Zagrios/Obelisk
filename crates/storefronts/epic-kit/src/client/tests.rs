@@ -1512,14 +1512,19 @@ async fn launch_fetches_required_ownership_token_as_raw_bytes_and_never_swallows
 }
 
 #[test]
-fn an_installation_names_its_prerequisite_from_its_own_receipt_only() {
+fn an_installation_names_its_game_and_prerequisite_from_its_own_receipt_only() {
     let temp = tempfile::tempdir().unwrap();
     let mut installation = launch_installation(temp.path());
     let directory = std::path::PathBuf::from(&installation.directory);
     let read = |app: &str, platform: &str| {
-        super::installed_prerequisite("space", "base", app, platform, &directory)
+        super::installed_launch("space", "base", app, platform, &directory)
     };
-    assert_eq!(read("game", "Mac").unwrap(), None);
+    let installed = read("game", "Mac").unwrap();
+    assert_eq!(installed.prerequisite, None);
+    assert_eq!(
+        std::path::Path::new(&installed.target.executable),
+        directory.join(&installation.launch_executable)
+    );
     installation.prerequisite = Some(Prerequisite {
         ids: vec!["ue".into()],
         name: "Prerequisites".into(),
@@ -1527,7 +1532,10 @@ fn an_installation_names_its_prerequisite_from_its_own_receipt_only() {
         arguments: "/quiet".into(),
     });
     write_launch_receipt(&installation);
-    assert_eq!(read("game", "Mac").unwrap(), installation.prerequisite);
+    assert_eq!(
+        read("game", "Mac").unwrap().prerequisite,
+        installation.prerequisite
+    );
     assert!(read("other", "Mac").is_err());
     assert!(read("game", "Windows").is_err());
 }

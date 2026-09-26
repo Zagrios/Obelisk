@@ -60,22 +60,27 @@ impl LaunchCatalogItem {
     }
 }
 
-/// What the installation in `directory` asks to run once before its game
-/// first starts. Only the local receipt is read, so this runs before any
-/// short-lived game credential exists.
-pub fn installed_prerequisite(
+/// The game an installation starts and what it asks to run once before its
+/// game first starts, as its local receipt names them. Nothing is fetched, so
+/// this runs before any short-lived game credential exists.
+pub struct InstalledLaunch {
+    /// The publisher's executable and command line, without the arguments a
+    /// launch plan adds.
+    pub target: LaunchTarget,
+    pub prerequisite: Option<Prerequisite>,
+}
+
+/// What the installation in `directory` starts, from its receipt alone.
+pub fn installed_launch(
     namespace: &str,
     catalog_item_id: &str,
     app_name: &str,
     platform: &str,
     directory: &Path,
-) -> Result<Option<Prerequisite>, EpicError> {
+) -> Result<InstalledLaunch, EpicError> {
+    let native_platform = native_platform(platform)?;
     validate_identity(namespace, catalog_item_id, app_name, platform)?;
-    let installed =
-        installation::open::<Installation>(directory).map_err(|failure| match failure {
-            InstallFailure::Io(_) => launch_error("directoryUnreadable"),
-            failure => failure.into(),
-        })?;
+    let installed = open_installation(directory)?;
     let receipt = installed
         .receipt
         .as_ref()
@@ -87,7 +92,49 @@ pub fn installed_prerequisite(
     {
         return Err(launch_error("incompleteInstallation"));
     }
-    Ok(receipt.prerequisite.clone())
+    Ok(InstalledLaunch {
+        target: installed_target(native_platform, &installed.root, receipt)?,
+        prerequisite: receipt.prerequisite.clone(),
+    })
+}
+
+fn native_platform(platform: &str) -> Result<&'static str, EpicError> {
+    match platform {
+        "Mac" => Ok("macos"),
+        "Windows" => Ok("windows"),
+        _ => Err(launch_error("unsupportedPlatform")),
+    }
+}
+
+fn open_installation(
+    directory: &Path,
+) -> Result<installation::Installation<Installation>, EpicError> {
+    installation::open::<Installation>(directory).map_err(|failure| match failure {
+        InstallFailure::Io(_) => launch_error("directoryUnreadable"),
+        failure => failure.into(),
+    })
+}
+
+/// The exact publisher executable and argv, with Steam's shared path
+/// confinement and quoting rules. Never a shell.
+fn installed_target(
+    native_platform: &str,
+    root: &Path,
+    receipt: &Installation,
+) -> Result<LaunchTarget, EpicError> {
+    let executable = receipt.launch_executable.replace('\\', "/");
+    let working_directory = Path::new(&executable)
+        .parent()
+        .and_then(Path::to_str)
+        .unwrap_or("");
+    launch::resolve(
+        native_platform,
+        root,
+        &executable,
+        &receipt.launch_command,
+        working_directory,
+    )
+    .map_err(|error| launch_error(error.key_suffix()))
 }
 
 impl Client {
@@ -100,22 +147,14 @@ impl Client {
         directory: &Path,
         language: &str,
     ) -> Result<LaunchPlan, EpicError> {
-        let native_platform = match platform {
-            "Mac" => "macos",
-            "Windows" => "windows",
-            _ => return Err(launch_error("unsupportedPlatform")),
-        };
+        let native_platform = native_platform(platform)?;
         validate_identity(namespace, catalog_item_id, app_name, platform)?;
         let credentials = self.credentials().await?;
         if !directory.is_absolute() || !directory.is_dir() {
             return Err(launch_error("directoryMissing"));
         }
         // No Transfer of this installation can start until the plan returns.
-        let installed =
-            installation::open::<Installation>(directory).map_err(|failure| match failure {
-                InstallFailure::Io(_) => launch_error("directoryUnreadable"),
-                failure => failure.into(),
-            })?;
+        let installed = open_installation(directory)?;
         let root = &installed.root;
         let receipt = installed
             .receipt
@@ -130,21 +169,7 @@ impl Client {
         {
             return Err(launch_error("incompleteInstallation"));
         }
-        // Resolve the exact publisher executable and argv with Steam's shared
-        // path confinement and quoting rules. Never invoke a shell.
-        let executable = receipt.launch_executable.replace('\\', "/");
-        let working_directory = Path::new(&executable)
-            .parent()
-            .and_then(Path::to_str)
-            .unwrap_or("");
-        let mut target = launch::resolve(
-            native_platform,
-            root,
-            &executable,
-            &receipt.launch_command,
-            working_directory,
-        )
-        .map_err(|error| launch_error(error.key_suffix()))?;
+        let mut target = installed_target(native_platform, root, receipt)?;
         let account_id = credentials.account_id.as_str();
         let launch = self
             .with_access_token(|token| async move {

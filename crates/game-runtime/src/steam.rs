@@ -12,6 +12,7 @@ use std::{
 
 pub mod cloud;
 pub(crate) mod launch;
+mod windows;
 pub use launch::serve;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -65,9 +66,62 @@ impl supervisor::Provider for Steam {
     }
 }
 
-/// Resolves a Steam launch in SailOver's process: the game's executable inside
-/// its installation, the Steam API library it loads, and its environment.
-pub fn target(
+/// The launch of the Steam game `target` names inside `install`, with its
+/// Cloud, ready for its supervisor. A Windows game runs in Wine, in the
+/// installation's own prefix, which is readied first.
+pub fn prepare(
+    locations: &crate::Locations,
+    app_id: u32,
+    platform: &str,
+    install: &Path,
+    target: &sailover_core::launch::LaunchTarget,
+) -> Result<Request, Error> {
+    let home = &locations.home;
+    let wine = match platform {
+        "windows" => Some(crate::wine::Config::locate(
+            &locations.voile,
+            crate::wine::prefix(&locations.wine_prefixes, install)?,
+            locations
+                .steam_diagnostics
+                .join(format!("wine-{app_id}.log")),
+        )?),
+        _ => None,
+    };
+    let (target, steam_api) = match &wine {
+        Some(wine) => {
+            crate::wine::prepare(wine, home, install, target, &windows::Prefix { install })?;
+            windows::target(install, target, home, wine)?
+        }
+        None => native_target(install, target, home)?,
+    };
+    let cloud = cloud::Config {
+        root: locations.cloud_archive.clone(),
+        home: home.clone(),
+        install: install.to_owned(),
+        app_id,
+        prefix: wine.as_ref().map(|wine| wine.prefix.clone()),
+    };
+    Ok(Request {
+        root: locations.steam_sessions.clone(),
+        id: String::new(),
+        config: Config {
+            app_id,
+            cloud_save_roots: vec![install.to_owned()],
+            helpers: locations.helpers.clone(),
+            package: locations.steam_runtime_package.clone(),
+            cache: locations.steam_runtime_cache.clone(),
+            diagnostics: locations.steam_diagnostics.clone(),
+            steam_api,
+            home: home.clone(),
+            wine,
+        },
+        cloud: Some(cloud),
+        target,
+    })
+}
+
+/// The Mac game `target` names inside `install`, and its Steam API library.
+fn native_target(
     install: &Path,
     target: &sailover_core::launch::LaunchTarget,
     home: &Path,

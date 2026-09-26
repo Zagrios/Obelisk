@@ -312,14 +312,11 @@ fn a_windows_build_starts_in_wine_with_its_ownership_token_on_the_z_drive() {
     plan.platform = "Windows".into();
     plan.target.arguments = vec!["-AUTH_TYPE=exchangecode".into()];
     plan.ownership_token = Some(b"ownership".to_vec());
-    let wine = Wine {
-        runtime: directory.join("runtime"),
-        log: directory.join("logs/wine-game.log"),
-    };
+    let wine = crate::wine::tests::config(&directory);
     let prefix = directory.join("prefix");
 
     let (target, architecture, ownership) =
-        windows_target(&plan, &config, &prefix, &wine, &HashMap::new()).unwrap();
+        windows_target(&plan, &config, &wine, &HashMap::new()).unwrap();
 
     assert_eq!(architecture, Architecture::Intel);
     assert_eq!(target.executable, directory.join("runtime/bin/wine"));
@@ -341,7 +338,7 @@ fn a_windows_build_starts_in_wine_with_its_ownership_token_on_the_z_drive() {
     assert!(!Path::new(&token).exists());
     // A Mac binary is no Windows build.
     fs::write(config.install.join("game"), thin(INTEL, true)).unwrap();
-    assert!(windows_target(&plan, &config, &prefix, &wine, &HashMap::new()).is_err());
+    assert!(windows_target(&plan, &config, &wine, &HashMap::new()).is_err());
 }
 
 #[test]
@@ -360,8 +357,15 @@ fn a_windows_build_runs_only_in_its_prefix_and_a_mac_build_never_does() {
             profile: directory.join("prefix/drive_c/users/crossover"),
         }
     );
+    // Wine runs only the prefix the configuration names.
+    let wine = crate::wine::tests::config(&directory);
+    assert!(config.runs_in(Some(&wine)));
+    assert!(!config.runs_in(None));
     for prefix in [None, Some(PathBuf::from("relative/prefix"))] {
         config.prefix = prefix;
         assert!(matches!(config.validate(ACCOUNT), Err(Error::Unsupported)));
+        assert!(!config.runs_in(Some(&wine)));
     }
+    config.prefix = None;
+    assert!(config.runs_in(None));
 }

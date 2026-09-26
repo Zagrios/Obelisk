@@ -3,17 +3,19 @@
 mod client;
 pub(crate) mod launch;
 mod session;
+mod windows;
 
 // A Game session's phase is `Phase`; its Cloud sync's phase is `CloudPhase`.
 use crate::cloud::{Control, Phase as CloudPhase};
 use crate::supervisor::{self, Record, Target};
 pub use crate::supervisor::{FailureReason, Phase};
-pub use client::{prepare_windows, start};
+pub use client::start;
 pub use launch::serve;
 use sailover_core::transfer::CancelToken;
 use serde::{Deserialize, Serialize};
 pub use session::{EpicIndicator, archive, indicators, maintain, removed};
 use std::{path::PathBuf, sync::Arc};
+pub use windows::prepare_windows;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -124,6 +126,11 @@ impl Configuration {
             },
         }
     }
+    /// Whether `wine` runs this build in its own prefix, and only a Windows
+    /// build.
+    fn runs_in(&self, wine: Option<&crate::wine::Config>) -> bool {
+        self.prefix.as_ref() == wine.map(|wine| &wine.prefix)
+    }
     fn validate(&self, account: &str) -> Result<()> {
         cloud_vault::StoreScope::from(self.scope(account)).validate()?;
         // A Mac build runs natively; a Windows build in its prefix.
@@ -223,12 +230,5 @@ struct Request {
     environment: std::collections::HashMap<String, String>,
     /// How a Windows build runs.
     #[serde(default)]
-    wine: Option<Wine>,
-}
-
-/// The Wine runtime a Windows build runs in, and the log Wine writes.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Wine {
-    pub runtime: PathBuf,
-    pub log: PathBuf,
+    wine: Option<crate::wine::Config>,
 }

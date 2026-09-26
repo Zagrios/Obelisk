@@ -1,6 +1,10 @@
 //! A Windows game runs in SailOver's Wine runtime, inside the prefix of its
-//! installation, behind Proton's steam.exe helper that stands in for Steam.
-use crate::{Error, supervisor::Target};
+//! installation. What a storefront adds, such as Steam's steam.exe helper or
+//! the prerequisites it names, comes from that storefront's side.
+use crate::{
+    Error,
+    supervisor::{Target, architecture::Architecture},
+};
 use sailover_core::launch::LaunchTarget;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -13,13 +17,10 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// Wine is an Intel program: Rosetta runs it and the Windows game inside it.
+pub(crate) const ARCHITECTURE: Architecture = Architecture::Intel;
 /// The user every prefix of CrossOver's Wine names its profile after.
 const USER: &str = "crossover";
-/// The helper every Windows game starts behind. Wine installs it in each prefix.
-const STEAM_HELPER: &str = r"C:\windows\system32\steam.exe";
-/// Valve's Windows libraries that steam_api loads through the ActiveProcess
-/// registry keys. The runtime's ntdll redirects their exports to lsteamclient.
-const STEAM_CLIENTS: [&str; 2] = ["steamclient.dll", "steamclient64.dll"];
 /// The prerequisites a prefix ran, one id per line.
 const PREREQUISITES: &str = "sailover-prerequisites";
 /// The Wine Mono whose .NET registration the prefix holds.
@@ -30,8 +31,6 @@ const PREREQUISITES_LOG: &str = "sailover-prerequisites.log";
 const PREREQUISITE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 /// Success, "a newer version is already installed" and "restart required".
 const INSTALLED: [i32; 3] = [0, 1638, 3010];
-/// The largest install script read.
-const MAX_SCRIPT_BYTES: usize = 1024 * 1024;
 
 /// The Windows user profile inside `prefix`, where Auto-Cloud roots such as
 /// AppData and Documents live.
@@ -39,14 +38,34 @@ pub fn profile(prefix: &Path) -> PathBuf {
     prefix.join("drive_c/users").join(USER)
 }
 
-/// The Wine runtime and the prefix of one Windows installation.
+/// How one Windows installation runs: the Wine runtime, the installation's
+/// prefix, and the log Wine writes while its game runs.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Config {
     pub runtime: PathBuf,
     pub prefix: PathBuf,
+    pub log: PathBuf,
+}
+
+/// The Wine prefix of the Windows installation in `install`, named after the
+/// installation's folder.
+pub fn prefix(prefixes: &Path, install: &Path) -> Result<PathBuf, Error> {
+    let name = install.file_name().ok_or(Error::NotExecutable)?;
+    Ok(prefixes.join(name))
 }
 
 impl Config {
+    /// The runtime installed in `voile` running `prefix`, or `WineUnavailable`
+    /// while no runtime is installed.
+    pub fn locate(voile: &Path, prefix: PathBuf, log: PathBuf) -> Result<Self, Error> {
+        let runtime = crate::voile::runtime(voile).ok_or(Error::WineUnavailable)?;
+        Ok(Self {
+            runtime,
+            prefix,
+            log,
+        })
+    }
+
     fn wine(&self) -> PathBuf {
         self.runtime.join("bin/wine")
     }
@@ -123,21 +142,49 @@ impl Config {
     }
 }
 
+/// What one storefront adds to the prefix of its Windows installations.
+pub trait Storefront {
+    /// The programs it names to run once in a prefix before a game first
+    /// starts, in order.
+    fn prerequisites(&self) -> Result<Vec<Prerequisite>, Error>;
+    /// Places its own files in the prefix, before any prerequisite runs.
+    fn furnish(&self, _config: &Config) -> Result<(), Error> {
+        Ok(())
+    }
+}
+
+/// Readies the prefix of the Windows installation in `install` to start
+/// `target`: the game must be a Windows program inside the installation, then
+/// the prefix is created or updated for the runtime, the storefront furnishes
+/// it and its prerequisites run. Nothing touches the prefix for a game that
+/// cannot start.
+pub fn prepare(
+    config: &Config,
+    home: &Path,
+    install: &Path,
+    target: &LaunchTarget,
+    storefront: &impl Storefront,
+) -> Result<(), Error> {
+    program(install, target)?;
+    boot(config, home)?;
+    storefront.furnish(config)?;
+    install_prerequisites(config, home, &storefront.prerequisites()?)?;
+    match config.log.parent() {
+        Some(logs) => crate::files::private_directory(logs),
+        None => Err(Error::Storage),
+    }
+}
+
 /// The Windows game `target` names inside `install`, which Wine starts in the
-/// prefix with `environment` and Wine's own settings.
-pub fn target(
+/// prefix with `environment` and Wine's own settings, logging to the
+/// installation's log.
+pub(crate) fn target(
     install: &Path,
     target: &LaunchTarget,
     environment: HashMap<String, String>,
     config: &Config,
 ) -> Result<Target, Error> {
-    let root = install.canonicalize()?;
-    let executable = Path::new(&target.executable)
-        .canonicalize()
-        .map_err(|_| Error::NotExecutable)?;
-    if !executable.starts_with(&root) || !portable_executable(&executable)? {
-        return Err(Error::NotExecutable);
-    }
+    let executable = program(install, target)?;
     let mut arguments = vec![executable.to_string_lossy().into_owned()];
     arguments.extend(target.arguments.iter().cloned());
     let mut environment = environment;
@@ -147,27 +194,25 @@ pub fn target(
         arguments,
         working_directory: target.working_directory.clone().into(),
         environment,
-        log: None,
+        log: Some(config.log.clone()),
     })
 }
 
-/// The Windows game `target` names inside `install`, started by steam.exe,
-/// and the Steam API library that shows the game uses Steamworks.
-pub fn steam_target(
-    install: &Path,
-    target: &LaunchTarget,
-    home: &Path,
-    config: &Config,
-) -> Result<(Target, PathBuf), Error> {
-    let mut game = self::target(install, target, crate::native::environment(home), config)?;
-    let steam_api = crate::steam::launch::library(target, &["steam_api64.dll", "steam_api.dll"])?;
-    game.arguments.insert(0, STEAM_HELPER.to_owned());
-    Ok((game, steam_api))
+/// The Windows program `target` names, when it is one inside `install`.
+fn program(install: &Path, target: &LaunchTarget) -> Result<PathBuf, Error> {
+    let root = install.canonicalize()?;
+    let executable = Path::new(&target.executable)
+        .canonicalize()
+        .map_err(|_| Error::NotExecutable)?;
+    if !executable.starts_with(&root) || !portable_executable(&executable)? {
+        return Err(Error::NotExecutable);
+    }
+    Ok(executable)
 }
 
 /// Creates the prefix on first use, registers the runtime's Wine Mono in it,
 /// and keeps its user folders apart from the Mac home.
-pub fn prepare(config: &Config, home: &Path) -> Result<(), Error> {
+fn boot(config: &Config, home: &Path) -> Result<(), Error> {
     if !config.installed() {
         return Err(Error::WineUnavailable);
     }
@@ -214,21 +259,6 @@ fn wineboot(config: &Config, home: &Path, argument: &str) -> Result<(), Error> {
     Ok(())
 }
 
-/// Places Valve's steamclient libraries where the prefix's registry points
-/// steam_api.
-pub fn place_steam_clients(config: &Config) -> Result<(), Error> {
-    let steam = config.prefix.join("drive_c/Program Files (x86)/Steam");
-    fs::create_dir_all(&steam)?;
-    for name in STEAM_CLIENTS {
-        let source = config.runtime.join("steam").join(name);
-        let destination = steam.join(name);
-        if !destination.is_file() || crate::sha(&destination)? != crate::sha(&source)? {
-            fs::copy(&source, &destination)?;
-        }
-    }
-    Ok(())
-}
-
 /// Games save into the profile's Documents and similar folders, which Cloud
 /// syncs and never follows through links. A prefix created before the runtime
 /// stopped linking them to the Mac home still holds those links: each becomes
@@ -251,9 +281,9 @@ fn unlink_home_folders(profile: &Path) -> Result<(), Error> {
     Ok(())
 }
 
-/// A program run once in a prefix before its game starts, such as the Visual C++
-/// runtime installer. Storefronts name them: Steam in install scripts, Epic in
-/// its manifests.
+/// A program run once in a prefix before its game starts, such as a DirectX
+/// installer. Storefronts name them: Steam in install scripts, Epic in its
+/// manifests.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Prerequisite {
     /// A prefix runs each id once.
@@ -263,90 +293,38 @@ pub struct Prerequisite {
 }
 
 /// Where `path` is inside every prefix: Wine's Z: drive is the Mac's root.
-pub fn windows_path(path: &Path) -> String {
+pub(crate) fn windows_path(path: &Path) -> String {
     format!("Z:{}", path.to_string_lossy().replace('/', "\\"))
 }
 
-/// The steps of the install scripts a Steam installation lists, which Steam
-/// runs before a game first starts. A script that cannot be read is left out.
-pub fn steam_prerequisites(install: &Path) -> Result<Vec<Prerequisite>, Error> {
-    let read = |relative: &Path| {
-        sailover_core::install::read_cached_file(install, relative, MAX_SCRIPT_BYTES)
-            .map_err(|_| Error::Storage)
-    };
-    let Some(list) = read(Path::new(steam_kit::install_script::LIST))? else {
-        return Ok(Vec::new());
-    };
-    let windows_install = windows_path(install);
-    let mut prerequisites = Vec::new();
-    for script in String::from_utf8_lossy(&list).lines() {
-        let Ok(Some(bytes)) = read(Path::new(script)) else {
-            continue;
-        };
-        let Ok(steps) = steam_kit::install_script::steps(&bytes, install, &windows_install) else {
-            continue;
-        };
-        prerequisites.extend(steps.into_iter().map(|step| {
-            Prerequisite {
-                id: step.id,
-                programs: step
-                    .programs
-                    .into_iter()
-                    .map(|program| (program.path, program.arguments))
-                    .collect(),
-            }
-        }));
-    }
-    Ok(prerequisites)
-}
-
-/// Installers that only lay down the Visual C++ runtime, which games get from
-/// Wine instead, as they do the Visual C++ packages Steam lists. Unreal's
-/// prerequisites installer is mostly that runtime.
-fn visual_cpp_installer(name: &str) -> bool {
-    let name = name.to_ascii_lowercase();
-    ["vcredist", "vc_redist", "ueprereqsetup"]
-        .iter()
-        .any(|prefix| name.starts_with(prefix))
-}
-
-/// The program an Epic installation names to run before its game first
-/// starts, unless it only installs the Visual C++ runtime or leaves the
-/// installation.
-pub fn epic_prerequisites(
+/// Deletes the Wine prefix of the uninstalled Windows installation that was
+/// in `install`, as Steam deletes a Proton prefix. A missing prefix is already
+/// gone; a link in its place is never followed.
+pub fn remove(
+    locations: &crate::Locations,
     install: &Path,
-    prerequisite: Option<&epic_kit::client::Prerequisite>,
-) -> Vec<Prerequisite> {
-    let Some(prerequisite) = prerequisite else {
-        return Vec::new();
-    };
-    let relative = prerequisite.path.replace('\\', "/");
-    let relative = Path::new(&relative);
-    let inside = relative
-        .components()
-        .all(|component| matches!(component, std::path::Component::Normal(_)));
-    let installer = relative
-        .file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(visual_cpp_installer);
-    if !inside || installer {
-        return Vec::new();
+) -> Result<(), sailover_core::installation::RemovalFailure> {
+    use sailover_core::installation::RemovalFailure;
+    let prefix = prefix(&locations.wine_prefixes, install)
+        .map_err(|_| RemovalFailure::Unsafe(install.into()))?;
+    match fs::symlink_metadata(&prefix) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+        Ok(metadata) if !metadata.is_dir() => return Err(RemovalFailure::Unsafe(prefix)),
+        Ok(_) => {}
     }
-    let id = if prerequisite.ids.is_empty() {
-        relative.to_string_lossy().into_owned()
-    } else {
-        prerequisite.ids.join(",")
-    };
-    vec![Prerequisite {
-        id: format!("epic:{id}"),
-        programs: vec![(install.join(relative), prerequisite.arguments.clone())],
-    }]
+    // A Wine server lingers a few seconds after its game and would write the
+    // registry back into the prefix.
+    if let Some(runtime) = crate::voile::runtime(&locations.voile) {
+        let _ = wineserver(&runtime, &prefix, "-k");
+    }
+    Ok(fs::remove_dir_all(&prefix)?)
 }
 
 /// Runs, in order, the prerequisites this prefix has not run yet. One that
 /// fails or outlasts its timeout runs again on the next launch; the game still
 /// starts, and may tell what it misses.
-pub fn install_prerequisites(
+fn install_prerequisites(
     config: &Config,
     home: &Path,
     prerequisites: &[Prerequisite],
@@ -375,7 +353,7 @@ pub fn install_prerequisites(
         }
     }
     // The game must not start while an installer's processes still run.
-    wineserver(config, "-w")?;
+    wineserver(&config.runtime, &config.prefix, "-w")?;
     Ok(())
 }
 
@@ -414,7 +392,7 @@ fn run_prerequisite(
             .stderr(log.try_clone()?);
         let code = wait(command.spawn()?, PREREQUISITE_TIMEOUT)?;
         if code.is_none() {
-            wineserver(config, "-k")?;
+            wineserver(&config.runtime, &config.prefix, "-k")?;
         }
         if !code.is_some_and(|code| INSTALLED.contains(&code)) {
             return Ok(false);
@@ -439,11 +417,16 @@ fn wait(mut child: Child, timeout: Duration) -> Result<Option<i32>, Error> {
     }
 }
 
-fn wineserver(config: &Config, argument: &str) -> Result<(), Error> {
-    Command::new(config.runtime.join("bin/wineserver"))
+/// Waits for, or stops, the Wine server of `prefix`. Neither starts a server,
+/// so no Wine setting is needed.
+fn wineserver(runtime: &Path, prefix: &Path, argument: &str) -> Result<(), Error> {
+    Command::new(runtime.join("bin/wineserver"))
         .arg(argument)
         .env_clear()
-        .env("WINEPREFIX", &config.prefix)
+        .env("WINEPREFIX", prefix)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .status()?;
     Ok(())
 }

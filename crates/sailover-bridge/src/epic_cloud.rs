@@ -107,16 +107,8 @@ impl EpicSession {
             true => {
                 let configuration = configuration.clone();
                 Some(
-                    blocking(move || {
-                        let runtime = game_runtime::voile::runtime(Path::new(&locations.voile))
-                            .ok_or(epic::Error::WineUnavailable)?;
-                        epic::prepare_windows(
-                            &configuration,
-                            runtime,
-                            Path::new(&locations.epic_diagnostics),
-                        )
-                    })
-                    .await?,
+                    blocking(move || epic::prepare_windows(&configuration, &(&locations).into()))
+                        .await?,
                 )
             }
         };

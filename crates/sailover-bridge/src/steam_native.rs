@@ -2,7 +2,7 @@
 //! It never queries Keychain, and cancellation crosses UniFFI explicitly.
 use crate::{GameSession, SailOverLocations, SteamCredentials, SteamError, SteamLaunchPlan};
 use std::{
-    path::{Path, PathBuf},
+    path::Path,
     sync::{Arc, Mutex},
 };
 
@@ -46,60 +46,13 @@ impl SteamNativeLaunch {
         locations: SailOverLocations,
     ) -> Result<(), SteamError> {
         let request = tokio::task::spawn_blocking(move || {
-            let install = PathBuf::from(&plan.install_directory);
-            let home = PathBuf::from(&locations.home);
-            let target = plan.target.into();
-            // A Windows installation runs in Wine, in the prefix named after it.
-            let wine = match (plan.platform == "windows", install.file_name()) {
-                (false, _) => None,
-                (true, Some(_)) => Some(game_runtime::wine::Config {
-                    runtime: game_runtime::voile::runtime(Path::new(&locations.voile))
-                        .ok_or(game_runtime::Error::WineUnavailable)?,
-                    prefix: crate::locations::prefix(&locations, &plan.install_directory).into(),
-                }),
-                (true, None) => return Err(game_runtime::Error::NotExecutable),
-            };
-            let (target, steam_api) = match &wine {
-                Some(wine) => {
-                    let (mut target, steam_api) =
-                        game_runtime::wine::steam_target(&install, &target, &home, wine)?;
-                    game_runtime::wine::prepare(wine, &home)?;
-                    game_runtime::wine::place_steam_clients(wine)?;
-                    // What Steam runs before a first launch, such as Visual C++.
-                    let prerequisites = game_runtime::wine::steam_prerequisites(&install)?;
-                    game_runtime::wine::install_prerequisites(wine, &home, &prerequisites)?;
-                    target.log = Some(
-                        PathBuf::from(&locations.steam_diagnostics)
-                            .join(format!("wine-{}.log", plan.app_id)),
-                    );
-                    (target, steam_api)
-                }
-                None => game_runtime::steam::target(&install, &target, &home)?,
-            };
-            let cloud = Some(game_runtime::steam::cloud::Config {
-                root: locations.cloud_archive.into(),
-                home: home.clone(),
-                install: install.clone(),
-                app_id: plan.app_id,
-                prefix: wine.as_ref().map(|wine| wine.prefix.clone()),
-            });
-            Ok::<_, game_runtime::Error>(game_runtime::steam::Request {
-                root: locations.steam_sessions.into(),
-                id: String::new(),
-                config: game_runtime::Config {
-                    app_id: plan.app_id,
-                    cloud_save_roots: vec![install.clone()],
-                    helpers: locations.helpers.into(),
-                    package: locations.steam_runtime_package.into(),
-                    cache: locations.steam_runtime_cache.into(),
-                    diagnostics: locations.steam_diagnostics.into(),
-                    steam_api,
-                    home,
-                    wine,
-                },
-                cloud,
-                target,
-            })
+            game_runtime::steam::prepare(
+                &(&locations).into(),
+                plan.app_id,
+                &plan.platform,
+                Path::new(&plan.install_directory),
+                &plan.target.into(),
+            )
         })
         .await
         .map_err(|_| game_runtime::Error::StartFailed)??;

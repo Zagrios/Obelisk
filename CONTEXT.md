@@ -18,6 +18,14 @@ _Avoid_: vault root, SteamCloud folder
 The last moment SailOver confirmed that an account's local saves for a game and its Cloud saves were identical, by uploading, downloading or finding them equal. Capturing or choosing a version without that confirmation does not count.
 _Avoid_: last upload, last played
 
+**Wine prefix**:
+The Windows machine one Windows installation runs in, shared by every account that launches it. It holds the game's Windows saves, is readied before each launch of the game, and goes when the installation is uninstalled.
+_Avoid_: bottle, Wine folder
+
+**Prerequisite**:
+A program a storefront names to run once in a Wine prefix before its game first starts, such as a DirectX or Visual C++ installer. One that fails runs again on the next launch; the game starts anyway.
+_Avoid_: redistributable (Steam's name for the package, not the run), dependency
+
 **Reservation**:
 The exclusive claim a Game session or Cloud maintenance holds on a game's installation. While it exists, no Transfer, uninstall or other launch of that game can start.
 _Avoid_: lock, busy state
