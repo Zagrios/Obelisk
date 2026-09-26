@@ -139,14 +139,24 @@ impl ContentClient {
                 match self.fetch(&url, cancel, reporter).await {
                     Ok(bytes) => {
                         let expected = chunk.clone();
+                        let received = cfg!(debug_assertions).then(|| bytes.clone());
                         match cancel
                             .spawn_blocking(move || decode_chunk(&bytes, &expected))
                             .await
                             .map_err(|_| EpicError::Protocol)?
                         {
                             Ok(bytes) => return Ok(bytes),
-                            Err(error @ EpicError::UnsupportedContent) => return Err(error),
-                            Err(error) => failure = error,
+                            Err(error) => {
+                                if let Some(received) = &received {
+                                    crate::details::diagnostic::write_chunk(
+                                        &url, &chunk, received, &error,
+                                    );
+                                }
+                                if matches!(error, EpicError::UnsupportedContent) {
+                                    return Err(error);
+                                }
+                                failure = error;
+                            }
                         }
                     }
                     Err(EpicError::Cancelled) => return Err(EpicError::Cancelled),
@@ -586,10 +596,11 @@ pub(crate) fn decode_chunk(bytes: &[u8], chunk: &Chunk) -> ChunkResult {
         _ => return Err(EpicError::Protocol),
     };
     let compressed_size = u32_at(12)? as usize;
-    if header_size != expected_header
-        || bytes.len() != header_size + compressed_size
-        || chunk.file_size != bytes.len() as u64
-    {
+    // The manifest's chunk file size is only an estimate: older manifests
+    // list sizes for an older header, such as Unrailed's, 4 bytes short of
+    // the version 3 header the CDN serves. The decoded window's SHA-1 and
+    // rolling hash, both from the manifest, prove the chunk.
+    if header_size != expected_header || bytes.len() != header_size + compressed_size {
         return Err(EpicError::Protocol);
     }
     for (index, word) in chunk.guid.iter().enumerate() {

@@ -12,6 +12,7 @@ use crate::{
     manifest,
 };
 
+pub(crate) mod diagnostic;
 pub(crate) mod manifest_cache;
 
 pub(crate) async fn installation_size(
@@ -55,6 +56,45 @@ pub(crate) async fn fetch_manifest(
     platform: &str,
     cache_directory: Option<&Path>,
 ) -> Result<FetchedManifest, EpicError> {
+    let mut trace = diagnostic::Trace {
+        platform: platform.into(),
+        namespace: namespace.into(),
+        catalog_item_id: catalog_item_id.into(),
+        app_name: app_name.into(),
+        ..Default::default()
+    };
+    let result = fetch_traced(
+        api,
+        access_token,
+        namespace,
+        catalog_item_id,
+        app_name,
+        platform,
+        cache_directory,
+        &mut trace,
+    )
+    .await;
+    if let Err(error) = &result
+        && !matches!(error, EpicError::Cancelled | EpicError::Network)
+    {
+        trace.error = format!("{error:?}");
+        diagnostic::write(&trace);
+    }
+    result
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn fetch_traced(
+    api: &Api,
+    access_token: &str,
+    namespace: &str,
+    catalog_item_id: &str,
+    app_name: &str,
+    platform: &str,
+    cache_directory: Option<&Path>,
+    trace: &mut diagnostic::Trace,
+) -> Result<FetchedManifest, EpicError> {
+    trace.step = "identity";
     validate_identity(namespace, catalog_item_id, app_name, platform)?;
     let mut url = Url::parse(&api.launcher).map_err(|_| EpicError::Protocol)?;
     url.path_segments_mut()
@@ -77,13 +117,24 @@ pub(crate) async fn fetch_manifest(
             "label",
             "Live",
         ]);
-    let response: AssetResponse = api.get(url, access_token).await?;
+    trace.step = "assets request";
+    let response: serde_json::Value = api.get(url, access_token).await?;
+    if cfg!(debug_assertions) {
+        trace.assets = Some(diagnostic::redact(&response));
+    }
+    trace.step = "assets response";
+    let response: AssetResponse =
+        serde_json::from_value(response).map_err(|_| EpicError::Protocol)?;
+    trace.step = "asset count";
     let [asset] = response.elements.as_slice() else {
         return Err(EpicError::Protocol);
     };
+    trace.asset_hash = asset.hash.clone();
+    trace.step = "manifest count";
     if asset.manifests.is_empty() || asset.manifests.len() > 8 {
         return Err(EpicError::Protocol);
     }
+    trace.step = "manifest cache";
     let cache_key = cache_directory.and_then(|_| {
         manifest_cache::ManifestCacheKey::new(
             namespace,
@@ -118,7 +169,13 @@ pub(crate) async fn fetch_manifest(
                 .map(str::to_owned)
         });
     let mut last_error = EpicError::Protocol;
+    trace.step = "manifests";
     for location in &asset.manifests {
+        let attempt = trace.attempts.push_mut(diagnostic::Attempt {
+            host: diagnostic::host(&location.uri),
+            step: "request",
+            ..Default::default()
+        });
         let result = async {
             let request = manifest_request(api, location)?;
             // A signed manifest query applies to that manifest only. Chunk URLs
@@ -135,16 +192,28 @@ pub(crate) async fn fetch_manifest(
                     cache_key: cache_key.clone(),
                 });
             }
+            attempt.step = "download";
             let response = api
                 .http
                 .execute(request)
                 .await
                 .map_err(|_| EpicError::Network)?;
+            attempt.status = Some(response.status().as_u16());
             // CDN errors do not invalidate the account's OAuth session.
             if !response.status().is_success() {
                 return Err(EpicError::Protocol);
             }
+            attempt.step = "body";
             let bytes = auth::bounded_bytes(response, manifest::MAX_MANIFEST_BYTES).await?;
+            attempt.bytes = Some(bytes.len());
+            attempt.step = "hash and parse";
+            if cfg!(debug_assertions) {
+                match crate::content_manifest::parse(&bytes) {
+                    Ok(manifest) => attempt.manifest_app_name = Some(manifest.app_name),
+                    Err(error) => attempt.parse_error = Some(format!("{error:?}")),
+                }
+                trace.manifest = Some(bytes.clone());
+            }
             let hash = asset.hash.clone();
             let deployment_id = deployment_id.clone();
             let cache_key = cache_key.clone();
@@ -170,7 +239,12 @@ pub(crate) async fn fetch_manifest(
         .await;
         match result {
             Ok(fetched) => return Ok(fetched),
-            Err(error) => last_error = error,
+            Err(error) => {
+                if let Some(attempt) = trace.attempts.last_mut() {
+                    attempt.error = format!("{error:?}");
+                }
+                last_error = error;
+            }
         }
     }
     Err(last_error)

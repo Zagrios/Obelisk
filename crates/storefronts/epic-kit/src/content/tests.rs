@@ -602,6 +602,27 @@ fn accepts_legacy_and_plain_v4_headers_but_rejects_encryption() {
     }
 }
 
+#[test]
+fn a_chunk_decodes_whatever_size_the_manifest_estimated_but_never_torn() {
+    let (mut expected, wire) = chunk(b"uncompressed bytes", 25, false);
+    // Older manifests list a version 2 header's size for a version 3 chunk.
+    expected.file_size = wire.len() as u64 - 4;
+    assert_eq!(
+        decode_chunk(&wire, &expected).unwrap(),
+        b"uncompressed bytes"
+    );
+    assert!(matches!(
+        decode_chunk(&wire[..wire.len() - 1], &expected),
+        Err(EpicError::Protocol)
+    ));
+    let mut longer = wire.clone();
+    longer.push(0);
+    assert!(matches!(
+        decode_chunk(&longer, &expected),
+        Err(EpicError::Protocol)
+    ));
+}
+
 #[tokio::test]
 async fn dropping_download_cancels_disk_worker_and_releases_install_lock() {
     let (manifest, responses, _) = fixture();
