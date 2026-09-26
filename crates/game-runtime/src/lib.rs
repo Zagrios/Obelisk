@@ -10,6 +10,7 @@ pub mod package;
 pub mod packaging;
 mod process;
 pub mod protocol;
+pub mod sessions;
 pub mod steam;
 pub mod supervisor;
 pub mod voile;

@@ -714,7 +714,11 @@ final class EpicDownloadTests: XCTestCase {
         let session = EpicDownloadSession(credentials: credential, game: owned, store: store)
         let model = EpicModel(directory: directory, keychain: store, restore: { _ in session }, language: "fr-FR",
                               gameSessions: EpicGameSessions(recoverSession: { nil }),
-                              launchGame: { _, configuration in try await session.startGame(configuration: configuration) })
+                              launchGame: { _, admission, configuration, beforeStart in
+                                  try await admission.launch(handoff: TestHandoff {
+                                      try await session.startGame(configuration: configuration)
+                                  }, beforeStart: beforeStart)
+                              })
         await model.start()
         model.open(owned)
         try await eventually { !model.isLoadingGameDetails }
@@ -882,7 +886,7 @@ private actor EpicDownloadSession: EpicSessionProtocol {
     func launchPlan(namespace: String, catalogItemId: String, appName: String, platform: String, directory: String, language: String) async throws -> EpicLaunchPlan {
         throw CocoaError(.featureUnsupported)
     }
-    func startGame(configuration: EpicCloudConfiguration) async throws -> any GameSessionProtocol {
+    func startGame(configuration: EpicCloudConfiguration) async throws -> any GameSupervisor {
         events.append("launchGame")
         launchRequests.append(configuration)
         if shouldHoldLaunch {
@@ -947,24 +951,29 @@ private final class EpicDownloadProgress: @unchecked Sendable {
 
 private enum EpicDownloadTestFailure: Error { case timeout }
 
-/// A Game session fake behind the production session interface.
-private final class EpicDownloadGameSession: GameSessionProtocol, @unchecked Sendable {
+/// A Game session fake behind the production supervisor interface.
+private final class EpicDownloadGameSession: GameSupervisor, @unchecked Sendable {
     private let state: EpicDownloadGameState
 
     init(state: EpicDownloadGameState) { self.state = state }
-    func begin() async throws { await state.begin() }
-    func cancelPreparation() { Task { await state.cancelPreparation() } }
-    func choose(account: GameAccount, decisionId: UInt64, choice: CloudChoice) async throws {
-        await state.choose(choice)
+    func begin() throws { let state = state; try awaitBlocking { await state.begin() } }
+    func cancelPreparation() { let state = state; _ = try? awaitBlocking { await state.cancelPreparation() } }
+    func choose(account: GameAccount, decisionId: UInt64, choice: CloudChoice) throws {
+        let state = state
+        try awaitBlocking { await state.choose(choice) }
     }
-    func resumeAfterRosetta(account: GameAccount, decisionId: UInt64) async throws {
+    func resumeAfterRosetta(account: GameAccount, decisionId: UInt64) throws {
         throw GameSessionError.Failure(reason: "backend.epic.cloud.invalidSession")
     }
-    func revoke(account: GameAccount) async throws {
+    func revoke(account: GameAccount) throws {
         guard case let .epic(accountId) = account else { return }
-        await state.revoke(accountId: accountId)
+        let state = state
+        try awaitBlocking { await state.revoke(accountId: accountId) }
     }
-    func snapshot(after: UInt64?) async throws -> GameSnapshot { await state.snapshot(after: after) }
+    func snapshot(after: UInt64?) throws -> GameSnapshot {
+        let state = state
+        return try awaitBlocking { await state.snapshot(after: after) }
+    }
 }
 
 private actor EpicDownloadGameState {
@@ -984,7 +993,7 @@ private actor EpicDownloadGameState {
         self.holdRunning = holdRunning
         self.onBegin = onBegin
         current = GameSnapshot(id: UUID().uuidString, phase: .preparing, finished: false, failureReason: nil,
-            exitCode: nil, error: nil, revision: 1, reconnecting: false, rosetta: nil,
+            error: nil, revision: 1, reconnecting: false, rosetta: nil,
             cloud: CloudStatus(phase: .checking, decisionId: 0, error: nil, allowedChoices: []),
             store: .epic(accountId: accountId, namespace: configuration.namespace, appName: configuration.appName))
     }

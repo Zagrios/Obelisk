@@ -460,7 +460,13 @@ fileprivate final class UniffiHandleMap<T>: @unchecked Sendable {
 
 
 // Public interface members begin here.
-
+// Magic number for the Rust proxy to call using the same mechanism as every other method,
+// to free the callback once it's dropped by Rust.
+private let IDX_CALLBACK_FREE: Int32 = 0
+// Callback return codes
+private let UNIFFI_CALLBACK_SUCCESS: Int32 = 0
+private let UNIFFI_CALLBACK_ERROR: Int32 = 1
+private let UNIFFI_CALLBACK_UNEXPECTED_ERROR: Int32 = 2
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
@@ -481,22 +487,6 @@ fileprivate struct FfiConverterUInt32: FfiConverterPrimitive {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterInt32: FfiConverterPrimitive {
-    typealias FfiType = Int32
-    typealias SwiftType = Int32
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Int32 {
-        return try lift(readInt(&buf))
-    }
-
-    public static func write(_ value: Int32, into buf: inout [UInt8]) {
-        writeInt(&buf, lower(value))
-    }
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
 fileprivate struct FfiConverterUInt64: FfiConverterPrimitive {
     typealias FfiType = UInt64
     typealias SwiftType = UInt64
@@ -507,6 +497,22 @@ fileprivate struct FfiConverterUInt64: FfiConverterPrimitive {
 
     public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
         writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterDouble: FfiConverterPrimitive {
+    typealias FfiType = Double
+    typealias SwiftType = Double
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Double {
+        return try lift(readDouble(&buf))
+    }
+
+    public static func write(_ value: Double, into buf: inout [UInt8]) {
+        writeDouble(&buf, lower(value))
     }
 }
 
@@ -597,6 +603,211 @@ fileprivate struct FfiConverterData: FfiConverterRustBuffer {
         writeBytes(&buf, value)
     }
 }
+
+
+
+
+/**
+ * What must happen once a new supervisor holds the game and before its
+ * start gate opens, such as saving the credentials the handoff rotated. It
+ * may block.
+ */
+public protocol BeforeGameStart: AnyObject, Sendable {
+    
+    func run() 
+    
+}
+/**
+ * What must happen once a new supervisor holds the game and before its
+ * start gate opens, such as saving the credentials the handoff rotated. It
+ * may block.
+ */
+open class BeforeGameStartImpl: BeforeGameStart, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_sailover_bridge_fn_clone_beforegamestart(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_sailover_bridge_fn_free_beforegamestart(handle, $0) }
+    }
+
+    
+
+    
+open func run()  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_sailover_bridge_fn_method_beforegamestart_run(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+}
+}
+    
+
+    
+}
+
+
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+fileprivate struct UniffiCallbackInterfaceBeforeGameStart {
+
+    // Create the VTable using a series of closures.
+    // Swift automatically converts these into C callback functions.
+    //
+    // Store the vtable directly.
+    static let vtable: UniffiVTableCallbackInterfaceBeforeGameStart = UniffiVTableCallbackInterfaceBeforeGameStart(
+        uniffiFree: { (uniffiHandle: UInt64) -> () in
+            do {
+                try FfiConverterTypeBeforeGameStart.handleMap.remove(handle: uniffiHandle)
+            } catch {
+                print("Uniffi callback interface BeforeGameStart: handle missing in uniffiFree")
+            }
+        },
+        uniffiClone: { (uniffiHandle: UInt64) -> UInt64 in
+            do {
+                return try FfiConverterTypeBeforeGameStart.handleMap.clone(handle: uniffiHandle)
+            } catch {
+                fatalError("Uniffi callback interface BeforeGameStart: handle missing in uniffiClone")
+            }
+        },
+        run: { (
+            uniffiHandle: UInt64,
+            uniffiOutReturn: UnsafeMutableRawPointer,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> () in
+                guard let uniffiObj = try? FfiConverterTypeBeforeGameStart.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return uniffiObj.run(
+                )
+            }
+
+            
+            let writeReturn = { () }
+            uniffiTraitInterfaceCall(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn
+            )
+        }
+    )
+
+    // Rust stores this pointer for future callback invocations, so it must live
+    // for the process lifetime (not just for the init function call).
+    //
+    // `nonisolated(unsafe)` is needed under Swift 6 strict concurrency.
+    // This is safe because the pointee is initialized once during static init
+    // and never mutated by either side of the FFI.  Its fields are C function pointers.
+    nonisolated(unsafe) static let vtablePtr: UnsafePointer<UniffiVTableCallbackInterfaceBeforeGameStart> = {
+        let ptr = UnsafeMutablePointer<UniffiVTableCallbackInterfaceBeforeGameStart>.allocate(capacity: 1)
+        ptr.initialize(to: vtable)
+        return UnsafePointer(ptr)
+    }()
+}
+
+private func uniffiCallbackInitBeforeGameStart() {
+    uniffi_sailover_bridge_fn_init_callback_vtable_beforegamestart(UniffiCallbackInterfaceBeforeGameStart.vtablePtr)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBeforeGameStart: FfiConverter {
+    fileprivate static let handleMap = UniffiHandleMap<BeforeGameStart>()
+
+    typealias FfiType = UInt64
+    typealias SwiftType = BeforeGameStart
+
+    public static func lift(_ handle: UInt64) throws -> BeforeGameStart {
+        if ((handle & 1) == 0) {
+            // Rust-generated handle, construct a new class that uses the handle to implement the
+            // interface
+            return BeforeGameStartImpl(unsafeFromHandle: handle)
+        } else {
+            // Swift-generated handle, get the object from the handle map
+            return try handleMap.remove(handle: handle)
+        }
+    }
+
+    public static func lower(_ value: BeforeGameStart) -> UInt64 {
+         if let rustImpl = value as? BeforeGameStartImpl {
+             // Rust-implemented object.  Clone the handle and return it
+            return rustImpl.uniffiCloneHandle()
+         } else {
+            // Swift object, generate a new vtable handle and return that.
+            return handleMap.insert(obj: value)
+         }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BeforeGameStart {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: BeforeGameStart, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBeforeGameStart_lift(_ handle: UInt64) throws -> BeforeGameStart {
+    return try FfiConverterTypeBeforeGameStart.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBeforeGameStart_lower(_ value: BeforeGameStart) -> UInt64 {
+    return FfiConverterTypeBeforeGameStart.lower(value)
+}
+
+
 
 
 
@@ -798,7 +1009,14 @@ public protocol EpicSessionProtocol: AnyObject, Sendable {
     
     func archiveCloud(configuration: EpicCloudConfiguration) async throws 
     
-    func launchGame(configuration: EpicCloudConfiguration, locations: SailOverLocations) async throws  -> GameSession
+    /**
+     * Launches the build `configuration` names for its admission, readying
+     * Voile and the prefix of a Windows build before any exchange code
+     * exists, and runs `before_start`, which saves the credentials the
+     * exchange rotated, before the game starts. Then follows its session
+     * until it is finished.
+     */
+    func launchGame(admission: GameAdmission, configuration: EpicCloudConfiguration, locations: SailOverLocations, beforeStart: BeforeGameStart) async throws 
     
 }
 open class EpicSession: EpicSessionProtocol, @unchecked Sendable {
@@ -1149,19 +1367,26 @@ open func archiveCloud(configuration: EpicCloudConfiguration)async throws   {
         )
 }
     
-open func launchGame(configuration: EpicCloudConfiguration, locations: SailOverLocations)async throws  -> GameSession  {
+    /**
+     * Launches the build `configuration` names for its admission, readying
+     * Voile and the prefix of a Windows build before any exchange code
+     * exists, and runs `before_start`, which saves the credentials the
+     * exchange rotated, before the game starts. Then follows its session
+     * until it is finished.
+     */
+open func launchGame(admission: GameAdmission, configuration: EpicCloudConfiguration, locations: SailOverLocations, beforeStart: BeforeGameStart)async throws   {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
                 uniffi_sailover_bridge_fn_method_epicsession_launch_game(
-                        self.uniffiCloneHandle(),FfiConverterTypeEpicCloudConfiguration_lower(configuration),FfiConverterTypeSailOverLocations_lower(locations)
+                        self.uniffiCloneHandle(),FfiConverterTypeGameAdmission_lower(admission),FfiConverterTypeEpicCloudConfiguration_lower(configuration),FfiConverterTypeSailOverLocations_lower(locations),FfiConverterTypeBeforeGameStart_lower(beforeStart)
                 )
             },
-            pollFunc: ffi_sailover_bridge_rust_future_poll_u64,
-            completeFunc: ffi_sailover_bridge_rust_future_complete_u64,
-            freeFunc: ffi_sailover_bridge_rust_future_free_u64,
-            liftFunc: FfiConverterTypeGameSession_lift,
-            errorHandler: FfiConverterTypeEpicError_lift
+            pollFunc: ffi_sailover_bridge_rust_future_poll_void,
+            completeFunc: ffi_sailover_bridge_rust_future_complete_void,
+            freeFunc: ffi_sailover_bridge_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeGameSessionError_lift
         )
 }
     
@@ -1216,40 +1441,31 @@ public func FfiConverterTypeEpicSession_lower(_ value: EpicSession) -> UInt64 {
 
 
 /**
- * One Game session's supervisor, for either storefront.
+ * One admitted launch. It holds the Reservation until its session is
+ * finished, or until it is cancelled before its handoff.
  */
-public protocol GameSessionProtocol: AnyObject, Sendable {
+public protocol GameAdmissionProtocol: AnyObject, Sendable {
     
     /**
-     * Opens the start gate of a supervisor that waits for its UI. Only Epic
-     * launches wait; a Steam session has nothing to begin.
+     * Cancels preparation. Before the handoff this releases the Reservation;
+     * after it, a game that already started keeps running.
      */
-    func begin() async throws 
+    func cancel() 
     
     /**
-     * Cancels preparation. After spawn the game keeps running.
+     * Hands the game off through `handoff`, then follows its session until
+     * it is finished. Cancelling during the handoff keeps the Reservation
+     * until the supervisor it returns confirms the game is gone.
+     * `before_start` runs before a waiting supervisor's start gate opens.
      */
-    func cancelPreparation() 
-    
-    func choose(account: GameAccount, decisionId: UInt64, choice: CloudChoice) async throws 
-    
-    func resumeAfterRosetta(account: GameAccount, decisionId: UInt64) async throws 
-    
-    /**
-     * Account revocation: network work stops, the game keeps running.
-     */
-    func revoke(account: GameAccount) async throws 
-    
-    /**
-     * Waits for a revision newer than `after`, or returns at once.
-     */
-    func snapshot(after: UInt64?) async throws  -> GameSnapshot
+    func launch(handoff: GameHandoff, beforeStart: BeforeGameStart?) async throws 
     
 }
 /**
- * One Game session's supervisor, for either storefront.
+ * One admitted launch. It holds the Reservation until its session is
+ * finished, or until it is cancelled before its handoff.
  */
-open class GameSession: GameSessionProtocol, @unchecked Sendable {
+open class GameAdmission: GameAdmissionProtocol, @unchecked Sendable {
     fileprivate let handle: UInt64
 
     /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
@@ -1286,7 +1502,7 @@ open class GameSession: GameSessionProtocol, @unchecked Sendable {
     @_documentation(visibility: private)
 #endif
     public func uniffiCloneHandle() -> UInt64 {
-        return try! rustCall { uniffi_sailover_bridge_fn_clone_gamesession(self.handle, $0) }
+        return try! rustCall { uniffi_sailover_bridge_fn_clone_gameadmission(self.handle, $0) }
     }
     // No primary constructor declared for this class.
 
@@ -1296,109 +1512,42 @@ open class GameSession: GameSessionProtocol, @unchecked Sendable {
             return
         }
 
-        try! rustCall { uniffi_sailover_bridge_fn_free_gamesession(handle, $0) }
+        try! rustCall { uniffi_sailover_bridge_fn_free_gameadmission(handle, $0) }
     }
 
     
 
     
     /**
-     * Opens the start gate of a supervisor that waits for its UI. Only Epic
-     * launches wait; a Steam session has nothing to begin.
+     * Cancels preparation. Before the handoff this releases the Reservation;
+     * after it, a game that already started keeps running.
      */
-open func begin()async throws   {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_sailover_bridge_fn_method_gamesession_begin(
-                        self.uniffiCloneHandle()
-                )
-            },
-            pollFunc: ffi_sailover_bridge_rust_future_poll_void,
-            completeFunc: ffi_sailover_bridge_rust_future_complete_void,
-            freeFunc: ffi_sailover_bridge_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeGameSessionError_lift
-        )
-}
-    
-    /**
-     * Cancels preparation. After spawn the game keeps running.
-     */
-open func cancelPreparation()  {try! rustCall() {
+open func cancel()  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_sailover_bridge_fn_method_gamesession_cancel_preparation(
+    uniffi_sailover_bridge_fn_method_gameadmission_cancel(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 }
 }
     
-open func choose(account: GameAccount, decisionId: UInt64, choice: CloudChoice)async throws   {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_sailover_bridge_fn_method_gamesession_choose(
-                        self.uniffiCloneHandle(),FfiConverterTypeGameAccount_lower(account),FfiConverterUInt64.lower(decisionId),FfiConverterTypeCloudChoice_lower(choice)
-                )
-            },
-            pollFunc: ffi_sailover_bridge_rust_future_poll_void,
-            completeFunc: ffi_sailover_bridge_rust_future_complete_void,
-            freeFunc: ffi_sailover_bridge_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeGameSessionError_lift
-        )
-}
-    
-open func resumeAfterRosetta(account: GameAccount, decisionId: UInt64)async throws   {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_sailover_bridge_fn_method_gamesession_resume_after_rosetta(
-                        self.uniffiCloneHandle(),FfiConverterTypeGameAccount_lower(account),FfiConverterUInt64.lower(decisionId)
-                )
-            },
-            pollFunc: ffi_sailover_bridge_rust_future_poll_void,
-            completeFunc: ffi_sailover_bridge_rust_future_complete_void,
-            freeFunc: ffi_sailover_bridge_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeGameSessionError_lift
-        )
-}
-    
     /**
-     * Account revocation: network work stops, the game keeps running.
+     * Hands the game off through `handoff`, then follows its session until
+     * it is finished. Cancelling during the handoff keeps the Reservation
+     * until the supervisor it returns confirms the game is gone.
+     * `before_start` runs before a waiting supervisor's start gate opens.
      */
-open func revoke(account: GameAccount)async throws   {
+open func launch(handoff: GameHandoff, beforeStart: BeforeGameStart?)async throws   {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_sailover_bridge_fn_method_gamesession_revoke(
-                        self.uniffiCloneHandle(),FfiConverterTypeGameAccount_lower(account)
+                uniffi_sailover_bridge_fn_method_gameadmission_launch(
+                        self.uniffiCloneHandle(),FfiConverterTypeGameHandoff_lower(handoff),FfiConverterOptionTypeBeforeGameStart.lower(beforeStart)
                 )
             },
             pollFunc: ffi_sailover_bridge_rust_future_poll_void,
             completeFunc: ffi_sailover_bridge_rust_future_complete_void,
             freeFunc: ffi_sailover_bridge_rust_future_free_void,
             liftFunc: { $0 },
-            errorHandler: FfiConverterTypeGameSessionError_lift
-        )
-}
-    
-    /**
-     * Waits for a revision newer than `after`, or returns at once.
-     */
-open func snapshot(after: UInt64?)async throws  -> GameSnapshot  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_sailover_bridge_fn_method_gamesession_snapshot(
-                        self.uniffiCloneHandle(),FfiConverterOptionUInt64.lower(after)
-                )
-            },
-            pollFunc: ffi_sailover_bridge_rust_future_poll_rust_buffer,
-            completeFunc: ffi_sailover_bridge_rust_future_complete_rust_buffer,
-            freeFunc: ffi_sailover_bridge_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypeGameSnapshot_lift,
             errorHandler: FfiConverterTypeGameSessionError_lift
         )
 }
@@ -1411,24 +1560,24 @@ open func snapshot(after: UInt64?)async throws  -> GameSnapshot  {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypeGameSession: FfiConverter {
+public struct FfiConverterTypeGameAdmission: FfiConverter {
     typealias FfiType = UInt64
-    typealias SwiftType = GameSession
+    typealias SwiftType = GameAdmission
 
-    public static func lift(_ handle: UInt64) throws -> GameSession {
-        return GameSession(unsafeFromHandle: handle)
+    public static func lift(_ handle: UInt64) throws -> GameAdmission {
+        return GameAdmission(unsafeFromHandle: handle)
     }
 
-    public static func lower(_ value: GameSession) -> UInt64 {
+    public static func lower(_ value: GameAdmission) -> UInt64 {
         return value.uniffiCloneHandle()
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GameSession {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GameAdmission {
         let handle: UInt64 = try readInt(&buf)
         return try lift(handle)
     }
 
-    public static func write(_ value: GameSession, into buf: inout [UInt8]) {
+    public static func write(_ value: GameAdmission, into buf: inout [UInt8]) {
         writeInt(&buf, lower(value))
     }
 }
@@ -1437,15 +1586,843 @@ public struct FfiConverterTypeGameSession: FfiConverter {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeGameSession_lift(_ handle: UInt64) throws -> GameSession {
-    return try FfiConverterTypeGameSession.lift(handle)
+public func FfiConverterTypeGameAdmission_lift(_ handle: UInt64) throws -> GameAdmission {
+    return try FfiConverterTypeGameAdmission.lift(handle)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeGameSession_lower(_ value: GameSession) -> UInt64 {
-    return FfiConverterTypeGameSession.lower(value)
+public func FfiConverterTypeGameAdmission_lower(_ value: GameAdmission) -> UInt64 {
+    return FfiConverterTypeGameAdmission.lower(value)
+}
+
+
+
+
+
+
+/**
+ * Hands an admitted game to a supervisor that code outside Rust starts.
+ */
+public protocol GameHandoff: AnyObject, Sendable {
+    
+    /**
+     * The supervisor that accepted the game. It may block.
+     */
+    func handOff() throws  -> GameSupervisor
+    
+}
+/**
+ * Hands an admitted game to a supervisor that code outside Rust starts.
+ */
+open class GameHandoffImpl: GameHandoff, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_sailover_bridge_fn_clone_gamehandoff(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_sailover_bridge_fn_free_gamehandoff(handle, $0) }
+    }
+
+    
+
+    
+    /**
+     * The supervisor that accepted the game. It may block.
+     */
+open func handOff()throws  -> GameSupervisor  {
+    return try  FfiConverterTypeGameSupervisor_lift(try rustCallWithError(FfiConverterTypeGameSessionError_lift) {
+        uniffiCallStatus in
+    uniffi_sailover_bridge_fn_method_gamehandoff_hand_off(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+
+    
+}
+
+
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+fileprivate struct UniffiCallbackInterfaceGameHandoff {
+
+    // Create the VTable using a series of closures.
+    // Swift automatically converts these into C callback functions.
+    //
+    // Store the vtable directly.
+    static let vtable: UniffiVTableCallbackInterfaceGameHandoff = UniffiVTableCallbackInterfaceGameHandoff(
+        uniffiFree: { (uniffiHandle: UInt64) -> () in
+            do {
+                try FfiConverterTypeGameHandoff.handleMap.remove(handle: uniffiHandle)
+            } catch {
+                print("Uniffi callback interface GameHandoff: handle missing in uniffiFree")
+            }
+        },
+        uniffiClone: { (uniffiHandle: UInt64) -> UInt64 in
+            do {
+                return try FfiConverterTypeGameHandoff.handleMap.clone(handle: uniffiHandle)
+            } catch {
+                fatalError("Uniffi callback interface GameHandoff: handle missing in uniffiClone")
+            }
+        },
+        handOff: { (
+            uniffiHandle: UInt64,
+            uniffiOutReturn: UnsafeMutablePointer<UInt64>,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> GameSupervisor in
+                guard let uniffiObj = try? FfiConverterTypeGameHandoff.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return try uniffiObj.handOff(
+                )
+            }
+
+            
+            let writeReturn = { uniffiOutReturn.pointee = FfiConverterTypeGameSupervisor_lower($0) }
+            uniffiTraitInterfaceCallWithError(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn,
+                lowerError: FfiConverterTypeGameSessionError_lower
+            )
+        }
+    )
+
+    // Rust stores this pointer for future callback invocations, so it must live
+    // for the process lifetime (not just for the init function call).
+    //
+    // `nonisolated(unsafe)` is needed under Swift 6 strict concurrency.
+    // This is safe because the pointee is initialized once during static init
+    // and never mutated by either side of the FFI.  Its fields are C function pointers.
+    nonisolated(unsafe) static let vtablePtr: UnsafePointer<UniffiVTableCallbackInterfaceGameHandoff> = {
+        let ptr = UnsafeMutablePointer<UniffiVTableCallbackInterfaceGameHandoff>.allocate(capacity: 1)
+        ptr.initialize(to: vtable)
+        return UnsafePointer(ptr)
+    }()
+}
+
+private func uniffiCallbackInitGameHandoff() {
+    uniffi_sailover_bridge_fn_init_callback_vtable_gamehandoff(UniffiCallbackInterfaceGameHandoff.vtablePtr)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGameHandoff: FfiConverter {
+    fileprivate static let handleMap = UniffiHandleMap<GameHandoff>()
+
+    typealias FfiType = UInt64
+    typealias SwiftType = GameHandoff
+
+    public static func lift(_ handle: UInt64) throws -> GameHandoff {
+        if ((handle & 1) == 0) {
+            // Rust-generated handle, construct a new class that uses the handle to implement the
+            // interface
+            return GameHandoffImpl(unsafeFromHandle: handle)
+        } else {
+            // Swift-generated handle, get the object from the handle map
+            return try handleMap.remove(handle: handle)
+        }
+    }
+
+    public static func lower(_ value: GameHandoff) -> UInt64 {
+         if let rustImpl = value as? GameHandoffImpl {
+             // Rust-implemented object.  Clone the handle and return it
+            return rustImpl.uniffiCloneHandle()
+         } else {
+            // Swift object, generate a new vtable handle and return that.
+            return handleMap.insert(obj: value)
+         }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GameHandoff {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: GameHandoff, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGameHandoff_lift(_ handle: UInt64) throws -> GameHandoff {
+    return try FfiConverterTypeGameHandoff.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGameHandoff_lower(_ value: GameHandoff) -> UInt64 {
+    return FfiConverterTypeGameHandoff.lower(value)
+}
+
+
+
+
+
+
+/**
+ * Finds the Game session a previous SailOver left running. `None` confirms
+ * that none remains.
+ */
+public protocol GameRecovery: AnyObject, Sendable {
+    
+    func recover() throws  -> GameSupervisor?
+    
+}
+/**
+ * Finds the Game session a previous SailOver left running. `None` confirms
+ * that none remains.
+ */
+open class GameRecoveryImpl: GameRecovery, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_sailover_bridge_fn_clone_gamerecovery(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_sailover_bridge_fn_free_gamerecovery(handle, $0) }
+    }
+
+    
+
+    
+open func recover()throws  -> GameSupervisor?  {
+    return try  FfiConverterOptionTypeGameSupervisor.lift(try rustCallWithError(FfiConverterTypeGameSessionError_lift) {
+        uniffiCallStatus in
+    uniffi_sailover_bridge_fn_method_gamerecovery_recover(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+
+    
+}
+
+
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+fileprivate struct UniffiCallbackInterfaceGameRecovery {
+
+    // Create the VTable using a series of closures.
+    // Swift automatically converts these into C callback functions.
+    //
+    // Store the vtable directly.
+    static let vtable: UniffiVTableCallbackInterfaceGameRecovery = UniffiVTableCallbackInterfaceGameRecovery(
+        uniffiFree: { (uniffiHandle: UInt64) -> () in
+            do {
+                try FfiConverterTypeGameRecovery.handleMap.remove(handle: uniffiHandle)
+            } catch {
+                print("Uniffi callback interface GameRecovery: handle missing in uniffiFree")
+            }
+        },
+        uniffiClone: { (uniffiHandle: UInt64) -> UInt64 in
+            do {
+                return try FfiConverterTypeGameRecovery.handleMap.clone(handle: uniffiHandle)
+            } catch {
+                fatalError("Uniffi callback interface GameRecovery: handle missing in uniffiClone")
+            }
+        },
+        recover: { (
+            uniffiHandle: UInt64,
+            uniffiOutReturn: UnsafeMutablePointer<RustBuffer>,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> GameSupervisor? in
+                guard let uniffiObj = try? FfiConverterTypeGameRecovery.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return try uniffiObj.recover(
+                )
+            }
+
+            
+            let writeReturn = { uniffiOutReturn.pointee = FfiConverterOptionTypeGameSupervisor.lower($0) }
+            uniffiTraitInterfaceCallWithError(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn,
+                lowerError: FfiConverterTypeGameSessionError_lower
+            )
+        }
+    )
+
+    // Rust stores this pointer for future callback invocations, so it must live
+    // for the process lifetime (not just for the init function call).
+    //
+    // `nonisolated(unsafe)` is needed under Swift 6 strict concurrency.
+    // This is safe because the pointee is initialized once during static init
+    // and never mutated by either side of the FFI.  Its fields are C function pointers.
+    nonisolated(unsafe) static let vtablePtr: UnsafePointer<UniffiVTableCallbackInterfaceGameRecovery> = {
+        let ptr = UnsafeMutablePointer<UniffiVTableCallbackInterfaceGameRecovery>.allocate(capacity: 1)
+        ptr.initialize(to: vtable)
+        return UnsafePointer(ptr)
+    }()
+}
+
+private func uniffiCallbackInitGameRecovery() {
+    uniffi_sailover_bridge_fn_init_callback_vtable_gamerecovery(UniffiCallbackInterfaceGameRecovery.vtablePtr)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGameRecovery: FfiConverter {
+    fileprivate static let handleMap = UniffiHandleMap<GameRecovery>()
+
+    typealias FfiType = UInt64
+    typealias SwiftType = GameRecovery
+
+    public static func lift(_ handle: UInt64) throws -> GameRecovery {
+        if ((handle & 1) == 0) {
+            // Rust-generated handle, construct a new class that uses the handle to implement the
+            // interface
+            return GameRecoveryImpl(unsafeFromHandle: handle)
+        } else {
+            // Swift-generated handle, get the object from the handle map
+            return try handleMap.remove(handle: handle)
+        }
+    }
+
+    public static func lower(_ value: GameRecovery) -> UInt64 {
+         if let rustImpl = value as? GameRecoveryImpl {
+             // Rust-implemented object.  Clone the handle and return it
+            return rustImpl.uniffiCloneHandle()
+         } else {
+            // Swift object, generate a new vtable handle and return that.
+            return handleMap.insert(obj: value)
+         }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GameRecovery {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: GameRecovery, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGameRecovery_lift(_ handle: UInt64) throws -> GameRecovery {
+    return try FfiConverterTypeGameRecovery.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGameRecovery_lower(_ value: GameRecovery) -> UInt64 {
+    return FfiConverterTypeGameRecovery.lower(value)
+}
+
+
+
+
+
+
+/**
+ * One Game session's supervisor. The real one is Rust's; tests stand in
+ * their own. Every call may block on the supervisor's control connection.
+ */
+public protocol GameSupervisor: AnyObject, Sendable {
+    
+    /**
+     * Waits for a revision newer than `after`, or returns at once.
+     */
+    func snapshot(after: UInt64?) throws  -> GameSnapshot
+    
+    /**
+     * Cancels preparation. After spawn the game keeps running.
+     */
+    func cancelPreparation() 
+    
+    /**
+     * Opens the start gate of a supervisor that waits for its UI.
+     */
+    func begin() throws 
+    
+    func choose(account: GameAccount, decisionId: UInt64, choice: CloudChoice) throws 
+    
+    func resumeAfterRosetta(account: GameAccount, decisionId: UInt64) throws 
+    
+    /**
+     * Account revocation: network work stops, the game keeps running.
+     */
+    func revoke(account: GameAccount) throws 
+    
+}
+/**
+ * One Game session's supervisor. The real one is Rust's; tests stand in
+ * their own. Every call may block on the supervisor's control connection.
+ */
+open class GameSupervisorImpl: GameSupervisor, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_sailover_bridge_fn_clone_gamesupervisor(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_sailover_bridge_fn_free_gamesupervisor(handle, $0) }
+    }
+
+    
+
+    
+    /**
+     * Waits for a revision newer than `after`, or returns at once.
+     */
+open func snapshot(after: UInt64?)throws  -> GameSnapshot  {
+    return try  FfiConverterTypeGameSnapshot_lift(try rustCallWithError(FfiConverterTypeGameSessionError_lift) {
+        uniffiCallStatus in
+    uniffi_sailover_bridge_fn_method_gamesupervisor_snapshot(
+            self.uniffiCloneHandle(),
+        FfiConverterOptionUInt64.lower(after),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Cancels preparation. After spawn the game keeps running.
+     */
+open func cancelPreparation()  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_sailover_bridge_fn_method_gamesupervisor_cancel_preparation(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * Opens the start gate of a supervisor that waits for its UI.
+     */
+open func begin()throws   {try rustCallWithError(FfiConverterTypeGameSessionError_lift) {
+        uniffiCallStatus in
+    uniffi_sailover_bridge_fn_method_gamesupervisor_begin(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+}
+}
+    
+open func choose(account: GameAccount, decisionId: UInt64, choice: CloudChoice)throws   {try rustCallWithError(FfiConverterTypeGameSessionError_lift) {
+        uniffiCallStatus in
+    uniffi_sailover_bridge_fn_method_gamesupervisor_choose(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeGameAccount_lower(account),
+        FfiConverterUInt64.lower(decisionId),
+        FfiConverterTypeCloudChoice_lower(choice),uniffiCallStatus
+    )
+}
+}
+    
+open func resumeAfterRosetta(account: GameAccount, decisionId: UInt64)throws   {try rustCallWithError(FfiConverterTypeGameSessionError_lift) {
+        uniffiCallStatus in
+    uniffi_sailover_bridge_fn_method_gamesupervisor_resume_after_rosetta(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeGameAccount_lower(account),
+        FfiConverterUInt64.lower(decisionId),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * Account revocation: network work stops, the game keeps running.
+     */
+open func revoke(account: GameAccount)throws   {try rustCallWithError(FfiConverterTypeGameSessionError_lift) {
+        uniffiCallStatus in
+    uniffi_sailover_bridge_fn_method_gamesupervisor_revoke(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeGameAccount_lower(account),uniffiCallStatus
+    )
+}
+}
+    
+
+    
+}
+
+
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+fileprivate struct UniffiCallbackInterfaceGameSupervisor {
+
+    // Create the VTable using a series of closures.
+    // Swift automatically converts these into C callback functions.
+    //
+    // Store the vtable directly.
+    static let vtable: UniffiVTableCallbackInterfaceGameSupervisor = UniffiVTableCallbackInterfaceGameSupervisor(
+        uniffiFree: { (uniffiHandle: UInt64) -> () in
+            do {
+                try FfiConverterTypeGameSupervisor.handleMap.remove(handle: uniffiHandle)
+            } catch {
+                print("Uniffi callback interface GameSupervisor: handle missing in uniffiFree")
+            }
+        },
+        uniffiClone: { (uniffiHandle: UInt64) -> UInt64 in
+            do {
+                return try FfiConverterTypeGameSupervisor.handleMap.clone(handle: uniffiHandle)
+            } catch {
+                fatalError("Uniffi callback interface GameSupervisor: handle missing in uniffiClone")
+            }
+        },
+        snapshot: { (
+            uniffiHandle: UInt64,
+            after: RustBuffer,
+            uniffiOutReturn: UnsafeMutablePointer<RustBuffer>,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> GameSnapshot in
+                guard let uniffiObj = try? FfiConverterTypeGameSupervisor.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return try uniffiObj.snapshot(
+                     after: try FfiConverterOptionUInt64.lift(after)
+                )
+            }
+
+            
+            let writeReturn = { uniffiOutReturn.pointee = FfiConverterTypeGameSnapshot_lower($0) }
+            uniffiTraitInterfaceCallWithError(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn,
+                lowerError: FfiConverterTypeGameSessionError_lower
+            )
+        },
+        cancelPreparation: { (
+            uniffiHandle: UInt64,
+            uniffiOutReturn: UnsafeMutableRawPointer,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> () in
+                guard let uniffiObj = try? FfiConverterTypeGameSupervisor.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return uniffiObj.cancelPreparation(
+                )
+            }
+
+            
+            let writeReturn = { () }
+            uniffiTraitInterfaceCall(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn
+            )
+        },
+        begin: { (
+            uniffiHandle: UInt64,
+            uniffiOutReturn: UnsafeMutableRawPointer,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> () in
+                guard let uniffiObj = try? FfiConverterTypeGameSupervisor.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return try uniffiObj.begin(
+                )
+            }
+
+            
+            let writeReturn = { () }
+            uniffiTraitInterfaceCallWithError(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn,
+                lowerError: FfiConverterTypeGameSessionError_lower
+            )
+        },
+        choose: { (
+            uniffiHandle: UInt64,
+            account: RustBuffer,
+            decisionId: UInt64,
+            choice: RustBuffer,
+            uniffiOutReturn: UnsafeMutableRawPointer,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> () in
+                guard let uniffiObj = try? FfiConverterTypeGameSupervisor.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return try uniffiObj.choose(
+                     account: try FfiConverterTypeGameAccount_lift(account),
+                     decisionId: try FfiConverterUInt64.lift(decisionId),
+                     choice: try FfiConverterTypeCloudChoice_lift(choice)
+                )
+            }
+
+            
+            let writeReturn = { () }
+            uniffiTraitInterfaceCallWithError(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn,
+                lowerError: FfiConverterTypeGameSessionError_lower
+            )
+        },
+        resumeAfterRosetta: { (
+            uniffiHandle: UInt64,
+            account: RustBuffer,
+            decisionId: UInt64,
+            uniffiOutReturn: UnsafeMutableRawPointer,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> () in
+                guard let uniffiObj = try? FfiConverterTypeGameSupervisor.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return try uniffiObj.resumeAfterRosetta(
+                     account: try FfiConverterTypeGameAccount_lift(account),
+                     decisionId: try FfiConverterUInt64.lift(decisionId)
+                )
+            }
+
+            
+            let writeReturn = { () }
+            uniffiTraitInterfaceCallWithError(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn,
+                lowerError: FfiConverterTypeGameSessionError_lower
+            )
+        },
+        revoke: { (
+            uniffiHandle: UInt64,
+            account: RustBuffer,
+            uniffiOutReturn: UnsafeMutableRawPointer,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> () in
+                guard let uniffiObj = try? FfiConverterTypeGameSupervisor.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return try uniffiObj.revoke(
+                     account: try FfiConverterTypeGameAccount_lift(account)
+                )
+            }
+
+            
+            let writeReturn = { () }
+            uniffiTraitInterfaceCallWithError(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn,
+                lowerError: FfiConverterTypeGameSessionError_lower
+            )
+        }
+    )
+
+    // Rust stores this pointer for future callback invocations, so it must live
+    // for the process lifetime (not just for the init function call).
+    //
+    // `nonisolated(unsafe)` is needed under Swift 6 strict concurrency.
+    // This is safe because the pointee is initialized once during static init
+    // and never mutated by either side of the FFI.  Its fields are C function pointers.
+    nonisolated(unsafe) static let vtablePtr: UnsafePointer<UniffiVTableCallbackInterfaceGameSupervisor> = {
+        let ptr = UnsafeMutablePointer<UniffiVTableCallbackInterfaceGameSupervisor>.allocate(capacity: 1)
+        ptr.initialize(to: vtable)
+        return UnsafePointer(ptr)
+    }()
+}
+
+private func uniffiCallbackInitGameSupervisor() {
+    uniffi_sailover_bridge_fn_init_callback_vtable_gamesupervisor(UniffiCallbackInterfaceGameSupervisor.vtablePtr)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGameSupervisor: FfiConverter {
+    fileprivate static let handleMap = UniffiHandleMap<GameSupervisor>()
+
+    typealias FfiType = UInt64
+    typealias SwiftType = GameSupervisor
+
+    public static func lift(_ handle: UInt64) throws -> GameSupervisor {
+        if ((handle & 1) == 0) {
+            // Rust-generated handle, construct a new class that uses the handle to implement the
+            // interface
+            return GameSupervisorImpl(unsafeFromHandle: handle)
+        } else {
+            // Swift-generated handle, get the object from the handle map
+            return try handleMap.remove(handle: handle)
+        }
+    }
+
+    public static func lower(_ value: GameSupervisor) -> UInt64 {
+         if let rustImpl = value as? GameSupervisorImpl {
+             // Rust-implemented object.  Clone the handle and return it
+            return rustImpl.uniffiCloneHandle()
+         } else {
+            // Swift object, generate a new vtable handle and return that.
+            return handleMap.insert(obj: value)
+         }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GameSupervisor {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: GameSupervisor, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGameSupervisor_lift(_ handle: UInt64) throws -> GameSupervisor {
+    return try FfiConverterTypeGameSupervisor.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGameSupervisor_lower(_ value: GameSupervisor) -> UInt64 {
+    return FfiConverterTypeGameSupervisor.lower(value)
 }
 
 
@@ -2117,181 +3094,6 @@ public func FfiConverterTypeSteamLogin_lower(_ value: SteamLogin) -> UInt64 {
 
 
 
-public protocol SteamNativeLaunchProtocol: AnyObject, Sendable {
-    
-    func cancel() 
-    
-    /**
-     * Resolves the game inside its installation. A failure here is definite:
-     * no supervisor exists yet.
-     */
-    func prepare(plan: SteamLaunchPlan, locations: SailOverLocations) async throws 
-    
-    /**
-     * Hands the prepared game to its supervisor.
-     */
-    func startGame() async throws  -> GameSession
-    
-}
-open class SteamNativeLaunch: SteamNativeLaunchProtocol, @unchecked Sendable {
-    fileprivate let handle: UInt64
-
-    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    public struct NoHandle {
-        public init() {}
-    }
-
-    // TODO: We'd like this to be `private` but for Swifty reasons,
-    // we can't implement `FfiConverter` without making this `required` and we can't
-    // make it `required` without making it `public`.
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    required public init(unsafeFromHandle handle: UInt64) {
-        self.handle = handle
-    }
-
-    // This constructor can be used to instantiate a fake object.
-    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
-    //
-    // - Warning:
-    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    public init(noHandle: NoHandle) {
-        self.handle = 0
-    }
-
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    public func uniffiCloneHandle() -> UInt64 {
-        return try! rustCall { uniffi_sailover_bridge_fn_clone_steamnativelaunch(self.handle, $0) }
-    }
-public convenience init(credentials: SteamCredentials) {
-    let handle =
-        try! rustCall() {
-        uniffiCallStatus in
-    uniffi_sailover_bridge_fn_constructor_steamnativelaunch_new(
-        FfiConverterTypeSteamCredentials_lower(credentials),uniffiCallStatus
-    )
-}
-    self.init(unsafeFromHandle: handle)
-}
-
-    deinit {
-        if handle == 0 {
-            // Mock objects have handle=0 don't try to free them
-            return
-        }
-
-        try! rustCall { uniffi_sailover_bridge_fn_free_steamnativelaunch(handle, $0) }
-    }
-
-    
-
-    
-open func cancel()  {try! rustCall() {
-        uniffiCallStatus in
-    uniffi_sailover_bridge_fn_method_steamnativelaunch_cancel(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-}
-}
-    
-    /**
-     * Resolves the game inside its installation. A failure here is definite:
-     * no supervisor exists yet.
-     */
-open func prepare(plan: SteamLaunchPlan, locations: SailOverLocations)async throws   {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_sailover_bridge_fn_method_steamnativelaunch_prepare(
-                        self.uniffiCloneHandle(),FfiConverterTypeSteamLaunchPlan_lower(plan),FfiConverterTypeSailOverLocations_lower(locations)
-                )
-            },
-            pollFunc: ffi_sailover_bridge_rust_future_poll_void,
-            completeFunc: ffi_sailover_bridge_rust_future_complete_void,
-            freeFunc: ffi_sailover_bridge_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeSteamError_lift
-        )
-}
-    
-    /**
-     * Hands the prepared game to its supervisor.
-     */
-open func startGame()async throws  -> GameSession  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_sailover_bridge_fn_method_steamnativelaunch_start_game(
-                        self.uniffiCloneHandle()
-                )
-            },
-            pollFunc: ffi_sailover_bridge_rust_future_poll_u64,
-            completeFunc: ffi_sailover_bridge_rust_future_complete_u64,
-            freeFunc: ffi_sailover_bridge_rust_future_free_u64,
-            liftFunc: FfiConverterTypeGameSession_lift,
-            errorHandler: FfiConverterTypeSteamError_lift
-        )
-}
-    
-
-    
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeSteamNativeLaunch: FfiConverter {
-    typealias FfiType = UInt64
-    typealias SwiftType = SteamNativeLaunch
-
-    public static func lift(_ handle: UInt64) throws -> SteamNativeLaunch {
-        return SteamNativeLaunch(unsafeFromHandle: handle)
-    }
-
-    public static func lower(_ value: SteamNativeLaunch) -> UInt64 {
-        return value.uniffiCloneHandle()
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SteamNativeLaunch {
-        let handle: UInt64 = try readInt(&buf)
-        return try lift(handle)
-    }
-
-    public static func write(_ value: SteamNativeLaunch, into buf: inout [UInt8]) {
-        writeInt(&buf, lower(value))
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeSteamNativeLaunch_lift(_ handle: UInt64) throws -> SteamNativeLaunch {
-    return try FfiConverterTypeSteamNativeLaunch.lift(handle)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeSteamNativeLaunch_lower(_ value: SteamNativeLaunch) -> UInt64 {
-    return FfiConverterTypeSteamNativeLaunch.lower(value)
-}
-
-
-
-
-
-
 public protocol SteamSessionProtocol: AnyObject, Sendable {
     
     func achievements(appId: UInt32, language: String) async throws  -> [SteamAchievement]
@@ -2740,6 +3542,280 @@ public func FfiConverterTypeSteamSession_lift(_ handle: UInt64) throws -> SteamS
 #endif
 public func FfiConverterTypeSteamSession_lower(_ value: SteamSession) -> UInt64 {
     return FfiConverterTypeSteamSession.lower(value)
+}
+
+
+
+
+
+
+/**
+ * One storefront's Game sessions, for the whole life of SailOver.
+ */
+public protocol StorefrontSessionsProtocol: AnyObject, Sendable {
+    
+    /**
+     * Admits a launch: the Reservation holds from here. Nil while another
+     * session or a recovery holds the storefront.
+     */
+    func admit(game: GameIdentity)  -> GameAdmission?
+    
+    /**
+     * Waits for a revision newer than `after`, or returns at once.
+     */
+    func changed(after: UInt64) async  -> GameSessionsState
+    
+    /**
+     * Answers the Cloud question session `session_id` shows with
+     * `decision_id`. Cancel stops a launch check still in progress.
+     */
+    func choose(sessionId: String, decisionId: UInt64, choice: CloudChoice) async throws 
+    
+    /**
+     * The player declined to install Rosetta: the waiting launch stops.
+     */
+    func declineRosetta(sessionId: String, account: GameAccount, decisionId: UInt64) 
+    
+    func resumeAfterRosetta(sessionId: String, account: GameAccount, decisionId: UInt64) async throws 
+    
+    /**
+     * Account revocation. The game keeps running.
+     */
+    func revoke(account: GameAccount) 
+    
+    func state()  -> GameSessionsState
+    
+}
+/**
+ * One storefront's Game sessions, for the whole life of SailOver.
+ */
+open class StorefrontSessions: StorefrontSessionsProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_sailover_bridge_fn_clone_storefrontsessions(self.handle, $0) }
+    }
+    /**
+     * Starts by recovering the session a previous SailOver left running.
+     */
+public convenience init(storefront: SessionStorefront, locations: SailOverLocations) {
+    let handle =
+        try! rustCall() {
+        uniffiCallStatus in
+    uniffi_sailover_bridge_fn_constructor_storefrontsessions_new(
+        FfiConverterTypeSessionStorefront_lower(storefront),
+        FfiConverterTypeSailOverLocations_lower(locations),uniffiCallStatus
+    )
+}
+    self.init(unsafeFromHandle: handle)
+}
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_sailover_bridge_fn_free_storefrontsessions(handle, $0) }
+    }
+
+    
+    /**
+     * Recovers through `recovery` instead of the supervisors on disk.
+     */
+public static func withRecovery(storefront: SessionStorefront, recovery: GameRecovery) -> StorefrontSessions  {
+    return try!  FfiConverterTypeStorefrontSessions_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_sailover_bridge_fn_constructor_storefrontsessions_with_recovery(
+        FfiConverterTypeSessionStorefront_lower(storefront),
+        FfiConverterTypeGameRecovery_lower(recovery),uniffiCallStatus
+    )
+})
+}
+    
+
+    
+    /**
+     * Admits a launch: the Reservation holds from here. Nil while another
+     * session or a recovery holds the storefront.
+     */
+open func admit(game: GameIdentity) -> GameAdmission?  {
+    return try!  FfiConverterOptionTypeGameAdmission.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_sailover_bridge_fn_method_storefrontsessions_admit(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeGameIdentity_lower(game),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Waits for a revision newer than `after`, or returns at once.
+     */
+open func changed(after: UInt64)async  -> GameSessionsState  {
+    return
+        try!  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_sailover_bridge_fn_method_storefrontsessions_changed(
+                        self.uniffiCloneHandle(),FfiConverterUInt64.lower(after)
+                )
+            },
+            pollFunc: ffi_sailover_bridge_rust_future_poll_rust_buffer,
+            completeFunc: ffi_sailover_bridge_rust_future_complete_rust_buffer,
+            freeFunc: ffi_sailover_bridge_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeGameSessionsState_lift,
+            errorHandler: nil
+            
+        )
+}
+    
+    /**
+     * Answers the Cloud question session `session_id` shows with
+     * `decision_id`. Cancel stops a launch check still in progress.
+     */
+open func choose(sessionId: String, decisionId: UInt64, choice: CloudChoice)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_sailover_bridge_fn_method_storefrontsessions_choose(
+                        self.uniffiCloneHandle(),FfiConverterString.lower(sessionId),FfiConverterUInt64.lower(decisionId),FfiConverterTypeCloudChoice_lower(choice)
+                )
+            },
+            pollFunc: ffi_sailover_bridge_rust_future_poll_void,
+            completeFunc: ffi_sailover_bridge_rust_future_complete_void,
+            freeFunc: ffi_sailover_bridge_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeGameSessionError_lift
+        )
+}
+    
+    /**
+     * The player declined to install Rosetta: the waiting launch stops.
+     */
+open func declineRosetta(sessionId: String, account: GameAccount, decisionId: UInt64)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_sailover_bridge_fn_method_storefrontsessions_decline_rosetta(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(sessionId),
+        FfiConverterTypeGameAccount_lower(account),
+        FfiConverterUInt64.lower(decisionId),uniffiCallStatus
+    )
+}
+}
+    
+open func resumeAfterRosetta(sessionId: String, account: GameAccount, decisionId: UInt64)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_sailover_bridge_fn_method_storefrontsessions_resume_after_rosetta(
+                        self.uniffiCloneHandle(),FfiConverterString.lower(sessionId),FfiConverterTypeGameAccount_lower(account),FfiConverterUInt64.lower(decisionId)
+                )
+            },
+            pollFunc: ffi_sailover_bridge_rust_future_poll_void,
+            completeFunc: ffi_sailover_bridge_rust_future_complete_void,
+            freeFunc: ffi_sailover_bridge_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeGameSessionError_lift
+        )
+}
+    
+    /**
+     * Account revocation. The game keeps running.
+     */
+open func revoke(account: GameAccount)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_sailover_bridge_fn_method_storefrontsessions_revoke(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeGameAccount_lower(account),uniffiCallStatus
+    )
+}
+}
+    
+open func state() -> GameSessionsState  {
+    return try!  FfiConverterTypeGameSessionsState_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_sailover_bridge_fn_method_storefrontsessions_state(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeStorefrontSessions: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = StorefrontSessions
+
+    public static func lift(_ handle: UInt64) throws -> StorefrontSessions {
+        return StorefrontSessions(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: StorefrontSessions) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> StorefrontSessions {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: StorefrontSessions, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeStorefrontSessions_lift(_ handle: UInt64) throws -> StorefrontSessions {
+    return try FfiConverterTypeStorefrontSessions.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeStorefrontSessions_lower(_ value: StorefrontSessions) -> UInt64 {
+    return FfiConverterTypeStorefrontSessions.lower(value)
 }
 
 
@@ -4019,6 +5095,218 @@ public func FfiConverterTypeGame_lower(_ value: Game) -> RustBuffer {
 }
 
 
+public struct GameSessionState: Equatable, Hashable {
+    public var id: String
+    public var game: GameIdentity
+    public var phase: GamePhase
+    /**
+     * The control connection was lost; the game may still run.
+     */
+    public var reconnecting: Bool
+    public var cloud: CloudStatus
+    /**
+     * Steam's native host.
+     */
+    public var host: SteamHostState?
+    /**
+     * A supervisor snapshot backs this session, not only its admission.
+     */
+    public var observed: Bool
+    /**
+     * How much of Voile has downloaded while the launch waits for it.
+     */
+    public var runtimeInstall: Double?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, game: GameIdentity, phase: GamePhase, 
+        /**
+         * The control connection was lost; the game may still run.
+         */reconnecting: Bool, cloud: CloudStatus, 
+        /**
+         * Steam's native host.
+         */host: SteamHostState?, 
+        /**
+         * A supervisor snapshot backs this session, not only its admission.
+         */observed: Bool, 
+        /**
+         * How much of Voile has downloaded while the launch waits for it.
+         */runtimeInstall: Double?) {
+        self.id = id
+        self.game = game
+        self.phase = phase
+        self.reconnecting = reconnecting
+        self.cloud = cloud
+        self.host = host
+        self.observed = observed
+        self.runtimeInstall = runtimeInstall
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension GameSessionState: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGameSessionState: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GameSessionState {
+        return
+            try GameSessionState(
+                id: FfiConverterString.read(from: &buf), 
+                game: FfiConverterTypeGameIdentity.read(from: &buf), 
+                phase: FfiConverterTypeGamePhase.read(from: &buf), 
+                reconnecting: FfiConverterBool.read(from: &buf), 
+                cloud: FfiConverterTypeCloudStatus.read(from: &buf), 
+                host: FfiConverterOptionTypeSteamHostState.read(from: &buf), 
+                observed: FfiConverterBool.read(from: &buf), 
+                runtimeInstall: FfiConverterOptionDouble.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GameSessionState, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterTypeGameIdentity.write(value.game, into: &buf)
+        FfiConverterTypeGamePhase.write(value.phase, into: &buf)
+        FfiConverterBool.write(value.reconnecting, into: &buf)
+        FfiConverterTypeCloudStatus.write(value.cloud, into: &buf)
+        FfiConverterOptionTypeSteamHostState.write(value.host, into: &buf)
+        FfiConverterBool.write(value.observed, into: &buf)
+        FfiConverterOptionDouble.write(value.runtimeInstall, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGameSessionState_lift(_ buf: RustBuffer) throws -> GameSessionState {
+    return try FfiConverterTypeGameSessionState.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGameSessionState_lower(_ value: GameSessionState) -> RustBuffer {
+    return FfiConverterTypeGameSessionState.lower(value)
+}
+
+
+public struct GameSessionsState: Equatable, Hashable {
+    /**
+     * Grows with every change.
+     */
+    public var revision: UInt64
+    /**
+     * The session holding the Reservation.
+     */
+    public var active: GameSessionState?
+    /**
+     * The last session observed, kept after it ends.
+     */
+    public var last: GameSessionState?
+    /**
+     * A session a previous SailOver left may still run.
+     */
+    public var recovering: Bool
+    /**
+     * The last recovery attempt failed; it is retried.
+     */
+    public var recoveryFailed: Bool
+    /**
+     * Accounts signed out since the last admission.
+     */
+    public var revoked: [GameAccount]
+    public var rosetta: RosettaPromptState?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Grows with every change.
+         */revision: UInt64, 
+        /**
+         * The session holding the Reservation.
+         */active: GameSessionState?, 
+        /**
+         * The last session observed, kept after it ends.
+         */last: GameSessionState?, 
+        /**
+         * A session a previous SailOver left may still run.
+         */recovering: Bool, 
+        /**
+         * The last recovery attempt failed; it is retried.
+         */recoveryFailed: Bool, 
+        /**
+         * Accounts signed out since the last admission.
+         */revoked: [GameAccount], rosetta: RosettaPromptState?) {
+        self.revision = revision
+        self.active = active
+        self.last = last
+        self.recovering = recovering
+        self.recoveryFailed = recoveryFailed
+        self.revoked = revoked
+        self.rosetta = rosetta
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension GameSessionsState: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGameSessionsState: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GameSessionsState {
+        return
+            try GameSessionsState(
+                revision: FfiConverterUInt64.read(from: &buf), 
+                active: FfiConverterOptionTypeGameSessionState.read(from: &buf), 
+                last: FfiConverterOptionTypeGameSessionState.read(from: &buf), 
+                recovering: FfiConverterBool.read(from: &buf), 
+                recoveryFailed: FfiConverterBool.read(from: &buf), 
+                revoked: FfiConverterSequenceTypeGameAccount.read(from: &buf), 
+                rosetta: FfiConverterOptionTypeRosettaPromptState.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GameSessionsState, into buf: inout [UInt8]) {
+        FfiConverterUInt64.write(value.revision, into: &buf)
+        FfiConverterOptionTypeGameSessionState.write(value.active, into: &buf)
+        FfiConverterOptionTypeGameSessionState.write(value.last, into: &buf)
+        FfiConverterBool.write(value.recovering, into: &buf)
+        FfiConverterBool.write(value.recoveryFailed, into: &buf)
+        FfiConverterSequenceTypeGameAccount.write(value.revoked, into: &buf)
+        FfiConverterOptionTypeRosettaPromptState.write(value.rosetta, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGameSessionsState_lift(_ buf: RustBuffer) throws -> GameSessionsState {
+    return try FfiConverterTypeGameSessionsState.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGameSessionsState_lower(_ value: GameSessionsState) -> RustBuffer {
+    return FfiConverterTypeGameSessionsState.lower(value)
+}
+
+
 public struct GameSnapshot: Equatable, Hashable {
     public var id: String
     public var phase: GamePhase
@@ -4028,7 +5316,6 @@ public struct GameSnapshot: Equatable, Hashable {
      */
     public var finished: Bool
     public var failureReason: GameFailureReason?
-    public var exitCode: Int32?
     /**
      * Localization key of the session's own failure.
      */
@@ -4048,7 +5335,7 @@ public struct GameSnapshot: Equatable, Hashable {
         /**
          * The phase is final and the session owns no game or starting process:
          * only then is the Reservation released.
-         */finished: Bool, failureReason: GameFailureReason?, exitCode: Int32?, 
+         */finished: Bool, failureReason: GameFailureReason?, 
         /**
          * Localization key of the session's own failure.
          */error: String?, revision: UInt64, 
@@ -4059,7 +5346,6 @@ public struct GameSnapshot: Equatable, Hashable {
         self.phase = phase
         self.finished = finished
         self.failureReason = failureReason
-        self.exitCode = exitCode
         self.error = error
         self.revision = revision
         self.reconnecting = reconnecting
@@ -4088,7 +5374,6 @@ public struct FfiConverterTypeGameSnapshot: FfiConverterRustBuffer {
                 phase: FfiConverterTypeGamePhase.read(from: &buf), 
                 finished: FfiConverterBool.read(from: &buf), 
                 failureReason: FfiConverterOptionTypeGameFailureReason.read(from: &buf), 
-                exitCode: FfiConverterOptionInt32.read(from: &buf), 
                 error: FfiConverterOptionString.read(from: &buf), 
                 revision: FfiConverterUInt64.read(from: &buf), 
                 reconnecting: FfiConverterBool.read(from: &buf), 
@@ -4103,7 +5388,6 @@ public struct FfiConverterTypeGameSnapshot: FfiConverterRustBuffer {
         FfiConverterTypeGamePhase.write(value.phase, into: &buf)
         FfiConverterBool.write(value.finished, into: &buf)
         FfiConverterOptionTypeGameFailureReason.write(value.failureReason, into: &buf)
-        FfiConverterOptionInt32.write(value.exitCode, into: &buf)
         FfiConverterOptionString.write(value.error, into: &buf)
         FfiConverterUInt64.write(value.revision, into: &buf)
         FfiConverterBool.write(value.reconnecting, into: &buf)
@@ -4278,6 +5562,67 @@ public func FfiConverterTypeLaunchTarget_lift(_ buf: RustBuffer) throws -> Launc
 #endif
 public func FfiConverterTypeLaunchTarget_lower(_ value: LaunchTarget) -> RustBuffer {
     return FfiConverterTypeLaunchTarget.lower(value)
+}
+
+
+/**
+ * A Rosetta requirement the player can answer.
+ */
+public struct RosettaPromptState: Equatable, Hashable {
+    public var sessionId: String
+    public var account: GameAccount
+    public var decisionId: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(sessionId: String, account: GameAccount, decisionId: UInt64) {
+        self.sessionId = sessionId
+        self.account = account
+        self.decisionId = decisionId
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension RosettaPromptState: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRosettaPromptState: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RosettaPromptState {
+        return
+            try RosettaPromptState(
+                sessionId: FfiConverterString.read(from: &buf), 
+                account: FfiConverterTypeGameAccount.read(from: &buf), 
+                decisionId: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RosettaPromptState, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.sessionId, into: &buf)
+        FfiConverterTypeGameAccount.write(value.account, into: &buf)
+        FfiConverterUInt64.write(value.decisionId, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRosettaPromptState_lift(_ buf: RustBuffer) throws -> RosettaPromptState {
+    return try FfiConverterTypeRosettaPromptState.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRosettaPromptState_lower(_ value: RosettaPromptState) -> RustBuffer {
+    return FfiConverterTypeRosettaPromptState.lower(value)
 }
 
 
@@ -6642,6 +7987,84 @@ public func FfiConverterTypeGameFailureReason_lower(_ value: GameFailureReason) 
 
 
 
+/**
+ * The game and account a launch is admitted for.
+ */
+
+public enum GameIdentity: Equatable, Hashable {
+    
+    case steam(appId: UInt32, accountId: UInt64
+    )
+    case epic(accountId: String, namespace: String, appName: String
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension GameIdentity: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGameIdentity: FfiConverterRustBuffer {
+    typealias SwiftType = GameIdentity
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GameIdentity {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .steam(appId: try FfiConverterUInt32.read(from: &buf), accountId: try FfiConverterUInt64.read(from: &buf)
+        )
+        
+        case 2: return .epic(accountId: try FfiConverterString.read(from: &buf), namespace: try FfiConverterString.read(from: &buf), appName: try FfiConverterString.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: GameIdentity, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .steam(appId,accountId):
+            writeInt(&buf, Int32(1))
+            FfiConverterUInt32.write(appId, into: &buf)
+            FfiConverterUInt64.write(accountId, into: &buf)
+            
+        
+        case let .epic(accountId,namespace,appName):
+            writeInt(&buf, Int32(2))
+            FfiConverterString.write(accountId, into: &buf)
+            FfiConverterString.write(namespace, into: &buf)
+            FfiConverterString.write(appName, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGameIdentity_lift(_ buf: RustBuffer) throws -> GameIdentity {
+    return try FfiConverterTypeGameIdentity.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGameIdentity_lower(_ value: GameIdentity) -> RustBuffer {
+    return FfiConverterTypeGameIdentity.lower(value)
+}
+
+
+
 
 public enum GameKind: Equatable, Hashable {
     
@@ -6803,6 +8226,10 @@ enum GameSessionError: Swift.Error, Equatable, Hashable, Foundation.LocalizedErr
 
     
     
+    /**
+     * The launch was cancelled before its game started.
+     */
+    case Cancelled
     case Failure(reason: String
     )
 
@@ -6834,7 +8261,8 @@ public struct FfiConverterTypeGameSessionError: FfiConverterRustBuffer {
         
 
         
-        case 1: return .Failure(
+        case 1: return .Cancelled
+        case 2: return .Failure(
             reason: try FfiConverterString.read(from: &buf)
             )
 
@@ -6849,8 +8277,12 @@ public struct FfiConverterTypeGameSessionError: FfiConverterRustBuffer {
 
         
         
-        case let .Failure(reason):
+        case .Cancelled:
             writeInt(&buf, Int32(1))
+        
+        
+        case let .Failure(reason):
+            writeInt(&buf, Int32(2))
             FfiConverterString.write(reason, into: &buf)
             
         }
@@ -7040,6 +8472,75 @@ public func FfiConverterTypeRemovalError_lift(_ buf: RustBuffer) throws -> Remov
 public func FfiConverterTypeRemovalError_lower(_ value: RemovalError) -> RustBuffer {
     return FfiConverterTypeRemovalError.lower(value)
 }
+
+
+/**
+ * The storefront whose Game sessions an object holds.
+ */
+
+public enum SessionStorefront: Equatable, Hashable {
+    
+    case steam
+    case epic
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension SessionStorefront: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSessionStorefront: FfiConverterRustBuffer {
+    typealias SwiftType = SessionStorefront
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SessionStorefront {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .steam
+        
+        case 2: return .epic
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: SessionStorefront, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .steam:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .epic:
+            writeInt(&buf, Int32(2))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSessionStorefront_lift(_ buf: RustBuffer) throws -> SessionStorefront {
+    return try FfiConverterTypeSessionStorefront.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSessionStorefront_lower(_ value: SessionStorefront) -> RustBuffer {
+    return FfiConverterTypeSessionStorefront.lower(value)
+}
+
 
 
 public 
@@ -7796,30 +9297,6 @@ fileprivate struct FfiConverterOptionUInt32: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterOptionInt32: FfiConverterRustBuffer {
-    typealias SwiftType = Int32?
-
-    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
-        guard let value = value else {
-            writeInt(&buf, Int8(0))
-            return
-        }
-        writeInt(&buf, Int8(1))
-        FfiConverterInt32.write(value, into: &buf)
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
-        switch try readInt(&buf) as Int8 {
-        case 0: return nil
-        case 1: return try FfiConverterInt32.read(from: &buf)
-        default: throw UniffiInternalError.unexpectedOptionalTag
-        }
-    }
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
 fileprivate struct FfiConverterOptionUInt64: FfiConverterRustBuffer {
     typealias SwiftType = UInt64?
 
@@ -7836,6 +9313,30 @@ fileprivate struct FfiConverterOptionUInt64: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterUInt64.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionDouble: FfiConverterRustBuffer {
+    typealias SwiftType = Double?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterDouble.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterDouble.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -7892,8 +9393,8 @@ fileprivate struct FfiConverterOptionData: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterOptionTypeGameSession: FfiConverterRustBuffer {
-    typealias SwiftType = GameSession?
+fileprivate struct FfiConverterOptionTypeBeforeGameStart: FfiConverterRustBuffer {
+    typealias SwiftType = BeforeGameStart?
 
     public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
         guard let value = value else {
@@ -7901,13 +9402,61 @@ fileprivate struct FfiConverterOptionTypeGameSession: FfiConverterRustBuffer {
             return
         }
         writeInt(&buf, Int8(1))
-        FfiConverterTypeGameSession.write(value, into: &buf)
+        FfiConverterTypeBeforeGameStart.write(value, into: &buf)
     }
 
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
-        case 1: return try FfiConverterTypeGameSession.read(from: &buf)
+        case 1: return try FfiConverterTypeBeforeGameStart.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeGameAdmission: FfiConverterRustBuffer {
+    typealias SwiftType = GameAdmission?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeGameAdmission.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeGameAdmission.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeGameSupervisor: FfiConverterRustBuffer {
+    typealias SwiftType = GameSupervisor?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeGameSupervisor.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeGameSupervisor.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -7964,6 +9513,30 @@ fileprivate struct FfiConverterOptionTypeEpicFriendActivity: FfiConverterRustBuf
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeGameSessionState: FfiConverterRustBuffer {
+    typealias SwiftType = GameSessionState?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeGameSessionState.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeGameSessionState.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeGameTransfer: FfiConverterRustBuffer {
     typealias SwiftType = GameTransfer?
 
@@ -7980,6 +9553,30 @@ fileprivate struct FfiConverterOptionTypeGameTransfer: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeGameTransfer.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeRosettaPromptState: FfiConverterRustBuffer {
+    typealias SwiftType = RosettaPromptState?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeRosettaPromptState.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeRosettaPromptState.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -8076,6 +9673,30 @@ fileprivate struct FfiConverterOptionTypeGameFailureReason: FfiConverterRustBuff
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeGameFailureReason.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeSteamHostState: FfiConverterRustBuffer {
+    typealias SwiftType = SteamHostState?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeSteamHostState.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeSteamHostState.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -8505,6 +10126,31 @@ fileprivate struct FfiConverterSequenceTypeCloudChoice: FfiConverterRustBuffer {
         return seq
     }
 }
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeGameAccount: FfiConverterRustBuffer {
+    typealias SwiftType = [GameAccount]
+
+    public static func write(_ value: [GameAccount], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeGameAccount.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [GameAccount] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [GameAccount]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeGameAccount.read(from: &buf))
+        }
+        return seq
+    }
+}
 private let UNIFFI_RUST_FUTURE_POLL_READY: Int8 = 0
 private let UNIFFI_RUST_FUTURE_POLL_WAKE: Int8 = 1
 
@@ -8651,20 +10297,6 @@ public func epicCloudRemoved(configuration: EpicCloudConfiguration, accountId: S
             errorHandler: FfiConverterTypeEpicError_lift
         )
 }
-public func recoverEpicGameSession(sessionDirectory: String, helper: String)async throws  -> GameSession?  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_sailover_bridge_fn_func_recover_epic_game_session(FfiConverterString.lower(sessionDirectory),FfiConverterString.lower(helper)
-                )
-            },
-            pollFunc: ffi_sailover_bridge_rust_future_poll_rust_buffer,
-            completeFunc: ffi_sailover_bridge_rust_future_complete_rust_buffer,
-            freeFunc: ffi_sailover_bridge_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterOptionTypeGameSession.lift,
-            errorHandler: FfiConverterTypeEpicError_lift
-        )
-}
 /**
  * Removes a storefront's dedicated installation folder under the lock every
  * Transfer and launch of it takes. `protected` folders are never removed.
@@ -8736,18 +10368,22 @@ public func steamNews(appId: UInt32)async throws  -> [SteamNews]  {
             errorHandler: FfiConverterTypeSteamError_lift
         )
 }
-public func recoverSteamGameSession(sessionDirectory: String, helper: String)async throws  -> GameSession?  {
+/**
+ * Launches the game `plan` resolves for its admission, installing Voile first
+ * for a Windows game, then follows its session until it is finished.
+ */
+public func launchSteamGame(admission: GameAdmission, plan: SteamLaunchPlan, credentials: SteamCredentials, locations: SailOverLocations)async throws   {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_sailover_bridge_fn_func_recover_steam_game_session(FfiConverterString.lower(sessionDirectory),FfiConverterString.lower(helper)
+                uniffi_sailover_bridge_fn_func_launch_steam_game(FfiConverterTypeGameAdmission_lower(admission),FfiConverterTypeSteamLaunchPlan_lower(plan),FfiConverterTypeSteamCredentials_lower(credentials),FfiConverterTypeSailOverLocations_lower(locations)
                 )
             },
-            pollFunc: ffi_sailover_bridge_rust_future_poll_rust_buffer,
-            completeFunc: ffi_sailover_bridge_rust_future_complete_rust_buffer,
-            freeFunc: ffi_sailover_bridge_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterOptionTypeGameSession.lift,
-            errorHandler: FfiConverterTypeSteamError_lift
+            pollFunc: ffi_sailover_bridge_rust_future_poll_void,
+            completeFunc: ffi_sailover_bridge_rust_future_complete_void,
+            freeFunc: ffi_sailover_bridge_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeGameSessionError_lift
         )
 }
 public func steamCloudRemoved(config: SteamCloudConfiguration, accountId: UInt64)async throws   {
@@ -8818,9 +10454,6 @@ private let initializationResult: InitializationResult = {
     if (uniffi_sailover_bridge_checksum_func_epic_cloud_removed() != 24317) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sailover_bridge_checksum_func_recover_epic_game_session() != 59812) {
-        return InitializationResult.apiChecksumMismatch
-    }
     if (uniffi_sailover_bridge_checksum_func_remove_game_installation() != 17409) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -8839,7 +10472,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_sailover_bridge_checksum_func_steam_news() != 45284) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sailover_bridge_checksum_func_recover_steam_game_session() != 60125) {
+    if (uniffi_sailover_bridge_checksum_func_launch_steam_game() != 42110) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sailover_bridge_checksum_func_steam_cloud_removed() != 62949) {
@@ -8923,25 +10556,61 @@ private let initializationResult: InitializationResult = {
     if (uniffi_sailover_bridge_checksum_method_epicsession_archive_cloud() != 30689) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sailover_bridge_checksum_method_epicsession_launch_game() != 28616) {
+    if (uniffi_sailover_bridge_checksum_method_epicsession_launch_game() != 44843) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sailover_bridge_checksum_method_gamesession_begin() != 43478) {
+    if (uniffi_sailover_bridge_checksum_method_beforegamestart_run() != 55440) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sailover_bridge_checksum_method_gamesession_cancel_preparation() != 6060) {
+    if (uniffi_sailover_bridge_checksum_method_gameadmission_cancel() != 58850) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sailover_bridge_checksum_method_gamesession_choose() != 11521) {
+    if (uniffi_sailover_bridge_checksum_method_gameadmission_launch() != 64643) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sailover_bridge_checksum_method_gamesession_resume_after_rosetta() != 11823) {
+    if (uniffi_sailover_bridge_checksum_method_gamehandoff_hand_off() != 54461) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sailover_bridge_checksum_method_gamesession_revoke() != 379) {
+    if (uniffi_sailover_bridge_checksum_method_gamerecovery_recover() != 39555) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sailover_bridge_checksum_method_gamesession_snapshot() != 65248) {
+    if (uniffi_sailover_bridge_checksum_method_gamesupervisor_snapshot() != 16921) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sailover_bridge_checksum_method_gamesupervisor_cancel_preparation() != 27630) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sailover_bridge_checksum_method_gamesupervisor_begin() != 1002) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sailover_bridge_checksum_method_gamesupervisor_choose() != 62716) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sailover_bridge_checksum_method_gamesupervisor_resume_after_rosetta() != 5891) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sailover_bridge_checksum_method_gamesupervisor_revoke() != 57482) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sailover_bridge_checksum_method_storefrontsessions_admit() != 7411) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sailover_bridge_checksum_method_storefrontsessions_changed() != 59563) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sailover_bridge_checksum_method_storefrontsessions_choose() != 64504) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sailover_bridge_checksum_method_storefrontsessions_decline_rosetta() != 17050) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sailover_bridge_checksum_method_storefrontsessions_resume_after_rosetta() != 58545) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sailover_bridge_checksum_method_storefrontsessions_revoke() != 5137) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sailover_bridge_checksum_method_storefrontsessions_state() != 3684) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sailover_bridge_checksum_method_steamlogin_challenge() != 58131) {
@@ -9022,15 +10691,6 @@ private let initializationResult: InitializationResult = {
     if (uniffi_sailover_bridge_checksum_method_steamfriendsfixture_receive() != 63831) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sailover_bridge_checksum_method_steamnativelaunch_cancel() != 33877) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_sailover_bridge_checksum_method_steamnativelaunch_prepare() != 18337) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_sailover_bridge_checksum_method_steamnativelaunch_start_game() != 24217) {
-        return InitializationResult.apiChecksumMismatch
-    }
     if (uniffi_sailover_bridge_checksum_method_voileinstall_cancel() != 13489) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -9049,6 +10709,12 @@ private let initializationResult: InitializationResult = {
     if (uniffi_sailover_bridge_checksum_constructor_epicsession_sign_in() != 60902) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_sailover_bridge_checksum_constructor_storefrontsessions_new() != 2483) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sailover_bridge_checksum_constructor_storefrontsessions_with_recovery() != 34675) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_sailover_bridge_checksum_constructor_steamlogin_begin_credentials() != 16798) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -9064,13 +10730,14 @@ private let initializationResult: InitializationResult = {
     if (uniffi_sailover_bridge_checksum_constructor_steamfriendsfixture_new() != 14207) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sailover_bridge_checksum_constructor_steamnativelaunch_new() != 24964) {
-        return InitializationResult.apiChecksumMismatch
-    }
     if (uniffi_sailover_bridge_checksum_constructor_voileinstall_new() != 7855) {
         return InitializationResult.apiChecksumMismatch
     }
 
+    uniffiCallbackInitBeforeGameStart()
+    uniffiCallbackInitGameHandoff()
+    uniffiCallbackInitGameRecovery()
+    uniffiCallbackInitGameSupervisor()
     return InitializationResult.ok
 }()
 

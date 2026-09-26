@@ -17,6 +17,8 @@ protocol InstallationStorefront: CloudStorefront {
     associatedtype Request: GameTransferRequest where Request.GameID == GameID
     /// The name a Transfer's progress gives the game.
     static func transferName(of request: Request) -> String
+    /// The game and account a launch of `receipt` is admitted for.
+    static func identity(of receipt: Receipt, account: AccountID) -> GameIdentity
     /// Where new installations go, inside SailOver's library directory.
     static var gamesDirectory: String { get }
     static var receiptsUnavailable: String { get }
@@ -57,9 +59,9 @@ struct InstallationSession<Store: InstallationStorefront> {
     var download: @MainActor (Store.Request, TransferEvents<Store.Receipt>) async throws -> Void
     var progress: @Sendable () -> GameTransfer?
     var cancel: @Sendable () -> Void
-    /// Hands a verified installation to its supervisor. `proceed` throws when
-    /// the launch was cancelled; call it right before the game is handed off.
-    var start: @MainActor (Store.Receipt, _ proceed: @MainActor () throws -> Void) async throws -> any GameSessionProtocol
+    /// Hands a verified installation to its supervisor for its admission,
+    /// and returns once the session is finished.
+    var start: @MainActor (Store.Receipt, GameAdmission) async throws -> Void
 }
 
 /// What a storefront reports while it runs one Transfer.
@@ -118,7 +120,6 @@ final class GameInstallations<Store: InstallationStorefront> {
 
     let sessions: GameSessions<Store>
     let cloud: CloudModel<Store>
-    @ObservationIgnored private let runtime: VoileRuntime
     @ObservationIgnored private let directory: URL
     private var account: Store.AccountID?
     @ObservationIgnored private var receiptsFile: URL?
@@ -133,11 +134,10 @@ final class GameInstallations<Store: InstallationStorefront> {
     @ObservationIgnored private var progressTask: Task<Void, Never>?
 
     /// `directory` is SailOver's library directory, which an uninstall never removes.
-    init(directory: URL, sessions: GameSessions<Store>, cloud: CloudModel<Store>, runtime: VoileRuntime = .live) {
+    init(directory: URL, sessions: GameSessions<Store>, cloud: CloudModel<Store>) {
         self.directory = directory
         self.sessions = sessions
         self.cloud = cloud
-        self.runtime = runtime
     }
 
     func connect(account: Store.AccountID, receipts file: URL, port: InstallationPort<Store>) {
@@ -271,8 +271,9 @@ final class GameInstallations<Store: InstallationStorefront> {
 
     /// How much of Voile has downloaded while the game on screen waits for it.
     var runtimeInstallFraction: Double? {
-        guard isLaunching, launchGame == selection()?.game else { return nil }
-        return runtime.installFraction
+        guard isLaunching, let game = launchGame, game == selection()?.game,
+              let active = sessions.active, active.game == game else { return nil }
+        return active.runtimeInstall
     }
 
     /// Whether the primary action launches the game rather than installing it.
@@ -453,7 +454,7 @@ final class GameInstallations<Store: InstallationStorefront> {
         var gameWasRunning = false
         // The shared session store outlives this model: a strong capture here
         // would pin the whole library graph for the game's lifetime.
-        launchTask = sessions.launch(game: game, account: account, prepare: { [weak self] in
+        launchTask = sessions.launch(Store.identity(of: receipt, account: account), run: { [weak self] admission in
             guard let self else { throw CancellationError() }
             try self.requireCurrent(current)
             var ready = receipt
@@ -463,10 +464,7 @@ final class GameInstallations<Store: InstallationStorefront> {
             }
             try self.requireCurrent(current)
             self.isVerifyingBeforeLaunch = false
-            return try await session.start(ready) { [weak self] in
-                guard let self else { throw CancellationError() }
-                try self.requireCurrent(current)
-            }
+            try await session.start(ready, admission)
         }, onRunning: { [weak self] in
             gameWasRunning = true
             guard let self, self.generation == current else { return }
@@ -580,6 +578,9 @@ struct SteamDownload: GameTransferRequest {
 extension SteamGames: InstallationStorefront {
     typealias Receipt = SteamInstallReceipt
     typealias Request = SteamDownload
+    static func identity(of receipt: SteamInstallReceipt, account: UInt64) -> GameIdentity {
+        .steam(appId: receipt.appId, accountId: account)
+    }
     static func transferName(of request: SteamDownload) -> String { String(request.game.appId) }
     static let gamesDirectory = "Games/Steam"
     static let receiptsUnavailable = "model.steam.receiptsUnavailable"
@@ -597,6 +598,9 @@ struct EpicDownload: GameTransferRequest {
 extension EpicGames: InstallationStorefront {
     typealias Receipt = EpicInstallReceipt
     typealias Request = EpicDownload
+    static func identity(of receipt: EpicInstallReceipt, account: String) -> GameIdentity {
+        .epic(accountId: account, namespace: receipt.namespace, appName: receipt.appName)
+    }
     static func transferName(of request: EpicDownload) -> String { request.game.appName }
     static let gamesDirectory = "Games/Epic"
     static let receiptsUnavailable = "model.epic.receiptsUnavailable"

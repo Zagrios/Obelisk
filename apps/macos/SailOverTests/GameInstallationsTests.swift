@@ -12,11 +12,11 @@ final class GameInstallationsTests: XCTestCase {
         let fixture = try Fixture(game: game)
         let handoff = GameSessionGate<Void>()
         var handedOff = false
-        fixture.port.start = { _, proceed in
+        fixture.port.start = { _, admission in
             try await handoff.wait()
-            try proceed()
+            try Task.checkCancellation()
             handedOff = true
-            return RecoveredGameFixture(appID: 620)
+            try await admission.follow(supervisor: RecoveredGameFixture(appID: 620))
         }
         let installations = fixture.connect()
 
@@ -155,7 +155,7 @@ private final class PortFixture {
     var download: @MainActor (SteamDownload, TransferEvents<SteamInstallReceipt>) async throws -> Void = { _, _ in
         throw CancellationError()
     }
-    var start: @MainActor (SteamInstallReceipt, @MainActor () throws -> Void) async throws -> any GameSessionProtocol = {
+    var start: @MainActor (SteamInstallReceipt, GameAdmission) async throws -> Void = {
         _, _ in throw CancellationError()
     }
     var removePrefix: (@Sendable () throws -> Void)?

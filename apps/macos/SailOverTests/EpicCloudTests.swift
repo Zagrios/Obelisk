@@ -73,24 +73,6 @@ final class EpicCloudTests: XCTestCase {
         try XCTUnwrap(opaque.representation(using: .png, properties: [:])).write(to: file)
     }
 
-    func testHandoffForwardsCancellationBeforeAndAfterClientArrival() async throws {
-        let late = EpicCloudGameFixture(phase: .preparing, cloudPhase: .checking)
-        let before = EpicGameHandoff()
-        before.cancel()
-        before.receive(late)
-        before.cancel()
-        try await eventually { late.signals.cancellations == 1 }
-
-        let received = EpicCloudGameFixture(phase: .preparing, cloudPhase: .checking)
-        let after = EpicGameHandoff()
-        after.receive(received)
-        after.cancel()
-        try await eventually { received.signals.cancellations == 1 }
-        try await after.revoke(accountId: "account")
-        let revocations = await received.revocations
-        XCTAssertEqual(revocations, ["account"])
-    }
-
     func testSupervisorCancellationDoesNotBecomeAServiceFailure() async throws {
         for message in ["backend.epic.cloud.cancelled", "backend.epic.cancelled", "renamed cancellation", nil] {
             let game = EpicCloudGameFixture(phase: .failed, cloudPhase: .failed)
@@ -557,79 +539,114 @@ private actor EpicCloudPreparationGate {
     func release() { continuation?.resume(); continuation = nil }
 }
 
-private actor EpicCloudGameFixture: GameSessionProtocol {
+private final class EpicCloudGameFixture: GameSupervisor, @unchecked Sendable {
     struct Choice: Equatable {
         let accountId: String
         let decisionId: UInt64
         let choice: CloudChoice
     }
-    nonisolated let signals = EpicCloudSignals()
-    private(set) var choices: [Choice] = []
-    private(set) var revocations: [String] = []
-    private(set) var beginnings = 0
-    private(set) var rosettaChecks = 0
-    private(set) var rosettaResumes: [UInt64] = []
+    let signals = EpicCloudSignals()
+    private let condition = NSCondition()
+    private var _choices: [Choice] = []
+    private var _revocations: [String] = []
+    private var _beginnings = 0
+    private var _rosettaChecks = 0
+    private var _rosettaResumes: [UInt64] = []
     private var unavailableAttempts = 0
     private var rejectsRevocation = false
+    private var lostConnection = false
+    private var waiters = 0
     private var current: GameSnapshot
-    private var waiting: CheckedContinuation<GameSnapshot, Error>?
-    var waitingForSnapshot: Bool { waiting != nil }
+    var choices: [Choice] { locked { _choices } }
+    var revocations: [String] { locked { _revocations } }
+    var beginnings: Int { locked { _beginnings } }
+    var rosettaChecks: Int { locked { _rosettaChecks } }
+    var rosettaResumes: [UInt64] { locked { _rosettaResumes } }
+    var waitingForSnapshot: Bool { locked { waiters > 0 } }
 
     init(phase: GamePhase, cloudPhase: CloudPhase) {
         current = GameSnapshot(id: UUID().uuidString, phase: phase, finished: [.finished, .failed].contains(phase),
-            failureReason: nil, exitCode: nil, error: nil, revision: 1, reconnecting: false, rosetta: nil,
+            failureReason: nil, error: nil, revision: 1, reconnecting: false, rosetta: nil,
             cloud: CloudStatus(phase: cloudPhase, decisionId: 1, error: nil, allowedChoices: [.local, .cloud, .cancel]),
             store: .epic(accountId: "account", namespace: "sandbox", appName: "game"))
     }
-    nonisolated func cancelPreparation() { signals.cancel() }
-    func begin() async throws { beginnings += 1 }
-    func rejectRevocation() { rejectsRevocation = true }
-    func revoke(account: GameAccount) async throws {
-        if rejectsRevocation { throw GameSessionError.Failure(reason: "backend.epic.cloud.session") }
-        guard case let .epic(accountId) = account else { throw GameSessionError.Failure(reason: "wrong store") }
-        revocations.append(accountId)
+    private func locked<T>(_ body: () throws -> T) rethrows -> T {
+        condition.lock()
+        defer { condition.unlock() }
+        return try body()
     }
-    func choose(account: GameAccount, decisionId: UInt64, choice: CloudChoice) async throws {
-        guard case let .epic(accountId) = account else { throw GameSessionError.Failure(reason: "wrong store") }
-        choices.append(Choice(accountId: accountId, decisionId: decisionId, choice: choice))
+    func cancelPreparation() { signals.cancel() }
+    func begin() throws { locked { _beginnings += 1 } }
+    func rejectRevocation() { locked { rejectsRevocation = true } }
+    func revoke(account: GameAccount) throws {
+        try locked {
+            if rejectsRevocation { throw GameSessionError.Failure(reason: "backend.epic.cloud.session") }
+            guard case let .epic(accountId) = account else { throw GameSessionError.Failure(reason: "wrong store") }
+            _revocations.append(accountId)
+        }
+    }
+    func choose(account: GameAccount, decisionId: UInt64, choice: CloudChoice) throws {
+        try locked {
+            guard case let .epic(accountId) = account else { throw GameSessionError.Failure(reason: "wrong store") }
+            _choices.append(Choice(accountId: accountId, decisionId: decisionId, choice: choice))
+        }
     }
     func requireRosetta(decisionId: UInt64) {
-        current.rosetta = RosettaRequest(decisionId: decisionId)
-        update()
+        locked { current.rosetta = RosettaRequest(decisionId: decisionId) }
+        update(keeping: true)
     }
-    func failNextRosettaResumes(_ attempts: Int) { unavailableAttempts = attempts }
-    func resumeAfterRosetta(account: GameAccount, decisionId: UInt64) async throws {
-        rosettaChecks += 1
-        if unavailableAttempts > 0 {
-            unavailableAttempts -= 1
-            throw GameSessionError.Failure(reason: EpicGameSessions.rosettaUnavailableKey)
+    func failNextRosettaResumes(_ attempts: Int) { locked { unavailableAttempts = attempts } }
+    func resumeAfterRosetta(account: GameAccount, decisionId: UInt64) throws {
+        try locked {
+            _rosettaChecks += 1
+            if unavailableAttempts > 0 {
+                unavailableAttempts -= 1
+                throw GameSessionError.Failure(reason: EpicGameSessions.rosettaUnavailableKey)
+            }
+            guard account == .epic(accountId: "account"), current.rosetta?.decisionId == decisionId else {
+                throw GameSessionError.Failure(reason: "backend.epic.cloud.invalidSession")
+            }
+            _rosettaResumes.append(decisionId)
         }
-        guard account == .epic(accountId: "account"), current.rosetta?.decisionId == decisionId else {
-            throw GameSessionError.Failure(reason: "backend.epic.cloud.invalidSession")
-        }
-        rosettaResumes.append(decisionId)
     }
-    func snapshot(after: UInt64?) async throws -> GameSnapshot {
-        if after != current.revision { return current }
-        return try await withCheckedThrowingContinuation { waiting = $0 }
+    func snapshot(after: UInt64?) throws -> GameSnapshot {
+        try locked {
+            waiters += 1
+            defer { waiters -= 1 }
+            while after == current.revision && !lostConnection { condition.wait() }
+            if lostConnection {
+                lostConnection = false
+                throw GameSessionError.Failure(reason: "backend.epic.cloud.session")
+            }
+            return current
+        }
     }
     func update(phase: GamePhase? = nil, cloudPhase: CloudPhase? = nil,
                 decisionId: UInt64? = nil, allowedChoices: [CloudChoice]? = nil, error: String? = nil,
                 failureReason: GameFailureReason? = nil) {
-        if let phase { current.phase = phase }
-        if let cloudPhase { current.cloud.phase = cloudPhase }
-        if let decisionId { current.cloud.decisionId = decisionId }
-        if let allowedChoices { current.cloud.allowedChoices = allowedChoices }
-        current.error = error
-        current.failureReason = failureReason
-        current.finished = [.finished, .failed].contains(current.phase)
-        current.revision += 1
-        waiting?.resume(returning: current)
-        waiting = nil
+        locked {
+            if let phase { current.phase = phase }
+            if let cloudPhase { current.cloud.phase = cloudPhase }
+            if let decisionId { current.cloud.decisionId = decisionId }
+            if let allowedChoices { current.cloud.allowedChoices = allowedChoices }
+            current.error = error
+            current.failureReason = failureReason
+        }
+        update(keeping: true)
+    }
+    private func update(keeping: Bool) {
+        locked {
+            current.finished = [.finished, .failed].contains(current.phase)
+            current.revision += 1
+            condition.broadcast()
+        }
     }
     func loseConnection() {
-        waiting?.resume(throwing: GameSessionError.Failure(reason: "backend.epic.cloud.session"))
-        waiting = nil
+        locked {
+            guard waiters > 0 else { return }
+            lostConnection = true
+            condition.broadcast()
+        }
     }
 }
 

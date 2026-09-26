@@ -148,7 +148,7 @@ final class SteamRosettaTests: XCTestCase {
         model.install()
         await game.update(cloudPhase: .ready)
         await game.requireRosetta(decisionId: 17)
-        try await eventually { sessions.active?.rosetta != nil }
+        try await eventually { sessions.rosettaPrompt(accountId: 42) != nil }
         XCTAssertNil(model.prompt)
         model.connect(accountId: 42)
         XCTAssertEqual(model.prompt?.decisionId, 17)

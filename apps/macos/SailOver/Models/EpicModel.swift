@@ -31,7 +31,8 @@ final class EpicModel {
     }
 
     let gameSessions: EpicGameSessions
-    @ObservationIgnored private let launchGame: @MainActor (any EpicSessionProtocol, EpicCloudConfiguration) async throws -> any GameSessionProtocol
+    @ObservationIgnored private let launchGame: @MainActor (any EpicSessionProtocol, GameAdmission, EpicCloudConfiguration,
+                                                            any BeforeGameStart) async throws -> Void
     @ObservationIgnored private let maintainCloud: @MainActor (any EpicSessionProtocol, EpicCloudConfiguration) async -> any CloudMaintenanceProtocol
     let cloud: EpicCloudModel
     let rosetta: EpicRosettaModel
@@ -92,8 +93,9 @@ final class EpicModel {
         language: String = Locale.preferredLanguages.first ?? "en",
         gameSessions: EpicGameSessions = .shared,
         cloudServices: EpicCloudServices = .live,
-        launchGame: @escaping @MainActor (any EpicSessionProtocol, EpicCloudConfiguration) async throws -> any GameSessionProtocol = {
-            try await $0.launchGame(configuration: $1, locations: .live)
+        launchGame: @escaping @MainActor (any EpicSessionProtocol, GameAdmission, EpicCloudConfiguration,
+                                          any BeforeGameStart) async throws -> Void = {
+            try await $0.launchGame(admission: $1, configuration: $2, locations: .live, beforeStart: $3)
         },
         maintainCloud: @escaping @MainActor (any EpicSessionProtocol, EpicCloudConfiguration) async -> any CloudMaintenanceProtocol = {
             await $0.maintainCloud(configuration: $1)
@@ -512,25 +514,6 @@ final class EpicModel {
         }
     }
 
-    private func supervise(on session: any EpicSessionProtocol, accountId: String, generation current: Int,
-                           preparing: Bool = true,
-                           create: @MainActor () async throws -> any GameSessionProtocol) async throws -> any GameSessionProtocol {
-        let handoff = EpicGameHandoff()
-        do {
-            return try await withTaskCancellationHandler {
-                try await rememberedSession.perform(on: session, preparing: preparing) {
-                    let client = try await create()
-                    handoff.receive(client)
-                    return client
-                }
-            } onCancel: { handoff.cancel() }
-        } catch {
-            handoff.cancel()
-            if current != generation { try? await handoff.revoke(accountId: accountId) }
-            throw error
-        }
-    }
-
     private func receiptsFile(for account: String) -> URL {
         // Account identifiers are opaque. Encode them before using them in a file name.
         let component = account.utf8.map { String(format: "%02x", $0) }.joined()
@@ -562,19 +545,15 @@ final class EpicModel {
                     },
                     progress: { session.downloadProgress() },
                     cancel: { session.cancelDownload() },
-                    start: { [weak self] receipt, proceed in
-                        guard let self, let accountID,
-                              let game = games.first(where: { $0.libraryID == receipt.libraryID }) else {
+                    start: { [weak self] receipt, admission in
+                        guard let self, let game = games.first(where: { $0.libraryID == receipt.libraryID }) else {
                             throw CancellationError()
                         }
                         let configuration = cloud.configuration(game: game, receipt: receipt, language: launchLanguage)
-                        return try await supervise(on: session, accountId: accountID, generation: generation,
-                                                   preparing: false) {
-                            try proceed()
-                            // Windows builds run in SailOver's Wine runtime, installed apart from the app on first use.
-                            if receipt.platform == "Windows" { try await VoileRuntime.live.prepare() }
-                            do { return try await launchGame(session, configuration) }
-                            catch { throw GameHandoffFailure(cause: error) }
+                        try await remembered.perform(on: session, preparing: false) {
+                            try Task.checkCancellation()
+                            try await launchGame(session, admission, configuration,
+                                                 RememberedCredentials(remembered, session: session))
                         }
                     }
                 )
@@ -618,7 +597,6 @@ final class EpicModel {
         case EpicError.InvalidResponse: L10n.string("model.epic.invalidResponse")
         case let EpicError.Service(message): L10n.message(message)
         case let browserError as EpicWebAuthenticationError: browserError.localizedDescription
-        case let launchError as GameLaunchFailure: launchError.localizedDescription
         case let failure as GameInstallationFailure: failure.localizedDescription
         default: L10n.string("model.epic.failure")
         }
@@ -630,36 +608,3 @@ extension EpicGame {
     var libraryID: String { epicLibraryID(namespace: namespace, appName: appName) }
 }
 
-/// Forwards cancellation as soon as UniFFI returns a session, even while the
-/// remembered account is still waiting for its ordered Keychain write.
-final class EpicGameHandoff: @unchecked Sendable {
-    private let lock = NSLock()
-    private var client: (any GameSessionProtocol)?
-    private var cancelled = false
-    private var cancellationSent = false
-
-    func receive(_ client: any GameSessionProtocol) {
-        let shouldCancel = lock.withLock {
-            self.client = client
-            guard cancelled, !cancellationSent else { return false }
-            cancellationSent = true
-            return true
-        }
-        if shouldCancel { Task.detached { client.cancelPreparation() } }
-    }
-
-    func cancel() {
-        let target = lock.withLock { () -> (any GameSessionProtocol)? in
-            cancelled = true
-            guard let client, !cancellationSent else { return nil }
-            cancellationSent = true
-            return client
-        }
-        if let target { Task.detached { target.cancelPreparation() } }
-    }
-
-    func revoke(accountId: String) async throws {
-        guard let target = lock.withLock({ client }) else { return }
-        try await Task.detached { try await target.revoke(account: .epic(accountId: accountId)) }.value
-    }
-}

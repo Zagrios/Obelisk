@@ -107,7 +107,7 @@ final class SteamModel {
     @ObservationIgnored private let loadNews: @Sendable (UInt32) async throws -> [SteamNews]
     @ObservationIgnored private let beginLogin: @Sendable (SteamLoginStart) async throws -> any SteamLoginProtocol
     let gameSessions: SteamGameSessions
-    @ObservationIgnored private let startGame: @MainActor (SteamLaunchPlan, SteamCredentials) async throws -> any GameSessionProtocol
+    @ObservationIgnored private let startGame: @MainActor (GameAdmission, SteamLaunchPlan, SteamCredentials) async throws -> Void
     @ObservationIgnored private let startCloudMaintenance: @MainActor @Sendable (SteamCredentials, SteamCloudMaintenanceRequest) -> any CloudMaintenanceProtocol
     let cloud: SteamCloudModel
     let rosetta: SteamRosettaModel
@@ -156,8 +156,8 @@ final class SteamModel {
         },
         gameSessions: SteamGameSessions = .shared,
         cloudServices: SteamCloudServices = .live,
-        startGame: @escaping @MainActor (SteamLaunchPlan, SteamCredentials) async throws -> any GameSessionProtocol = {
-            try await SteamGameLauncher.start($0, credentials: $1)
+        startGame: @escaping @MainActor (GameAdmission, SteamLaunchPlan, SteamCredentials) async throws -> Void = {
+            try await launchSteamGame(admission: $0, plan: $1, credentials: $2, locations: .live)
         }
     ) {
         self.directory = directory
@@ -869,12 +869,12 @@ final class SteamModel {
                     },
                     progress: { session.downloadProgress() },
                     cancel: { session.cancelDownload() },
-                    start: { [weak self] receipt, proceed in
+                    start: { [weak self] receipt, admission in
                         let plan = try await session.launchPlan(appId: receipt.appId, platform: receipt.platform,
                                                                 directory: receipt.directory)
-                        try proceed()
+                        try Task.checkCancellation()
                         guard let credentials = self?.sessionCredentials else { throw SteamError.AuthenticationRequired }
-                        return try await startGame(plan, credentials)
+                        try await startGame(admission, plan, credentials)
                     }
                 )
             },

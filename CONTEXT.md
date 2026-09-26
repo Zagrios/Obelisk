@@ -30,6 +30,10 @@ _Avoid_: redistributable (Steam's name for the package, not the run), dependency
 The exclusive claim a Game session or Cloud maintenance holds on a game's installation. While it exists, no Transfer, uninstall or other launch of that game can start.
 _Avoid_: lock, busy state
 
+**Admission**:
+The moment a launch claims its game's Reservation, before any verification, Voile download or authentication can wait. A launch cancelled before its handoff to a supervisor gives the Reservation back; once handed off, only the Game session's end does.
+_Avoid_: launch start, pending launch
+
 **Game session**:
 One account-scoped launch of a game, holding a Reservation from admission until the game has really exited and its Cloud saves are settled. It outlives SailOver quitting.
 _Avoid_: launch, supervisor session

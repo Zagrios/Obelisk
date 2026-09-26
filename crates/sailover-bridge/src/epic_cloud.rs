@@ -1,7 +1,10 @@
 //! Presentation of the Rust-owned Epic supervisor and Cloud decisions.
-use crate::{EpicError, EpicSession, GameSession, SailOverLocations};
+use crate::{
+    BeforeGameStart, EpicError, EpicSession, GameAdmission, GameSessionError, SailOverLocations,
+    game_session::Admitted,
+};
 use game_runtime::epic;
-use std::{path::Path, sync::Arc};
+use std::sync::Arc;
 
 impl From<epic::Error> for EpicError {
     fn from(error: epic::Error) -> Self {
@@ -71,71 +74,84 @@ async fn blocking<T: Send + 'static>(
         .map_err(Into::into)
 }
 
-struct Admission {
-    cancel: sailover_core::transfer::CancelToken,
-    client: Arc<std::sync::Mutex<Option<Arc<GameSession>>>>,
-    armed: bool,
-}
-impl Drop for Admission {
-    fn drop(&mut self) {
-        if self.armed {
-            self.cancel.cancel();
-            if let Some(client) = &*self.client.lock().unwrap() {
-                client.cancel_preparation();
-            }
-        }
-    }
-}
 #[uniffi::export(async_runtime = "tokio")]
 impl EpicSession {
+    /// Launches the build `configuration` names for its admission, readying
+    /// Voile and the prefix of a Windows build before any exchange code
+    /// exists, and runs `before_start`, which saves the credentials the
+    /// exchange rotated, before the game starts. Then follows its session
+    /// until it is finished.
     pub async fn launch_game(
         &self,
+        admission: Arc<GameAdmission>,
         configuration: EpicCloudConfiguration,
         locations: SailOverLocations,
-    ) -> Result<Arc<GameSession>, EpicError> {
-        let cancel = sailover_core::transfer::CancelToken::new();
-        let client_slot = Arc::new(std::sync::Mutex::new(None));
-        let mut admission = Admission {
-            cancel: cancel.clone(),
-            client: Arc::clone(&client_slot),
-            armed: true,
+        before_start: Arc<dyn BeforeGameStart>,
+    ) -> Result<(), GameSessionError> {
+        use game_runtime::sessions::{Failure, Handoff};
+        let Admitted::Epic(slot) = &admission.admission else {
+            return Err(GameSessionError::new("backend.epic.cloud.invalidSession"));
         };
+        let admission = slot.take()?;
+        let canceller = admission.canceller();
+        let client = self.client.clone();
         let configuration: epic::Configuration = configuration.into();
-        // A Windows build runs in Wine, readied before any exchange code exists.
-        let wine = match configuration.prefix.is_some() {
-            false => None,
-            true => {
-                let configuration = configuration.clone();
-                Some(
-                    blocking(move || epic::prepare_windows(&configuration, &(&locations).into()))
-                        .await?,
-                )
+        let refused = |error: EpicError| Handoff::Refused(Failure::Failed(error.to_string()));
+        let handoff = async move {
+            // A Windows build runs in Wine, readied before any exchange code exists.
+            let wine = match configuration.prefix.is_some() {
+                false => None,
+                true => {
+                    let locations: game_runtime::Locations = (&locations).into();
+                    canceller
+                        .install_runtime(&locations.voile)
+                        .await
+                        .map_err(Handoff::Refused)?;
+                    let configuration = configuration.clone();
+                    Some(
+                        blocking(move || epic::prepare_windows(&configuration, &locations))
+                            .await
+                            .map_err(refused)?,
+                    )
+                }
+            };
+            let account = client
+                .credentials()
+                .await
+                .map_err(|e| refused(e.into()))?
+                .account_id;
+            let exchange = client
+                .exchange_code()
+                .await
+                .map_err(|e| refused(e.into()))?;
+            if client
+                .credentials()
+                .await
+                .map_err(|e| refused(e.into()))?
+                .account_id
+                != account
+            {
+                return Err(refused(EpicError::Unauthorized));
             }
+            if canceller.cancelled() {
+                return Err(Handoff::Refused(Failure::Cancelled));
+            }
+            let cancel = sailover_core::transfer::CancelToken::new();
+            let token = cancel.clone();
+            canceller.on_cancel(move || token.cancel());
+            let started = tokio::task::spawn_blocking(move || {
+                epic::start(configuration, account, exchange, wine, cancel)
+            })
+            .await
+            .map_err(|_| Handoff::Lost(epic::Error::Session.to_string()))?
+            .map_err(|error| Handoff::Lost(error.to_string()))?;
+            Ok(Arc::new(started) as Arc<dyn game_runtime::sessions::Supervised<epic::Epic>>)
         };
-        let account = self.client.credentials().await?.account_id;
-        let exchange = self.client.exchange_code().await?;
-        if self.client.credentials().await?.account_id != account {
-            return Err(EpicError::Unauthorized);
-        }
-        let session = tokio::task::spawn_blocking(move || {
-            let session = GameSession::epic(epic::start(
-                configuration,
-                account,
-                exchange,
-                wine,
-                cancel.clone(),
-            )?);
-            *client_slot.lock().unwrap() = Some(Arc::clone(&session));
-            if cancel.is_cancelled() {
-                session.cancel_preparation();
-            }
-            Ok::<_, epic::Error>(session)
-        })
-        .await
-        .map_err(|_| epic::Error::Session)??;
-        // Completion transfers cancellation to the observer's explicit controls.
-        admission.armed = false;
-        Ok(session)
+        // The exchange code rotated the account's credentials: they are saved
+        // before the game starts.
+        Ok(admission
+            .launch_before(handoff, Box::new(move || before_start.run()))
+            .await?)
     }
     pub async fn archive_cloud(
         &self,
@@ -147,19 +163,6 @@ impl EpicSession {
     }
 }
 
-#[uniffi::export(async_runtime = "tokio")]
-pub async fn recover_epic_game_session(
-    session_directory: String,
-    helper: String,
-) -> Result<Option<Arc<GameSession>>, EpicError> {
-    blocking(move || {
-        Ok(
-            epic::Client::recover(Path::new(&session_directory), Path::new(&helper))?
-                .map(GameSession::epic),
-        )
-    })
-    .await
-}
 #[uniffi::export(async_runtime = "tokio")]
 pub async fn epic_cloud_removed(
     configuration: EpicCloudConfiguration,
@@ -197,7 +200,7 @@ mod tests {
         })
     }
 
-    fn bridge_snapshot(value: Value) -> crate::GameSnapshot {
+    fn bridge_snapshot(value: Value) -> game_runtime::sessions::Observation<epic::Epic> {
         let snapshot: epic::Snapshot = serde_json::from_value(value).unwrap();
         snapshot.into()
     }
@@ -208,7 +211,7 @@ mod tests {
         value["phase"] = json!("Preparing");
         value["rosetta"] = json!({"decision_id": 17});
         let snapshot = bridge_snapshot(value);
-        assert_eq!(snapshot.rosetta.unwrap().decision_id, 17);
+        assert_eq!(snapshot.rosetta.unwrap(), 17);
     }
 
     #[test]
@@ -227,10 +230,10 @@ mod tests {
         value["failure_reason"] = json!("Cancelled");
 
         let snapshot = bridge_snapshot(value);
-        assert!(matches!(snapshot.phase, crate::GamePhase::Failed));
+        assert!(matches!(snapshot.phase, epic::Phase::Failed));
         assert!(matches!(
-            snapshot.failure_reason,
-            Some(crate::GameFailureReason::Cancelled)
+            snapshot.failure,
+            Some(epic::FailureReason::Cancelled)
         ));
         assert_eq!(snapshot.error.as_deref(), Some(message));
     }
@@ -243,8 +246,8 @@ mod tests {
 
             let snapshot = bridge_snapshot(value);
             assert!(matches!(
-                snapshot.failure_reason,
-                Some(crate::GameFailureReason::Failed)
+                snapshot.failure,
+                Some(epic::FailureReason::Failed)
             ));
             assert_eq!(snapshot.error.as_deref(), Some(message));
         }
@@ -257,16 +260,16 @@ mod tests {
             assert!(value.get("failure_reason").is_none());
             let snapshot = bridge_snapshot(value);
             assert!(matches!(
-                snapshot.failure_reason,
-                Some(crate::GameFailureReason::Cancelled)
+                snapshot.failure,
+                Some(epic::FailureReason::Cancelled)
             ));
             assert_eq!(snapshot.error.as_deref(), Some(message));
         }
 
         let snapshot = bridge_snapshot(failed_snapshot("backend.epic.unauthorized"));
         assert!(matches!(
-            snapshot.failure_reason,
-            Some(crate::GameFailureReason::Failed)
+            snapshot.failure,
+            Some(epic::FailureReason::Failed)
         ));
         assert_eq!(snapshot.error.as_deref(), Some("backend.epic.unauthorized"));
     }
@@ -280,7 +283,7 @@ mod tests {
                 if let Some(reason) = reason {
                     value["failure_reason"] = json!(reason);
                 }
-                assert!(bridge_snapshot(value).failure_reason.is_none());
+                assert!(bridge_snapshot(value).failure.is_none());
             }
         }
     }

@@ -83,6 +83,12 @@ final class EpicRememberedSession {
         return try result.get()
     }
 
+    /// Saves the credentials of `session` now, when it is still the active one.
+    func save(on session: any EpicSessionProtocol) async {
+        guard let active = account, active.session === session else { return }
+        await persist(active)
+    }
+
     /// Invalidates observations and operations immediately. Removal waits for any in-flight save.
     /// Stopping observation neither revokes OAuth nor cancels a download; the caller owns sign-out.
     @discardableResult
@@ -143,5 +149,27 @@ final class EpicRememberedSession {
         }
         storageTask = task
         return task
+    }
+}
+
+/// Saves an Epic launch's rotated credentials before its game starts. Rust
+/// waits on its own thread while the save runs on the main actor.
+final class RememberedCredentials: BeforeGameStart, @unchecked Sendable {
+    private let remembered: EpicRememberedSession
+    private let session: any EpicSessionProtocol
+
+    init(_ remembered: EpicRememberedSession, session: any EpicSessionProtocol) {
+        self.remembered = remembered
+        self.session = session
+    }
+
+    func run() {
+        let semaphore = DispatchSemaphore(value: 0)
+        let (remembered, session) = (remembered, session)
+        Task { @MainActor in
+            await remembered.save(on: session)
+            semaphore.signal()
+        }
+        semaphore.wait()
     }
 }
