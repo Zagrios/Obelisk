@@ -847,3 +847,28 @@ async fn abandoned_account_transfer_keeps_disk_admission_until_worker_exits() {
         .unwrap();
     assert_eq!(transfers.snapshot().unwrap().state, TransferState::Complete);
 }
+
+#[test]
+fn unflagged_programs_are_recognised_by_their_header() {
+    let temporary = tempfile::tempdir().unwrap();
+    let file = |flags| ManifestFile {
+        filename: "file".into(),
+        symlink_target: None,
+        hash: [0; 20],
+        flags,
+        parts: Vec::new(),
+    };
+    for (contents, executable) in [
+        (&[0xcf, 0xfa, 0xed, 0xfe, 7, 0, 0, 1][..], true),
+        (&[0xca, 0xfe, 0xba, 0xbe, 0, 0, 0, 2][..], true),
+        (b"#!/bin/sh\n", true),
+        (b"{\"gameId\": 1}", false),
+        (b"#", false),
+        (b"", false),
+    ] {
+        let path = temporary.path().join("file");
+        fs::write(&path, contents).unwrap();
+        assert_eq!(is_executable(&file(0), &path).unwrap(), executable);
+        assert!(is_executable(&file(4), &path).unwrap());
+    }
+}

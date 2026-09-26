@@ -218,11 +218,10 @@ async fn fetch_traced(
             let deployment_id = deployment_id.clone();
             let cache_key = cache_key.clone();
             let validate_content = cache_directory.is_some();
-            let app_name = app_name.to_owned();
             tokio::task::spawn_blocking(move || {
                 checked_hash(&bytes, hash.as_deref())?;
                 let parsed = validate_content
-                    .then(|| manifest_cache::validate(&bytes, &app_name))
+                    .then(|| manifest_cache::validate(&bytes))
                     .transpose()?;
                 Ok(FetchedManifest {
                     network_bytes: bytes.len() as u64,

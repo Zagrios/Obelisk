@@ -879,18 +879,20 @@ async fn download_checks_ownership_fetches_manifest_without_bearer_and_writes_re
 }
 
 #[tokio::test]
-async fn manifest_identity_mismatch_and_unowned_games_never_create_an_installation() {
-    let mock = Mock::new(download_replies("another-game"));
+async fn a_manifest_naming_another_app_still_installs() {
+    let mock = Mock::new(download_replies("fd52e5b57c6d4468bfd6b39b5577436d"));
     let client = mock.client(false);
     let parent = tempfile::tempdir().unwrap();
-    assert!(matches!(
-        client
-            .download("space", "base", "game", "Mac", parent.path())
-            .await,
-        Err(EpicError::Protocol)
-    ));
-    assert_eq!(std::fs::read_dir(parent.path()).unwrap().count(), 0);
-    assert_eq!(client.progress().unwrap().state, TransferState::Failed);
+    let installation = client
+        .download("space", "base", "game", "Mac", parent.path())
+        .await
+        .unwrap();
+    assert_eq!(installation.app_name, "game");
+}
+
+#[tokio::test]
+async fn unowned_games_never_create_an_installation() {
+    let parent = tempfile::tempdir().unwrap();
     let mock = Mock::new(vec![reply(
         "/library/api/public/items",
         200,

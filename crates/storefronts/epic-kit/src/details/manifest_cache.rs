@@ -17,7 +17,6 @@ use crate::{
 pub(crate) struct ManifestCacheKey {
     identity: String,
     hash: String,
-    app_name: String,
 }
 
 impl ManifestCacheKey {
@@ -40,7 +39,6 @@ impl ManifestCacheKey {
         Some(Self {
             identity: hex(&Sha1::digest(identity)),
             hash: hash.to_ascii_lowercase(),
-            app_name: app_name.into(),
         })
     }
 
@@ -68,7 +66,7 @@ pub(super) fn load(
     };
     let validated = (|| {
         super::checked_hash(&bytes, Some(&key.hash))?;
-        validate(&bytes, &key.app_name)
+        validate(&bytes)
     })();
     match validated {
         Ok(manifest) => Ok(Some(CachedManifest { bytes, manifest })),
@@ -81,11 +79,11 @@ pub(super) fn load(
     }
 }
 
-pub(super) fn validate(bytes: &[u8], app_name: &str) -> Result<Manifest, EpicError> {
+/// The manifest's own app name is not compared with the catalog's: some builds
+/// carry an internal one (Rocket League's `Sugar` names itself by a hex id).
+/// The SHA-1 from the asset response already binds these bytes to the asset.
+pub(super) fn validate(bytes: &[u8]) -> Result<Manifest, EpicError> {
     let manifest = content_manifest::parse(bytes)?;
-    if manifest.app_name != app_name {
-        return Err(EpicError::Protocol);
-    }
     validate_manifest(&manifest)?;
     Ok(manifest)
 }
@@ -206,13 +204,18 @@ pub(super) mod tests {
     }
 
     #[test]
-    fn corrupt_oversized_mismatched_and_unsafe_manifests_are_misses() {
+    fn a_manifest_naming_another_app_is_a_hit() {
         let directory = tempfile::tempdir().unwrap();
-        for bytes in [
-            b"invalid".to_vec(),
-            fixture("other-app", "game.exe"),
-            fixture("game", "../escape"),
-        ] {
+        let bytes = fixture("fd52e5b57c6d4468bfd6b39b5577436d", "game.exe");
+        let key = key(&bytes);
+        store(directory.path(), &key, &bytes).unwrap();
+        assert!(load(directory.path(), &key).unwrap().is_some());
+    }
+
+    #[test]
+    fn corrupt_oversized_and_unsafe_manifests_are_misses() {
+        let directory = tempfile::tempdir().unwrap();
+        for bytes in [b"invalid".to_vec(), fixture("game", "../escape")] {
             let key = key(&bytes);
             store(directory.path(), &key, &bytes).unwrap();
             assert!(load(directory.path(), &key).unwrap().is_none());

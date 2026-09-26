@@ -288,7 +288,7 @@ impl DiskInstall {
             }
             let target = checked_file_path(&root, &relative)?;
             if *valid {
-                apply_permissions(&target, is_executable(file))?;
+                apply_permissions(&target, is_executable(file, &target)?)?;
                 continue;
             }
             self.reporter.update(|status| {
@@ -493,7 +493,7 @@ impl DiskInstall {
         }
         partial.sync_all()?;
         drop(partial);
-        apply_permissions(&partial_path, is_executable(file))?;
+        apply_permissions(&partial_path, is_executable(file, &partial_path)?)?;
         self.cancel.check()?;
         let target = checked_file_path(root, relative)?;
         fs::rename(&partial_path, &target)?;
@@ -502,8 +502,27 @@ impl DiskInstall {
     }
 }
 
-fn is_executable(file: &ManifestFile) -> bool {
-    file.flags & 4 != 0
+/// Manifests flag only the launch executable of some builds: Prison Architect's
+/// Paradox bootstrap runs an unflagged installer beside it. Programs are then
+/// recognised by their header, a Mach-O binary or a script.
+fn is_executable(file: &ManifestFile, path: &Path) -> std::io::Result<bool> {
+    if file.flags & 4 != 0 {
+        return Ok(true);
+    }
+    let mut header = Vec::with_capacity(4);
+    File::open(path)?.take(4).read_to_end(&mut header)?;
+    Ok(is_program_header(&header))
+}
+
+fn is_program_header(header: &[u8]) -> bool {
+    const PROGRAMS: [&[u8]; 5] = [
+        &[0xcf, 0xfa, 0xed, 0xfe], // 64-bit Mach-O
+        &[0xce, 0xfa, 0xed, 0xfe], // 32-bit Mach-O
+        &[0xca, 0xfe, 0xba, 0xbe], // universal binary
+        &[0xca, 0xfe, 0xba, 0xbf], // 64-bit universal binary
+        b"#!",
+    ];
+    PROGRAMS.iter().any(|magic| header.starts_with(magic))
 }
 
 fn manifest_key(manifest: &Manifest) -> String {
