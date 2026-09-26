@@ -478,7 +478,7 @@ impl SteamConnection {
                     os_type: (-102_i32) as u32, // EOSType::MacOSUnknown, encoded as uint32.
                     remember_password: true,
                     account_name: account_name.into(),
-                    machine_name: "Forge".into(),
+                    machine_name: "SailOver".into(),
                     supports_rate_limit: true,
                     access_token: refresh_token.into(),
                 },

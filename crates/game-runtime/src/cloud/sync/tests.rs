@@ -244,7 +244,7 @@ pub(crate) async fn a_game_without_cloud_rules_is_unavailable_until_they_return<
     assert_eq!(record(&game).unavailable, None);
 }
 
-pub(crate) async fn saves_forge_holds_never_pass_for_a_game_without_cloud<H: Harness>() {
+pub(crate) async fn saves_sailover_holds_never_pass_for_a_game_without_cloud<H: Harness>() {
     let game = H::game();
     synced(&game, b"old").await;
     game.set_rules(false);
@@ -872,7 +872,7 @@ macro_rules! cloud_suite {
             a_launch_conflict_asks_and_applies_the_cloud_choice,
             a_failed_exit_upload_keeps_the_exit_save_pending,
             a_game_without_cloud_rules_is_unavailable_until_they_return,
-            saves_forge_holds_never_pass_for_a_game_without_cloud,
+            saves_sailover_holds_never_pass_for_a_game_without_cloud,
             a_cancelled_launch_check_is_a_failed_sync_until_the_next_sync,
             launching_anyway_without_pending_work_is_a_failed_sync,
             an_unanswered_launch_conflict_is_recorded_until_it_is_answered,

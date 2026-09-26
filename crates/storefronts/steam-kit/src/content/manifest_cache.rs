@@ -7,7 +7,7 @@ use std::{
     sync::Arc,
 };
 
-use forge_core::install::{self, PARTIAL_DIRECTORY};
+use sailover_core::install::{self, PARTIAL_DIRECTORY};
 
 use super::{
     ContentError, MAX_MANIFEST_BYTES,

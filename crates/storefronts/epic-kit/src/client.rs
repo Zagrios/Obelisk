@@ -270,7 +270,7 @@ impl Client {
 
     /// A separate watch reports refresh immediately, even if the next HTTP request fails.
     pub async fn next_credentials_revision(&self, after_revision: u64) -> Option<u64> {
-        forge_core::watch::next_matching(self.credential_events.subscribe(), |state| {
+        sailover_core::watch::next_matching(self.credential_events.subscribe(), |state| {
             state.stopped || state.revision != after_revision
         })
         .await

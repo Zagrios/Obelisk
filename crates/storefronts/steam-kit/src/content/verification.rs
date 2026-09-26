@@ -1,13 +1,13 @@
 //! Steam manifest entries described for the shared verification scheduler.
 //!
 //! Path confinement, the SHA-1 read, the reader bound and the join-before-repair
-//! guarantee all live in `forge_core::verification`. Rust's orphan rule is why
+//! guarantee all live in `sailover_core::verification`. Rust's orphan rule is why
 //! the trait implementation stays in this crate.
-use forge_core::verification::{VerificationError, VerificationFile};
+use sailover_core::verification::{VerificationError, VerificationFile};
 
 use super::{ContentError, format::ManifestFile, invalid};
 
-pub(super) use forge_core::verification::verify_files;
+pub(super) use sailover_core::verification::verify_files;
 
 impl VerificationFile for ManifestFile {
     fn name(&self) -> &str {
@@ -41,7 +41,7 @@ impl From<VerificationError> for ContentError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use forge_core::{
+    use sailover_core::{
         install::{checked_file_path, safe_relative_path},
         transfer::{CancelToken, DownloadProgress, Reporter},
         verification::{verify_with_workers, worker_limit},
@@ -50,13 +50,13 @@ mod tests {
     use std::fs;
 
     #[test]
-    #[ignore = "Reads an existing installation selected by FORGE_VERIFY_BENCH_DIRECTORY; no writes or network"]
+    #[ignore = "Reads an existing installation selected by SAILOVER_VERIFY_BENCH_DIRECTORY; no writes or network"]
     fn benchmark_installed_files() {
         use std::{fs::File, io::Read, time::Instant};
 
-        let root = std::env::var_os("FORGE_VERIFY_BENCH_DIRECTORY")
+        let root = std::env::var_os("SAILOVER_VERIFY_BENCH_DIRECTORY")
             .map(std::path::PathBuf::from)
-            .expect("set FORGE_VERIFY_BENCH_DIRECTORY to an existing game installation")
+            .expect("set SAILOVER_VERIFY_BENCH_DIRECTORY to an existing game installation")
             .canonicalize()
             .unwrap();
         assert!(root.is_dir());
@@ -65,7 +65,7 @@ mod tests {
         while let Some(directory) = directories.pop() {
             for entry in fs::read_dir(directory).unwrap() {
                 let entry = entry.unwrap();
-                if entry.file_name().to_string_lossy().starts_with(".forge") {
+                if entry.file_name().to_string_lossy().starts_with(".sailover") {
                     continue;
                 }
                 let kind = entry.file_type().unwrap();

@@ -377,7 +377,7 @@ dependencies = [
  "base64 0.23.1",
  "crc32fast",
  "flate2",
- "forge-core",
+ "sailover-core",
  "futures-util",
  "reqwest",
  "serde",
@@ -430,7 +430,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "forge-core"
+name = "sailover-core"
 version = "0.1.0"
 dependencies = [
  "futures-util",
@@ -444,14 +444,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "forge-steam-discovery-adapter"
+name = "sailover-steam-discovery-adapter"
 version = "0.1.0"
 dependencies = [
  "libc",
 ]
 
 [[package]]
-name = "forge-steam-native"
+name = "sailover-steam-native"
 version = "0.1.0"
 dependencies = [
  "game-runtime",
@@ -542,7 +542,7 @@ dependencies = [
  "cloud-vault",
  "epic-kit",
  "flate2",
- "forge-core",
+ "sailover-core",
  "reqwest",
  "serde",
  "serde_json",
@@ -1758,7 +1758,7 @@ dependencies = [
  "cbc",
  "crc32fast",
  "flate2",
- "forge-core",
+ "sailover-core",
  "futures-util",
  "lzma-rs",
  "prost",

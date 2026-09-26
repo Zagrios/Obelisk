@@ -57,7 +57,7 @@ pub(crate) trait Harness: 'static {
         input: std::io::StdinLock<'static>,
         output: std::io::StderrLock<'static>,
     ) -> Result<(), String>;
-    /// Its UI sends Begin after each start, as Forge does for Epic.
+    /// Its UI sends Begin after each start, as SailOver does for Epic.
     fn begins() -> bool {
         false
     }
@@ -112,7 +112,7 @@ fn events(directory: &Path) -> Vec<String> {
 
 /// The test directory of the re-entered supervisor, and its script.
 pub(crate) fn fixture_directory() -> (PathBuf, Script) {
-    let directory = PathBuf::from(std::env::var_os("FORGE_SESSION_FIXTURE").unwrap());
+    let directory = PathBuf::from(std::env::var_os("SAILOVER_SESSION_FIXTURE").unwrap());
     let script = serde_json::from_slice(&fs::read(directory.join("script.json")).unwrap()).unwrap();
     (directory, script)
 }
@@ -133,11 +133,11 @@ pub(crate) async fn hold<E>(
 /// Re-entered as a disposable supervisor process.
 #[test]
 fn supervisor_fixture() {
-    let Some(directory) = std::env::var_os("FORGE_SESSION_FIXTURE") else {
+    let Some(directory) = std::env::var_os("SAILOVER_SESSION_FIXTURE") else {
         return;
     };
     let directory = PathBuf::from(directory);
-    let harness = std::env::var("FORGE_SESSION_HARNESS").unwrap();
+    let harness = std::env::var("SAILOVER_SESSION_HARNESS").unwrap();
     let (input, output) = (std::io::stdin().lock(), std::io::stderr().lock());
     let served = match harness.as_str() {
         recording::Recording::NAME => recording::Recording::serve(input, output),
@@ -234,7 +234,7 @@ pub(crate) fn write_helper(path: &Path, directory: &Path, script: &Script) {
 pub(crate) fn target(directory: &Path, script: &Script) -> Target {
     Target {
         executable: if script.missing {
-            "/forge-missing-game-fixture".into()
+            "/sailover-missing-game-fixture".into()
         } else {
             "/bin/sh".into()
         },
@@ -269,8 +269,8 @@ fn fixture_command<H: Harness>(directory: &Path) -> Process {
     let mut command = Process::new(std::env::current_exe().unwrap());
     command
         .args(["--exact", "supervisor::session::tests::supervisor_fixture"])
-        .env("FORGE_SESSION_FIXTURE", directory)
-        .env("FORGE_SESSION_HARNESS", H::NAME);
+        .env("SAILOVER_SESSION_FIXTURE", directory)
+        .env("SAILOVER_SESSION_HARNESS", H::NAME);
     command
 }
 

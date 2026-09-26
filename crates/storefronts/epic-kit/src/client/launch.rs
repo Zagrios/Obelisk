@@ -2,7 +2,7 @@
 //! credentials. Process execution remains in the native host.
 use std::{collections::BTreeMap, path::Path};
 
-use forge_core::{
+use sailover_core::{
     installation::{self, InstallFailure},
     launch::{self, LaunchTarget},
 };

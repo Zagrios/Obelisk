@@ -7,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use forge_core::{
+use sailover_core::{
     installation::{self, Destination, InstallFailure, InstalledFiles, TransferError},
     transfer::{
         Cancelled, DownloadProgress, DownloadSummary, TransferBusy, TransferContext, Transfers,
@@ -25,7 +25,7 @@ use crate::{
 };
 mod cloud;
 
-pub use forge_core::{installation::TransferProgress, transfer::TransferState};
+pub use sailover_core::{installation::TransferProgress, transfer::TransferState};
 
 /// Opening a game and then downloading it should not pay two PICS token and
 /// product round trips; publisher metadata rarely changes within a minute.
@@ -64,7 +64,7 @@ impl From<crate::cm::CmError> for ClientConnectError {
 
 pub fn http_client() -> Result<reqwest::Client, ClientError> {
     reqwest::Client::builder()
-        .user_agent(concat!("Forge/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("SailOver/", env!("CARGO_PKG_VERSION")))
         .connect_timeout(Duration::from_secs(15))
         .timeout(Duration::from_secs(90))
         .https_only(true)
@@ -577,7 +577,7 @@ impl Client {
             );
         }
         scripts.sort();
-        forge_core::install::write_cached_file(
+        sailover_core::install::write_cached_file(
             destination,
             Path::new(crate::install_script::LIST),
             scripts.join("\n").as_bytes(),

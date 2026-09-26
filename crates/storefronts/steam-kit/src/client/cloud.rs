@@ -156,7 +156,7 @@ impl Client {
             .tempdir_in(&directory)
             .map_err(|_| CloudError::Storage)?;
         let name = format!(
-            "__forge_cloud_validation_{}.bin",
+            "__sailover_cloud_validation_{}.bin",
             marker
                 .path()
                 .file_name()
@@ -166,7 +166,7 @@ impl Client {
         if before.files.iter().any(|file| file.name == name) {
             return Err(CloudError::Changed);
         }
-        let bytes = b"Forge Steam Cloud transport validation\nOnly this disposable file is created and removed.\n".to_vec();
+        let bytes = b"SailOver Steam Cloud transport validation\nOnly this disposable file is created and removed.\n".to_vec();
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|_| CloudError::Storage)?

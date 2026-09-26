@@ -2,7 +2,7 @@
 //!
 //! The caller obtains entitlements, depot keys and request codes through Steam's CM.
 //! Protocol references and format limits are recorded in docs/steam-content-notes.md.
-//! Path confinement, locking, hashing and progress reporting come from `forge_core`.
+//! Path confinement, locking, hashing and progress reporting come from `sailover_core`.
 
 mod format;
 mod manifest_cache;
@@ -19,14 +19,14 @@ use std::{
     time::Duration,
 };
 
-use forge_core::{
+use reqwest::{Client, Url};
+use sailover_core::{
     install::{
         self, InstallError, PARTIAL_DIRECTORY, apply_permissions, checked_file_path,
         ensure_directory, reject_link_or_special_file, safe_relative_path,
     },
     transfer::{self, Cancelled, DownloadPhase, DownloadProgress, DownloadSummary, Reporter},
 };
-use reqwest::{Client, Url};
 use sha1::{Digest, Sha1};
 #[cfg(test)]
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -36,8 +36,8 @@ use tokio::sync::mpsc;
 use format::{Chunk, Manifest, ManifestFile, decode_chunk, parse_manifest, unpack_zip};
 
 /// Shared with CM avatar hashes.
-pub(crate) use forge_core::install::hex;
-pub use forge_core::transfer::CancelToken;
+pub(crate) use sailover_core::install::hex;
+pub use sailover_core::transfer::CancelToken;
 
 const MAX_MANIFEST_BYTES: usize = 128 * 1024 * 1024;
 const MAX_CHUNK_BYTES: usize = 64 * 1024 * 1024;

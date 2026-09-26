@@ -116,23 +116,23 @@ fn nothing_outside_the_installation_is_a_target() {
 
 #[test]
 fn a_game_inherits_the_players_language_and_account_only() {
-    let forge = HashMap::from([
+    let sailover = HashMap::from([
         ("USER", "player"),
         ("LANG", "fr_FR.UTF-8"),
         ("LC_ALL", ""),
-        ("TMPDIR", "/private/var/folders/forge/T/"),
+        ("TMPDIR", "/private/var/folders/sailover/T/"),
         ("DYLD_INSERT_LIBRARIES", "/tmp/inject.dylib"),
-        ("FORGE_LIBRARY_DIRECTORY", "/tmp/library"),
+        ("SAILOVER_LIBRARY_DIRECTORY", "/tmp/library"),
     ]);
     let environment = environment_from(Path::new("/Users/player"), |key| {
-        forge.get(key).map(|value| (*value).to_owned())
+        sailover.get(key).map(|value| (*value).to_owned())
     });
     assert_eq!(
         environment,
         HashMap::from([
             ("HOME".into(), "/Users/player".into()),
             ("PATH".into(), "/usr/bin:/bin:/usr/sbin:/sbin".into()),
-            ("TMPDIR".into(), "/private/var/folders/forge/T/".into()),
+            ("TMPDIR".into(), "/private/var/folders/sailover/T/".into()),
             ("USER".into(), "player".into()),
             ("LOGNAME".into(), "player".into()),
             ("LANG".into(), "fr_FR.UTF-8".into()),

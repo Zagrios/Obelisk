@@ -199,7 +199,7 @@ mod spawn_tests {
         atomic::{AtomicBool, Ordering},
     };
 
-    /// Another thread keeps spawning short-lived children, as Forge does
+    /// Another thread keeps spawning short-lived children, as SailOver does
     /// while it inspects processes.
     fn spawning() -> (Arc<AtomicBool>, std::thread::JoinHandle<()>) {
         let stop = Arc::new(AtomicBool::new(false));

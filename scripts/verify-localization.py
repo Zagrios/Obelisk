@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CATALOG = ROOT / "apps/macos/Forge/Resources/Localizable.xcstrings"
+CATALOG = ROOT / "apps/macos/SailOver/Resources/Localizable.xcstrings"
 PLACEHOLDER = re.compile(r"%(?:(\d+)\$)?([-+0 #]*\d*(?:\.\d+)?(?:ll|l)?[@diufgs])")
 UI_LITERAL = re.compile(
     r'\b(?:Text|Button|Label|Window|Toggle|Picker|TextField|SecureField|ProgressView|'
@@ -43,7 +43,7 @@ def main():
         assert all(signature(value) == signature(variants[0]) for value in variants), f"Placeholder mismatch: {key}"
 
     referenced = set()
-    for path in (ROOT / "apps/macos/Forge").rglob("*.swift"):
+    for path in (ROOT / "apps/macos/SailOver").rglob("*.swift"):
         if "Generated" in path.parts:
             continue
         source = path.read_text()

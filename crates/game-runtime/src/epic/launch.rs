@@ -266,7 +266,7 @@ impl<S: Services> lifecycle::Launch for Launch<S> {
     }
 }
 
-/// `config.helper` is `Helpers/SteamNative/forge-steam-host`; the Rosetta
+/// `config.helper` is `Helpers/SteamNative/sailover-steam-host`; the Rosetta
 /// helper app sits beside `SteamNative`, as for Steam.
 fn helpers(config: &Configuration) -> Result<PathBuf> {
     Ok(config
@@ -286,7 +286,7 @@ pub(super) fn native_target(
     let mut arguments = plan.target.arguments.clone();
     let ownership = if let Some(bytes) = &plan.ownership_token {
         let directory = tempfile::Builder::new()
-            .prefix("forge-epic-ownership-")
+            .prefix("sailover-epic-ownership-")
             .permissions(std::fs::Permissions::from_mode(0o700))
             .tempdir()?;
         let path = directory.path().join("ownership.bin");
@@ -312,7 +312,7 @@ pub(super) fn native_target(
     ))
 }
 
-/// The `forge-steam-host epic-supervise` entry point.
+/// The `sailover-steam-host epic-supervise` entry point.
 pub fn serve(input: impl Read, output: impl Write, inspect: lifecycle::Inspect) -> Result<()> {
     lifecycle::serve::<Launch>(input, output, inspect)
 }

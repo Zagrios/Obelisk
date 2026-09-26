@@ -440,7 +440,7 @@ impl FriendsEventSource {
     /// Atomic revision check + subscription. Dropping the future cancels the
     /// wait; disconnect wakes existing waits even when no persona changed.
     pub async fn next(&self, after_revision: u64) -> FriendsSnapshot {
-        let ready = forge_core::watch::next_matching(self.updates.subscribe(), |snapshot| {
+        let ready = sailover_core::watch::next_matching(self.updates.subscribe(), |snapshot| {
             snapshot.revision != after_revision || snapshot.connection.ended()
         })
         .await;

@@ -1,4 +1,4 @@
-//! Parse a read-only Forge metadata report without accessing actual save paths.
+//! Parse a read-only SailOver metadata report without accessing actual save paths.
 use std::{fs, path::Path};
 use steam_kit::cloud::{AutoCloudPaths, CloudListing};
 fn main() -> Result<(), Box<dyn std::error::Error>> {

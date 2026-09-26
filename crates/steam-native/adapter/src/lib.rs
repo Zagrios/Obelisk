@@ -14,12 +14,12 @@ unsafe extern "C" fn lookup(port: u32, name: *const c_char, result: *mut u32) ->
     // environment is inherited before exec and remains unchanged by this image.
     // Calling the original symbol from the interposing image does not recurse.
     unsafe {
-        let service = libc::getenv(c"FORGE_PRIVATE_STEAM_DISCOVERY".as_ptr());
+        let service = libc::getenv(c"SAILOVER_PRIVATE_STEAM_DISCOVERY".as_ptr());
         if !service.is_null()
             && !name.is_null()
             && CStr::from_ptr(service)
                 .to_bytes()
-                .starts_with(b"com.zagrios.forge.discovery.")
+                .starts_with(b"com.zagrios.sailover.discovery.")
             && CStr::from_ptr(name) == c"com.valvesoftware.steam.ipctool"
         {
             return bootstrap_look_up(port, service, result);

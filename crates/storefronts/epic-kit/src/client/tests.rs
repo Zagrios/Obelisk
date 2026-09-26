@@ -843,7 +843,7 @@ async fn download_checks_ownership_fetches_manifest_without_bearer_and_writes_re
     assert!(directory.starts_with(parent.path().canonicalize().unwrap()));
     assert!(directory.join("Game.app/Contents/empty").is_file());
     let receipt: Installation =
-        serde_json::from_slice(&std::fs::read(directory.join(".forge-install.json")).unwrap())
+        serde_json::from_slice(&std::fs::read(directory.join(".sailover-install.json")).unwrap())
             .unwrap();
     assert_eq!(receipt.build_version, "1.0");
     assert_eq!(receipt.deployment_id.as_deref(), Some("deployment-fixture"));
@@ -1182,7 +1182,7 @@ async fn manifest_cache_never_bypasses_current_ownership_or_authentication() {
             .download("space", "base", "game", "Mac", parent.path())
             .await
             .unwrap();
-        let receipt = std::path::Path::new(&installed.directory).join(".forge-install.json");
+        let receipt = std::path::Path::new(&installed.directory).join(".sailover-install.json");
         let before = std::fs::read(&receipt).unwrap();
         let result = client
             .download("space", "base", "game", "Mac", parent.path())
@@ -1240,7 +1240,7 @@ fn launch_installation(directory: &std::path::Path) -> Installation {
 
 fn write_launch_receipt(installation: &Installation) {
     std::fs::write(
-        std::path::Path::new(&installation.directory).join(".forge-install.json"),
+        std::path::Path::new(&installation.directory).join(".sailover-install.json"),
         serde_json::to_vec(installation).unwrap(),
     )
     .unwrap();
@@ -1513,7 +1513,7 @@ async fn launch_rejects_missing_mismatched_and_escaping_receipts_before_network(
         let mut receipt = baseline.clone();
         receipt[field] = json!(value);
         std::fs::write(
-            temporary.path().join(".forge-install.json"),
+            temporary.path().join(".sailover-install.json"),
             serde_json::to_vec(&receipt).unwrap(),
         )
         .unwrap();
@@ -1646,7 +1646,7 @@ async fn launch_discards_exchange_code_when_user_disconnects_during_http() {
 async fn launch_cannot_read_installation_while_download_holds_its_lock() {
     let temporary = tempfile::tempdir().unwrap();
     launch_installation(temporary.path());
-    let _download_lock = forge_core::installation::lock(temporary.path()).unwrap();
+    let _download_lock = sailover_core::installation::lock(temporary.path()).unwrap();
     let mock = Mock::new(Vec::new());
     let result = mock
         .client(false)

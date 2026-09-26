@@ -19,7 +19,7 @@ pub fn serve(
     service: &str,
     output: &mut File,
 ) -> Result<()> {
-    if app == 0 || !service.starts_with("com.zagrios.forge.discovery.") || service.len() > 120 {
+    if app == 0 || !service.starts_with("com.zagrios.sailover.discovery.") || service.len() > 120 {
         return Err("Invalid native launch".into());
     }
     let credentials = Credentials::read(std::io::stdin().lock())?;
@@ -105,7 +105,7 @@ pub fn serve(
                 authenticated = true;
                 emit(output, &Event::Authenticated {})?;
                 client.request_ticket(app)?;
-                if std::env::var_os("FORGE_STORAGE_METADATA").is_some() {
+                if std::env::var_os("SAILOVER_STORAGE_METADATA").is_some() {
                     engine.request_app_info(user, pipe, app)?;
                 }
             }
@@ -192,7 +192,7 @@ pub fn serve(
             mach::destroy(&mut reply);
         }
     }
-    if let Some(platforms) = std::env::var_os("FORGE_STORAGE_METADATA") {
+    if let Some(platforms) = std::env::var_os("SAILOVER_STORAGE_METADATA") {
         let platforms: u32 = platforms
             .to_str()
             .and_then(|mask| mask.parse().ok())

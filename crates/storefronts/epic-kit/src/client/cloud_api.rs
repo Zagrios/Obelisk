@@ -6,9 +6,9 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use forge_core::{install::hex, transfer::CancelToken};
 use futures_util::{StreamExt, stream};
 use reqwest::Url;
+use sailover_core::{install::hex, transfer::CancelToken};
 use serde::Deserialize;
 use sha1::{Digest, Sha1};
 

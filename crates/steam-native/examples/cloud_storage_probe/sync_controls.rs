@@ -1,6 +1,6 @@
 //! Observe explicit sync admission, offline failure and cancellation, not transfers.
 use super::{method, report};
-use forge_steam_native::{Result, abi::Callback, native::Library, symbol};
+use sailover_steam_native::{Result, abi::Callback, native::Library, symbol};
 use std::{
     ffi::c_void,
     fs::File,
@@ -15,7 +15,7 @@ pub(super) fn run(
     library: &Library,
     mode: &str,
 ) -> Result<()> {
-    if std::env::var_os("FORGE_CLOUD_PROBE_IDENTITY").is_none() {
+    if std::env::var_os("SAILOVER_CLOUD_PROBE_IDENTITY").is_none() {
         return Err("Sync control fixture requires the disconnected test identity".into());
     }
     let next = symbol!(

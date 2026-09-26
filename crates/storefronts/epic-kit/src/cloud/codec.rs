@@ -5,7 +5,7 @@ use std::{
     io::Write,
 };
 
-use forge_core::transfer::CancelToken;
+use sailover_core::transfer::CancelToken;
 use sha1::{Digest, Sha1};
 
 use super::{

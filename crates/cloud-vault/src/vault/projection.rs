@@ -495,7 +495,7 @@ impl Vault {
             let probe = match collision_dirs.entry(parent.to_path_buf()) {
                 std::collections::btree_map::Entry::Vacant(entry) => entry.insert(
                     tempfile::Builder::new()
-                        .prefix(".forge-cloud-names-")
+                        .prefix(".sailover-cloud-names-")
                         .tempdir_in(parent)?,
                 ),
                 std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
@@ -760,7 +760,7 @@ fn names_alias(a: &Path, b: &Path) -> Result<bool> {
         return Ok(false);
     }
     let probe = tempfile::Builder::new()
-        .prefix(".forge-cloud-owner-")
+        .prefix(".sailover-cloud-owner-")
         .tempdir_in(b.parent().ok_or(Error::Invalid)?)?;
     File::create_new(probe.path().join(a.file_name().ok_or(Error::Invalid)?))?;
     match File::create_new(probe.path().join(b.file_name().ok_or(Error::Invalid)?)) {

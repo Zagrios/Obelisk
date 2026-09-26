@@ -1,7 +1,7 @@
 [workspace]
 members = [
-    "crates/forge-core",
-    "crates/forge-bridge",
+    "crates/sailover-core",
+    "crates/sailover-bridge",
     "crates/game-runtime",
     "crates/cloud-vault",
     "crates/storefronts/steam-kit",
@@ -18,7 +18,7 @@ rust-version = "1.98"
 publish = false
 
 [workspace.dependencies]
-forge-core = { path = "crates/forge-core" }
+sailover-core = { path = "crates/sailover-core" }
 game-runtime = { path = "crates/game-runtime" }
 cloud-vault = { path = "crates/cloud-vault" }
 steam-kit = { path = "crates/storefronts/steam-kit" }

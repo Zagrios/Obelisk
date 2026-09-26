@@ -1,6 +1,6 @@
-# Forge
+# SailOver
 
-Forge manages games owned through storefront accounts, including their installation and launch.
+SailOver manages games owned through storefront accounts, including their installation and launch.
 
 ## Language
 
@@ -11,11 +11,11 @@ One account-scoped attempt to install, verify or repair a game's files. Its life
 A record identifying a game installation whose required files were successfully installed. Partial download data is not an installation receipt.
 
 **Cloud archive**:
-Forge's own local store of each account's save versions, together with the record of which account currently owns each physical save location. One archive serves every storefront, so two storefront copies of a game that share a save location cannot silently adopt each other's saves.
+SailOver's own local store of each account's save versions, together with the record of which account currently owns each physical save location. One archive serves every storefront, so two storefront copies of a game that share a save location cannot silently adopt each other's saves.
 _Avoid_: vault root, SteamCloud folder
 
 **Last Cloud sync**:
-The last moment Forge confirmed that an account's local saves for a game and its Cloud saves were identical, by uploading, downloading or finding them equal. Capturing or choosing a version without that confirmation does not count.
+The last moment SailOver confirmed that an account's local saves for a game and its Cloud saves were identical, by uploading, downloading or finding them equal. Capturing or choosing a version without that confirmation does not count.
 _Avoid_: last upload, last played
 
 **Reservation**:
@@ -23,11 +23,11 @@ The exclusive claim a Game session or Cloud maintenance holds on a game's instal
 _Avoid_: lock, busy state
 
 **Game session**:
-One account-scoped launch of a game, holding a Reservation from admission until the game has really exited and its Cloud saves are settled. It outlives Forge quitting.
+One account-scoped launch of a game, holding a Reservation from admission until the game has really exited and its Cloud saves are settled. It outlives SailOver quitting.
 _Avoid_: launch, supervisor session
 
 **Cloud maintenance**:
-Synchronizing one game's Cloud saves without launching it, at the player's request. It runs inside Forge, holds the game's Reservation while it runs, and stops if Forge quits.
+Synchronizing one game's Cloud saves without launching it, at the player's request. It runs inside SailOver, holds the game's Reservation while it runs, and stops if SailOver quits.
 _Avoid_: Cloud resume, cloud-only session, background sync
 
 **Cloud sync**:

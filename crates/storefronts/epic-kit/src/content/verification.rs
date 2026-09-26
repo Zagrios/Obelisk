@@ -1,13 +1,13 @@
 //! Epic manifest entries described for the same verification scheduler as Steam.
 //!
 //! Path confinement, the SHA-1 read, the reader bound and the join-before-repair
-//! guarantee all live in `forge_core::verification`. Rust's orphan rule is why
+//! guarantee all live in `sailover_core::verification`. Rust's orphan rule is why
 //! the trait implementation stays in this crate.
-use forge_core::verification::{VerificationError, VerificationFile};
+use sailover_core::verification::{VerificationError, VerificationFile};
 
 use crate::{EpicError, content_manifest::ManifestFile};
 
-pub(super) use forge_core::verification::verify_files;
+pub(super) use sailover_core::verification::verify_files;
 
 impl VerificationFile for ManifestFile {
     fn name(&self) -> &str {

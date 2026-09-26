@@ -9,8 +9,8 @@ use crate::cloud::{Control, Phase as CloudPhase};
 use crate::supervisor::{self, Record, Target};
 pub use crate::supervisor::{FailureReason, Phase};
 pub use client::start;
-use forge_core::transfer::CancelToken;
 pub use launch::serve;
+use sailover_core::transfer::CancelToken;
 use serde::{Deserialize, Serialize};
 pub use session::{EpicIndicator, archive, indicators, maintain, removed};
 use std::{path::PathBuf, sync::Arc};
@@ -194,7 +194,7 @@ struct Request {
     id: String,
     account_id: String,
     exchange_code: String,
-    /// Built in Forge's process: a supervisor starts without any environment.
+    /// Built in SailOver's process: a supervisor starts without any environment.
     #[serde(default)]
     environment: std::collections::HashMap<String, String>,
 }

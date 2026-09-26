@@ -376,7 +376,7 @@ impl AuthClient {
 
 fn device_details() -> wire::DeviceDetails {
     wire::DeviceDetails {
-        name: "Forge on macOS".into(),
+        name: "SailOver on macOS".into(),
         platform: 1,   // SteamClient: produces a token usable for CM logon.
         os_type: -102, // MacOSUnknown: avoids claiming an obsolete macOS version.
     }

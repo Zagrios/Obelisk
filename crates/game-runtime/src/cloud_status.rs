@@ -118,7 +118,7 @@ pub(crate) fn answered(record: &mut Record) {
     }
 }
 
-/// What one game's indicator shows from persisted state. Forge adds the live
+/// What one game's indicator shows from persisted state. SailOver adds the live
 /// states on top: a sync in progress and a running game.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SavedState {
@@ -137,7 +137,7 @@ pub enum SavedState {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Indicator {
     pub state: SavedState,
-    /// A game session's guard is set. Only Forge's live sessions tell
+    /// A game session's guard is set. Only SailOver's live sessions tell
     /// whether that game still runs or its supervisor died.
     pub game_session: bool,
     pub synced_at: Option<u64>,

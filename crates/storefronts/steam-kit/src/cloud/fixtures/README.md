@@ -1,6 +1,6 @@
 # Publisher AutoCloud fixtures
 
-Captured September 20, 2026 through Forge's normal authenticated PICS session. These files contain only publisher UFS configuration, not account IDs, file manifests, saves or credentials. Numeric filenames are AppIDs. Runtime behavior is generic; tests select representative configurations by AppID.
+Captured September 20, 2026 through SailOver's normal authenticated PICS session. These files contain only publisher UFS configuration, not account IDs, file manifests, saves or credentials. Numeric filenames are AppIDs. Runtime behavior is generic; tests select representative configurations by AppID.
 
 1145360 Hades: omitted recursive flag, root override.
 774171 Muse Dash: platform lists and a root-relative leading slash.

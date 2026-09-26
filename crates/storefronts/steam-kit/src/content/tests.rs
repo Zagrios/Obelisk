@@ -229,9 +229,9 @@ fn rejects_paths_symlinks_conflicts_and_chunk_gaps_before_installing() {
         "a/../../escape",
         "a/./b",
         "a\0b",
-        ".forge-content/file",
-        ".FORGE-INSTALL.JSON",
-        ".FORGE-INSTALL.LOCK",
+        ".sailover-content/file",
+        ".SAILOVER-INSTALL.JSON",
+        ".SAILOVER-INSTALL.LOCK",
     ] {
         assert!(
             validate_manifest_files(&[file(name, &[b"x"])]).is_err(),
@@ -643,7 +643,9 @@ async fn invalid_cache_is_refetched_and_a_new_manifest_installs_its_new_content(
         .download_depot(&plan(directory.path()), &cancel, |_| {})
         .await
         .unwrap();
-    let cached_path = directory.path().join(".forge-content/manifests/42/99.zip");
+    let cached_path = directory
+        .path()
+        .join(".sailover-content/manifests/42/99.zip");
     fs::write(&cached_path, b"truncated cache").unwrap();
     let before = fixture.requests.lock().unwrap().len();
     let repaired = client
@@ -910,7 +912,7 @@ async fn traversal_manifest_does_not_create_destination() {
 #[tokio::test]
 async fn abandoned_account_transfer_keeps_disk_admission_until_worker_exits() {
     use crate::client::{ClientError, TransferProgress, TransferState};
-    use forge_core::transfer::Transfers;
+    use sailover_core::transfer::Transfers;
     fn initial() -> TransferProgress {
         TransferProgress::new("42")
     }

@@ -161,7 +161,7 @@ impl<P: Sample> Fixture<P> {
             &self.sessions,
             &self.helper,
             uuid::Uuid::new_v4().to_string(),
-            Process::new("/forge-no-supervisor-fixture"),
+            Process::new("/sailover-no-supervisor-fixture"),
             inspect_table,
             |_| panic!("a refused launch never hands anything over"),
             |_| false,

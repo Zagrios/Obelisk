@@ -1,8 +1,8 @@
-//! Epic's side of an installation Transfer: forge-core runs the order around
+//! Epic's side of an installation Transfer: sailover-core runs the order around
 //! it, this module prepares Epic's manifest and runs its content engine.
 use std::{path::Path, sync::Arc};
 
-use forge_core::{
+use sailover_core::{
     install::hex,
     installation::{self, Destination, InstallFailure, InstalledFiles, TransferError},
     transfer::{TransferBusy, TransferContext, Transfers},
@@ -13,7 +13,7 @@ use sha1::{Digest, Sha1};
 use super::{Client, validate_identity};
 use crate::{EpicError, content::ContentClient, details};
 
-pub use forge_core::{installation::TransferProgress, transfer::TransferState};
+pub use sailover_core::{installation::TransferProgress, transfer::TransferState};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Installation {

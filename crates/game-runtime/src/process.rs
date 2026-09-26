@@ -66,7 +66,7 @@ impl Child {
         command.envs(prepared.endpoints.iter().map(|(key, value)| (key, value)));
         // The host checks the SDK projection under the game's platform.
         if let Some(storage) = &prepared.storage {
-            command.env("FORGE_STORAGE_METADATA", storage.platforms.to_string());
+            command.env("SAILOVER_STORAGE_METADATA", storage.platforms.to_string());
         }
         command
     }
@@ -194,7 +194,7 @@ mod tests {
             home: temporary.path().into(),
             app_id: 1030300,
         };
-        let service = "com.zagrios.forge.discovery.fixture";
+        let service = "com.zagrios.sailover.discovery.fixture";
         let host = Child::host_command(&prepared, &config, service);
         assert_eq!(
             host.get_args().last(),
@@ -210,7 +210,7 @@ mod tests {
                 Some(expected)
             );
         }
-        assert_eq!(game["FORGE_PRIVATE_STEAM_DISCOVERY"], service);
+        assert_eq!(game["SAILOVER_PRIVATE_STEAM_DISCOVERY"], service);
         assert_eq!(
             game["DYLD_INSERT_LIBRARIES"],
             prepared

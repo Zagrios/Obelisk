@@ -20,7 +20,7 @@ fn config(directory: &Path, sessions: &Path) -> Configuration {
         install: directory.join("install"),
         session_directory: sessions.into(),
         // The Rosetta helper app sits beside `SteamNative`, in the test directory.
-        helper: directory.join("SteamNative/forge-steam-host"),
+        helper: directory.join("SteamNative/sailover-steam-host"),
         namespace: "namespace".into(),
         catalog_item_id: "catalog".into(),
         app_name: "game".into(),
@@ -117,7 +117,7 @@ impl Services for FakeEpic {
                 name: None,
             }),
             ownership_token: None,
-            target: forge_core::launch::LaunchTarget {
+            target: sailover_core::launch::LaunchTarget {
                 executable: executable.to_string_lossy().into_owned(),
                 arguments: vec![directory.join("game.sh").to_string_lossy().into_owned()],
                 working_directory: directory.to_string_lossy().into_owned(),
@@ -229,7 +229,7 @@ fn launch_plan(install: &Path, working: &Path) -> LaunchPlan {
         platform: "Mac".into(),
         activity: None,
         ownership_token: None,
-        target: forge_core::launch::LaunchTarget {
+        target: sailover_core::launch::LaunchTarget {
             executable: install.join("game").to_string_lossy().into_owned(),
             arguments: vec![],
             working_directory: working.to_string_lossy().into_owned(),

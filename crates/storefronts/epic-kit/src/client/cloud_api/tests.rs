@@ -243,7 +243,7 @@ impl Drop for Mock {
     }
 }
 fn hex(bytes: &[u8]) -> String {
-    forge_core::install::hex(&Sha1::digest(bytes))
+    sailover_core::install::hex(&Sha1::digest(bytes))
 }
 fn rules() -> CloudRules {
     CloudRules {

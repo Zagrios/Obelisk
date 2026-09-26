@@ -73,7 +73,7 @@ impl<P: Provider> OwnerLock<P> {
 }
 
 /// Excludes a storefront's launch admission while Cloud maintenance runs in
-/// Forge, including stores left by a dead supervisor. Construction checks the
+/// SailOver, including stores left by a dead supervisor. Construction checks the
 /// kernel identities of the recorded supervisor and game.
 pub struct IdleGuard<P> {
     _starting: fs::File,
@@ -429,7 +429,7 @@ impl<P: Provider> Client<P> {
             Ok(())
         });
         // Reap while this UI exists. Parent exit reparents the supervisor;
-        // none of its stdio stays attached to Forge after the handoff.
+        // none of its stdio stays attached to SailOver after the handoff.
         std::thread::spawn(move || {
             let _ = child.wait();
         });

@@ -25,17 +25,17 @@ if [[ "$RUST_TARGET" != "$HOST_TARGET" ]]; then
     exit 1
 fi
 
-GENERATED="$PROJECT_ROOT/apps/macos/Forge/Bridge/Generated"
+GENERATED="$PROJECT_ROOT/apps/macos/SailOver/Bridge/Generated"
 STAGING="$PROJECT_ROOT/build/bindings/$CONFIGURATION"
 LIBRARY_DIR="$PROJECT_ROOT/build/rust/$CONFIGURATION"
 mkdir -p "$GENERATED" "$STAGING" "$LIBRARY_DIR"
 
-cargo build --locked --manifest-path "$PROJECT_ROOT/Cargo.toml" -p forge-bridge --lib \
+cargo build --locked --manifest-path "$PROJECT_ROOT/Cargo.toml" -p sailover-bridge --lib \
     --target "$RUST_TARGET" --profile "$PROFILE_NAME"
 
-cargo run --locked --manifest-path "$PROJECT_ROOT/Cargo.toml" -p forge-bridge \
+cargo run --locked --manifest-path "$PROJECT_ROOT/Cargo.toml" -p sailover-bridge \
     --bin uniffi-bindgen --features cli -- generate \
-    --library "$PROJECT_ROOT/target/$RUST_TARGET/$CARGO_PROFILE/libforge_bridge.dylib" \
+    --library "$PROJECT_ROOT/target/$RUST_TARGET/$CARGO_PROFILE/libsailover_bridge.dylib" \
     --language swift --config "$PROJECT_ROOT/uniffi.toml" --out-dir "$STAGING" --no-format
 
 # Preserve timestamps when generated contents have not changed.
@@ -45,8 +45,8 @@ for generated_file in "$STAGING"/*; do
         cp "$generated_file" "$destination"
     fi
 done
-MODULEMAP="$STAGING/ForgeBridgeFFI.modulemap"
+MODULEMAP="$STAGING/SailOverBridgeFFI.modulemap"
 if ! cmp -s "$MODULEMAP" "$GENERATED/module.modulemap"; then
     cp "$MODULEMAP" "$GENERATED/module.modulemap"
 fi
-cp "$PROJECT_ROOT/target/$RUST_TARGET/$CARGO_PROFILE/libforge_bridge.a" "$LIBRARY_DIR/"
+cp "$PROJECT_ROOT/target/$RUST_TARGET/$CARGO_PROFILE/libsailover_bridge.a" "$LIBRARY_DIR/"

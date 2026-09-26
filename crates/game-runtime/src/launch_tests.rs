@@ -101,7 +101,7 @@ fn local_storage_is_validated_before_host_start_without_an_sdk_consumer() {
     assert!(
         process::Child::host_command(&runtime._prepared, &config, "fixture")
             .get_envs()
-            .any(|(key, value)| key == "FORGE_STORAGE_METADATA"
+            .any(|(key, value)| key == "SAILOVER_STORAGE_METADATA"
                 && value == Some(std::ffi::OsStr::new("2")))
     );
     assert_eq!(native_cache_files(cache.clone(), 42, 2).unwrap().len(), 1);

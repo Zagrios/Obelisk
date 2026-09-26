@@ -1,4 +1,4 @@
-//! Forge's independent Steam protocol client: authentication, licenses and
+//! SailOver's independent Steam protocol client: authentication, licenses and
 //! verified SteamPipe downloads. No .NET runtime or SteamCMD process is used.
 
 pub mod auth;
@@ -15,7 +15,7 @@ mod message;
 pub mod news;
 mod proto;
 
-use forge_core::storefront::{StorefrontCapabilities, StorefrontDescriptor, StorefrontId};
+use sailover_core::storefront::{StorefrontCapabilities, StorefrontDescriptor, StorefrontId};
 
 pub fn descriptor() -> StorefrontDescriptor {
     StorefrontDescriptor {

@@ -58,7 +58,7 @@ def generate_layout(destination: Path) -> None:
         }
         root["icvl"] = ("type", b"icnv")
         root["vstl"] = ("type", b"icnv")  # Always open in icon view.
-        store["Forge.app"]["Iloc"] = (165, 180)
+        store["SailOver.app"]["Iloc"] = (165, 180)
         store["Applications"]["Iloc"] = (475, 180)
 
 

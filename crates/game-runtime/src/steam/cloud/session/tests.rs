@@ -333,7 +333,7 @@ async fn a_windows_game_reads_its_sdk_saves_from_the_same_native_storage() {
 }
 
 #[tokio::test]
-async fn launching_anyway_past_rules_forge_cannot_follow_starts_the_game() {
+async fn launching_anyway_past_rules_sailover_cannot_follow_starts_the_game() {
     let game = SteamGame::game();
     game.cloud.set_metadata(Some(CloudMetadata::Object(vec![(
         "quota".into(),

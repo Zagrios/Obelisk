@@ -8,7 +8,7 @@ use crate::kv::{self, Kv};
 pub(crate) const FLAG: u32 = 256;
 /// Where an installation lists, one relative path per line, the install
 /// scripts its depots carry.
-pub const LIST: &str = ".forge-content/install-scripts";
+pub const LIST: &str = ".sailover-content/install-scripts";
 /// "process 1" through "process 16" in one step.
 const MAX_PROGRAMS: usize = 16;
 
@@ -33,7 +33,7 @@ pub struct InstallScriptError(&'static str);
 
 /// The steps of a 64-bit Windows machine. `%INSTALLDIR%` is `install` in
 /// program paths, which must stay inside it, and `windows_install` in command
-/// lines. A step with a requirement Forge cannot check is left out.
+/// lines. A step with a requirement SailOver cannot check is left out.
 pub fn steps(
     script: &[u8],
     install: &Path,

@@ -1,5 +1,5 @@
 //! Both exec helpers through their process boundary: the arm64
-//! `forge-steam-host game-exec` and the Intel `forge-steam-sdk exec-game`.
+//! `sailover-steam-host game-exec` and the Intel `sailover-steam-sdk exec-game`.
 //! Each becomes the game only after the supervisor's admission message.
 use game_runtime::supervisor::exec::Admission;
 use std::{
@@ -13,9 +13,9 @@ use std::{
 
 /// The two helpers, as the supervisor spawns them.
 fn helpers() -> [Command; 2] {
-    let mut arm = Command::new(env!("CARGO_BIN_EXE_forge-steam-host"));
+    let mut arm = Command::new(env!("CARGO_BIN_EXE_sailover-steam-host"));
     arm.arg("game-exec");
-    let mut intel = Command::new(env!("CARGO_BIN_EXE_forge-steam-sdk"));
+    let mut intel = Command::new(env!("CARGO_BIN_EXE_sailover-steam-sdk"));
     intel.arg("exec-game");
     [arm, intel]
 }
@@ -56,7 +56,7 @@ fn confirm_replacement(child: &mut Child, directory: &Path) -> (Vec<u8>, bool, E
 }
 
 fn scratch(name: &str) -> PathBuf {
-    let directory = std::env::temp_dir().join(format!("forge-{name}-{}", std::process::id()));
+    let directory = std::env::temp_dir().join(format!("sailover-{name}-{}", std::process::id()));
     std::fs::create_dir_all(&directory).unwrap();
     directory.canonicalize().unwrap()
 }
@@ -68,7 +68,7 @@ fn a_failed_exec_reports_failure_without_starting_a_replacement() {
         admit(
             &mut child,
             &Admission {
-                executable: "/forge-missing-game-fixture".into(),
+                executable: "/sailover-missing-game-fixture".into(),
                 arguments: vec![],
                 working_directory: "/tmp".into(),
                 log: None,
@@ -123,7 +123,7 @@ fn the_game_keeps_the_helper_pid_its_environment_and_default_signals() {
     let executable = directory.join("game-fixture");
     let adapter = directory.join("adapter-fixture.dylib");
     let source = directory.join("adapter.c");
-    std::fs::write(&source, "int forge_fixture(void) { return 0; }\n").unwrap();
+    std::fs::write(&source, "int sailover_fixture(void) { return 0; }\n").unwrap();
     for (source, output, library) in [
         (
             Path::new(concat!(
@@ -160,10 +160,10 @@ fn the_game_keeps_the_helper_pid_its_environment_and_default_signals() {
             .env("EXPECTED_ADAPTER", &adapter)
             .env("DYLD_INSERT_LIBRARIES", &adapter)
             .env(
-                "FORGE_PRIVATE_STEAM_DISCOVERY",
-                "com.zagrios.forge.discovery.fixture",
+                "SAILOVER_PRIVATE_STEAM_DISCOVERY",
+                "com.zagrios.sailover.discovery.fixture",
             )
-            .env("FORGE_FIXTURE_BYTES", OsStr::from_bytes(b"\xff\xfe"));
+            .env("SAILOVER_FIXTURE_BYTES", OsStr::from_bytes(b"\xff\xfe"));
         let mut child = spawn(helper);
         let pid = child.id();
         admit(

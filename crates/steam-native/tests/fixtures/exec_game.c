@@ -11,9 +11,9 @@ int main(int argc, char **argv) {
     if (argc != 3 || strcmp(argv[1], "a b") || strcmp(argv[2], "$not-a-shell")) return 1;
     if (!getcwd(cwd, sizeof(cwd)) || strcmp(cwd, getenv("EXPECTED_CWD"))) return 2;
     if (strcmp(getenv("DYLD_INSERT_LIBRARIES"), getenv("EXPECTED_ADAPTER"))) return 3;
-    if (strcmp(getenv("FORGE_PRIVATE_STEAM_DISCOVERY"), "com.zagrios.forge.discovery.fixture")) return 4;
+    if (strcmp(getenv("SAILOVER_PRIVATE_STEAM_DISCOVERY"), "com.zagrios.sailover.discovery.fixture")) return 4;
     // The environment is passed verbatim, including values that are not UTF-8.
-    const char *bytes = getenv("FORGE_FIXTURE_BYTES");
+    const char *bytes = getenv("SAILOVER_FIXTURE_BYTES");
     if (!bytes || strcmp(bytes, "\xff\xfe")) return 8;
     // A game starts with the default SIGPIPE disposition, never an inherited ignore.
     struct sigaction pipe;

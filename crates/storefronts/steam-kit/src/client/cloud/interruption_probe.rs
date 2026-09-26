@@ -57,7 +57,7 @@ fn original_files(
 
 impl Client {
     /// First invocation interrupts an HTTP body before CM commit. Invoke again
-    /// after restarting Forge to close the old batch, verify remote state, create
+    /// after restarting SailOver to close the old batch, verify remote state, create
     /// a fresh attempt, verify it and remove only the diagnostic file.
     pub async fn cloud_interruption_probe(
         &self,
@@ -99,7 +99,7 @@ impl Client {
                     .tempdir_in(&directory)
                     .map_err(|_| CloudError::Storage)?;
                 let name = format!(
-                    "__forge_cloud_interruption_{}.bin",
+                    "__sailover_cloud_interruption_{}.bin",
                     marker
                         .path()
                         .file_name()
@@ -161,7 +161,7 @@ impl Client {
             _ => return Err(CloudError::Storage),
         };
         if probe.before.app_id != app_id
-            || !probe.name.starts_with("__forge_cloud_interruption_")
+            || !probe.name.starts_with("__sailover_cloud_interruption_")
             || probe.name.contains('/')
             || probe.before.files.iter().any(|f| f.name == probe.name)
             || [

@@ -1,6 +1,6 @@
 //! Disposable, in-process private/public storage coherence experiment.
 use super::{load_cache, method, read_fixture, report};
-use forge_steam_native::{Result, abi};
+use sailover_steam_native::{Result, abi};
 use std::{
     ffi::{CStr, c_char, c_void},
     fs::File,
@@ -9,10 +9,10 @@ use std::{
 };
 
 const APP: u32 = 480;
-const ORIGINAL: &CStr = c"forge-offline-probe.dat";
-const LIVE: &CStr = c"forge-offline-live.dat";
-const FIRST: &[u8] = b"Forge offline RemoteStorage fixture v1\n";
-const UPDATED: &[u8] = b"Forge offline RemoteStorage fixture v2 - changed length\n";
+const ORIGINAL: &CStr = c"sailover-offline-probe.dat";
+const LIVE: &CStr = c"sailover-offline-live.dat";
+const FIRST: &[u8] = b"SailOver offline RemoteStorage fixture v1\n";
+const UPDATED: &[u8] = b"SailOver offline RemoteStorage fixture v2 - changed length\n";
 
 pub(super) fn prepare_pipe_app(output: &mut File, utils: *mut c_void, base: usize) -> Result<()> {
     let get = method(utils, base, 19, 0x8cc76c)?;
@@ -61,7 +61,7 @@ impl Storage {
         engine: &abi::Engine,
         pipe: i32,
     ) -> Result<()> {
-        if std::env::var_os("FORGE_CLOUD_PROBE_IDENTITY").is_none() {
+        if std::env::var_os("SAILOVER_CLOUD_PROBE_IDENTITY").is_none() {
             return Err("Live mutation requires the disconnected test identity".into());
         }
         let app = scratch.join("home/Library/Application Support/Steam/userdata/1/480");

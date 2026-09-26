@@ -41,7 +41,7 @@ pub enum EpicError {
     Service { message: String },
 }
 
-use forge_core::{
+use sailover_core::{
     install::InstallError,
     storefront::{StorefrontCapabilities, StorefrontDescriptor, StorefrontId},
     transfer::Cancelled,

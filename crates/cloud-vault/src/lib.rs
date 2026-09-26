@@ -1,4 +1,4 @@
-//! Forge-owned Cloud decisions and durable save storage. No Valve ABI or network
+//! SailOver-owned Cloud decisions and durable save storage. No Valve ABI or network
 //! calls belong here. An adapter must supply complete, verified remote views.
 mod model;
 mod reconcile;

@@ -1,4 +1,4 @@
-name: Forge
+name: SailOver
 options:
   minimumXcodeGenVersion: 2.46.0
   deploymentTarget:
@@ -17,11 +17,11 @@ settings:
     ONLY_ACTIVE_ARCH: YES
     SWIFT_STRICT_CONCURRENCY: complete
 targets:
-  Forge:
+  SailOver:
     type: application
     platform: macOS
     sources:
-      - path: Forge
+      - path: SailOver
         excludes:
           - "Bridge/Generated/*.h"
           - "Bridge/Generated/*.modulemap"
@@ -36,10 +36,10 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: ""
         INFOPLIST_KEY_NSHighResolutionCapable: YES
         ENABLE_APP_SANDBOX: NO
-        SWIFT_INCLUDE_PATHS: "$(SRCROOT)/Forge/Bridge/Generated"
-        HEADER_SEARCH_PATHS: "$(SRCROOT)/Forge/Bridge/Generated"
+        SWIFT_INCLUDE_PATHS: "$(SRCROOT)/SailOver/Bridge/Generated"
+        HEADER_SEARCH_PATHS: "$(SRCROOT)/SailOver/Bridge/Generated"
         LIBRARY_SEARCH_PATHS: "$(SRCROOT)/../../build/rust/$(CONFIGURATION)"
-        OTHER_LDFLAGS: "$(inherited) -lforge_bridge -framework Security -framework SystemConfiguration -liconv"
+        OTHER_LDFLAGS: "$(inherited) -lsailover_bridge -framework Security -framework SystemConfiguration -liconv"
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
     preBuildScripts:
       - name: Build Rust and generate Swift bindings
@@ -48,23 +48,23 @@ targets:
       - name: Build and sign native Steam helper
         script: '"$SRCROOT/../../scripts/build-steam-native.sh"'
         basedOnDependencyAnalysis: false
-  ForgeTests:
+  SailOverTests:
     type: bundle.unit-test
     platform: macOS
     sources:
-      - path: ForgeTests
+      - path: SailOverTests
     dependencies:
-      - target: Forge
+      - target: SailOver
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
-        PRODUCT_BUNDLE_IDENTIFIER: com.zagrios.forge.tests
-        SWIFT_INCLUDE_PATHS: "$(SRCROOT)/Forge/Bridge/Generated"
+        PRODUCT_BUNDLE_IDENTIFIER: com.zagrios.sailover.tests
+        SWIFT_INCLUDE_PATHS: "$(SRCROOT)/SailOver/Bridge/Generated"
 schemes:
-  Forge:
+  SailOver:
     build:
       targets:
-        Forge: all
+        SailOver: all
     test:
       targets:
-        - ForgeTests
+        - SailOverTests

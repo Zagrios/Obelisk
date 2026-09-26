@@ -1,7 +1,7 @@
 //! Epic BuildPatch chunk delivery and atomic installation.
 //!
 //! The bounded network pump and blocking disk worker follow Steam's installer;
-//! path confinement, locking, hashing and progress reporting come from `forge_core`.
+//! path confinement, locking, hashing and progress reporting come from `sailover_core`.
 //! Complete files and verified chunk caches survive cancellation and are reused.
 mod verification;
 
@@ -14,14 +14,14 @@ use std::{
     time::Duration,
 };
 
-use forge_core::{
+use reqwest::{Client, Url};
+use sailover_core::{
     install::{
         self, PARTIAL_DIRECTORY, apply_permissions, checked_file_path, ensure_directory, hex,
         safe_relative_path,
     },
     transfer::{self, CancelToken, DownloadPhase, DownloadProgress, DownloadSummary, Reporter},
 };
-use reqwest::{Client, Url};
 use sha1::{Digest, Sha1};
 use tokio::sync::mpsc;
 

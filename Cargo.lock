@@ -531,9 +531,9 @@ dependencies = [
  "base64 0.23.1",
  "crc32fast",
  "flate2",
- "forge-core",
  "futures-util",
  "reqwest",
+ "sailover-core",
  "serde",
  "serde_json",
  "sha1 0.11.0",
@@ -581,36 +581,6 @@ checksum = "6e634e2e0ebac1ee034020da1ca582e17ffe4e0f5e985823721e168928136dcb"
 dependencies = [
  "crc32fast",
  "miniz_oxide",
-]
-
-[[package]]
-name = "forge-bridge"
-version = "0.1.0"
-dependencies = [
- "epic-kit",
- "forge-core",
- "game-runtime",
- "gog-kit",
- "serde_json",
- "steam-kit",
- "tempfile",
- "thiserror",
- "tokio",
- "uniffi",
-]
-
-[[package]]
-name = "forge-core"
-version = "0.1.0"
-dependencies = [
- "futures-util",
- "serde",
- "serde_json",
- "sha1 0.11.0",
- "tempfile",
- "thiserror",
- "tokio",
- "uuid",
 ]
 
 [[package]]
@@ -704,8 +674,8 @@ dependencies = [
  "cloud-vault",
  "epic-kit",
  "flate2",
- "forge-core",
  "reqwest",
+ "sailover-core",
  "serde",
  "serde_json",
  "sha1 0.11.0",
@@ -789,7 +759,7 @@ dependencies = [
 name = "gog-kit"
 version = "0.1.0"
 dependencies = [
- "forge-core",
+ "sailover-core",
 ]
 
 [[package]]
@@ -1739,6 +1709,36 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 
 [[package]]
+name = "sailover-bridge"
+version = "0.1.0"
+dependencies = [
+ "epic-kit",
+ "game-runtime",
+ "gog-kit",
+ "sailover-core",
+ "serde_json",
+ "steam-kit",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "uniffi",
+]
+
+[[package]]
+name = "sailover-core"
+version = "0.1.0"
+dependencies = [
+ "futures-util",
+ "serde",
+ "serde_json",
+ "sha1 0.11.0",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "same-file"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2027,13 +2027,13 @@ dependencies = [
  "cloud-vault",
  "crc32fast",
  "flate2",
- "forge-core",
  "futures-util",
  "lzma-rs",
  "prost",
  "reqwest",
  "rsa",
  "ruzstd",
+ "sailover-core",
  "serde",
  "serde_json",
  "sha1 0.11.0",

@@ -33,7 +33,7 @@ pub(crate) trait Machine: Send + Sync + 'static {
     fn rosetta(helper: &Path) -> Result<bool, Core>;
 }
 
-/// The machine Forge runs on.
+/// The machine SailOver runs on.
 pub(crate) struct Mac;
 impl Machine for Mac {
     fn select(target: &Target, config: &Config) -> Result<Option<Architecture>, Error> {
@@ -278,14 +278,14 @@ impl<M: Machine> session::Launch for Launch<M> {
 
 /// Games ship the Steam API library beside their executable or inside their
 /// bundle. Links are never followed, and the search stays bounded.
-pub(crate) fn steam_api(target: &forge_core::launch::LaunchTarget) -> Result<PathBuf, Error> {
+pub(crate) fn steam_api(target: &sailover_core::launch::LaunchTarget) -> Result<PathBuf, Error> {
     library(target, &["libsteam_api.dylib"])
 }
 
 /// The first file under the game's directory named like one of `names`,
 /// ignoring case as Windows file names do.
 pub(crate) fn library(
-    target: &forge_core::launch::LaunchTarget,
+    target: &sailover_core::launch::LaunchTarget,
     names: &[&str],
 ) -> Result<PathBuf, Error> {
     const MAX_ENTRIES: usize = 20_000;
@@ -336,7 +336,7 @@ pub(crate) fn library(
 #[cfg(test)]
 pub(crate) mod tests;
 
-/// The `forge-steam-host supervise` entry point.
+/// The `sailover-steam-host supervise` entry point.
 pub fn serve(
     input: impl Read,
     output: impl std::io::Write,

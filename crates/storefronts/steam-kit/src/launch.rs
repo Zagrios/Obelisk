@@ -1,7 +1,7 @@
 //! Resolve publisher-provided launch options without executing a game or a shell.
 use std::path::Path;
 
-use forge_core::launch::{LaunchDirectory, LaunchTarget};
+use sailover_core::launch::{LaunchDirectory, LaunchTarget};
 
 use crate::cm::{AppInfo, LaunchConfig, supports_platform};
 
@@ -60,7 +60,7 @@ pub fn plan(app: &AppInfo, platform: &str, directory: &Path) -> Result<LaunchPla
     })
 }
 
-fn shared_error(error: forge_core::launch::LaunchError) -> LaunchError {
+fn shared_error(error: sailover_core::launch::LaunchError) -> LaunchError {
     LaunchError(format!("backend.steam.launch.{}", error.key_suffix()))
 }
 

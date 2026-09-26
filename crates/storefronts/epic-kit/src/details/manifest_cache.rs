@@ -2,7 +2,7 @@
 //! Account rights and CDN metadata are always fetched before consulting this cache.
 use std::path::{Path, PathBuf};
 
-use forge_core::install::{self, PARTIAL_DIRECTORY, hex};
+use sailover_core::install::{self, PARTIAL_DIRECTORY, hex};
 use sha1::{Digest, Sha1};
 
 use crate::{
@@ -261,7 +261,7 @@ pub(super) mod tests {
                 if parent {
                     std::os::unix::fs::symlink(
                         outside.path(),
-                        directory.path().join(".forge-content"),
+                        directory.path().join(".sailover-content"),
                     )
                     .unwrap();
                 } else {

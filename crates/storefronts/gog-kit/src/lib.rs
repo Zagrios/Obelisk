@@ -1,6 +1,6 @@
-//! Reserved for Forge's GOG integration. No authentication or downloads yet.
+//! Reserved for SailOver's GOG integration. No authentication or downloads yet.
 
-use forge_core::storefront::{StorefrontCapabilities, StorefrontDescriptor, StorefrontId};
+use sailover_core::storefront::{StorefrontCapabilities, StorefrontDescriptor, StorefrontId};
 
 pub fn descriptor() -> StorefrontDescriptor {
     StorefrontDescriptor {

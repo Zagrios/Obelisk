@@ -237,7 +237,7 @@ fn a_steam_installation_lists_the_steps_of_its_install_scripts() {
     let install = root.join("game");
     let redist = install.join("_CommonRedist/vcredist/2022");
     fs::create_dir_all(&redist).unwrap();
-    fs::create_dir_all(install.join(".forge-content")).unwrap();
+    fs::create_dir_all(install.join(".sailover-content")).unwrap();
     fs::write(
         install.join(steam_kit::install_script::LIST),
         "_CommonRedist/missing/installscript.vdf\n_CommonRedist/vcredist/2022/installscript.vdf",

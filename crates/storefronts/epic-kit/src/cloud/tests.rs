@@ -1,6 +1,6 @@
 use super::*;
 use crate::content;
-use forge_core::transfer::CancelToken;
+use sailover_core::transfer::CancelToken;
 
 fn rules(path: &str) -> CloudRules {
     CloudRules {

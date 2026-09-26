@@ -1,6 +1,6 @@
 //! Offline Cloud interface probe. Run only through the disposable-data runner.
-//! This example is not included in Forge's application build.
-use forge_steam_native::{Result, abi, host, native, pinned_client, symbol};
+//! This example is not included in SailOver's application build.
+use sailover_steam_native::{Result, abi, host, native, pinned_client, symbol};
 use std::{ffi::c_void, io::Write, path::Path};
 
 #[path = "cloud_storage_probe/live_storage.rs"]
@@ -51,11 +51,11 @@ fn probe(output: &mut std::fs::File) -> Result<()> {
         return Err("Expected a probe mode and a verified runtime path".into());
     }
     let path = Path::new(&args[2]);
-    let scratch = std::path::PathBuf::from(std::env::var("FORGE_CLOUD_PROBE_ROOT")?);
+    let scratch = std::path::PathBuf::from(std::env::var("SAILOVER_CLOUD_PROBE_ROOT")?);
     if scratch.parent() != Some(Path::new("/private/tmp"))
         || !scratch
             .file_name()
-            .is_some_and(|name| name.to_string_lossy().starts_with("forge-cloud-probe-"))
+            .is_some_and(|name| name.to_string_lossy().starts_with("sailover-cloud-probe-"))
         || path != scratch.join("runtime/steamclient.dylib")
         || std::env::var_os("HOME").as_deref() != Some(scratch.join("home").as_os_str())
     {
@@ -92,7 +92,7 @@ fn probe(output: &mut std::fs::File) -> Result<()> {
     if args[1] != "inventory" {
         let engine = abi::Engine::open(path)?;
         let (user, pipe) = engine.global();
-        if std::env::var_os("FORGE_CLOUD_PROBE_IDENTITY").is_some() {
+        if std::env::var_os("SAILOVER_CLOUD_PROBE_IDENTITY").is_some() {
             // Disposable account component 1, no credential or external network.
             // This is not authentication or a production identity substitution.
             let requested = engine.user(user, pipe)?.log_on(0x0110_0001_0000_0001)?;
@@ -220,16 +220,16 @@ fn local_storage(
 ) -> Result<()> {
     const APP: u32 = 480;
     const ROOT: u32 = 0;
-    const PAYLOAD: &[u8] = b"Forge offline RemoteStorage fixture v1\n";
-    let account_component = if std::env::var_os("FORGE_CLOUD_PROBE_IDENTITY").is_some() {
+    const PAYLOAD: &[u8] = b"SailOver offline RemoteStorage fixture v1\n";
+    let account_component = if std::env::var_os("SAILOVER_CLOUD_PROBE_IDENTITY").is_some() {
         "1"
     } else {
         "0"
     };
     let mut name = if mode == "project-read-renamed" {
-        c"forge-offline-probe-renamed.dat"
+        c"sailover-offline-probe-renamed.dat"
     } else {
-        c"forge-offline-probe.dat"
+        c"sailover-offline-probe.dat"
     };
     let fixture_path = scratch.join(format!(
         "home/Library/Application Support/Steam/userdata/{account_component}/480/remote/{}",
@@ -311,9 +311,9 @@ fn local_storage(
         file.sync_all()?;
         report(
             output,
-            serde_json::json!({"event": "forge_projected_fixture", "bytes": PAYLOAD.len()}),
+            serde_json::json!({"event": "sailover_projected_fixture", "bytes": PAYLOAD.len()}),
         )?;
-        if std::env::var_os("FORGE_CLOUD_PROBE_CACHE").is_some() {
+        if std::env::var_os("SAILOVER_CLOUD_PROBE_CACHE").is_some() {
             // Test fixture only: reproduce the record emitted by this pinned
             // macOS runtime for these exact bytes. No live cache is imported.
             let timestamp = file
@@ -326,7 +326,7 @@ fn local_storage(
                 .ok_or("Missing cache parent")?
                 .join("remotecache.vdf");
             let cache = format!(
-                "\"480\"\n{{\n\"ChangeNumber\" \"0\"\n\"OSType\" \"-1\"\n\"forge-offline-probe.dat\"\n{{\n\"root\" \"0\"\n\"size\" \"39\"\n\"localtime\" \"{timestamp}\"\n\"time\" \"{timestamp}\"\n\"remotetime\" \"0\"\n\"sha\" \"b9d228874d30ac5d864bebd5252d232a3858c866\"\n\"syncstate\" \"3\"\n\"persiststate\" \"0\"\n\"platformstosync2\" \"-1\"\n}}\n}}\n"
+                "\"480\"\n{{\n\"ChangeNumber\" \"0\"\n\"OSType\" \"-1\"\n\"sailover-offline-probe.dat\"\n{{\n\"root\" \"0\"\n\"size\" \"39\"\n\"localtime\" \"{timestamp}\"\n\"time\" \"{timestamp}\"\n\"remotetime\" \"0\"\n\"sha\" \"b9d228874d30ac5d864bebd5252d232a3858c866\"\n\"syncstate\" \"3\"\n\"persiststate\" \"0\"\n\"platformstosync2\" \"-1\"\n}}\n}}\n"
             );
             let mut index = std::fs::OpenOptions::new()
                 .write(true)
@@ -336,7 +336,7 @@ fn local_storage(
             index.sync_all()?;
             report(
                 output,
-                serde_json::json!({"event": "forge_projected_cache", "fixture_records": 1}),
+                serde_json::json!({"event": "sailover_projected_cache", "fixture_records": 1}),
             )?;
         }
     }
@@ -390,7 +390,7 @@ fn local_storage(
         while started.elapsed() < std::time::Duration::from_secs(5) {
             let _ = engine.callback(pipe);
             if std::fs::read_to_string(&cache)
-                .is_ok_and(|text| text.contains("forge-offline-probe.dat"))
+                .is_ok_and(|text| text.contains("sailover-offline-probe.dat"))
             {
                 checkpoint = true;
                 break;
@@ -420,7 +420,7 @@ fn local_storage(
         if !original.contains(name.to_str()?) {
             return Err("Expected initialized native cache record".into());
         }
-        let renamed = c"forge-offline-probe-renamed.dat";
+        let renamed = c"sailover-offline-probe-renamed.dat";
         let destination = parent.join(renamed.to_str()?);
         if destination.try_exists()? {
             return Err("Renamed fixture already exists".into());
@@ -439,7 +439,7 @@ fn local_storage(
         name = renamed;
         report(
             output,
-            serde_json::json!({"event": "forge_renamed_fixture_and_cache", "direct_read_matches": std::fs::read(destination)? == PAYLOAD}),
+            serde_json::json!({"event": "sailover_renamed_fixture_and_cache", "direct_read_matches": std::fs::read(destination)? == PAYLOAD}),
         )?;
         load_cache(output, storage, base, engine, pipe)?;
     }

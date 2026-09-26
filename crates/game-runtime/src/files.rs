@@ -59,7 +59,7 @@ impl Prepared {
                 .to_string_lossy()
                 .into_owned(),
         );
-        environment.insert("FORGE_PRIVATE_STEAM_DISCOVERY".into(), service.into());
+        environment.insert("SAILOVER_PRIVATE_STEAM_DISCOVERY".into(), service.into());
         environment
     }
 }
@@ -132,7 +132,7 @@ fn sandbox(config: &Config, directory: &Path) -> Result<String, Error> {
         quote(
             &config
                 .home
-                .join("Library/Application Support/com.zagrios.forge")
+                .join("Library/Application Support/com.zagrios.sailover")
         )?,
         quote(&directory.join(crate::package::HOST))?
     );
@@ -211,14 +211,14 @@ mod atomic_tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn sandbox_access_child() {
-        let Some(root) = std::env::var_os("FORGE_SANDBOX_ACCESS_FIXTURE") else {
+        let Some(root) = std::env::var_os("SAILOVER_SANDBOX_ACCESS_FIXTURE") else {
             return;
         };
         let root = PathBuf::from(root);
         assert!(root.join("home/cache/runtime").canonicalize().is_ok());
         assert!(fs::read(root.join("home/saves/slot.dat")).is_err());
         assert!(fs::read(root.join("home/Library/Application Support/Steam/fixture")).is_err());
-        if std::env::var_os("FORGE_SANDBOX_STORAGE_FIXTURE").is_some() {
+        if std::env::var_os("SAILOVER_SANDBOX_STORAGE_FIXTURE").is_some() {
             let steam = root.join("home/sdk/Library/Application Support/Steam");
             assert!(fs::write(steam.join("userdata/42/42/remote/slot"), b"allowed").is_ok());
             assert!(fs::write(steam.join("userdata/42/43/slot"), b"wrong app").is_err());
@@ -264,7 +264,7 @@ mod atomic_tests {
             .args(["-p", &profile])
             .arg(executable)
             .args(["files::atomic_tests::sandbox_access_child", "--exact"])
-            .env("FORGE_SANDBOX_ACCESS_FIXTURE", &root)
+            .env("SAILOVER_SANDBOX_ACCESS_FIXTURE", &root)
             .output()
             .unwrap();
         assert!(
@@ -303,8 +303,8 @@ mod atomic_tests {
             .arg(&prepared.profile)
             .arg(std::env::current_exe().unwrap())
             .args(["files::atomic_tests::sandbox_access_child", "--exact"])
-            .env("FORGE_SANDBOX_ACCESS_FIXTURE", &root)
-            .env("FORGE_SANDBOX_STORAGE_FIXTURE", "1")
+            .env("SAILOVER_SANDBOX_ACCESS_FIXTURE", &root)
+            .env("SAILOVER_SANDBOX_STORAGE_FIXTURE", "1")
             .output()
             .unwrap();
         assert!(

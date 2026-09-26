@@ -1,7 +1,7 @@
 //! A native game's executable inside its installation, and the environment
 //! every game starts with, whatever its storefront.
 use crate::{Error, supervisor::architecture::Architecture};
-use forge_core::launch::LaunchTarget;
+use sailover_core::launch::LaunchTarget;
 use std::{
     collections::HashMap,
     os::unix::fs::PermissionsExt,
@@ -10,7 +10,7 @@ use std::{
 };
 
 /// The executable `target` names inside `root`: an application bundle's
-/// declared executable, or the file itself. It must be a Mach-O Forge can run.
+/// declared executable, or the file itself. It must be a Mach-O SailOver can run.
 /// Installers may drop its execute permission; only then is it repaired.
 pub fn executable(root: &Path, target: &LaunchTarget) -> Result<(PathBuf, Architecture), Error> {
     let root = root.canonicalize()?;
@@ -64,8 +64,8 @@ fn bundle_executable(bundle: &Path) -> Result<PathBuf, Error> {
 }
 
 /// The environment every game starts with: the player's home, account and
-/// language, and nothing else of Forge's. A supervisor starts without any
-/// environment, so Forge builds this before handing the game over.
+/// language, and nothing else of SailOver's. A supervisor starts without any
+/// environment, so SailOver builds this before handing the game over.
 pub fn environment(home: &Path) -> HashMap<String, String> {
     environment_from(home, |key| std::env::var(key).ok())
 }

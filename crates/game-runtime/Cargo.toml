@@ -22,7 +22,7 @@ tokio = { workspace = true, features = ["process", "io-util"] }
 steam-kit.workspace = true
 cloud-vault.workspace = true
 epic-kit.workspace = true
-forge-core.workspace = true
+sailover-core.workspace = true
 
 [dev-dependencies]
 sha1.workspace = true
@@ -32,7 +32,7 @@ cloud-vault = { workspace = true, features = ["testing"] }
 packaging = []
 
 [[bin]]
-name = "forge-steam-runtime-package"
+name = "sailover-steam-runtime-package"
 path = "src/bin/package.rs"
 required-features = ["packaging"]
 

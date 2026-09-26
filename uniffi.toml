@@ -1,4 +1,4 @@
-[crates.forge_bridge.bindings.swift]
-module_name = "ForgeBridge"
-ffi_module_name = "ForgeBridgeFFI"
+[crates.sailover_bridge.bindings.swift]
+module_name = "SailOverBridge"
+ffi_module_name = "SailOverBridgeFFI"
 generate_module_map = true

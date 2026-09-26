@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run a signed, offline Rust Cloud probe against Forge's bundled Valve files.
+"""Run a signed, offline Rust Cloud probe against SailOver's bundled Valve files.
 
 No game, account credential, installed Steam client or existing save is used.
 All native writes are restricted to a fresh temporary directory. The profile
@@ -25,7 +25,7 @@ def main():
     parser.add_argument("--keep-scratch", action="store_true", help="Keep the disposable runtime for inspection")
     parser.add_argument("--fixture-appinfo", action="store_true", help="Seed synthetic offline app quota metadata")
     parser.add_argument("--fixture-identity", action="store_true", help="Request a test-only identity with all external networking denied")
-    parser.add_argument("--fixture-cache", action="store_true", help="Project a synthetic RemoteStorage index with the Forge fixture")
+    parser.add_argument("--fixture-cache", action="store_true", help="Project a synthetic RemoteStorage index with the SailOver fixture")
     args = parser.parse_args()
     if args.fixture_cache and args.mode not in ["local-projection", "local-cache-refresh"]:
         parser.error("--fixture-cache requires a projection mode")
@@ -40,13 +40,13 @@ def main():
         "--target-dir", str(project / "build/steam-native-target"),
     ], check=True)
     binary = project / "build/steam-native-target/debug/examples/cloud_storage_probe"
-    package = project / "build/xcode/Build/Products/Debug/Forge.app/Contents/Resources/SteamRuntime/runtime.zip"
+    package = project / "build/xcode/Build/Products/Debug/SailOver.app/Contents/Resources/SteamRuntime/runtime.zip"
     manifest = json.loads((project / "crates/game-runtime/runtime-manifest.json").read_text())
     signing = (project / "apps/macos/Config/Signing.local.xcconfig").read_text()
     identity = re.search(r"^CODE_SIGN_IDENTITY\s*=\s*([0-9A-Fa-f]{40})\s*$", signing, re.M)
     if identity is None:
         raise SystemExit("Configure the existing Apple signing identity first")
-    scratch = Path(tempfile.mkdtemp(prefix="forge-cloud-probe-", dir="/private/tmp"))
+    scratch = Path(tempfile.mkdtemp(prefix="sailover-cloud-probe-", dir="/private/tmp"))
     scratch.chmod(0o700)
     for name in ["runtime", "home", "tmp"]:
         (scratch / name).mkdir(mode=0o700)
@@ -60,7 +60,7 @@ def main():
                 output += (b"\x00" if isinstance(value, dict) else b"\x01") + key.encode() + b"\x00"
                 output += kv(value) if isinstance(value, dict) else str(value).encode() + b"\x00"
             return bytes(output) + b"\x08"
-        data = kv({"appinfo": {"appid": "480", "common": {"name": "Forge offline fixture", "type": "Game"},
+        data = kv({"appinfo": {"appid": "480", "common": {"name": "SailOver offline fixture", "type": "Game"},
                               "ufs": {"quota": "1048576", "maxnumfiles": "16"}}})
         entry = struct.pack("<IIQ", 2, 1, 0) + bytes(20) + struct.pack("<I", 1) + hashlib.sha1(data).digest() + data
         cache = struct.pack("<IIII", 0x07564428, 1, 480, len(entry)) + entry + struct.pack("<I", 0)
@@ -79,18 +79,18 @@ def main():
     shutil.copy2(binary, executable)
     subprocess.run([
         "/usr/bin/codesign", "--force", "--sign", identity.group(1), "--options", "runtime",
-        "--identifier", "com.zagrios.forge.cloud-probe", "--entitlements",
+        "--identifier", "com.zagrios.sailover.cloud-probe", "--entitlements",
         str(project / "packaging/steam-host.entitlements"), str(executable),
     ], check=True, capture_output=True)
     subprocess.run(["/usr/bin/codesign", "--verify", "--strict", str(executable)], check=True)
     # These variables belong only to the disposable child, not the shell/session.
     environment = {"PATH": "/usr/bin:/bin", "HOME": str(scratch / "home"),
                    "CFFIXED_USER_HOME": str(scratch / "home"), "TMPDIR": str(scratch / "tmp"),
-                   "FORGE_CLOUD_PROBE_ROOT": str(scratch)}
+                   "SAILOVER_CLOUD_PROBE_ROOT": str(scratch)}
     if args.fixture_identity:
-        environment["FORGE_CLOUD_PROBE_IDENTITY"] = "fixture"
+        environment["SAILOVER_CLOUD_PROBE_IDENTITY"] = "fixture"
     if args.fixture_cache:
-        environment["FORGE_CLOUD_PROBE_CACHE"] = "fixture"
+        environment["SAILOVER_CLOUD_PROBE_CACHE"] = "fixture"
     # Reserve distinct private endpoints while preparing the sandbox. No default
     # Steam endpoint or local discovery is used. Release just before exec.
     reservations = []
@@ -174,9 +174,9 @@ def main():
             ])
         ]
     account_component = 1 if args.fixture_identity else 0
-    name = "forge-offline-probe-renamed.dat" if args.mode == "local-cache-refresh" else "forge-offline-probe.dat"
+    name = "sailover-offline-probe-renamed.dat" if args.mode == "local-cache-refresh" else "sailover-offline-probe.dat"
     if args.mode == "local-live-mutation":
-        name = "forge-offline-live.dat"
+        name = "sailover-offline-live.dat"
     fixture = scratch / f"home/Library/Application Support/Steam/userdata/{account_component}/480/remote/{name}"
     if fixture.is_file():
         payload = fixture.read_bytes()

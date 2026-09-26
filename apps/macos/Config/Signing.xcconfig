@@ -1,4 +1,4 @@
-// Keep the same signing identity across builds so Keychain recognizes Forge.
+// Keep the same signing identity across builds so Keychain recognizes SailOver.
 CODE_SIGN_STYLE = Manual
 CODE_SIGN_IDENTITY = Apple Development
 

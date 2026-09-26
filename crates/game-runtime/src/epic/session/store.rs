@@ -171,7 +171,7 @@ pub(super) fn bindings(
             return Err(Error::Unsupported);
         }
         rules.check_directory()?;
-        let path = forge_core::install::checked_file_path(&rules.directory, Path::new(&name))
+        let path = sailover_core::install::checked_file_path(&rules.directory, Path::new(&name))
             .map_err(epic_kit::EpicError::from)?;
         if create {
             ensure_parent(path.parent().ok_or(Error::Storage)?)?;

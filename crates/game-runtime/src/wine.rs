@@ -1,7 +1,7 @@
-//! A Windows game runs in Forge's Wine runtime, inside the prefix of its
+//! A Windows game runs in SailOver's Wine runtime, inside the prefix of its
 //! installation, behind Proton's steam.exe helper that stands in for Steam.
 use crate::{Error, supervisor::Target};
-use forge_core::launch::LaunchTarget;
+use sailover_core::launch::LaunchTarget;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeSet, HashMap},
@@ -21,9 +21,9 @@ const STEAM_HELPER: &str = r"C:\windows\system32\steam.exe";
 /// registry keys. The runtime's ntdll redirects their exports to lsteamclient.
 const STEAM_CLIENTS: [&str; 2] = ["steamclient.dll", "steamclient64.dll"];
 /// The prerequisites a prefix ran, one id per line.
-const PREREQUISITES: &str = "forge-prerequisites";
+const PREREQUISITES: &str = "sailover-prerequisites";
 /// Their output, rewritten by each launch that runs one.
-const PREREQUISITES_LOG: &str = "forge-prerequisites.log";
+const PREREQUISITES_LOG: &str = "sailover-prerequisites.log";
 /// An installer still running after this long is stopped.
 const PREREQUISITE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 /// Success, "a newer version is already installed" and "restart required".
@@ -213,7 +213,7 @@ pub fn windows_path(path: &Path) -> String {
 /// runs before a game first starts. A script that cannot be read is left out.
 pub fn steam_prerequisites(install: &Path) -> Result<Vec<Prerequisite>, Error> {
     let read = |relative: &Path| {
-        forge_core::install::read_cached_file(install, relative, MAX_SCRIPT_BYTES)
+        sailover_core::install::read_cached_file(install, relative, MAX_SCRIPT_BYTES)
             .map_err(|_| Error::Storage)
     };
     let Some(list) = read(Path::new(steam_kit::install_script::LIST))? else {

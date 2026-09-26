@@ -1,10 +1,10 @@
-use forge_steam_native::native;
+use sailover_steam_native::native;
 use std::process::{Command, Stdio};
 
 #[test]
 fn identity_helper_flushes_its_bounded_response_before_immediate_exit() {
     let expected = native::process_identity(std::process::id()).unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_forge-steam-host"))
+    let output = Command::new(env!("CARGO_BIN_EXE_sailover-steam-host"))
         .args(["process-identity", &std::process::id().to_string()])
         .stdin(Stdio::null())
         .output()
@@ -13,7 +13,7 @@ fn identity_helper_flushes_its_bounded_response_before_immediate_exit() {
     let actual: Option<game_runtime::supervisor::Identity> =
         serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(actual, Some(expected));
-    let output = Command::new(env!("CARGO_BIN_EXE_forge-steam-host"))
+    let output = Command::new(env!("CARGO_BIN_EXE_sailover-steam-host"))
         .args(["process-identity", "2147483647"])
         .stdin(Stdio::null())
         .output()
@@ -41,7 +41,7 @@ fn native_supervisor_acknowledges_and_reports_preparation_failure_without_valve(
         }
     }
     let root = Scratch(std::env::temp_dir().join(format!(
-            "forge-ack-{}-{}",
+            "sailover-ack-{}-{}",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -49,7 +49,7 @@ fn native_supervisor_acknowledges_and_reports_preparation_failure_without_valve(
                 .as_nanos()
         )));
     std::fs::create_dir(&root.0).unwrap();
-    let helper = PathBuf::from(env!("CARGO_BIN_EXE_forge-steam-host"));
+    let helper = PathBuf::from(env!("CARGO_BIN_EXE_sailover-steam-host"));
     let launch = Launch::new(Credentials {
         steam_id: 123,
         account_name: "fixture".into(),

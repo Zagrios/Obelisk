@@ -4,7 +4,7 @@
 //! A storefront supplies its `Launch`; the order of the steps is the core's.
 use super::*;
 use crate::supervisor::architecture::Architecture;
-use forge_core::transfer::CancelToken;
+use sailover_core::transfer::CancelToken;
 use std::{
     io::{Read, Write},
     os::fd::OwnedFd,
@@ -44,7 +44,7 @@ pub(crate) struct Opening<P: Provider> {
     pub id: String,
     pub account_id: P::Account,
     pub store: P::Store,
-    /// The directory that bundles the Forge Rosetta helper app.
+    /// The directory that bundles the SailOver Rosetta helper app.
     pub helpers: PathBuf,
 }
 
@@ -139,7 +139,7 @@ pub struct Questions {
     observed: Option<Mutex<Instant>>,
 }
 impl Questions {
-    /// Cloud maintenance in Forge: the UI itself waits for the answer.
+    /// Cloud maintenance in SailOver: the UI itself waits for the answer.
     pub fn in_app() -> Self {
         Self {
             next: AtomicU64::new(0),
@@ -322,7 +322,7 @@ pub(crate) fn serve<L: Launch>(
     // A short socket path avoids macOS's 104-byte sockaddr_un limit, including
     // when the account home is long. tempfile creates an unpredictable 0700 dir.
     let socket_directory = tempfile::Builder::new()
-        .prefix("forge-session-")
+        .prefix("sailover-session-")
         .permissions(std::fs::Permissions::from_mode(0o700))
         .tempdir_in("/tmp")
         .map_err(Error::from)?;
