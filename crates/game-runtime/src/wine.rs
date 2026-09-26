@@ -61,6 +61,17 @@ impl Config {
         library.is_file().then_some(library)
     }
 
+    /// No Gecko installer prompt and no menu entries. .NET games run on the
+    /// Wine Mono a runtime carries; without it, mscoree stays off so that no
+    /// Mono installer prompt appears either.
+    fn dll_overrides(&self) -> &'static str {
+        if self.runtime.join("share/wine/mono").is_dir() {
+            "mshtml=;winemenubuilder.exe=d"
+        } else {
+            "mscoree,mshtml=;winemenubuilder.exe=d"
+        }
+    }
+
     /// Wine's errors, unless a development runtime's `winedebug` file names
     /// other channels, such as `+steamclient`.
     fn debug_channels(&self) -> String {
@@ -77,10 +88,9 @@ impl Config {
                 "WINEPREFIX".to_owned(),
                 self.prefix.to_string_lossy().into_owned(),
             ),
-            // No Mono or Gecko installer prompt, and no menu entries.
             (
                 "WINEDLLOVERRIDES".to_owned(),
-                "mscoree,mshtml=;winemenubuilder.exe=d".to_owned(),
+                self.dll_overrides().to_owned(),
             ),
             ("WINEDEBUG".to_owned(), self.debug_channels()),
             // Events, mutexes and semaphores become Mach semaphores instead of

@@ -235,6 +235,23 @@ fn wine_reports_its_errors_unless_the_runtime_names_other_channels() {
 }
 
 #[test]
+fn dotnet_games_run_only_on_the_mono_a_runtime_carries() {
+    let (_directory, root) = installation();
+    let config = config(&root);
+    assert_eq!(
+        config.environment()["WINEDLLOVERRIDES"],
+        "mscoree,mshtml=;winemenubuilder.exe=d"
+    );
+
+    fs::create_dir_all(config.runtime.join("share/wine/mono/wine-mono-10.4.1")).unwrap();
+
+    assert_eq!(
+        config.environment()["WINEDLLOVERRIDES"],
+        "mshtml=;winemenubuilder.exe=d"
+    );
+}
+
+#[test]
 fn every_wine_command_syncs_through_mach_and_gives_32_bit_games_4_gb() {
     let (_directory, root) = installation();
     let environment = config(&root).environment();
