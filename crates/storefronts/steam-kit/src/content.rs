@@ -6,12 +6,13 @@
 
 mod format;
 mod manifest_cache;
+mod mirrors;
 mod verification;
 
 pub use manifest_cache::CachedManifest;
 
 use std::{
-    collections::{HashSet, VecDeque},
+    collections::{HashMap, HashSet},
     fs::{self, File, OpenOptions},
     io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
@@ -19,6 +20,7 @@ use std::{
     time::Duration,
 };
 
+use futures_util::future::BoxFuture;
 use reqwest::{Client, Url};
 use sailover_core::{
     install::{
@@ -33,7 +35,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use thiserror::Error;
 use tokio::sync::mpsc;
 
+use crate::cm::ContentServer;
 use format::{Chunk, Manifest, ManifestFile, decode_chunk, parse_manifest, unpack_zip};
+use mirrors::{Mirrors, Ticket};
 
 /// Shared with CM avatar hashes.
 pub(crate) use sailover_core::install::hex;
@@ -41,25 +45,40 @@ pub use sailover_core::transfer::CancelToken;
 
 const MAX_MANIFEST_BYTES: usize = 128 * 1024 * 1024;
 const MAX_CHUNK_BYTES: usize = 64 * 1024 * 1024;
-/// CDN requests in flight per depot. Chunks are typically 1 MiB, so this also
-/// bounds the memory held by decoded chunks waiting to be written.
-const CHUNK_CONCURRENCY: usize = 16;
-/// Keep upcoming files ready without opening partial files for the whole depot.
-/// Chunk payloads remain bounded by the existing network pump and delivery queue.
-const FILE_PREFETCH_WINDOW: usize = 8;
+/// Chunk requests in flight per depot, across every server. One CDN
+/// connection carries about a megabyte per second, so a fast link needs many.
+/// Chunks are typically 1 MiB, so this also bounds the memory decoded chunks
+/// hold.
+const CHUNK_REQUESTS: usize = 64;
+/// Chunks requested ahead of the writer: enough that requests in flight never
+/// wait for it to prepare files.
+const QUEUED_CHUNKS: usize = 2 * CHUNK_REQUESTS;
+/// Decoded chunks waiting for the disk writer.
+const WRITE_QUEUE: usize = 16;
+/// Files prepared ahead of the writer, each holding its partial file open:
+/// requests queue without opening partial files for the whole depot.
+const PREPARED_FILES: usize = 32;
 
-/// No Debug implementation: depot keys and CDN tokens are credentials.
-pub struct DepotDownload {
+/// No Debug implementation: depot keys are credentials.
+pub struct DepotDownload<'a> {
     pub depot_id: u32,
     pub manifest_id: u64,
     pub request_code: u64,
     pub depot_key: [u8; 32],
-    /// A CDN hostname, optionally including a port. HTTPS is always used.
-    pub server: String,
-    pub cdn_token: Option<String>,
+    /// The CDN servers allowed to serve the depot, in Steam's order of
+    /// preference. HTTPS is always used.
+    pub servers: Vec<ContentServer>,
+    /// Grants the tokens servers may require; without it, a refusal is final.
+    pub authorization: Option<&'a dyn CdnAuthorization>,
     pub destination: PathBuf,
     /// Already validated snapshot of the current manifest, if available locally.
     pub cached_manifest: Option<CachedManifest>,
+}
+
+/// Grants the CDN authorization a server may require before serving a depot.
+pub trait CdnAuthorization: Sync {
+    /// A token for `host`, or `None` when Steam grants none.
+    fn token<'a>(&'a self, host: &'a str) -> BoxFuture<'a, Option<String>>;
 }
 
 #[derive(Debug, Error)]
@@ -101,18 +120,17 @@ impl From<InstallError> for ContentError {
 #[derive(Clone)]
 pub struct ContentClient {
     client: Client,
+    /// Local servers standing in for CDN hosts; any other host is unreachable.
     #[cfg(test)]
-    test_endpoint: Option<Url>,
+    test_endpoints: HashMap<String, Url>,
 }
-
-type ChunkResult = Result<Vec<u8>, ContentError>;
 
 impl ContentClient {
     pub fn new(client: Client) -> Self {
         Self {
             client,
             #[cfg(test)]
-            test_endpoint: None,
+            test_endpoints: HashMap::new(),
         }
     }
 
@@ -160,15 +178,18 @@ impl ContentClient {
     #[cfg(test)]
     pub(crate) async fn verify_live_sample(
         &self,
-        plan: &DepotDownload,
+        plan: &DepotDownload<'_>,
     ) -> Result<(u64, u32), ContentError> {
         let cancel = CancelToken::new();
+        let mirrors = Mirrors::new(&plan.servers, plan.authorization)?;
         let path = format!(
             "depot/{}/manifest/{}/5/{}",
             plan.depot_id, plan.manifest_id, plan.request_code
         );
-        let zipped = self
-            .fetch(plan, &path, MAX_MANIFEST_BYTES, &cancel, |_| {})
+        let (zipped, _) = mirrors
+            .fetch(&path, None, 0, &cancel, |url| {
+                self.fetch(url, MAX_MANIFEST_BYTES, &cancel, |_| {})
+            })
             .await?;
         let bytes = unpack_zip(&zipped, MAX_MANIFEST_BYTES)?;
         let manifest = parse_manifest(&bytes, &plan.depot_key)?;
@@ -192,8 +213,10 @@ impl ContentClient {
         let mut size = 0_u64;
         for chunk in &file.chunks {
             let path = format!("depot/{}/chunk/{}", plan.depot_id, hex(&chunk.sha));
-            let encrypted = self
-                .fetch(plan, &path, MAX_CHUNK_BYTES, &cancel, |_| {})
+            let (encrypted, _) = mirrors
+                .fetch(&path, None, 0, &cancel, |url| {
+                    self.fetch(url, MAX_CHUNK_BYTES, &cancel, |_| {})
+                })
                 .await?;
             let plaintext = decode_chunk(&encrypted, chunk, &plan.depot_key)?;
             size += plaintext.len() as u64;
@@ -205,18 +228,20 @@ impl ContentClient {
         Ok((size, file.chunks.len() as u32))
     }
 
-    /// Installs one authorized depot. Network work stays on the async runtime while
-    /// every disk operation runs on the blocking pool, so a multi-GB depot does not
-    /// pin a runtime worker. Existing complete files and verified partial chunks are
-    /// reused on the next invocation. File replacement is atomic; an incomplete file
-    /// never replaces an installed file.
+    /// Installs one authorized depot, its chunks spread over every server the
+    /// plan names. Network work stays on the async runtime while every disk
+    /// operation runs on the blocking pool, so a multi-GB depot does not pin a
+    /// runtime worker. Existing complete files and verified partial chunks are
+    /// reused on the next invocation. File replacement is atomic; an incomplete
+    /// file never replaces an installed file.
     pub async fn download_depot(
         &self,
-        plan: &DepotDownload,
+        plan: &DepotDownload<'_>,
         cancel: &CancelToken,
         progress: impl Fn(DownloadProgress) + Send + Sync + 'static,
     ) -> Result<DownloadSummary, ContentError> {
         cancel.check()?;
+        let mirrors = Mirrors::new(&plan.servers, plan.authorization)?;
         let reporter = Reporter::new(
             DownloadProgress {
                 current_file: "backend.steam.content.fetchingManifest".into(),
@@ -250,16 +275,15 @@ impl ContentClient {
                     plan.depot_id, plan.manifest_id, plan.request_code
                 )
             };
-            let zipped = self
-                .fetch(
-                    plan,
-                    &manifest_path,
-                    MAX_MANIFEST_BYTES,
-                    cancel,
-                    |received| {
+            let reporter = &reporter;
+            // Every chunk waits on the manifest: it is raced like the oldest chunk.
+            let ticket = mirrors.ticket();
+            let (zipped, _) = mirrors
+                .fetch(&manifest_path, Some(&ticket), 0, cancel, |url| {
+                    self.fetch(url, MAX_MANIFEST_BYTES, cancel, |received| {
                         reporter.update(|status| status.network_bytes += received);
-                    },
-                )
+                    })
+                })
                 .await?;
             let key = plan.depot_key;
             let manifest = cancel
@@ -294,7 +318,7 @@ impl ContentClient {
         });
 
         let (requests, request_queue) = mpsc::unbounded_channel();
-        let (deliveries, results) = mpsc::channel(CHUNK_CONCURRENCY);
+        let (deliveries, results) = mpsc::channel(WRITE_QUEUE);
         let disk = DiskInstall {
             destination: plan.destination.clone(),
             depot_id: plan.depot_id,
@@ -308,12 +332,18 @@ impl ContentClient {
         };
         let (reused_bytes, ()) = tokio::join!(
             cancel.spawn_blocking(move || disk.run()),
-            transfer::pump_chunks(
+            transfer::pump_chunks_unordered(
                 request_queue,
                 deliveries,
-                CHUNK_CONCURRENCY,
+                CHUNK_REQUESTS,
                 cancel,
-                |chunk| self.fetch_chunk(plan, chunk, cancel, &reporter),
+                |(place, chunk)| {
+                    // Requests are created in manifest order.
+                    let ticket = mirrors.ticket();
+                    let fetched =
+                        self.fetch_chunk(&mirrors, ticket, plan, chunk, cancel, &reporter);
+                    async move { fetched.await.map(|bytes| (place, bytes)) }
+                },
             ),
         );
         let reused_bytes = reused_bytes
@@ -321,73 +351,71 @@ impl ContentClient {
         Ok(reporter.summary(reused_bytes))
     }
 
-    /// Three attempts per chunk. Authorization and missing-content responses are
-    /// final, and cancellation is never retried. Decryption and decompression run
-    /// on the blocking pool.
+    /// Fetches one chunk through the depot's servers and decodes it. Chunk
+    /// bytes count once, from the response that answered; a corrupt response
+    /// moves the chunk to another server. Decryption and decompression run on
+    /// the blocking pool.
     async fn fetch_chunk(
         &self,
-        plan: &DepotDownload,
+        mirrors: &Mirrors<'_>,
+        ticket: Ticket<'_>,
+        plan: &DepotDownload<'_>,
         chunk: Chunk,
         cancel: &CancelToken,
         reporter: &Reporter,
-    ) -> ChunkResult {
+    ) -> Result<Vec<u8>, ContentError> {
         let path = format!("depot/{}/chunk/{}", plan.depot_id, hex(&chunk.sha));
         let key = plan.depot_key;
-        let mut last_error = None;
-        for attempt in 0..3 {
-            cancel.check()?;
-            reporter.update(|status| status.phase = DownloadPhase::Downloading);
-            let fetched = self
-                .fetch(plan, &path, MAX_CHUNK_BYTES, cancel, |received| {
-                    reporter.update(|status| {
-                        status.network_bytes += received;
-                        status.content_bytes += received;
-                    });
-                })
-                .await;
-            match fetched {
-                Ok(encrypted) => {
+        let chunk = &chunk;
+        reporter.update(|status| status.phase = DownloadPhase::Downloading);
+        let (bytes, received) = mirrors
+            .fetch(
+                &path,
+                Some(&ticket),
+                u64::from(chunk.compressed_size),
+                cancel,
+                |url| async move {
+                    let (encrypted, received) = self
+                        .fetch(url, MAX_CHUNK_BYTES, cancel, |received| {
+                            reporter.update(|status| status.network_bytes += received);
+                        })
+                        .await?;
                     let expected = chunk.clone();
                     let decoded = cancel
                         .spawn_blocking(move || decode_chunk(&encrypted, &expected, &key))
                         .await
-                        .map_err(|_| invalid("backend.steam.content.chunkDecryptionInterrupted"))?;
-                    match decoded {
-                        Ok(bytes) => return Ok(bytes),
-                        Err(error) => last_error = Some(error),
-                    }
-                }
-                Err(error @ (ContentError::Cancelled | ContentError::Http(401 | 403 | 404))) => {
-                    return Err(error);
-                }
-                Err(error) => last_error = Some(error),
-            }
-            if attempt < 2 {
-                tokio::select! {
-                    () = tokio::time::sleep(Duration::from_millis(250 * (attempt + 1))) => {}
-                    () = cancel.cancelled() => return Err(ContentError::Cancelled),
-                }
-            }
-        }
-        Err(last_error.unwrap_or(ContentError::Network))
+                        .map_err(|_| {
+                            invalid("backend.steam.content.chunkDecryptionInterrupted")
+                        })??;
+                    Ok((decoded, received))
+                },
+            )
+            .await?;
+        reporter.update(|status| status.content_bytes += received);
+        Ok(bytes)
     }
 
+    /// Returns the response body with its size, which measures the server.
     async fn fetch(
         &self,
-        plan: &DepotDownload,
-        path: &str,
+        url: Url,
         limit: usize,
         cancel: &CancelToken,
         mut on_bytes: impl FnMut(u64),
-    ) -> Result<Vec<u8>, ContentError> {
-        let url = content_url(plan, path)?;
+    ) -> Result<(Vec<u8>, u64), ContentError> {
         #[cfg(test)]
-        let url = if let Some(endpoint) = &self.test_endpoint {
-            let mut local = endpoint.join(path).expect("test URL");
+        let url = if self.test_endpoints.is_empty() {
+            url
+        } else {
+            let Some(endpoint) = url
+                .host_str()
+                .and_then(|host| self.test_endpoints.get(host))
+            else {
+                return Err(ContentError::Network);
+            };
+            let mut local = endpoint.join(url.path()).expect("test URL");
             local.set_query(url.query());
             local
-        } else {
-            url
         };
         let operation = async {
             let mut response = self
@@ -413,7 +441,8 @@ impl ContentClient {
                 }
                 bytes.extend_from_slice(&chunk);
             }
-            Ok(bytes)
+            let size = bytes.len() as u64;
+            Ok((bytes, size))
         };
         tokio::select! {
             result = operation => result,
@@ -421,6 +450,18 @@ impl ContentClient {
         }
     }
 }
+
+/// Where a chunk belongs: its file's index in the manifest and its own index
+/// in that file.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ChunkPlace {
+    file: usize,
+    chunk: usize,
+}
+
+type ChunkRequest = (ChunkPlace, Chunk);
+/// A requested chunk's decoded bytes, delivered as soon as they arrive.
+type ChunkResult = Result<(ChunkPlace, Vec<u8>), ContentError>;
 
 /// Everything that touches the disk for one depot, on a blocking thread: the
 /// destination lock, manifest cache, verification, assembly and atomic publication.
@@ -432,17 +473,64 @@ struct DiskInstall {
     manifest: Arc<Manifest>,
     cancel: CancelToken,
     reporter: Arc<Reporter>,
-    requests: mpsc::UnboundedSender<Chunk>,
+    requests: mpsc::UnboundedSender<ChunkRequest>,
     results: mpsc::Receiver<ChunkResult>,
 }
 
+/// A file being assembled in its partial file. Its chunks arrive in any
+/// order and each is written in place; the file is hashed in order as far as
+/// its chunks are present, so a chunk arriving late holds up only its file.
 struct PreparedFile<'a> {
     file: &'a ManifestFile,
     relative: PathBuf,
     target: PathBuf,
     partial_path: PathBuf,
     partial: File,
-    reusable: Vec<bool>,
+    /// Chunks in the partial file: verified from an earlier run, or written.
+    present: Vec<bool>,
+    /// Chunks requested and not written yet.
+    missing: usize,
+    hasher: Sha1,
+    /// Chunks hashed so far, from the start of the file.
+    hashed: usize,
+    reused_bytes: u64,
+}
+
+impl PreparedFile<'_> {
+    /// Writes a chunk in place, then hashes on as far as the file is present.
+    fn write(&mut self, index: usize, bytes: &[u8]) -> Result<(), ContentError> {
+        let chunk = self
+            .file
+            .chunks
+            .get(index)
+            .filter(|_| !self.present[index])
+            .ok_or_else(|| invalid("backend.steam.content.chunkDownloadInterrupted"))?;
+        self.partial.seek(SeekFrom::Start(chunk.offset))?;
+        self.partial.write_all(bytes)?;
+        self.present[index] = true;
+        self.missing -= 1;
+        self.hash_present(Some((index, bytes)))
+    }
+
+    /// Hashes the chunks present from where hashing stopped. The chunk just
+    /// written is hashed from memory; one that arrived early is read back.
+    fn hash_present(&mut self, written: Option<(usize, &[u8])>) -> Result<(), ContentError> {
+        let mut buffer = Vec::new();
+        while self.present.get(self.hashed) == Some(&true) {
+            match written {
+                Some((index, bytes)) if index == self.hashed => self.hasher.update(bytes),
+                _ => {
+                    let chunk = &self.file.chunks[self.hashed];
+                    buffer.resize(chunk.original_size as usize, 0);
+                    self.partial.seek(SeekFrom::Start(chunk.offset))?;
+                    self.partial.read_exact(&mut buffer)?;
+                    self.hasher.update(&buffer);
+                }
+            }
+            self.hashed += 1;
+        }
+        Ok(())
+    }
 }
 
 impl DiskInstall {
@@ -477,12 +565,15 @@ impl DiskInstall {
         // file's full path is still confined right before it is written.
         let mut ensured_parents: HashSet<PathBuf> = HashSet::new();
         let mut remaining = manifest.files.iter().enumerate();
-        let mut prepared = VecDeque::new();
+        // Files being assembled, by manifest index.
+        let mut assembling = HashMap::new();
+        // Chunks requested for them and not written yet.
+        let mut queued = 0;
         loop {
-            // Requests retain manifest order across files, so the existing
-            // ordered pump can feed the writer without changing chunk identity.
-            // Valid files and directories do not occupy the preparation window.
-            while prepared.len() < FILE_PREFETCH_WINDOW {
+            // Requests follow manifest order. Files are prepared until enough
+            // of their chunks are queued; valid files and directories do not
+            // count.
+            while assembling.len() < PREPARED_FILES && queued < QUEUED_CHUNKS {
                 let Some((index, file)) = remaining.next() else {
                     break;
                 };
@@ -503,26 +594,35 @@ impl DiskInstall {
                     apply_permissions(&target, is_executable(file))?;
                     continue;
                 }
-                prepared.push_back(self.prepare(&partial_root, file, relative, target)?);
+                let prepared = self.prepare(&partial_root, index, file, relative, target)?;
+                if prepared.missing == 0 {
+                    reused_bytes += self.publish(prepared, &root, &mut pending_directory)?;
+                } else {
+                    queued += prepared.missing;
+                    assembling.insert(index, prepared);
+                }
             }
-            let Some(next) = prepared.pop_front() else {
+            if assembling.is_empty() {
                 break;
-            };
-            self.cancel.check()?;
-            // Only a file this pass actually repairs is reported: verification
-            // finished above, and traversing a valid file is one chmod.
-            self.reporter.update(|status| {
-                status.phase = DownloadPhase::Verifying;
-                status.current_file.clone_from(&next.file.name);
-            });
-            let directory = next.target.parent().unwrap_or(&root).to_path_buf();
-            reused_bytes += self.assemble(next, &root)?;
-            if pending_directory.as_ref() != Some(&directory)
-                && let Some(previous) = pending_directory.replace(directory)
-            {
-                File::open(previous)?.sync_all()?;
             }
-            self.reporter.update(|status| status.completed_files += 1);
+            self.cancel.check()?;
+            let (place, bytes) = self
+                .results
+                .blocking_recv()
+                .ok_or_else(|| invalid("backend.steam.content.chunkDownloadInterrupted"))??;
+            let file: &mut PreparedFile<'_> = assembling
+                .get_mut(&place.file)
+                .ok_or_else(|| invalid("backend.steam.content.chunkDownloadInterrupted"))?;
+            file.write(place.chunk, &bytes)?;
+            queued -= 1;
+            let size = bytes.len() as u64;
+            self.reporter
+                .update(|status| status.completed_bytes += size);
+            if file.missing == 0
+                && let Some(file) = assembling.remove(&place.file)
+            {
+                reused_bytes += self.publish(file, &root, &mut pending_directory)?;
+            }
         }
         if let Some(directory) = pending_directory {
             File::open(directory)?.sync_all()?;
@@ -530,11 +630,12 @@ impl DiskInstall {
         Ok(reused_bytes)
     }
 
-    /// Inspect the partial file once and enqueue only its missing chunks. Keep
-    /// its open handle and reuse bitmap until the ordered writer reaches it.
+    /// Inspect the partial file once and request only its missing chunks. Keep
+    /// its open handle until its last chunk is written.
     fn prepare<'a>(
         &self,
         partial_root: &Path,
+        index: usize,
         file: &'a ManifestFile,
         relative: PathBuf,
         target: PathBuf,
@@ -550,7 +651,7 @@ impl DiskInstall {
             .open(&partial_path)?;
         let existing = partial.metadata()?.len();
         partial.set_len(file.size)?;
-        let mut reusable = vec![false; file.chunks.len()];
+        let mut present = vec![false; file.chunks.len()];
         let mut buffer = Vec::new();
         for (index, chunk) in file.chunks.iter().enumerate() {
             self.cancel.check()?;
@@ -561,102 +662,94 @@ impl DiskInstall {
             buffer.resize(chunk.original_size as usize, 0);
             partial.seek(SeekFrom::Start(chunk.offset))?;
             partial.read_exact(&mut buffer)?;
-            reusable[index] = format::verify_chunk(&buffer, chunk).is_ok();
+            present[index] = format::verify_chunk(&buffer, chunk).is_ok();
         }
-        for (chunk, _) in file
+        let reused_bytes = file
             .chunks
             .iter()
-            .zip(&reusable)
-            .filter(|(_, reused)| !**reused)
-        {
+            .zip(&present)
+            .filter(|(_, present)| **present)
+            .map(|(chunk, _)| u64::from(chunk.original_size))
+            .sum();
+        self.reporter
+            .update(|status| status.completed_bytes += reused_bytes);
+        for (chunk_index, chunk) in file.chunks.iter().enumerate() {
+            if present[chunk_index] {
+                continue;
+            }
             self.cancel.check()?;
-            if self.requests.send(chunk.clone()).is_err() {
-                // The pump may already have queued a terminal CDN error for an
-                // earlier file. Let assembly consume that ordered result instead
-                // of hiding it behind an interrupted-prefetch error.
+            let place = ChunkPlace {
+                file: index,
+                chunk: chunk_index,
+            };
+            if self.requests.send((place, chunk.clone())).is_err() {
+                // The pump may already have queued a terminal CDN error. Let
+                // the writer receive that result instead of hiding it behind an
+                // interrupted-prefetch error.
                 break;
             }
         }
-        Ok(PreparedFile {
+        let mut prepared = PreparedFile {
             file,
             relative,
             target,
             partial_path,
             partial,
-            reusable,
-        })
+            missing: present.iter().filter(|present| !**present).count(),
+            present,
+            hasher: Sha1::new(),
+            hashed: 0,
+            reused_bytes,
+        };
+        prepared.hash_present(None)?;
+        Ok(prepared)
     }
 
-    /// Reuses verified chunks already in the partial file, writes fetched chunks
-    /// in manifest order and publishes the file atomically. A file assembled only
-    /// from fresh chunks is hashed as it is written; one that reused on-disk
-    /// chunks is read back so the check covers what actually landed on disk.
-    fn assemble(&mut self, prepared: PreparedFile<'_>, root: &Path) -> Result<u64, ContentError> {
+    /// Checks a fully assembled file's hash and publishes it atomically.
+    /// Returns the bytes it reused from an earlier run.
+    fn publish(
+        &mut self,
+        prepared: PreparedFile<'_>,
+        root: &Path,
+        pending_directory: &mut Option<PathBuf>,
+    ) -> Result<u64, ContentError> {
         let PreparedFile {
             file,
             relative,
             target,
             partial_path,
-            mut partial,
-            reusable,
+            partial,
+            present,
+            hasher,
+            hashed,
+            reused_bytes,
+            ..
         } = prepared;
-        let hash_while_writing = !reusable.contains(&true);
-        let mut hasher = Sha1::new();
-        let mut reused_bytes = 0;
-        for (chunk, reused) in file.chunks.iter().zip(&reusable) {
-            self.cancel.check()?;
-            if *reused {
-                reused_bytes += u64::from(chunk.original_size);
-            } else {
-                let bytes = self
-                    .results
-                    .blocking_recv()
-                    .ok_or_else(|| invalid("backend.steam.content.chunkDownloadInterrupted"))??;
-                partial.seek(SeekFrom::Start(chunk.offset))?;
-                partial.write_all(&bytes)?;
-                if hash_while_writing {
-                    hasher.update(&bytes);
-                }
-            }
-            let size = u64::from(chunk.original_size);
-            self.reporter
-                .update(|status| status.completed_bytes += size);
-        }
         self.cancel.check()?;
-        self.reporter
-            .update(|status| status.phase = DownloadPhase::Verifying);
+        // Only a file this pass actually repairs is reported: verification
+        // finished earlier, and traversing a valid file is one chmod.
+        self.reporter.update(|status| {
+            status.phase = DownloadPhase::Verifying;
+            status.current_file.clone_from(&file.name);
+        });
         partial.sync_all()?;
         drop(partial);
-        let valid = if hash_while_writing {
-            hasher.finalize()[..] == file.sha
-        } else {
-            verify_file(&partial_path, file, &self.cancel)?
-        };
-        if !valid {
+        if hashed != present.len() || hasher.finalize()[..] != file.sha {
             return Err(invalid("backend.steam.content.assembledHashMismatch"));
         }
         apply_permissions(&partial_path, is_executable(file))?;
         // Re-check parents before publishing; never follow existing symlinks under root.
         checked_file_path(root, &relative)?;
+        let directory = target.parent().unwrap_or(root).to_path_buf();
         fs::rename(&partial_path, target)?;
+        if pending_directory.as_ref() != Some(&directory)
+            && let Some(previous) = pending_directory.replace(directory)
+        {
+            File::open(previous)?.sync_all()?;
+        }
+        self.reporter.update(|status| status.completed_files += 1);
         Ok(reused_bytes)
     }
-}
-
-fn content_url(plan: &DepotDownload, path: &str) -> Result<Url, ContentError> {
-    // CM supplies a host, not an arbitrary URL. Prevent credentials/query injection.
-    if plan.server.is_empty() || plan.server.contains(['/', '?', '#', '@', '\\']) {
-        return Err(invalid("backend.steam.content.invalidCdnAddress"));
-    }
-    let mut url = Url::parse(&format!("https://{}/", plan.server))
-        .map_err(|_| invalid("backend.steam.content.invalidCdnAddress"))?;
-    url.set_path(path);
-    url.set_query(
-        plan.cdn_token
-            .as_deref()
-            .map(|token| token.trim_start_matches('?')),
-    );
-    Ok(url)
 }
 
 fn invalid(reason: &str) -> ContentError {
@@ -726,19 +819,6 @@ fn validate_manifest_files(files: &[ManifestFile]) -> Result<(), ContentError> {
         }
     }
     Ok(())
-}
-
-fn verify_file(
-    path: &Path,
-    expected: &ManifestFile,
-    cancel: &CancelToken,
-) -> Result<bool, ContentError> {
-    Ok(install::verify_sha1_file(
-        path,
-        expected.size,
-        &expected.sha,
-        cancel,
-    )?)
 }
 
 #[cfg(test)]

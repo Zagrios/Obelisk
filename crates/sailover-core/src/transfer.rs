@@ -10,7 +10,7 @@ use std::{
     },
 };
 
-use futures_util::{StreamExt, stream};
+use futures_util::{Stream, StreamExt, stream};
 use tokio::sync::{Notify, mpsc};
 
 /// Cancels a download from any thread. Synchronous checks stay a cheap atomic
@@ -227,10 +227,38 @@ pub async fn pump_chunks<C, T, E, F>(
     F: Future<Output = Result<T, E>>,
     E: From<Cancelled>,
 {
-    let requests = stream::unfold(requests, |mut requests| async move {
+    let fetched = queued(requests).map(fetch).buffered(concurrency);
+    deliver(fetched, deliveries, cancel).await;
+}
+
+/// Like [`pump_chunks`], but delivers each chunk as soon as it arrives, for a
+/// disk thread that places chunks itself: a slow chunk then holds up nothing
+/// fetched after it.
+pub async fn pump_chunks_unordered<C, T, E, F>(
+    requests: mpsc::UnboundedReceiver<C>,
+    deliveries: mpsc::Sender<Result<T, E>>,
+    concurrency: usize,
+    cancel: &CancelToken,
+    fetch: impl Fn(C) -> F,
+) where
+    F: Future<Output = Result<T, E>>,
+    E: From<Cancelled>,
+{
+    let fetched = queued(requests).map(fetch).buffer_unordered(concurrency);
+    deliver(fetched, deliveries, cancel).await;
+}
+
+fn queued<C>(requests: mpsc::UnboundedReceiver<C>) -> impl Stream<Item = C> {
+    stream::unfold(requests, |mut requests| async move {
         requests.recv().await.map(|chunk| (chunk, requests))
-    });
-    let fetched = requests.map(fetch).buffered(concurrency);
+    })
+}
+
+async fn deliver<T, E: From<Cancelled>>(
+    fetched: impl Stream<Item = Result<T, E>>,
+    deliveries: mpsc::Sender<Result<T, E>>,
+    cancel: &CancelToken,
+) {
     tokio::pin!(fetched);
     loop {
         let next = tokio::select! {

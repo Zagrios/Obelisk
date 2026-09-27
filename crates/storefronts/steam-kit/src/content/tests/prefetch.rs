@@ -6,7 +6,7 @@ fn disk_install(
     cancel: &CancelToken,
 ) -> (
     DiskInstall,
-    mpsc::UnboundedReceiver<Chunk>,
+    mpsc::UnboundedReceiver<ChunkRequest>,
     mpsc::Sender<ChunkResult>,
     Arc<Reporter>,
 ) {
@@ -19,7 +19,7 @@ fn disk_install(
         |_| {},
     );
     let (requests, receiver) = mpsc::unbounded_channel();
-    let (deliveries, results) = mpsc::channel(CHUNK_CONCURRENCY);
+    let (deliveries, results) = mpsc::channel(WRITE_QUEUE);
     let disk = DiskInstall {
         destination: destination.into(),
         depot_id: 42,
@@ -78,28 +78,34 @@ async fn fetches_a_future_file_before_the_first_finishes_and_refills_the_window(
     let fetched = Mutex::new(Vec::new());
     let (installed, ()) = tokio::join!(
         cancel.spawn_blocking(move || disk.run()),
-        transfer::pump_chunks(requests, deliveries, CHUNK_CONCURRENCY, &cancel, |chunk| {
-            let first = &first;
-            let second = &second;
-            let payloads = &payloads;
-            let future_started = &future_started;
-            let observed = &observed;
-            let fetched = &fetched;
-            async move {
-                fetched.lock().unwrap().push(chunk.sha.clone());
-                if &chunk.sha == first {
-                    // The old file-at-a-time scheduler cannot start file two
-                    // while this first chunk is held, and fails this deadline.
-                    tokio::time::timeout(Duration::from_secs(2), future_started.notified())
-                        .await
-                        .map_err(|_| ContentError::Network)?;
-                } else if &chunk.sha == second {
-                    observed.store(true, Ordering::Release);
-                    future_started.notify_one();
+        transfer::pump_chunks_unordered(
+            requests,
+            deliveries,
+            CHUNK_REQUESTS,
+            &cancel,
+            |(place, chunk): ChunkRequest| {
+                let first = &first;
+                let second = &second;
+                let payloads = &payloads;
+                let future_started = &future_started;
+                let observed = &observed;
+                let fetched = &fetched;
+                async move {
+                    fetched.lock().unwrap().push(chunk.sha.clone());
+                    if &chunk.sha == first {
+                        // The old file-at-a-time scheduler cannot start file two
+                        // while this first chunk is held, and fails this deadline.
+                        tokio::time::timeout(Duration::from_secs(2), future_started.notified())
+                            .await
+                            .map_err(|_| ContentError::Network)?;
+                    } else if &chunk.sha == second {
+                        observed.store(true, Ordering::Release);
+                        future_started.notify_one();
+                    }
+                    Ok((place, payloads.get(&chunk.sha).unwrap().clone()))
                 }
-                Ok(payloads.get(&chunk.sha).unwrap().clone())
             }
-        }),
+        ),
     );
     assert_eq!(installed.unwrap().unwrap(), valid.len() as u64);
     assert!(observed.load(Ordering::Acquire));
@@ -123,7 +129,8 @@ async fn fetches_a_future_file_before_the_first_finishes_and_refills_the_window(
 #[tokio::test]
 async fn cancellation_bounds_prepared_files_and_resumes_each_verified_partial() {
     let directory = tempfile::tempdir().unwrap();
-    let pieces: Vec<_> = (0..10)
+    // More files than may be prepared at once, with fewer chunks than the window.
+    let pieces: Vec<_> = (0..PREPARED_FILES + 8)
         .map(|index| {
             [
                 format!("first chunk of file {index}").into_bytes(),
@@ -165,18 +172,19 @@ async fn cancellation_bounds_prepared_files_and_resumes_each_verified_partial() 
     let partial_count = Arc::new(Mutex::new(None));
     let count = Arc::clone(&partial_count);
     let counted_root = partial_root.clone();
+    let reused = pieces[3][0].len() as u64;
     let result = client
         .download_depot(&plan(directory.path()), &cancel, move |status| {
-            if status.completed_bytes > 0 && !trigger.is_cancelled() {
-                // The first chunk was assembled, but no replacement has been
-                // published. Eight prepared files includes the active writer.
+            if status.completed_bytes > reused && !trigger.is_cancelled() {
+                // The first chunk was written, but no replacement has been
+                // published.
                 *count.lock().unwrap() = Some(fs::read_dir(&counted_root).unwrap().count());
                 trigger.cancel();
             }
         })
         .await;
     assert!(matches!(result, Err(ContentError::Cancelled)));
-    assert_eq!(*partial_count.lock().unwrap(), Some(FILE_PREFETCH_WINDOW));
+    assert_eq!(*partial_count.lock().unwrap(), Some(PREPARED_FILES));
     for file in &files {
         assert_eq!(
             fs::read(directory.path().join(&file.name)).unwrap(),
@@ -188,10 +196,8 @@ async fn cancellation_bounds_prepared_files_and_resumes_each_verified_partial() 
         .download_depot(&plan(directory.path()), &CancelToken::new(), |_| {})
         .await
         .unwrap();
-    assert_eq!(
-        resumed.reused_bytes,
-        (pieces[0][0].len() + pieces[3][0].len()) as u64
-    );
+    // The verified partial chunk, and the chunk written before cancellation.
+    assert!(resumed.reused_bytes > reused);
     assert_eq!(resumed.completed_files, files.len() as u32);
     for (file, parts) in files.iter().zip(&pieces) {
         assert_eq!(
@@ -199,14 +205,8 @@ async fn cancellation_bounds_prepared_files_and_resumes_each_verified_partial() 
             parts.concat()
         );
     }
-    let requests = fixture.requests.lock().unwrap();
-    for (bytes, expected_requests) in [(&pieces[0][0], 1), (&pieces[3][0], 0)] {
-        let route = format!("/depot/42/chunk/{}", hex(&Sha1::digest(bytes)));
-        assert_eq!(
-            requests.iter().filter(|request| **request == route).count(),
-            expected_requests
-        );
-    }
+    let route = format!("/depot/42/chunk/{}", hex(&Sha1::digest(&pieces[3][0])));
+    assert!(!fixture.requests.lock().unwrap().contains(&route));
 }
 
 #[tokio::test]

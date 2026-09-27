@@ -2145,50 +2145,38 @@ mod tests {
             .await
             .unwrap();
         assert_ne!(code, 0);
-        let mut verified = None;
-        let mut last_error = None;
-        for server in servers
-            .iter()
-            .filter(|server| {
-                server.allowed_app_ids.is_empty() || server.allowed_app_ids.contains(&app.app_id)
-            })
-            .take(5)
-        {
-            let http = crate::client::http_client().unwrap();
-            let content = crate::content::ContentClient::new(http);
-            let mut plan = crate::content::DepotDownload {
-                depot_id: depot.depot_id,
-                manifest_id: depot.public_manifest.unwrap(),
-                request_code: code,
-                depot_key: key.as_slice().try_into().unwrap(),
-                server: server.vhost.clone(),
-                cdn_token: None,
-                destination: std::path::PathBuf::new(), // Helper never writes files.
-                cached_manifest: None,
-            };
-            let mut result = content.verify_live_sample(&plan).await;
-            if matches!(result, Err(crate::content::ContentError::Http(401 | 403))) {
-                plan.cdn_token = Some(
-                    connection
-                        .cdn_auth(app.app_id, depot.depot_id, &server.host)
-                        .await
-                        .unwrap(),
-                );
-                result = content.verify_live_sample(&plan).await;
+        let http = crate::client::http_client().unwrap();
+        let content = crate::content::ContentClient::new(http);
+        let authorization = crate::client::DepotAuthorization {
+            cm: &connection,
+            app_id: app.app_id,
+            depot_id: depot.depot_id,
+        };
+        let plan = crate::content::DepotDownload {
+            depot_id: depot.depot_id,
+            manifest_id: depot.public_manifest.unwrap(),
+            request_code: code,
+            depot_key: key.as_slice().try_into().unwrap(),
+            servers: servers
+                .iter()
+                .filter(|server| {
+                    server.allowed_app_ids.is_empty()
+                        || server.allowed_app_ids.contains(&app.app_id)
+                })
+                .cloned()
+                .collect(),
+            authorization: Some(&authorization),
+            destination: std::path::PathBuf::new(), // Helper never writes files.
+            cached_manifest: None,
+        };
+        let verified = match content.verify_live_sample(&plan).await {
+            Err(error @ crate::content::ContentError::InvalidData(_)) => {
+                panic!("Steam content format: {error}")
             }
-            match result {
-                Ok(sample) => {
-                    verified = Some(sample);
-                    break;
-                }
-                Err(error @ crate::content::ContentError::InvalidData(_)) => {
-                    panic!("Steam content format: {error}")
-                }
-                Err(error) => last_error = Some(error),
-            }
-        }
+            result => result,
+        };
         let (bytes_verified, chunks_verified) =
-            verified.unwrap_or_else(|| panic!("No CDN verified the public sample: {last_error:?}"));
+            verified.unwrap_or_else(|error| panic!("No CDN verified the public sample: {error:?}"));
         assert!(bytes_verified > 0 && bytes_verified <= 8 * 1024 * 1024);
         assert!(chunks_verified > 0);
         eprintln!(

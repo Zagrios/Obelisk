@@ -7,6 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use futures_util::future::BoxFuture;
 use sailover_core::{
     installation::{self, Destination, InstallFailure, InstalledFiles, TransferError},
     transfer::{
@@ -21,7 +22,7 @@ use crate::{
         AppInfo, ContentLicenses, ContentServer, DepotInfo, PICS_BATCH, SteamConnection,
         supports_platform,
     },
-    content::{CancelToken, ContentClient, ContentError, DepotDownload},
+    content::{CancelToken, CdnAuthorization, ContentClient, ContentError, DepotDownload},
 };
 mod cloud;
 
@@ -69,6 +70,9 @@ pub fn http_client() -> Result<reqwest::Client, ClientError> {
         .timeout(Duration::from_secs(90))
         .https_only(true)
         .redirect(reqwest::redirect::Policy::none())
+        // A depot download opens connections to many CDN servers; those it
+        // stops using close soon rather than hold descriptors.
+        .pool_idle_timeout(Duration::from_secs(20))
         .build()
         .map_err(|_| ClientError("backend.steam.client.connectionInitFailed".into()))
 }
@@ -148,7 +152,8 @@ struct PreparedDepot {
 /// Everything resolved over the CM before the installation lock is taken.
 struct PreparedInstall {
     name: String,
-    /// Validated HTTPS CDN/SteamCache hosts allowed to serve this app.
+    /// Validated HTTPS CDN/SteamCache hosts allowed to serve this app, in
+    /// Steam's order of preference.
     servers: Vec<ContentServer>,
     depots: Vec<PreparedDepot>,
 }
@@ -161,39 +166,6 @@ struct ProgressBase {
     total_estimate: u64,
     network: u64,
     content_bytes: u64,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-struct TransferBytes {
-    network: u64,
-    content: u64,
-}
-
-/// Content callbacks contain cumulative counters within one invocation. Keep
-/// prior attempts separate so repeated snapshots and mirror retries add once.
-#[derive(Default)]
-struct DepotTransferBytes {
-    previous: TransferBytes,
-    current: TransferBytes,
-}
-
-impl DepotTransferBytes {
-    fn begin_attempt(&mut self) {
-        self.previous = self.total();
-        self.current = TransferBytes::default();
-    }
-
-    fn observe(&mut self, network: u64, content: u64) -> TransferBytes {
-        self.current = TransferBytes { network, content };
-        self.total()
-    }
-
-    fn total(&self) -> TransferBytes {
-        TransferBytes {
-            network: self.previous.network + self.current.network,
-            content: self.previous.content + self.current.content,
-        }
-    }
 }
 
 pub struct Client {
@@ -546,7 +518,7 @@ impl Client {
         let content = ContentClient::new(self.http.clone());
         for depot in &prepared.depots {
             cancel.check()?;
-            let (summary, received) = self
+            let summary = self
                 .install_depot(
                     &content,
                     depot,
@@ -559,8 +531,8 @@ impl Client {
             base.total_estimate =
                 base.total_estimate.saturating_sub(depot.estimated_bytes) + summary.total_bytes;
             base.completed += summary.total_bytes;
-            base.network += received.network;
-            base.content_bytes += received.content;
+            base.network += summary.downloaded_bytes;
+            base.content_bytes += summary.content_bytes;
             manifests.push(InstalledDepot {
                 depot_id: depot.depot_id,
                 manifest_id: depot.manifest_id,
@@ -618,6 +590,8 @@ impl Client {
             return Err(ClientError("backend.steam.client.noCompatibleDepot".into()));
         }
         // The CM layer already keeps only validated HTTPS CDN/SteamCache hosts.
+        // Every one is kept: Steam's first servers are often its busiest, and a
+        // depot spreads over the fastest ones it measures.
         let servers: Vec<ContentServer> = cm
             .content_servers()
             .await
@@ -626,7 +600,6 @@ impl Client {
             .filter(|server| {
                 server.allowed_app_ids.is_empty() || server.allowed_app_ids.contains(&app_id)
             })
-            .take(8)
             .collect();
         if servers.is_empty() {
             return Err(ClientError("backend.steam.client.noContentServer".into()));
@@ -683,9 +656,8 @@ impl Client {
         })
     }
 
-    /// Installs one depot from the first mirror that serves it, refreshing CDN
-    /// authorization once after a 403. Returns the engine summary and the bytes
-    /// received across every attempt on this depot.
+    /// Installs one depot from every server allowed to serve it. A server that
+    /// refuses the depot is authorized over the CM.
     async fn install_depot(
         &self,
         content: &ContentClient,
@@ -694,28 +666,48 @@ impl Client {
         destination: &Path,
         transfer: &TransferContext<TransferProgress>,
         base: ProgressBase,
-    ) -> Result<(DownloadSummary, TransferBytes), ClientError> {
+    ) -> Result<DownloadSummary, ClientError> {
         let cancel = transfer.cancel_token();
-        let received = Arc::new(Mutex::new(DepotTransferBytes::default()));
         // The current manifest ID and depot key came from authorized Steam
-        // metadata above. Keep one validated snapshot across all CDN attempts.
+        // metadata above. Keep one validated snapshot across all CDN requests.
         let cached_manifest = content
             .cached_manifest(destination, depot.depot_id, depot.manifest_id, &depot.key)
             .await
             .map_err(client_error)?;
+        cancel.check()?;
+        // No request code is needed for an already validated cached archive. A
+        // miss always gets a fresh code just before the CDN.
+        let request_code = if cached_manifest.is_some() {
+            0
+        } else {
+            self.cm
+                .manifest_request_code(depot.depot_id, depot.authorizing_app, depot.manifest_id)
+                .await
+                .map_err(client_error)?
+        };
+        let authorization = DepotAuthorization {
+            cm: &self.cm,
+            app_id: depot.authorizing_app,
+            depot_id: depot.depot_id,
+        };
+        let plan = DepotDownload {
+            depot_id: depot.depot_id,
+            manifest_id: depot.manifest_id,
+            request_code,
+            depot_key: depot.key,
+            servers: servers.to_vec(),
+            authorization: Some(&authorization),
+            destination: destination.to_owned(),
+            cached_manifest,
+        };
         let depot_label =
             crate::message::format("backend.steam.client.depot", &[depot.depot_id.to_string()]);
         // Progress arrives from the content module's network and disk
         // threads, so the callback owns everything it touches.
-        let report: Arc<dyn Fn(DownloadProgress) + Send + Sync> = {
-            let received = Arc::clone(&received);
-            let transfer = transfer.clone();
-            let size = depot.estimated_bytes;
-            Arc::new(move |progress: DownloadProgress| {
-                let bytes = received
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .observe(progress.network_bytes, progress.content_bytes);
+        let transfer = transfer.clone();
+        let size = depot.estimated_bytes;
+        content
+            .download_depot(&plan, cancel, move |progress: DownloadProgress| {
                 transfer.update(|status| {
                     status.state = progress.phase.into();
                     status.completed_bytes = base.completed
@@ -724,64 +716,32 @@ impl Client {
                             .unwrap_or(progress.completed_bytes);
                     status.total_bytes =
                         base.total_estimate.saturating_sub(size) + progress.total_bytes;
-                    status.network_bytes = base.network + bytes.network;
-                    status.content_bytes = base.content_bytes + bytes.content;
+                    status.network_bytes = base.network + progress.network_bytes;
+                    status.content_bytes = base.content_bytes + progress.content_bytes;
                     status.current_file = progress.current_file;
                     status.message.clone_from(&depot_label);
                 });
             })
-        };
-        let mut last_error = None;
-        for server in servers {
-            cancel.check()?;
-            // No request code is needed for an already validated cached
-            // archive. A miss always gets a fresh code just before the CDN.
-            let request_code = if cached_manifest.is_some() {
-                0
-            } else {
-                self.cm
-                    .manifest_request_code(depot.depot_id, depot.authorizing_app, depot.manifest_id)
-                    .await
-                    .map_err(client_error)?
-            };
-            let mut plan = DepotDownload {
-                depot_id: depot.depot_id,
-                manifest_id: depot.manifest_id,
-                request_code,
-                depot_key: depot.key,
-                server: server.vhost.clone(),
-                cdn_token: None,
-                destination: destination.to_owned(),
-                cached_manifest: cached_manifest.clone(),
-            };
-            let mut result = attempt_depot(content, &plan, cancel, &received, &report).await;
-            if matches!(result, Err(ContentError::Http(403))) {
-                cancel.check()?;
-                plan.cdn_token = Some(
-                    self.cm
-                        .cdn_auth(depot.authorizing_app, depot.depot_id, &server.host)
-                        .await
-                        .map_err(client_error)?,
-                );
-                result = attempt_depot(content, &plan, cancel, &received, &report).await;
-            }
-            match result {
-                Ok(summary) => {
-                    let received = received
-                        .lock()
-                        .unwrap_or_else(PoisonError::into_inner)
-                        .total();
-                    return Ok((summary, received));
-                }
-                Err(error @ (ContentError::Network | ContentError::Http(_))) => {
-                    last_error = Some(error.to_string());
-                }
-                Err(error) => return Err(client_error(error)),
-            }
-        }
-        Err(ClientError(last_error.unwrap_or_else(|| {
-            "backend.steam.client.noDepotServer".into()
-        })))
+            .await
+            .map_err(client_error)
+    }
+}
+
+/// Asks Steam for the CDN authorization a server requires for one depot.
+pub(crate) struct DepotAuthorization<'a> {
+    pub(crate) cm: &'a SteamConnection,
+    pub(crate) app_id: u32,
+    pub(crate) depot_id: u32,
+}
+
+impl CdnAuthorization for DepotAuthorization<'_> {
+    fn token<'a>(&'a self, host: &'a str) -> BoxFuture<'a, Option<String>> {
+        Box::pin(async move {
+            self.cm
+                .cdn_auth(self.app_id, self.depot_id, host)
+                .await
+                .ok()
+        })
     }
 }
 
@@ -859,24 +819,6 @@ fn content_authorizing_app(app: &AppInfo, depot: &DepotInfo) -> u32 {
     }
 }
 
-/// One engine attempt on a depot. Counters restart so mirror retries add once.
-async fn attempt_depot(
-    content: &ContentClient,
-    plan: &DepotDownload,
-    cancel: &CancelToken,
-    received: &Mutex<DepotTransferBytes>,
-    report: &Arc<dyn Fn(DownloadProgress) + Send + Sync>,
-) -> Result<DownloadSummary, ContentError> {
-    received
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .begin_attempt();
-    let report = Arc::clone(report);
-    content
-        .download_depot(plan, cancel, move |progress| report(progress))
-        .await
-}
-
 /// Lower layers keep typed errors; the client passes message keys to the host.
 impl From<Cancelled> for ClientError {
     fn from(_: Cancelled) -> Self {
@@ -927,69 +869,6 @@ impl TransferError for ClientError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn transfer_bytes_accumulate_attempts_without_counting_repeated_snapshots() {
-        let mut depot = DepotTransferBytes::default();
-        depot.begin_attempt();
-        assert_eq!(
-            depot.observe(253, 0),
-            TransferBytes {
-                network: 253,
-                content: 0
-            }
-        );
-        assert_eq!(
-            depot.observe(253, 0),
-            TransferBytes {
-                network: 253,
-                content: 0
-            }
-        );
-        assert_eq!(
-            depot.observe(573, 320),
-            TransferBytes {
-                network: 573,
-                content: 320
-            }
-        );
-        // A CDN authentication retry or mirror starts a fresh set of counters.
-        depot.begin_attempt();
-        assert_eq!(
-            depot.observe(0, 0),
-            TransferBytes {
-                network: 573,
-                content: 320
-            }
-        );
-        assert_eq!(
-            depot.observe(253, 0),
-            TransferBytes {
-                network: 826,
-                content: 320
-            }
-        );
-        assert_eq!(
-            depot.observe(253, 0),
-            TransferBytes {
-                network: 826,
-                content: 320
-            }
-        );
-        assert_eq!(
-            depot.observe(573, 320),
-            TransferBytes {
-                network: 1146,
-                content: 640
-            }
-        );
-        assert_eq!(
-            depot.total(),
-            TransferBytes {
-                network: 1146,
-                content: 640
-            }
-        );
-    }
     fn depot(id: u32, os: &str, language: Option<&str>, dlc: Option<u32>) -> DepotInfo {
         DepotInfo {
             depot_id: id,
