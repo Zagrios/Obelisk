@@ -1070,10 +1070,10 @@ final class SteamPresentationTests: XCTestCase {
         XCTAssertEqual(model.qrURL, "https://s.team/q/fixture")
         XCTAssertFalse(model.isCredentialChallenge)
 
-        try await eventually(timeout: .seconds(10)) { model.isConnected }
+        // The library loads once the account connects.
+        try await eventually(timeout: .seconds(10)) { model.isConnected && model.games.count == fixtureGames.count }
         let recorded = await starts.all
         XCTAssertEqual(recorded, [.qr], "Sign-in must start exactly once, through the port")
-        XCTAssertEqual(model.games.count, fixtureGames.count)
     }
 
     @MainActor

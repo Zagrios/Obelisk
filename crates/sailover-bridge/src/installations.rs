@@ -698,6 +698,15 @@ fn epic_receipt(installed: EpicInstallation, request: &epic::Download) -> epic::
     }
 }
 
+/// Waits until the session's persistence saved its rotated credentials.
+struct Persisted(Arc<EpicSession>);
+impl EpicCredentialSave for Persisted {
+    fn save(&self) {
+        let client = self.0.client.clone();
+        self.0.persistence.wait(|| client.credentials_revision());
+    }
+}
+
 /// The signed-in Epic session.
 struct EpicSessionContent {
     session: Arc<EpicSession>,
@@ -1085,19 +1094,19 @@ pub struct EpicAccountInstallations {
 #[uniffi::export(async_runtime = "tokio")]
 impl EpicAccountInstallations {
     /// The installations of `account_id`, which `session` signed in.
-    /// `language` names the game's language at launch; `credentials` saves
-    /// the credentials account calls rotate, before a game starts too.
+    /// `language` names the game's language at launch. The session's own
+    /// persistence saves the credentials their calls rotate.
     #[uniffi::constructor]
     pub fn new(
         session: Arc<EpicSession>,
         account_id: String,
         language: String,
-        credentials: Arc<dyn EpicCredentialSave>,
         sessions: Arc<StorefrontSessions>,
         receipts: String,
         locations: SailOverLocations,
     ) -> Result<Arc<Self>, GameSessionError> {
         let locations: Locations = (&locations).into();
+        let credentials = Arc::new(Persisted(session.clone()));
         let content = EpicSessionContent {
             session,
             local: EpicLocal {

@@ -45,6 +45,18 @@ extension SteamSessionProtocol {
 // session never has to build a Rust-backed object.
 extension EpicSessionProtocol {
     func archiveCloud(configuration: EpicCloudConfiguration) async throws {}
+    /// Saves as Rust does: now, then after every rotation, in order.
+    func persist(credentials: any EpicCredentialSave) async {
+        let session = self
+        Task.detached {
+            credentials.save()
+            var after: UInt64 = 0
+            while let next = await session.nextCredentialsRevision(afterRevision: after) {
+                after = next
+                credentials.save()
+            }
+        }
+    }
     func maintainCloud(configuration: EpicCloudConfiguration) async -> CloudMaintenance {
         fatalError("Tests inject Cloud maintenance into EpicModel")
     }

@@ -271,6 +271,11 @@ impl Client {
     }
 
     /// A separate watch reports refresh immediately, even if the next HTTP request fails.
+    /// The revision of the credentials now, which grows with each rotation.
+    pub fn credentials_revision(&self) -> u64 {
+        self.credential_events.borrow().revision
+    }
+
     pub async fn next_credentials_revision(&self, after_revision: u64) -> Option<u64> {
         sailover_core::watch::next_matching(self.credential_events.subscribe(), |state| {
             state.stopped || state.revision != after_revision

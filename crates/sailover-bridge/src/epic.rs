@@ -175,6 +175,15 @@ impl From<client::GameDetails> for EpicGameDetails {
 pub struct EpicSession {
     /// Shared with the Cloud maintenance this session starts.
     pub(crate) client: Arc<client::Client>,
+    pub(crate) persistence: Arc<crate::epic_credentials::Persistence>,
+}
+impl EpicSession {
+    fn with(client: client::Client) -> Arc<Self> {
+        Arc::new(Self {
+            client: Arc::new(client),
+            persistence: Default::default(),
+        })
+    }
 }
 
 #[uniffi::export(async_runtime = "tokio")]
@@ -195,16 +204,16 @@ impl EpicSession {
 
     #[uniffi::constructor]
     pub async fn sign_in(authorization_code: String) -> Result<Arc<Self>, EpicError> {
-        Ok(Arc::new(Self {
-            client: Arc::new(client::Client::sign_in(&authorization_code).await?),
-        }))
+        Ok(Self::with(
+            client::Client::sign_in(&authorization_code).await?,
+        ))
     }
 
     #[uniffi::constructor]
     pub async fn restore(credentials: EpicCredentials) -> Result<Arc<Self>, EpicError> {
-        Ok(Arc::new(Self {
-            client: Arc::new(client::Client::restore(credentials.into()).await?),
-        }))
+        Ok(Self::with(
+            client::Client::restore(credentials.into()).await?,
+        ))
     }
 
     pub async fn credentials(&self) -> Result<EpicCredentials, EpicError> {
@@ -232,6 +241,17 @@ impl EpicSession {
     }
     pub async fn next_credentials_revision(&self, after_revision: u64) -> Option<u64> {
         self.client.next_credentials_revision(after_revision).await
+    }
+
+    /// Saves the account's credentials through `credentials` now and after
+    /// every rotation, one save at a time and in order, until the session's
+    /// observers stop. Every account call relies on it.
+    pub async fn persist(&self, credentials: Arc<dyn crate::EpicCredentialSave>) {
+        crate::epic_credentials::persist(
+            self.client.clone(),
+            self.persistence.clone(),
+            credentials,
+        );
     }
 
     pub async fn games(&self) -> Result<Vec<EpicGame>, EpicError> {

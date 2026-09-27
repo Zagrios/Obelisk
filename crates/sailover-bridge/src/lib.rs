@@ -13,6 +13,7 @@ mod epic;
 pub use epic::*;
 mod epic_cloud;
 pub use epic_cloud::*;
+mod epic_credentials;
 mod epic_friends;
 pub use epic_friends::*;
 mod cloud_maintenance;

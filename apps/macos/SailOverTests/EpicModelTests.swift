@@ -37,9 +37,8 @@ final class EpicModelTests: XCTestCase {
         XCTAssertFalse(model.isRestoring)
         XCTAssertEqual(model.accountName, "Fixture")
         XCTAssertEqual(model.games.map(\.appName), ["one"])
-        let saved = await store.value
+        await eventually { await store.value?.refreshToken == "rotated" }
         let loads = await store.loads
-        XCTAssertEqual(saved?.refreshToken, "rotated")
         XCTAssertEqual(loads, 1)
     }
 
@@ -387,7 +386,7 @@ final class EpicModelTests: XCTestCase {
         XCTAssertEqual(model.games.map(\.appName), ["one"])
     }
 
-    func testOpeningGameRequestsItsDetailsAndSavesPreparedTokenBeforeResponse() async {
+    func testOpeningGameRequestsItsDetailsAndSavesPreparedTokenWhileResponsePends() async {
         let original = credentials("original")
         let store = EpicMemoryStore(original)
         var owned = game("one")
@@ -401,9 +400,8 @@ final class EpicModelTests: XCTestCase {
         model.open(owned)
         await eventually { await session.detailsCalls.count == 1 }
         let request = await session.detailsCalls.first
-        let saved = await store.value
         XCTAssertEqual(request, EpicDetailsRequest(namespace: "fixture", catalogItemId: "one", appName: "one", platform: "Mac"))
-        XCTAssertEqual(saved?.refreshToken, "prepared")
+        await eventually { await store.value?.refreshToken == "prepared" }
         XCTAssertTrue(model.isLoadingGameDetails)
         XCTAssertNil(model.selectedGameDetails)
 
@@ -501,26 +499,6 @@ final class EpicModelTests: XCTestCase {
         XCTAssertFalse(model.isConnected)
         let saved = await store.value
         XCTAssertNil(saved)
-    }
-
-    func testClosingGameWhileSavingPreparedTokenDoesNotRequestDetails() async {
-        let owned = game("one")
-        let store = EpicMemoryStore(credentials("current"))
-        let session = EpicTestSession(credentials: credentials("current"), games: [owned])
-        let model = EpicModel(keychain: store, restore: { _ in session })
-        await model.start()
-        await store.holdNextSave()
-        model.open(owned)
-        await eventually { await store.waitingForSave }
-
-        model.closeGame()
-        await store.completeSave()
-        await eventually { !(await store.waitingForSave) }
-        await Task.yield()
-        let calls = await session.detailsCalls
-        XCTAssertTrue(calls.isEmpty)
-        XCTAssertNil(model.selectedGameDetails)
-        XCTAssertFalse(model.isLoadingGameDetails)
     }
 
     func testClosingGameStillSavesTokenRotatedByItsLateDetailsResponse() async {
@@ -673,8 +651,12 @@ actor EpicTestSession: EpicSessionProtocol {
         return currentCredentials
     }
     func prepare() async throws -> EpicCredentials {
-        if let prepared { currentCredentials = prepared; self.prepared = nil }
+        preparing()
         return currentCredentials
+    }
+    /// Rotates as Rust's client does when it renews its token before a call.
+    private func preparing() {
+        if let prepared { currentCredentials = prepared; self.prepared = nil }
     }
     func games() async throws -> [EpicGame] {
         gameCalls += 1
@@ -691,6 +673,7 @@ actor EpicTestSession: EpicSessionProtocol {
         return ownedGames
     }
     func gameDetails(namespace: String, catalogItemId: String, appName: String, platform: String) async throws -> EpicGameDetails {
+        preparing()
         detailsCalls.append(EpicDetailsRequest(namespace: namespace, catalogItemId: catalogItemId, appName: appName, platform: platform))
         defer { returnedDetails += 1 }
         if let rotated = detailsFailureCredentials {

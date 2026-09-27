@@ -1,7 +1,8 @@
 import Foundation
 import Observation
 
-/// Coordinates refresh credentials for one active Epic account. OAuth renewal stays in Rust.
+/// Keeps one active Epic account's refresh credentials in the Keychain. OAuth
+/// renewal stays in Rust, which asks for each rotation to be saved, in order.
 @MainActor
 @Observable
 final class EpicRememberedSession {
@@ -23,13 +24,11 @@ final class EpicRememberedSession {
     @ObservationIgnored private let store: any EpicCredentialStore
     @ObservationIgnored private var account: Account?
     @ObservationIgnored private var revision = UUID()
-    @ObservationIgnored private var observation: Task<Void, Never>?
     @ObservationIgnored private var storageTask: Task<Void, Never>?
 
     init(store: any EpicCredentialStore) { self.store = store }
 
     deinit {
-        observation?.cancel()
         account?.session.shutdownObservers()
     }
 
@@ -38,49 +37,15 @@ final class EpicRememberedSession {
         return try await store.load()
     }
 
+    /// Makes `session` the active account. Rust saves its credentials now and
+    /// after every rotation, through this.
     func activate(_ session: any EpicSessionProtocol, accountID: String) async {
-        observation?.cancel()
         revision = UUID()
         let active = Account(session: session, id: accountID, revision: revision)
         account = active
-        observation = Task { [weak self] in
-            await withTaskCancellationHandler {
-                var after: UInt64 = 0
-                while !Task.isCancelled {
-                    guard let updated = await session.nextCredentialsRevision(afterRevision: after),
-                          self?.revision == active.revision, !Task.isCancelled else { return }
-                    after = updated
-                    await self?.persist(active)
-                }
-            } onCancel: { session.shutdownObservers() }
-        }
+        await session.persist(credentials: RememberedCredentials(self, session: session))
+        // The account is saved before it is used.
         await persist(active)
-    }
-
-    /// Prepare and save before the request unless its session was already prepared by the transfer.
-    /// Save on every exit, including cancellation.
-    /// The request keeps its caller's cancellation, while storage runs in its own ordered tasks.
-    func perform<Value>(
-        on session: any EpicSessionProtocol,
-        preparing: Bool = true,
-        _ operation: @MainActor () async throws -> Value
-    ) async throws -> Value {
-        guard let active = account, active.session === session else { throw CancellationError() }
-        let result: Result<Value, Error>
-        do {
-            try requireCurrent(active)
-            if preparing {
-                _ = try await session.prepare()
-                await persist(active)
-                try requireCurrent(active)
-            }
-            result = .success(try await operation())
-        } catch {
-            result = .failure(error)
-        }
-        await persist(active)
-        try requireCurrent(active)
-        return try result.get()
     }
 
     /// Saves the credentials of `session` now, when it is still the active one.
@@ -93,17 +58,11 @@ final class EpicRememberedSession {
     /// Stopping observation neither revokes OAuth nor cancels a download; the caller owns sign-out.
     @discardableResult
     func forget() -> Task<Void, Never> {
-        observation?.cancel()
-        observation = nil
         account?.session.shutdownObservers()
         account = nil
         revision = UUID()
         storageWarning = nil
         return enqueueWrite(removing: true)
-    }
-
-    private func requireCurrent(_ active: Account) throws {
-        guard revision == active.revision, !Task.isCancelled else { throw CancellationError() }
     }
 
     private func persist(_ active: Account) async {
@@ -154,9 +113,10 @@ final class EpicRememberedSession {
 
 /// Saves the credentials Epic account calls rotate, such as a launch's
 /// exchange before its game starts. Rust waits on its own thread while the
-/// save runs on the main actor.
+/// save runs on the main actor. Rust holds it, so it leaves the remembered
+/// session free to go.
 final class RememberedCredentials: EpicCredentialSave, @unchecked Sendable {
-    private let remembered: EpicRememberedSession
+    private weak var remembered: EpicRememberedSession?
     private let session: any EpicSessionProtocol
 
     init(_ remembered: EpicRememberedSession, session: any EpicSessionProtocol) {
@@ -168,7 +128,7 @@ final class RememberedCredentials: EpicCredentialSave, @unchecked Sendable {
         let semaphore = DispatchSemaphore(value: 0)
         let (remembered, session) = (remembered, session)
         Task { @MainActor in
-            await remembered.save(on: session)
+            await remembered?.save(on: session)
             semaphore.signal()
         }
         semaphore.wait()

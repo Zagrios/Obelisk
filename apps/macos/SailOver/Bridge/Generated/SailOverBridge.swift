@@ -1057,10 +1057,10 @@ open class EpicAccountInstallations: EpicAccountInstallationsProtocol, @unchecke
     }
     /**
      * The installations of `account_id`, which `session` signed in.
-     * `language` names the game's language at launch; `credentials` saves
-     * the credentials account calls rotate, before a game starts too.
+     * `language` names the game's language at launch. The session's own
+     * persistence saves the credentials their calls rotate.
      */
-public convenience init(session: EpicSession, accountId: String, language: String, credentials: EpicCredentialSave, sessions: StorefrontSessions, receipts: String, locations: SailOverLocations)throws  {
+public convenience init(session: EpicSession, accountId: String, language: String, sessions: StorefrontSessions, receipts: String, locations: SailOverLocations)throws  {
     let handle =
         try rustCallWithError(FfiConverterTypeGameSessionError_lift) {
         uniffiCallStatus in
@@ -1068,7 +1068,6 @@ public convenience init(session: EpicSession, accountId: String, language: Strin
         FfiConverterTypeEpicSession_lower(session),
         FfiConverterString.lower(accountId),
         FfiConverterString.lower(language),
-        FfiConverterTypeEpicCredentialSave_lower(credentials),
         FfiConverterTypeStorefrontSessions_lower(sessions),
         FfiConverterString.lower(receipts),
         FfiConverterTypeSailOverLocations_lower(locations),uniffiCallStatus
@@ -1911,6 +1910,13 @@ public protocol EpicSessionProtocol: AnyObject, Sendable {
     
     func nextFriends(afterRevision: UInt64) async  -> EpicFriendsSnapshot
     
+    /**
+     * Saves the account's credentials through `credentials` now and after
+     * every rotation, one save at a time and in order, until the session's
+     * observers stop. Every account call relies on it.
+     */
+    func persist(credentials: EpicCredentialSave) async 
+    
     func prepare() async throws  -> EpicCredentials
     
     func reconnectFriends() async 
@@ -2185,6 +2191,28 @@ open func nextFriends(afterRevision: UInt64)async  -> EpicFriendsSnapshot  {
             completeFunc: ffi_sailover_bridge_rust_future_complete_rust_buffer,
             freeFunc: ffi_sailover_bridge_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeEpicFriendsSnapshot_lift,
+            errorHandler: nil
+            
+        )
+}
+    
+    /**
+     * Saves the account's credentials through `credentials` now and after
+     * every rotation, one save at a time and in order, until the session's
+     * observers stop. Every account call relies on it.
+     */
+open func persist(credentials: EpicCredentialSave)async   {
+    return
+        try!  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_sailover_bridge_fn_method_epicsession_persist(
+                        self.uniffiCloneHandle(),FfiConverterTypeEpicCredentialSave_lower(credentials)
+                )
+            },
+            pollFunc: ffi_sailover_bridge_rust_future_poll_void,
+            completeFunc: ffi_sailover_bridge_rust_future_complete_void,
+            freeFunc: ffi_sailover_bridge_rust_future_free_void,
+            liftFunc: { $0 },
             errorHandler: nil
             
         )
@@ -12660,6 +12688,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_sailover_bridge_checksum_method_epicsession_next_friends() != 38499) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_sailover_bridge_checksum_method_epicsession_persist() != 52303) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_sailover_bridge_checksum_method_epicsession_prepare() != 28133) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -12930,7 +12961,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_sailover_bridge_checksum_constructor_storefrontsessions_with_recovery() != 34675) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sailover_bridge_checksum_constructor_epicaccountinstallations_new() != 9852) {
+    if (uniffi_sailover_bridge_checksum_constructor_epicaccountinstallations_new() != 45646) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sailover_bridge_checksum_constructor_epicaccountinstallations_with_content() != 47311) {

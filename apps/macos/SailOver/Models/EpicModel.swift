@@ -364,9 +364,7 @@ final class EpicModel {
     private func reloadGames(_ connected: any EpicSessionProtocol, generation current: Int) async {
         defer { if current == generation { isLoadingGames = false } }
         do {
-            let loaded = try await rememberedSession.perform(on: connected) {
-                try await connected.games()
-            }
+            let loaded = try await connected.games()
             guard current == generation && !Task.isCancelled else { return }
             games = loaded
             if let selectedGame {
@@ -476,11 +474,8 @@ final class EpicModel {
     func reloadAchievements() {
         guard let game = selectedGame, let session else { return }
         let locale = Locale(identifier: launchLanguage).language.languageCode?.identifier ?? "en"
-        let remembered = rememberedSession
         achievements.load {
-            try await remembered.perform(on: session) {
-                try await session.achievements(namespace: game.namespace, locale: locale).map(GameAchievement.init)
-            }
+            try await session.achievements(namespace: game.namespace, locale: locale).map(GameAchievement.init)
         }
     }
 
@@ -507,15 +502,12 @@ final class EpicModel {
         defer { if isCurrent() { isLoadingGameDetails = false } }
         guard isCurrent() else { return }
         do {
-            let details = try await rememberedSession.perform(on: session) {
-                guard isCurrent() else { throw CancellationError() }
-                return try await session.gameDetails(
-                    namespace: game.namespace,
-                    catalogItemId: game.catalogItemId,
-                    appName: game.appName,
-                    platform: game.preferredPlatform
-                )
-            }
+            let details = try await session.gameDetails(
+                namespace: game.namespace,
+                catalogItemId: game.catalogItemId,
+                appName: game.appName,
+                platform: game.preferredPlatform
+            )
             if isCurrent() { selectedGameDetails = details }
         } catch {
             // Secondary metadata must not prevent browsing the library.
@@ -534,8 +526,7 @@ final class EpicModel {
                                       receipts: URL, locations: SailOverLocations) throws -> EpicAccountInstallations {
         if let session = session as? EpicSession {
             return try EpicAccountInstallations(session: session, accountId: account, language: language,
-                                                credentials: credentials, sessions: sessions,
-                                                receipts: receipts.path, locations: locations)
+                                                sessions: sessions, receipts: receipts.path, locations: locations)
         }
         #if DEBUG
         return try EpicAccountInstallations.withContent(
