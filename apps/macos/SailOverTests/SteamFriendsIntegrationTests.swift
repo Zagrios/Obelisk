@@ -251,6 +251,38 @@ final class SteamFriendsIntegrationTests: XCTestCase {
     }
 
     @MainActor
+    func testReconnectBindsInstallationsToTheReplacementSession() async {
+        let first = FriendsBridgeTestSession(hydrated: true)
+        let connections = FriendsTestConnections(first: first)
+        var bound: [any SteamSessionProtocol] = []
+        let library = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let make = SteamModel.installations(library: library)
+        let model = friendsTestModel(connect: { try await connections.connect($0) },
+                                     installations: { session, credentials, sessions, receipts in
+                                         bound.append(session)
+                                         return make(session, credentials, sessions, receipts)
+                                     })
+        await model.start()
+        defer { model.signOut() }
+        await first.settle()
+
+        first.fixture.disconnect(authenticationRequired: false)
+        await connections.waitForRequest(2)
+        let replacement = FriendsBridgeTestSession(hydrated: true)
+        let reconnected = expectation(description: "The replacement session is connected")
+        withObservationTracking {
+            _ = model.friends?.connection
+        } onChange: { reconnected.fulfill() }
+        await connections.release(2, session: replacement)
+        await fulfillment(of: [reconnected], timeout: 3)
+        await replacement.settle()
+
+        XCTAssertEqual(bound.count, 2)
+        XCTAssertTrue(bound.first === first)
+        XCTAssertTrue(bound.last === replacement, "Transfers must not go through the shut-down session")
+    }
+
+    @MainActor
     func testInitialConnectionCompletingAfterSignOutIsClosed() async {
         let connections = FriendsTestConnections()
         let model = friendsTestModel(connect: { try await connections.connect($0) })
@@ -282,7 +314,8 @@ func friendsTestModel(
     session: FriendsBridgeTestSession? = nil,
     accountID: UInt64 = FriendsWireFixture.accountID,
     connect: (@Sendable (SteamCredentials) async throws -> any SteamSessionProtocol)? = nil,
-    reconnectDelay: @escaping @Sendable (Int) async throws -> Void = { _ in try Task.checkCancellation() }
+    reconnectDelay: @escaping @Sendable (Int) async throws -> Void = { _ in try Task.checkCancellation() },
+    installations: SteamModel.MakeInstallations? = nil
 ) -> SteamModel {
     SteamModel(
         directory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString),
@@ -290,7 +323,8 @@ func friendsTestModel(
         connect: connect ?? { _ in session! },
         news: { _ in [] },
         beginLogin: offlineLogin,
-        reconnectDelay: reconnectDelay
+        reconnectDelay: reconnectDelay,
+        installations: installations
     )
 }
 

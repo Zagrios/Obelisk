@@ -458,10 +458,7 @@ final class SteamModel {
             errorMessage = nil
             isConnecting = false
             isRestoring = false
-            let receipts = directory.appending(path: "steam-installations-\(credentials.steamId).json")
-            installations.connect(account: credentials.steamId,
-                                  backend: makeInstallations(connected, credentials, gameSessions.core, receipts),
-                                  port: installationPort())
+            connectInstallations(connected, credentials: credentials)
             rosetta.connect(accountId: credentials.steamId)
             do {
                 if persist { try await keychain.save(credentials) }
@@ -666,6 +663,9 @@ final class SteamModel {
                         }
                         self.libraryPlatforms.reset()
                         self.session = replacement
+                        // The previous session is shut down: Transfers,
+                        // launches and Cloud maintenance go through this one.
+                        self.connectInstallations(replacement, credentials: credentials)
                         active = replacement
                         revision = 0
                         Task { [weak self] in
@@ -867,6 +867,14 @@ final class SteamModel {
         #else
         preconditionFailure("Only a Rust session signs in")
         #endif
+    }
+
+    /// The account's installations, behind `session`.
+    private func connectInstallations(_ session: any SteamSessionProtocol, credentials: SteamCredentials) {
+        let receipts = directory.appending(path: "steam-installations-\(credentials.steamId).json")
+        installations.connect(account: credentials.steamId,
+                              backend: makeInstallations(session, credentials, gameSessions.core, receipts),
+                              port: installationPort())
     }
 
     /// Steam's part of the installation actions.
