@@ -142,7 +142,7 @@ final class StorefrontLibraryFilterTests: XCTestCase {
         SteamGame(appId: appID, name: name, iconHash: "", lastPlayed: lastPlayed, playtimeMinutes: playtime)
     }
 
-    private func steamModel(root: URL, games: [SteamGame], receipts: [SteamInstallReceipt] = [],
+    private func steamModel(root: URL, games: [SteamGame], receipts: [InstallationReceipt<UInt32>] = [],
                             platforms: @escaping @Sendable ([UInt32]) async throws -> [SteamGamePlatforms] = { _ in [] }) -> SteamModel {
         let session = FilterSteamSession(games: games, platforms: platforms)
         return SteamModel(directory: root, keychain: FilterSteamCredentials(), connect: { _ in session }, news: { _ in [] },
@@ -156,23 +156,23 @@ final class StorefrontLibraryFilterTests: XCTestCase {
                  description: "", imageUrl: nil, headerImageUrl: nil, developer: "", windows: true, macos: macOS)
     }
 
-    private func epicModel(root: URL, games: [EpicGame], receipts: [EpicInstallReceipt] = []) -> EpicModel {
+    private func epicModel(root: URL, games: [EpicGame], receipts: [InstallationReceipt<String>] = []) -> EpicModel {
         let credentials = EpicCredentials(accountId: "filters", displayName: "Filter fixture", refreshToken: "fixture-only-never-sent")
         let session = EpicTestSession(credentials: credentials, games: games)
         return EpicModel(directory: root, keychain: EpicMemoryStore(credentials), restore: { _ in session },
                          installations: EpicModel.installations(FakeInstallations(receipts: receipts)))
     }
 
-    private func steamReceipts(_ entries: [(UInt32, String)], root: URL) -> [SteamInstallReceipt] {
+    private func steamReceipts(_ entries: [(UInt32, String)], root: URL) -> [InstallationReceipt<UInt32>] {
         entries.map { appID, platform in
-            SteamInstallReceipt(appId: appID, name: "Game \(appID)", directory: root.appending(path: "steam-\(appID)-\(platform)").path,
-                                platform: platform, language: "english", totalBytes: 1)
+            .steam(appId: appID, name: "Game \(appID)", directory: root.appending(path: "steam-\(appID)-\(platform)").path,
+                   platform: platform, totalBytes: 1)
         }
     }
 
-    private func epicReceipts(_ entries: [(EpicGame, String)], root: URL) -> [EpicInstallReceipt] {
+    private func epicReceipts(_ entries: [(EpicGame, String)], root: URL) -> [InstallationReceipt<String>] {
         entries.map { game, platform in
-            EpicInstallReceipt(namespace: game.namespace, appName: game.appName, name: game.title,
+            InstallationReceipt.epic(namespace: game.namespace, appName: game.appName, name: game.title,
                                directory: root.appending(path: "epic-\(game.namespace)-\(game.appName)-\(platform)").path,
                                platform: platform, totalBytes: 1)
         }

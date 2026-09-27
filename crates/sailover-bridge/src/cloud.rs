@@ -1,6 +1,5 @@
 //! Cloud indicators across UniFFI. An account's installations start
 //! maintenance and answer its Cloud question.
-use crate::EpicGameId;
 use game_runtime::cloud_status;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -55,18 +54,6 @@ impl From<cloud_status::Indicator> for CloudIndicator {
             installation_removed: indicator.installation_removed,
         }
     }
-}
-
-#[derive(Clone, Debug, uniffi::Record)]
-pub struct SteamCloudIndicator {
-    pub app_id: u32,
-    pub indicator: CloudIndicator,
-}
-
-#[derive(Clone, Debug, uniffi::Record)]
-pub struct EpicCloudIndicator {
-    pub game: EpicGameId,
-    pub indicator: CloudIndicator,
 }
 
 #[cfg(test)]

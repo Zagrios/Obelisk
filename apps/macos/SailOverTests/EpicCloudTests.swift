@@ -163,7 +163,7 @@ final class EpicCloudTests: XCTestCase {
         let credentials = EpicCredentials(accountId: "account", displayName: "Fixture", refreshToken: "fixture")
         let owned = EpicGame(appName: "game", namespace: "sandbox", catalogItemId: "catalog", title: "Fixture",
                              description: "", imageUrl: nil, headerImageUrl: nil, developer: "", windows: false, macos: true)
-        let receipt = EpicInstallReceipt(namespace: "sandbox", appName: "game", name: "Fixture",
+        let receipt = InstallationReceipt.epic(namespace: "sandbox", appName: "game", name: "Fixture",
                                          directory: directory.appending(path: "Games/Epic/epic-game-Mac").path,
                                          platform: "Mac", totalBytes: 0)
         let backend = FakeInstallations<EpicGames>(receipts: [receipt])

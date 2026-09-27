@@ -3,15 +3,27 @@ import Observation
 
 /// What a storefront adds to its installation actions.
 protocol InstallationStorefront: GameStorefront {
-    associatedtype Receipt: InstallReceipt where Receipt.GameID == GameID
-    /// What the storefront offers to install: one game's build.
-    associatedtype Offer: Equatable & Sendable
     /// A failed answer, as the storefront's models describe errors.
     @MainActor static func describe(_ error: Error) -> String
     /// The game Rust names `id`.
     static func game(_ id: String) -> GameID?
+    /// How Rust names `game`.
+    static func name(_ game: GameID) -> String
     /// Shown on a game's page while another game's operation holds the storefront.
     static var otherGameOperation: String { get }
+}
+
+/// One installation of the account, as its Installation receipt in Rust
+/// records it. Its id names it in every action.
+struct InstallationReceipt<GameID: Hashable & Sendable>: Identifiable, Equatable, Sendable {
+    let id: String
+    let gameID: GameID
+    let name: String
+    let directory: String
+    let platform: String
+    let totalBytes: UInt64
+    /// A Transfer started over it and has not succeeded since.
+    var needsVerification = false
 }
 
 /// The game on screen, as the storefront model sees it.
@@ -19,7 +31,7 @@ struct InstallationSelection<Store: InstallationStorefront> {
     let game: Store.GameID
     let platform: String
     /// The build SailOver can install, once the storefront knows one.
-    let offer: Store.Offer?
+    let offer: GameOffer?
 }
 
 /// What may start now, of one kind of action, as Rust's Reservation shows it.
@@ -78,7 +90,7 @@ struct InstallationPort<Store: InstallationStorefront> {
 /// Everything one account's installations present, as Rust keeps them.
 struct InstallationsSnapshot<Store: InstallationStorefront>: Equatable {
     var revision: UInt64
-    var receipts: [Store.Receipt]
+    var receipts: [InstallationReceipt<Store.GameID>]
     var transfer: GameTransfer?
     var transferGame: Store.GameID?
     var downloading: Bool
@@ -105,19 +117,19 @@ protocol InstallationsBackend<Store>: AnyObject {
     func changed(after: UInt64) async -> InstallationsSnapshot<Store>
     func setDiagnostic(_ running: Bool)
     /// Installs `offer`'s build, or resumes the game's interrupted Transfer.
-    func install(_ offer: Store.Offer)
+    func install(_ offer: GameOffer)
     /// Updates `receipt`'s installation in place, or resumes the game's
     /// interrupted Transfer.
-    func update(_ receipt: Store.Receipt)
+    func update(_ receipt: InstallationReceipt<Store.GameID>)
     func cancel()
     /// Launches `receipt`'s installation, verifying it first when `verify`
     /// asks for it or the installation needs it.
-    func launch(_ receipt: Store.Receipt, verify: Bool)
-    func uninstall(_ receipt: Store.Receipt)
+    func launch(_ receipt: InstallationReceipt<Store.GameID>, verify: Bool)
+    func uninstall(_ receipt: InstallationReceipt<Store.GameID>)
     func signedOut()
     /// Syncs the game's Cloud saves: those of `installed`, or an uninstalled
     /// game's when nil.
-    func maintainCloud(_ game: Store.GameID, installed: Store.Receipt?)
+    func maintainCloud(_ game: Store.GameID, installed: InstallationReceipt<Store.GameID>?)
     /// Answers the Cloud question the game shows: its maintenance's or its
     /// Game session's.
     func answerCloud(_ game: Store.GameID, decisionId: UInt64, choice: CloudChoice) async throws
@@ -131,7 +143,7 @@ protocol InstallationsBackend<Store>: AnyObject {
 /// the game on screen and forwards the player's actions.
 @MainActor @Observable
 final class GameInstallations<Store: InstallationStorefront> {
-    typealias Receipt = Store.Receipt
+    typealias Receipt = InstallationReceipt<Store.GameID>
 
     private(set) var receipts: [Receipt] = [] {
         // Every path that removes a game's last installation reports it here,
@@ -431,18 +443,16 @@ extension TransferState {
 }
 
 extension SteamGames: InstallationStorefront {
-    typealias Receipt = SteamInstallReceipt
-    typealias Offer = SteamOffer
     static func game(_ id: String) -> UInt32? { UInt32(id) }
+    static func name(_ game: UInt32) -> String { String(game) }
     static let otherGameOperation = "ui.steam.other_game_operation"
     @MainActor static func describe(_ error: Error) -> String { SteamModel.message(error) }
 }
 
 extension EpicGames: InstallationStorefront {
-    typealias Receipt = EpicInstallReceipt
-    typealias Offer = EpicOffer
     /// Rust names an Epic game as its library ID does.
     static func game(_ id: String) -> String? { epicGameID(id) == nil ? nil : id }
+    static func name(_ game: String) -> String { game }
     static let otherGameOperation = "ui.epic.other_game_operation"
     @MainActor static func describe(_ error: Error) -> String { EpicModel.message(error) }
 }
@@ -466,123 +476,72 @@ final class NoInstallations<Store: InstallationStorefront>: InstallationsBackend
         return empty
     }
     func setDiagnostic(_ running: Bool) {}
-    func install(_ offer: Store.Offer) {}
-    func update(_ receipt: Store.Receipt) {}
+    func install(_ offer: GameOffer) {}
+    func update(_ receipt: InstallationReceipt<Store.GameID>) {}
     func cancel() {}
-    func launch(_ receipt: Store.Receipt, verify: Bool) {}
-    func uninstall(_ receipt: Store.Receipt) {}
+    func launch(_ receipt: InstallationReceipt<Store.GameID>, verify: Bool) {}
+    func uninstall(_ receipt: InstallationReceipt<Store.GameID>) {}
     func signedOut() {}
-    func maintainCloud(_ game: Store.GameID, installed: Store.Receipt?) {}
+    func maintainCloud(_ game: Store.GameID, installed: InstallationReceipt<Store.GameID>?) {}
     func answerCloud(_ game: Store.GameID, decisionId: UInt64, choice: CloudChoice) async throws {
         throw Store.failure(Store.invalidSession)
     }
     func cloudIndicators(_ games: [Store.GameID]) async throws -> [(Store.GameID, CloudIndicator)] { [] }
 }
 
-/// A Steam account's installations in Rust.
-final class SteamInstallationsBackend: InstallationsBackend {
-    typealias Store = SteamGames
-    private let core: SteamAccountInstallations
+/// One account's installations in Rust, of either storefront: games cross
+/// under the names Rust gives them, installations under their receipt's id.
+final class RustInstallations<Store: InstallationStorefront>: InstallationsBackend {
+    private let core: any AccountInstallationsProtocol
 
-    init(_ core: SteamAccountInstallations) { self.core = core }
+    init(_ core: any AccountInstallationsProtocol) { self.core = core }
 
-    func snapshot() -> InstallationsSnapshot<SteamGames> { Self.snapshot(core.state()) }
-    func changed(after: UInt64) async -> InstallationsSnapshot<SteamGames> {
+    func snapshot() -> InstallationsSnapshot<Store> { Self.snapshot(core.state()) }
+    func changed(after: UInt64) async -> InstallationsSnapshot<Store> {
         Self.snapshot(await core.changed(after: after))
     }
     func setDiagnostic(_ running: Bool) { core.setDiagnostic(running: running) }
-    func install(_ offer: SteamOffer) { core.install(offer: offer) }
-    func update(_ receipt: SteamInstallReceipt) { core.update(receipt: receipt.id) }
+    func install(_ offer: GameOffer) { core.install(offer: offer) }
+    func update(_ receipt: InstallationReceipt<Store.GameID>) { core.update(installation: receipt.id) }
     func cancel() { core.cancel() }
-    func launch(_ receipt: SteamInstallReceipt, verify: Bool) { core.launch(receipt: receipt.id, verify: verify) }
-    func uninstall(_ receipt: SteamInstallReceipt) { core.uninstall(receipt: receipt.id) }
+    func launch(_ receipt: InstallationReceipt<Store.GameID>, verify: Bool) {
+        core.launch(installation: receipt.id, verify: verify)
+    }
+    func uninstall(_ receipt: InstallationReceipt<Store.GameID>) { core.uninstall(installation: receipt.id) }
     func signedOut() { core.signedOut() }
-    func maintainCloud(_ game: UInt32, installed: SteamInstallReceipt?) {
-        core.maintainCloud(appId: game, receipt: installed?.id)
+    func maintainCloud(_ game: Store.GameID, installed: InstallationReceipt<Store.GameID>?) {
+        core.maintainCloud(game: Store.name(game), installation: installed?.id)
     }
-    func answerCloud(_ game: UInt32, decisionId: UInt64, choice: CloudChoice) async throws {
-        do { try await core.answerCloud(appId: game, decisionId: decisionId, choice: choice) }
-        catch { throw SteamGameSessions.translated(error) }
+    func answerCloud(_ game: Store.GameID, decisionId: UInt64, choice: CloudChoice) async throws {
+        do { try await core.answerCloud(game: Store.name(game), decisionId: decisionId, choice: choice) }
+        catch { throw GameSessions<Store>.translated(error) }
     }
-    func cloudIndicators(_ games: [UInt32]) async throws -> [(UInt32, CloudIndicator)] {
-        try await core.cloudIndicators(appIds: games).map { ($0.appId, $0.indicator) }
-    }
-
-    private static func snapshot(_ state: SteamInstallationsState) -> InstallationsSnapshot<SteamGames> {
-        InstallationsSnapshot(
-            revision: state.revision, receipts: state.receipts.map(receipt), transfer: state.transfer,
-            transferGame: state.transferGame, downloading: state.downloading, launching: state.launching,
-            verifyingBeforeLaunch: state.verifyingBeforeLaunch, launchGame: state.launchGame,
-            uninstalling: state.uninstalling, uninstallGame: state.uninstallGame,
-            resumable: state.resumable.flatMap(SteamGames.game), report: state.report, warning: state.warning,
-            maintenance: state.maintenance.map { GameCloudMaintenance(game: $0.appId, cloud: $0.cloud) },
-            gate: InstallationsGate(state.gate, game: SteamGames.game)
-        )
-    }
-    private static func receipt(_ receipt: SteamReceipt) -> SteamInstallReceipt {
-        SteamInstallReceipt(appId: receipt.appId, name: receipt.name, directory: receipt.directory,
-                            platform: receipt.platform, language: receipt.language, totalBytes: receipt.totalBytes,
-                            needsVerification: receipt.needsVerification)
-    }
-}
-
-/// An Epic account's installations in Rust.
-final class EpicInstallationsBackend: InstallationsBackend {
-    typealias Store = EpicGames
-    private let core: EpicAccountInstallations
-
-    init(_ core: EpicAccountInstallations) { self.core = core }
-
-    func snapshot() -> InstallationsSnapshot<EpicGames> { Self.snapshot(core.state()) }
-    func changed(after: UInt64) async -> InstallationsSnapshot<EpicGames> {
-        Self.snapshot(await core.changed(after: after))
-    }
-    func setDiagnostic(_ running: Bool) { core.setDiagnostic(running: running) }
-    func install(_ offer: EpicOffer) { core.install(offer: offer) }
-    func update(_ receipt: EpicInstallReceipt) { core.update(receipt: receipt.id) }
-    func cancel() { core.cancel() }
-    func launch(_ receipt: EpicInstallReceipt, verify: Bool) { core.launch(receipt: receipt.id, verify: verify) }
-    func uninstall(_ receipt: EpicInstallReceipt) { core.uninstall(receipt: receipt.id) }
-    func signedOut() { core.signedOut() }
-    func maintainCloud(_ game: String, installed: EpicInstallReceipt?) {
-        guard let id = Self.id(game) else { return }
-        core.maintainCloud(game: id, receipt: installed?.id)
-    }
-    func answerCloud(_ game: String, decisionId: UInt64, choice: CloudChoice) async throws {
-        guard let id = Self.id(game) else { throw EpicGames.failure(EpicGames.invalidSession) }
-        do { try await core.answerCloud(game: id, decisionId: decisionId, choice: choice) }
-        catch { throw EpicGameSessions.translated(error) }
-    }
-    func cloudIndicators(_ games: [String]) async throws -> [(String, CloudIndicator)] {
-        try await core.cloudIndicators(games: games.compactMap(Self.id)).map {
-            (epicLibraryID(namespace: $0.game.namespace, appName: $0.game.appName), $0.indicator)
+    func cloudIndicators(_ games: [Store.GameID]) async throws -> [(Store.GameID, CloudIndicator)] {
+        try await core.cloudIndicators(games: games.map(Store.name)).compactMap { shown in
+            Store.game(shown.game).map { ($0, shown.indicator) }
         }
     }
 
-    private static func game(_ game: EpicGameId?) -> String? {
-        game.map { epicLibraryID(namespace: $0.namespace, appName: $0.appName) }
-    }
-    /// The game a library ID names.
-    private static func id(_ libraryID: String) -> EpicGameId? {
-        epicGameID(libraryID).map { EpicGameId(namespace: $0.namespace, appName: $0.appName) }
-    }
-    private static func snapshot(_ state: EpicInstallationsState) -> InstallationsSnapshot<EpicGames> {
+    private static func snapshot(_ state: InstallationsState) -> InstallationsSnapshot<Store> {
         InstallationsSnapshot(
-            revision: state.revision, receipts: state.receipts.map(receipt), transfer: state.transfer,
-            transferGame: game(state.transferGame), downloading: state.downloading, launching: state.launching,
-            verifyingBeforeLaunch: state.verifyingBeforeLaunch, launchGame: game(state.launchGame),
-            uninstalling: state.uninstalling, uninstallGame: game(state.uninstallGame),
-            resumable: state.resumable.flatMap(EpicGames.game), report: state.report, warning: state.warning,
-            maintenance: state.maintenance.map {
-                GameCloudMaintenance(game: epicLibraryID(namespace: $0.game.namespace, appName: $0.game.appName),
-                                     cloud: $0.cloud)
+            revision: state.revision,
+            receipts: state.installations.compactMap { installation in
+                Store.game(installation.game).map {
+                    InstallationReceipt(id: installation.id, gameID: $0, name: installation.name,
+                                        directory: installation.directory, platform: installation.platform,
+                                        totalBytes: installation.totalBytes,
+                                        needsVerification: installation.needsVerification)
+                }
             },
-            gate: InstallationsGate(state.gate, game: EpicGames.game)
+            transfer: state.transfer, transferGame: state.transferGame.flatMap(Store.game),
+            downloading: state.downloading, launching: state.launching,
+            verifyingBeforeLaunch: state.verifyingBeforeLaunch, launchGame: state.launchGame.flatMap(Store.game),
+            uninstalling: state.uninstalling, uninstallGame: state.uninstallGame.flatMap(Store.game),
+            resumable: state.resumable.flatMap(Store.game), report: state.report, warning: state.warning,
+            maintenance: state.maintenance.flatMap { maintenance in
+                Store.game(maintenance.game).map { GameCloudMaintenance(game: $0, cloud: maintenance.cloud) }
+            },
+            gate: InstallationsGate(state.gate, game: Store.game)
         )
-    }
-    private static func receipt(_ receipt: EpicReceipt) -> EpicInstallReceipt {
-        EpicInstallReceipt(namespace: receipt.namespace, appName: receipt.appName, name: receipt.name,
-                           directory: receipt.directory, platform: receipt.platform, totalBytes: receipt.totalBytes,
-                           needsVerification: receipt.needsVerification)
     }
 }

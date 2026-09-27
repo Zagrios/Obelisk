@@ -96,7 +96,7 @@ final class EpicDownloadTests: XCTestCase {
         try await eventually { !fixture.model.installations.isDownloading }
         XCTAssertEqual(fixture.model.selectedGame?.libraryID, other.libraryID)
         XCTAssertNil(fixture.model.installations.selectedReceipt)
-        XCTAssertEqual(fixture.model.installations.receipts.first?.libraryID, fixture.game.libraryID)
+        XCTAssertEqual(fixture.model.installations.receipts.first?.gameID, fixture.game.libraryID)
         XCTAssertEqual(fixture.model.installations.primaryActionTitle, L10n.string("model.game.download"))
         XCTAssertTrue(fixture.model.installations.primaryActionAvailable)
     }
@@ -206,9 +206,9 @@ final class EpicDownloadTests: XCTestCase {
     func testUninstallRejectsAStaleReceiptAndAnActiveDownload() async throws {
         let fixture = try await fixture(installed: "Windows")
         let receipt = try XCTUnwrap(fixture.model.installations.selectedReceipt)
-        let forged = EpicInstallReceipt(namespace: receipt.namespace, appName: receipt.appName, name: receipt.name,
-                                        directory: fixture.directory.path, platform: receipt.platform,
-                                        totalBytes: receipt.totalBytes)
+        let forged = InstallationReceipt(id: receipt.id, gameID: receipt.gameID, name: receipt.name,
+                                         directory: fixture.directory.path, platform: receipt.platform,
+                                         totalBytes: receipt.totalBytes)
         fixture.model.installations.uninstall(forged)
         XCTAssertEqual(fixture.backend.actions, [])
 
@@ -258,19 +258,19 @@ private struct EpicDownloadFixture {
     let game: EpicGame
 
     /// What Epic offers to install of the game on screen, for `platform`.
-    func offer(_ platform: String) -> EpicOffer {
-        EpicOffer(namespace: game.namespace, catalogItemId: game.catalogItemId, appName: game.appName,
+    func offer(_ platform: String) -> GameOffer {
+        GameOffer.epic(namespace: game.namespace, catalogItemId: game.catalogItemId, appName: game.appName,
                   title: game.title, platform: platform)
     }
 
-    func receipt(_ app: String, platform: String) -> EpicInstallReceipt {
+    func receipt(_ app: String, platform: String) -> InstallationReceipt<String> {
         var owned = game
         owned.appName = app
         return Self.receipt(owned, directory: directory, platform: platform)
     }
 
-    static func receipt(_ game: EpicGame, directory: URL, platform: String) -> EpicInstallReceipt {
-        EpicInstallReceipt(namespace: game.namespace, appName: game.appName, name: game.title,
+    static func receipt(_ game: EpicGame, directory: URL, platform: String) -> InstallationReceipt<String> {
+        InstallationReceipt.epic(namespace: game.namespace, appName: game.appName, name: game.title,
                            directory: directory.appending(path: "Games/Epic/epic-\(game.appName)-\(platform)").path,
                            platform: platform, totalBytes: 100)
     }

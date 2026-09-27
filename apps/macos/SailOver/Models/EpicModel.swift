@@ -9,19 +9,6 @@ func epicGameID(_ libraryID: String) -> (namespace: String, appName: String)? {
     return (String(libraryID[..<colon]), String(libraryID[libraryID.index(after: colon)...]))
 }
 
-struct EpicInstallReceipt: InstallReceipt {
-    var id: String { "\(namespace):\(appName):\(platform)" }
-    var libraryID: String { epicLibraryID(namespace: namespace, appName: appName) }
-    var gameID: String { libraryID }
-    let namespace: String
-    let appName: String
-    let name: String
-    let directory: String
-    let platform: String
-    let totalBytes: UInt64
-    var needsVerification: Bool? = false
-}
-
 @MainActor
 @Observable
 final class EpicModel {
@@ -113,7 +100,7 @@ final class EpicModel {
             guard let session = session as? EpicSession, let sessions = sessions as? StorefrontSessions else {
                 return NoInstallations<EpicGames>()
             }
-            return EpicInstallationsBackend(try! EpicAccountInstallations(
+            return RustInstallations<EpicGames>(try! AccountInstallations.epic(
                 session: session, accountId: account, language: language, sessions: sessions,
                 receipts: receipts.path, locations: locations
             ))
@@ -138,8 +125,8 @@ final class EpicModel {
     private var installationSelection: InstallationSelection<EpicGames>? {
         guard let game = selectedGame else { return nil }
         let offer = game.macos || game.windows
-            ? EpicOffer(namespace: game.namespace, catalogItemId: game.catalogItemId, appName: game.appName,
-                        title: game.title, platform: game.preferredPlatform)
+            ? GameOffer.epic(namespace: game.namespace, catalogItemId: game.catalogItemId, appName: game.appName,
+                             title: game.title, platform: game.preferredPlatform)
             : nil
         return InstallationSelection(game: game.libraryID, platform: game.preferredPlatform, offer: offer)
     }
@@ -156,7 +143,7 @@ final class EpicModel {
         let title = L10n.string("ui.epic.cloud.title")
         guard let libraryID else { return title }
         let name = games.first { $0.libraryID == libraryID }?.title
-            ?? installations.receipts.first { $0.libraryID == libraryID }?.name
+            ?? installations.receipts.first { $0.gameID == libraryID }?.name
             ?? libraryID
         return "\(title) · \(name)"
     }
@@ -184,7 +171,7 @@ final class EpicModel {
         let source = games
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         let selectedFilter = filter
-        let installedLibraryIDs = selectedFilter == .installed ? Set(installations.receipts.map(\.libraryID)) : []
+        let installedLibraryIDs = selectedFilter == .installed ? Set(installations.receipts.map(\.gameID)) : []
         if let cached = filteredLibraryCache, cached.query == query, cached.filter == selectedFilter,
            cached.installed == installedLibraryIDs {
             return cached.games

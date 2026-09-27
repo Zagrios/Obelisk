@@ -32,18 +32,6 @@ enum SteamLoginStart: Sendable, Equatable {
     case credentials(account: String, password: String)
 }
 
-struct SteamInstallReceipt: InstallReceipt {
-    var id: String { "\(appId)-\(platform)" }
-    var gameID: UInt32 { appId }
-    let appId: UInt32
-    let name: String
-    let directory: String
-    let platform: String
-    let language: String
-    let totalBytes: UInt64
-    var needsVerification: Bool? = nil
-}
-
 @MainActor
 @Observable
 final class SteamModel {
@@ -92,7 +80,7 @@ final class SteamModel {
         if let details, details.appId == selectedGame?.appId { return details.preferredPlatform }
         // Installation receipts are available before remote details. Never use
         // the previous game's platform to present the newly selected game.
-        return installations.receipts.contains { $0.appId == selectedGame?.appId && $0.platform == "macos" }
+        return installations.receipts.contains { $0.gameID == selectedGame?.appId && $0.platform == "macos" }
             ? "macos" : "windows"
     }
     private(set) var language: String
@@ -177,7 +165,7 @@ final class SteamModel {
             guard let session = session as? SteamSession, let sessions = sessions as? StorefrontSessions else {
                 return NoInstallations<SteamGames>()
             }
-            return SteamInstallationsBackend(try! SteamAccountInstallations(
+            return RustInstallations<SteamGames>(try! AccountInstallations.steam(
                 session: session, credentials: credentials, sessions: sessions, receipts: receipts.path,
                 locations: locations
             ))
@@ -212,7 +200,7 @@ final class SteamModel {
         let title = L10n.string("ui.steam.cloud.title")
         guard let appId else { return title }
         let name = games.first { $0.appId == appId }?.name
-            ?? installations.receipts.first { $0.appId == appId }?.name
+            ?? installations.receipts.first { $0.gameID == appId }?.name
             ?? String(appId)
         return "\(title) · \(name)"
     }
@@ -224,7 +212,7 @@ final class SteamModel {
         let details = details?.appId == game.appId && !isLoadingDetails ? details : nil
         let offer = details.flatMap { details in
             details.macos || details.windows
-                ? SteamOffer(appId: game.appId, name: game.name, platform: details.preferredPlatform, language: language)
+                ? GameOffer.steam(appId: game.appId, name: game.name, platform: details.preferredPlatform, language: language)
                 : nil
         }
         return InstallationSelection(game: game.appId, platform: platform, offer: offer)
@@ -256,7 +244,7 @@ final class SteamModel {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         let order = sort
         let selectedFilter = filter
-        let installedAppIds = selectedFilter == .installed ? Set(installations.receipts.map(\.appId)) : []
+        let installedAppIds = selectedFilter == .installed ? Set(installations.receipts.map(\.gameID)) : []
         // Dictionary snapshots share storage until the next metadata batch changes it.
         let platforms = selectedFilter == .macOS ? libraryPlatforms.platforms : [:]
         if let cached = filteredLibraryCache, cached.query == query, cached.sort == order,

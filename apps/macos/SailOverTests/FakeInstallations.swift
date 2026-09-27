@@ -8,13 +8,13 @@ import Foundation
 final class FakeInstallations<Store: InstallationStorefront>: InstallationsBackend {
     enum Call: Equatable {
         case diagnostic(Bool)
-        case install(Store.Offer)
-        case update(Store.Receipt)
+        case install(GameOffer)
+        case update(InstallationReceipt<Store.GameID>)
         case cancel
-        case launch(Store.Receipt, verify: Bool)
-        case uninstall(Store.Receipt)
+        case launch(InstallationReceipt<Store.GameID>, verify: Bool)
+        case uninstall(InstallationReceipt<Store.GameID>)
         case signedOut
-        case maintain(Store.GameID, installed: Store.Receipt?)
+        case maintain(Store.GameID, installed: InstallationReceipt<Store.GameID>?)
         case answer(Store.GameID, decision: UInt64, CloudChoice)
     }
 
@@ -28,7 +28,7 @@ final class FakeInstallations<Store: InstallationStorefront>: InstallationsBacke
     /// Runs as each action reaches Rust, before the call returns.
     var onCall: (Call) -> Void = { _ in }
 
-    init(receipts: [Store.Receipt] = []) {
+    init(receipts: [InstallationReceipt<Store.GameID>] = []) {
         state = InstallationsSnapshot(
             revision: 1, receipts: receipts, transfer: nil, transferGame: nil, downloading: false, launching: false,
             verifyingBeforeLaunch: false, launchGame: nil, uninstalling: false, uninstallGame: nil,
@@ -60,13 +60,13 @@ final class FakeInstallations<Store: InstallationStorefront>: InstallationsBacke
     }
 
     func setDiagnostic(_ running: Bool) { record(.diagnostic(running)) }
-    func install(_ offer: Store.Offer) { record(.install(offer)) }
-    func update(_ receipt: Store.Receipt) { record(.update(receipt)) }
+    func install(_ offer: GameOffer) { record(.install(offer)) }
+    func update(_ receipt: InstallationReceipt<Store.GameID>) { record(.update(receipt)) }
     func cancel() { record(.cancel) }
-    func launch(_ receipt: Store.Receipt, verify: Bool) { record(.launch(receipt, verify: verify)) }
-    func uninstall(_ receipt: Store.Receipt) { record(.uninstall(receipt)) }
+    func launch(_ receipt: InstallationReceipt<Store.GameID>, verify: Bool) { record(.launch(receipt, verify: verify)) }
+    func uninstall(_ receipt: InstallationReceipt<Store.GameID>) { record(.uninstall(receipt)) }
     func signedOut() { record(.signedOut) }
-    func maintainCloud(_ game: Store.GameID, installed: Store.Receipt?) {
+    func maintainCloud(_ game: Store.GameID, installed: InstallationReceipt<Store.GameID>?) {
         record(.maintain(game, installed: installed))
     }
     func answerCloud(_ game: Store.GameID, decisionId: UInt64, choice: CloudChoice) async throws {
@@ -78,6 +78,36 @@ final class FakeInstallations<Store: InstallationStorefront>: InstallationsBacke
     /// The actions Swift forwarded, without diagnostics.
     var actions: [Call] {
         calls.filter { if case .diagnostic = $0 { false } else { true } }
+    }
+}
+
+/// Installations as Rust names them.
+extension InstallationReceipt where GameID == UInt32 {
+    static func steam(appId: UInt32, name: String, directory: String, platform: String,
+                      totalBytes: UInt64 = 100) -> Self {
+        Self(id: "\(appId)-\(platform)", gameID: appId, name: name, directory: directory, platform: platform,
+             totalBytes: totalBytes)
+    }
+}
+
+extension InstallationReceipt where GameID == String {
+    static func epic(namespace: String, appName: String, name: String, directory: String, platform: String,
+                     totalBytes: UInt64 = 100) -> Self {
+        Self(id: "\(namespace):\(appName):\(platform)", gameID: epicLibraryID(namespace: namespace, appName: appName),
+             name: name, directory: directory, platform: platform, totalBytes: totalBytes)
+    }
+}
+
+extension GameOffer {
+    var platform: String {
+        switch self {
+        case let .steam(_, _, platform, _): platform
+        case let .epic(_, _, _, _, platform): platform
+        }
+    }
+    var steamApp: UInt32? {
+        guard case let .steam(appId, _, _, _) = self else { return nil }
+        return appId
     }
 }
 

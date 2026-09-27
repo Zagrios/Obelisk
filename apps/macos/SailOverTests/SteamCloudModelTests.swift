@@ -191,21 +191,21 @@ final class SteamCloudModelTests: XCTestCase {
 private final class Fixture {
     let sessions = SteamGameSessions()
     let installations: SteamInstallations
-    let receipt: SteamInstallReceipt?
+    let receipt: InstallationReceipt<UInt32>?
     private(set) var backend = FakeInstallations<SteamGames>()
     var model: SteamCloudModel { installations.cloud }
 
     init(installed: Bool = false) {
         installations = SteamInstallations(sessions: sessions, cloud: SteamCloudModel(sessions: sessions))
-        receipt = installed ? SteamInstallReceipt(appId: 42, name: "Fixture", directory: "/fixture/Games/Steam/steam-42-macos",
-                                                  platform: "macos", language: "english", totalBytes: 0) : nil
+        receipt = installed ? .steam(appId: 42, name: "Fixture", directory: "/fixture/Games/Steam/steam-42-macos",
+                                     platform: "macos", totalBytes: 0) : nil
     }
 
     /// Connects the account as SteamModel does.
     func connect(_ account: UInt64 = 0x0110_0001_0000_002a) {
         installations.selection = {
             InstallationSelection(game: 42, platform: "macos",
-                                  offer: SteamOffer(appId: 42, name: "Fixture", platform: "macos", language: "english"))
+                                  offer: GameOffer.steam(appId: 42, name: "Fixture", platform: "macos", language: "english"))
         }
         backend = FakeInstallations(receipts: receipt.map { [$0] } ?? [])
         installations.connect(account: account, backend: backend, port: InstallationPort(

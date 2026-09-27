@@ -102,7 +102,7 @@ final class GameInstallationsTests: XCTestCase {
 @MainActor
 private final class Fixture {
     let sessions = SteamGameSessions()
-    let receipt: SteamInstallReceipt
+    let receipt: InstallationReceipt<UInt32>
     private(set) var backend = FakeInstallations<SteamGames>()
     var verifies = false
     private(set) var reported: [String] = []
@@ -113,14 +113,14 @@ private final class Fixture {
     init(game: SteamGame, installed: Bool = true) {
         self.game = game
         self.installed = installed
-        receipt = SteamInstallReceipt(appId: 620, name: game.name, directory: "/fixture/Games/Steam/steam-620-macos",
-                                      platform: "macos", language: "english", totalBytes: 100)
+        receipt = .steam(appId: 620, name: game.name, directory: "/fixture/Games/Steam/steam-620-macos",
+                         platform: "macos", totalBytes: 100)
         installations = SteamInstallations(sessions: sessions, cloud: SteamCloudModel(sessions: sessions))
     }
 
     /// What Steam offers to install, for `platform`.
-    func offer(_ platform: String) -> SteamOffer {
-        SteamOffer(appId: 620, name: game.name, platform: platform, language: "english")
+    func offer(_ platform: String) -> GameOffer {
+        GameOffer.steam(appId: 620, name: game.name, platform: platform, language: "english")
     }
 
     func connect(platform: String = "macos", installable: Bool = true) -> SteamInstallations {

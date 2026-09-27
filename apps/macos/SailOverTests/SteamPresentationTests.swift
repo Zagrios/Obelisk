@@ -47,8 +47,8 @@ final class SteamPresentationTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let receipts = [
-            SteamInstallReceipt(appId: 620, name: "Portal 2", directory: root.appending(path: "steam-620-macos").path, platform: "macos", language: "french", totalBytes: 100),
-            SteamInstallReceipt(appId: 570, name: "Dota 2", directory: root.appending(path: "steam-570-windows").path, platform: "windows", language: "french", totalBytes: 200)
+            InstallationReceipt.steam(appId: 620, name: "Portal 2", directory: root.appending(path: "steam-620-macos").path, platform: "macos", totalBytes: 100),
+            InstallationReceipt.steam(appId: 570, name: "Dota 2", directory: root.appending(path: "steam-570-windows").path, platform: "windows", totalBytes: 200)
         ]
         let details = FixtureResponses<DetailsRequest, SteamGameDetails>()
         let session = FixtureSteamSession(games: fixtureGames, details: details)
@@ -359,12 +359,12 @@ final class SteamPresentationTests: XCTestCase {
         let news = FixtureResponses<UInt32, [SteamNews]>()
         let backend = FakeInstallations<SteamGames>()
         backend.onCall = { call in
-            guard case let .install(offer) = call else { return }
+            guard case let .install(offer) = call, let appId = offer.steamApp else { return }
             backend.publish {
                 $0.downloading = true
-                $0.gate = .action(offer.appId)
-                $0.transferGame = offer.appId
-                $0.transfer = GameTransfer(game: "\(offer.appId)", state: .preparing, completedBytes: 0, totalBytes: 0,
+                $0.gate = .action(appId)
+                $0.transferGame = appId
+                $0.transfer = GameTransfer(game: "\(appId)", state: .preparing, completedBytes: 0, totalBytes: 0,
                                            networkBytes: 0, contentBytes: 0, currentFile: "", message: "")
             }
         }
@@ -380,7 +380,7 @@ final class SteamPresentationTests: XCTestCase {
 
         model.installations.downloadSelected()
 
-        XCTAssertEqual(backend.actions, [.install(SteamOffer(appId: 620, name: "Portal 2", platform: "macos", language: "tchinese"))])
+        XCTAssertEqual(backend.actions, [.install(GameOffer.steam(appId: 620, name: "Portal 2", platform: "macos", language: "tchinese"))])
         XCTAssertEqual(model.installations.transfer?.state, .preparing, "Progress shows before its first snapshot")
         XCTAssertEqual(model.installations.activeTransferGame, 620)
         model.backToLibrary()
@@ -399,12 +399,12 @@ final class SteamPresentationTests: XCTestCase {
             $0.downloading = false
             $0.gate = .open
             $0.transfer?.state = .complete
-            $0.receipts = [SteamInstallReceipt(appId: 620, name: "Portal 2", directory: root.appending(path: "Games/Steam/steam-620-macos").path,
-                                               platform: "macos", language: "tchinese", totalBytes: 100)]
+            $0.receipts = [.steam(appId: 620, name: "Portal 2", directory: root.appending(path: "Games/Steam/steam-620-macos").path,
+                                  platform: "macos", totalBytes: 100)]
         }
         try await eventually { !model.installations.isDownloading }
         XCTAssertNil(model.installations.activeTransferGame)
-        XCTAssertEqual(model.installations.receipts.first?.language, "tchinese")
+        XCTAssertEqual(model.installations.receipts.first?.gameID, 620)
         XCTAssertFalse(model.installations.isLaunching)
         XCTAssertNil(model.errorMessage)
         model.open(fixtureGames[0])
@@ -525,8 +525,9 @@ final class SteamPresentationTests: XCTestCase {
         let fixture = try await launchFixture()
         defer { fixture.cleanUp() }
         let receipt = fixture.receipt
-        let forged = SteamInstallReceipt(appId: receipt.appId, name: receipt.name, directory: fixture.root.path,
-                                         platform: receipt.platform, language: receipt.language, totalBytes: receipt.totalBytes)
+        let forged = InstallationReceipt(id: receipt.id, gameID: receipt.gameID, name: receipt.name,
+                                         directory: fixture.root.path, platform: receipt.platform,
+                                         totalBytes: receipt.totalBytes)
         fixture.model.installations.uninstall(forged)
         XCTAssertEqual(fixture.backend.actions, [])
         fixture.model.installations.primaryAction()
@@ -973,7 +974,7 @@ final class SteamPresentationTests: XCTestCase {
     private func launchFixture(verify: Bool? = nil, sessions: SteamGameSessions? = nil) async throws -> LaunchFixture {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let installedDirectory = root.appending(path: "Installed games/steam-620-macos")
-        let receipt = SteamInstallReceipt(appId: 620, name: "Portal 2", directory: installedDirectory.path, platform: "macos", language: "french", totalBytes: 100)
+        let receipt = InstallationReceipt.steam(appId: 620, name: "Portal 2", directory: installedDirectory.path, platform: "macos", totalBytes: 100)
         let suite = "SailOverLaunchFixture.\(UUID().uuidString)"
         let preferences = try XCTUnwrap(UserDefaults(suiteName: suite))
         if let verify { preferences.set(verify, forKey: SteamModel.verifyBeforeLaunchPreferenceKey) }
@@ -1233,7 +1234,7 @@ private struct LaunchFixture {
     let suite: String
     let backend: FakeInstallations<SteamGames>
     let sessions: SteamGameSessions
-    let receipt: SteamInstallReceipt
+    let receipt: InstallationReceipt<UInt32>
 
     /// Rust admitted the launch, which prepares and holds the storefront.
     func preparing(verifying: Bool = false) {

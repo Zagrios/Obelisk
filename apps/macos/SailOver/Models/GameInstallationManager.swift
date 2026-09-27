@@ -1,17 +1,5 @@
 import Foundation
 
-/// A storefront's dedicated installation, recorded per account once every
-/// file succeeded. Rust keeps the account's receipts.
-protocol InstallReceipt: Codable, Equatable, Sendable, Identifiable where ID == String {
-    associatedtype GameID: Hashable & Sendable
-    var gameID: GameID { get }
-    var platform: String { get }
-    var directory: String { get }
-    var totalBytes: UInt64 { get }
-    /// A Transfer started over this installation and has not succeeded since.
-    var needsVerification: Bool? { get set }
-}
-
 /// An installation action that failed, as the player reads it. Reasons are
 /// localization keys.
 enum GameInstallationFailure: LocalizedError {
