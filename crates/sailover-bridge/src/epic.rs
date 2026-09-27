@@ -1,10 +1,8 @@
 //! Epic's account seam. Only refresh credentials cross into the macOS Keychain;
 //! the account access token stays inside the Rust session.
-use std::{path::Path, sync::Arc};
+use std::sync::Arc;
 
 use epic_kit::{auth, client};
-
-use crate::{GameTransfer, LaunchTarget};
 
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum EpicError {
@@ -145,23 +143,6 @@ pub struct EpicGameDetails {
     pub installation_bytes: Option<u64>,
 }
 
-#[derive(Clone, Debug, uniffi::Record)]
-pub struct EpicInstallation {
-    pub app_name: String,
-    pub directory: String,
-    pub platform: String,
-    pub total_bytes: u64,
-}
-
-// Launch arguments can contain a short-lived exchange code. Do not log plans.
-#[derive(Clone, uniffi::Record)]
-pub struct EpicLaunchPlan {
-    pub app_name: String,
-    pub platform: String,
-    pub target: LaunchTarget,
-    pub ownership_token: Option<Vec<u8>>,
-}
-
 impl From<client::GameDetails> for EpicGameDetails {
     fn from(details: client::GameDetails) -> Self {
         Self {
@@ -220,10 +201,6 @@ impl EpicSession {
         Ok(self.client.credentials().await?.into())
     }
 
-    pub async fn prepare(&self) -> Result<EpicCredentials, EpicError> {
-        Ok(self.client.prepare().await?.into())
-    }
-
     pub async fn start_friends(&self) {
         self.client.start_friends();
     }
@@ -266,68 +243,6 @@ impl EpicSession {
 
     pub async fn disconnect(&self) -> Result<(), EpicError> {
         self.client.disconnect().await.map_err(Into::into)
-    }
-
-    pub async fn download(
-        &self,
-        namespace: String,
-        catalog_item_id: String,
-        app_name: String,
-        platform: String,
-        directory: String,
-    ) -> Result<EpicInstallation, EpicError> {
-        let installation = self
-            .client
-            .download(
-                &namespace,
-                &catalog_item_id,
-                &app_name,
-                &platform,
-                Path::new(&directory),
-            )
-            .await?;
-        Ok(EpicInstallation {
-            app_name: installation.app_name,
-            directory: installation.directory,
-            platform: installation.platform,
-            total_bytes: installation.total_bytes,
-        })
-    }
-
-    pub fn download_progress(&self) -> Option<GameTransfer> {
-        self.client.progress().map(Into::into)
-    }
-
-    pub async fn launch_plan(
-        &self,
-        namespace: String,
-        catalog_item_id: String,
-        app_name: String,
-        platform: String,
-        directory: String,
-        language: String,
-    ) -> Result<EpicLaunchPlan, EpicError> {
-        let plan = self
-            .client
-            .launch_plan(
-                &namespace,
-                &catalog_item_id,
-                &app_name,
-                &platform,
-                Path::new(&directory),
-                &language,
-            )
-            .await?;
-        Ok(EpicLaunchPlan {
-            app_name: plan.app_name,
-            platform: plan.platform,
-            target: plan.target.into(),
-            ownership_token: plan.ownership_token,
-        })
-    }
-
-    pub fn cancel_download(&self) {
-        self.client.cancel_download();
     }
 
     pub async fn game_details(

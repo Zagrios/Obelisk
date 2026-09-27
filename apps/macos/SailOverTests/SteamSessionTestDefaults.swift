@@ -7,7 +7,6 @@ extension SteamSessionProtocol {
     func achievements(appId: UInt32, language: String) async throws -> [SteamAchievement] {
         throw CocoaError(.featureUnsupported)
     }
-    func archiveCloud(config: SteamCloudConfiguration) async throws {}
     func platforms(appIds: [UInt32]) async throws -> [SteamGamePlatforms] { [] }
     #if DEBUG
     func cloudAutocloudMetadata() async throws -> String {
@@ -44,7 +43,6 @@ extension SteamSessionProtocol {
 // Models take launches as injected closures, so a fake
 // session never has to build a Rust-backed object.
 extension EpicSessionProtocol {
-    func archiveCloud(configuration: EpicCloudConfiguration) async throws {}
     /// Saves as Rust does: now, then after every rotation, in order.
     func persist(credentials: any EpicCredentialSave) async {
         let session = self

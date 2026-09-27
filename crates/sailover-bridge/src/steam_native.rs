@@ -28,28 +28,6 @@ impl From<game_runtime::HostState> for SteamHostState {
     }
 }
 
-#[derive(uniffi::Record)]
-pub struct SteamCloudConfiguration {
-    pub root: String,
-    pub home: String,
-    pub install: String,
-    pub app_id: u32,
-    /// The Wine prefix of a Windows installation, where its saves live.
-    pub prefix: Option<String>,
-}
-
-impl From<SteamCloudConfiguration> for game_runtime::steam::cloud::Config {
-    fn from(config: SteamCloudConfiguration) -> Self {
-        Self {
-            root: config.root.into(),
-            home: config.home.into(),
-            install: config.install.into(),
-            app_id: config.app_id,
-            prefix: config.prefix.map(Into::into),
-        }
-    }
-}
-
 impl From<game_runtime::steam::cloud::Failure> for SteamError {
     fn from(failure: game_runtime::steam::cloud::Failure) -> Self {
         Self::Failure {

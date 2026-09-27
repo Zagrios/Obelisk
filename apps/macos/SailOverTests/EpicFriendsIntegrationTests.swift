@@ -82,7 +82,6 @@ final class EpicFriendsIntegrationTests: XCTestCase {
         await session.settled()
         XCTAssertEqual(session.reconnections, 1)
         XCTAssertEqual(session.disconnects, 0)
-        XCTAssertEqual(session.downloadCancellations, 0)
         XCTAssertTrue(model.isConnected)
     }
 
@@ -274,7 +273,7 @@ final class EpicFriendsTestSession: EpicSessionProtocol, @unchecked Sendable {
     private var reconnectBarriers: [CheckedContinuation<Void, Never>] = []
     private var friendAfter: UInt64 = 0
     private var credentialAfter: UInt64 = 0
-    private var startCount = 0, reconnectCount = 0, disconnectCount = 0, cancellationCount = 0, maximum = 0
+    private var startCount = 0, reconnectCount = 0, disconnectCount = 0, maximum = 0
     init(accountID: String = "epic-account") {
         snapshot.accountId = accountID
         saved.accountId = accountID
@@ -282,10 +281,8 @@ final class EpicFriendsTestSession: EpicSessionProtocol, @unchecked Sendable {
     var starts: Int { lock.withLock { startCount } }
     var reconnections: Int { lock.withLock { reconnectCount } }
     var disconnects: Int { lock.withLock { disconnectCount } }
-    var downloadCancellations: Int { lock.withLock { cancellationCount } }
     var maximumWaiters: Int { lock.withLock { maximum } }
     func credentials() async throws -> EpicCredentials { lock.withLock { saved } }
-    func prepare() async throws -> EpicCredentials { try await credentials() }
     func games() async throws -> [EpicGame] { [] }
     func startFriends() async { lock.withLock { startCount += 1 } }
     func reconnectFriends() async {
@@ -364,9 +361,5 @@ final class EpicFriendsTestSession: EpicSessionProtocol, @unchecked Sendable {
         }
     }
     func disconnect() async throws { shutdownObservers(); lock.withLock { disconnectCount += 1 } }
-    func cancelDownload() { lock.withLock { cancellationCount += 1 } }
-    func downloadProgress() -> GameTransfer? { nil }
-    func download(namespace: String, catalogItemId: String, appName: String, platform: String, directory: String) async throws -> EpicInstallation { throw EpicError.InvalidResponse }
     func gameDetails(namespace: String, catalogItemId: String, appName: String, platform: String) async throws -> EpicGameDetails { throw EpicError.InvalidResponse }
-    func launchPlan(namespace: String, catalogItemId: String, appName: String, platform: String, directory: String, language: String) async throws -> EpicLaunchPlan { throw EpicError.InvalidResponse }
 }

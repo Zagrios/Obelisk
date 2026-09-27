@@ -255,12 +255,10 @@ final class SteamFriendsIntegrationTests: XCTestCase {
         let first = FriendsBridgeTestSession(hydrated: true)
         let connections = FriendsTestConnections(first: first)
         var bound: [any SteamSessionProtocol] = []
-        let library = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
-        let make = SteamModel.installations(library: library)
         let model = friendsTestModel(connect: { try await connections.connect($0) },
-                                     installations: { session, credentials, sessions, receipts in
+                                     installations: { session, _, _, _ in
                                          bound.append(session)
-                                         return make(session, credentials, sessions, receipts)
+                                         return FakeInstallations<SteamGames>()
                                      })
         await model.start()
         defer { model.signOut() }
@@ -407,10 +405,6 @@ final class FriendsBridgeTestSession: SteamSessionProtocol, @unchecked Sendable 
     func games() async throws -> [SteamGame] { try await loadGames() }
     func profile() async throws -> SteamProfile { SteamProfile(displayName: nil, avatarUrl: nil) }
     func details(appId: UInt32, language: String) async throws -> SteamGameDetails { throw FriendsTestFailure.unexpected }
-    func download(appId: UInt32, platform: String, language: String, directory: String) async throws -> SteamInstallation { throw FriendsTestFailure.unexpected }
-    func downloadProgress() -> GameTransfer? { nil }
-    func cancelDownload() {}
-    func launchPlan(appId: UInt32, platform: String, directory: String) async throws -> SteamLaunchPlan { throw FriendsTestFailure.unexpected }
 }
 
 actor FriendsTestSignals<Key: Hashable & Sendable> {

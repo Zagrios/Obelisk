@@ -123,10 +123,6 @@ private final class SortingSteamSession: SteamSessionProtocol, Sendable {
     func games() async throws -> [SteamGame] { library }
     func profile() async throws -> SteamProfile { SteamProfile(displayName: nil, avatarUrl: nil) }
     func details(appId: UInt32, language: String) async throws -> SteamGameDetails { throw SortingFailure.unexpectedOperation }
-    func download(appId: UInt32, platform: String, language: String, directory: String) async throws -> SteamInstallation { throw SortingFailure.unexpectedOperation }
-    func downloadProgress() -> GameTransfer? { nil }
-    func cancelDownload() {}
-    func launchPlan(appId: UInt32, platform: String, directory: String) async throws -> SteamLaunchPlan { throw SortingFailure.unexpectedOperation }
 }
 
 private enum SortingFailure: Error { case unexpectedOperation }

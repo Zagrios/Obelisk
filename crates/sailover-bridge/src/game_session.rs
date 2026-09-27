@@ -1,17 +1,13 @@
 //! A storefront's Game sessions across UniFFI. Rust keeps the Reservation,
 //! recovery, Account revocation and the checks on every answer; Swift presents
-//! the state and forwards the player's answers. A supervisor is a foreign
-//! trait, so tests can stand one in for the real supervisor.
+//! the state and forwards the player's answers.
 use crate::{SailOverLocations, SteamHostState};
 use game_runtime::{
     cloud, epic,
-    sessions::{self, Failure, Observation, Sessions, Storefront, Supervised},
+    sessions::{self, Failure, Sessions, Storefront, Supervised},
     steam, supervisor,
 };
-use std::{
-    path::Path,
-    sync::{Arc, Mutex},
-};
+use std::{path::Path, sync::Arc};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum GamePhase {
@@ -29,21 +25,6 @@ impl From<supervisor::Phase> for GamePhase {
             supervisor::Phase::Finalizing => Self::Finalizing,
             supervisor::Phase::Finished => Self::Finished,
             supervisor::Phase::Failed => Self::Failed,
-        }
-    }
-}
-
-/// Why a finished session failed. Swift ends a cancellation silently.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
-pub enum GameFailureReason {
-    Cancelled,
-    Failed,
-}
-impl From<supervisor::FailureReason> for GameFailureReason {
-    fn from(reason: supervisor::FailureReason) -> Self {
-        match reason {
-            supervisor::FailureReason::Cancelled => Self::Cancelled,
-            supervisor::FailureReason::Failed => Self::Failed,
         }
     }
 }
@@ -131,50 +112,11 @@ impl From<cloud::Status> for CloudStatus {
     }
 }
 
-/// What the storefront's supervisor records about the game.
-#[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
-pub enum GameStore {
-    Steam {
-        app_id: u32,
-        account_id: u64,
-        /// The native host that owns the game's Steam session.
-        host: SteamHostState,
-    },
-    Epic {
-        account_id: String,
-        namespace: String,
-        app_name: String,
-    },
-}
-
 /// The account an answer or a revocation names.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum GameAccount {
     Steam { steam_id: u64 },
     Epic { account_id: String },
-}
-
-#[derive(Clone, Debug, uniffi::Record)]
-pub struct RosettaRequest {
-    pub decision_id: u64,
-}
-
-#[derive(Clone, Debug, uniffi::Record)]
-pub struct GameSnapshot {
-    pub id: String,
-    pub phase: GamePhase,
-    /// The phase is final and the session owns no game or starting process:
-    /// only then is the Reservation released.
-    pub finished: bool,
-    pub failure_reason: Option<GameFailureReason>,
-    /// Localization key of the session's own failure.
-    pub error: Option<String>,
-    pub revision: u64,
-    /// The control connection was lost; the game may still run.
-    pub reconnecting: bool,
-    pub rosetta: Option<RosettaRequest>,
-    pub cloud: CloudStatus,
-    pub store: GameStore,
 }
 
 /// A refused or failed session call, as a localization key.
@@ -207,62 +149,10 @@ impl From<GameSessionError> for String {
     }
 }
 
-/// One Game session's supervisor. The real one is Rust's; tests stand in
-/// their own. Every call may block on the supervisor's control connection.
-#[uniffi::export(with_foreign)]
-pub trait GameSupervisor: Send + Sync {
-    /// Waits for a revision newer than `after`, or returns at once.
-    fn snapshot(&self, after: Option<u64>) -> Result<GameSnapshot, GameSessionError>;
-    /// Cancels preparation. After spawn the game keeps running.
-    fn cancel_preparation(&self);
-    /// Ends the game, as quitting SailOver does. Before spawn it cancels
-    /// preparation.
-    fn stop(&self) -> Result<(), GameSessionError>;
-    /// Opens the start gate of a supervisor that waits for its UI.
-    fn begin(&self) -> Result<(), GameSessionError>;
-    fn choose(
-        &self,
-        account: GameAccount,
-        decision_id: u64,
-        choice: CloudChoice,
-    ) -> Result<(), GameSessionError>;
-    fn resume_after_rosetta(
-        &self,
-        account: GameAccount,
-        decision_id: u64,
-    ) -> Result<(), GameSessionError>;
-    /// Account revocation: network work stops, the game keeps running.
-    fn revoke(&self, account: GameAccount) -> Result<(), GameSessionError>;
-}
-
-/// Hands an admitted game to a supervisor that code outside Rust starts.
-#[uniffi::export(with_foreign)]
-pub trait GameHandoff: Send + Sync {
-    /// The supervisor that accepted the game. It may block.
-    fn hand_off(&self) -> Result<Arc<dyn GameSupervisor>, GameSessionError>;
-}
-
-/// What must happen once a new supervisor holds the game and before its
-/// start gate opens, such as saving the credentials the handoff rotated. It
-/// may block.
-#[uniffi::export(with_foreign)]
-pub trait BeforeGameStart: Send + Sync {
-    fn run(&self);
-}
-
-/// Finds the Game session a previous SailOver left running. `None` confirms
-/// that none remains.
-#[uniffi::export(with_foreign)]
-pub trait GameRecovery: Send + Sync {
-    fn recover(&self) -> Result<Option<Arc<dyn GameSupervisor>>, GameSessionError>;
-}
-
 /// What the bridge adds to each storefront's Game sessions.
 pub(crate) trait Bridged: Storefront {
     fn account(account: GameAccount) -> Option<Self::Account>;
     fn game_account(account: &Self::Account) -> GameAccount;
-    fn store(store: GameStore) -> Option<(Self::Account, Self::Store)>;
-    fn admission(game: GameIdentity) -> Option<(Self::Game, Self::Account)>;
     fn identity(game: &Self::Game, account: &Self::Account) -> GameIdentity;
     fn host(store: &Self::Store) -> Option<SteamHostState>;
 }
@@ -276,28 +166,6 @@ impl Bridged for steam::Steam {
     }
     fn game_account(account: &u64) -> GameAccount {
         GameAccount::Steam { steam_id: *account }
-    }
-    fn store(store: GameStore) -> Option<(u64, steam::Store)> {
-        match store {
-            GameStore::Steam {
-                app_id,
-                account_id,
-                host,
-            } => Some((
-                account_id,
-                steam::Store {
-                    app_id,
-                    host: host.into(),
-                },
-            )),
-            GameStore::Epic { .. } => None,
-        }
-    }
-    fn admission(game: GameIdentity) -> Option<(u32, u64)> {
-        match game {
-            GameIdentity::Steam { app_id, account_id } => Some((app_id, account_id)),
-            GameIdentity::Epic { .. } => None,
-        }
     }
     fn identity(game: &u32, account: &u64) -> GameIdentity {
         GameIdentity::Steam {
@@ -322,38 +190,6 @@ impl Bridged for epic::Epic {
             account_id: account.clone(),
         }
     }
-    fn store(store: GameStore) -> Option<(String, epic::Store)> {
-        match store {
-            GameStore::Epic {
-                account_id,
-                namespace,
-                app_name,
-            } => Some((
-                account_id,
-                epic::Store {
-                    namespace,
-                    app_name,
-                },
-            )),
-            GameStore::Steam { .. } => None,
-        }
-    }
-    fn admission(game: GameIdentity) -> Option<(epic::Store, String)> {
-        match game {
-            GameIdentity::Epic {
-                account_id,
-                namespace,
-                app_name,
-            } => Some((
-                epic::Store {
-                    namespace,
-                    app_name,
-                },
-                account_id,
-            )),
-            GameIdentity::Steam { .. } => None,
-        }
-    }
     fn identity(game: &epic::Store, account: &String) -> GameIdentity {
         GameIdentity::Epic {
             account_id: account.clone(),
@@ -363,106 +199,6 @@ impl Bridged for epic::Epic {
     }
     fn host(_: &epic::Store) -> Option<SteamHostState> {
         None
-    }
-}
-
-impl From<SteamHostState> for game_runtime::HostState {
-    fn from(host: SteamHostState) -> Self {
-        match host {
-            SteamHostState::Online => Self::Online,
-            SteamHostState::Disconnected => Self::Disconnected,
-            SteamHostState::Lost => Self::Lost,
-            SteamHostState::Stopped => Self::Stopped,
-        }
-    }
-}
-impl From<GamePhase> for supervisor::Phase {
-    fn from(phase: GamePhase) -> Self {
-        match phase {
-            GamePhase::Preparing => Self::Preparing,
-            GamePhase::Running => Self::Running,
-            GamePhase::Finalizing => Self::Finalizing,
-            GamePhase::Finished => Self::Finished,
-            GamePhase::Failed => Self::Failed,
-        }
-    }
-}
-impl From<CloudPhase> for cloud::Phase {
-    fn from(phase: CloudPhase) -> Self {
-        match phase {
-            CloudPhase::Idle => Self::Idle,
-            CloudPhase::Checking => Self::Checking,
-            CloudPhase::Ready => Self::Ready,
-            CloudPhase::Syncing => Self::Syncing,
-            CloudPhase::Synced => Self::Synced,
-            CloudPhase::Conflict => Self::Conflict,
-            CloudPhase::Pending => Self::Pending,
-            CloudPhase::Disabled => Self::Disabled,
-            CloudPhase::Unsupported => Self::Unsupported,
-            CloudPhase::Failed => Self::Failed,
-        }
-    }
-}
-
-/// A foreign supervisor as the Game sessions drive it.
-pub(crate) struct Foreign(pub(crate) Arc<dyn GameSupervisor>);
-impl<P: Bridged> Supervised<P> for Foreign {
-    fn snapshot(&self, after: Option<u64>) -> Result<Observation<P>, String> {
-        let snapshot = self.0.snapshot(after)?;
-        let (account, store) = P::store(snapshot.store).ok_or(P::INVALID_SESSION)?;
-        Ok(Observation {
-            id: snapshot.id,
-            account,
-            store,
-            phase: snapshot.phase.into(),
-            finished: snapshot.finished,
-            failure: snapshot.failure_reason.map(|reason| match reason {
-                GameFailureReason::Cancelled => supervisor::FailureReason::Cancelled,
-                GameFailureReason::Failed => supervisor::FailureReason::Failed,
-            }),
-            error: snapshot.error,
-            revision: snapshot.revision,
-            reconnecting: snapshot.reconnecting,
-            rosetta: snapshot.rosetta.map(|request| request.decision_id),
-            cloud: cloud::Status {
-                phase: snapshot.cloud.phase.into(),
-                decision_id: snapshot.cloud.decision_id,
-                error: snapshot.cloud.error,
-                allowed_choices: snapshot
-                    .cloud
-                    .allowed_choices
-                    .into_iter()
-                    .map(Into::into)
-                    .collect(),
-            },
-        })
-    }
-    fn cancel(&self) {
-        self.0.cancel_preparation();
-    }
-    fn stop(&self) -> Result<(), String> {
-        Ok(self.0.stop()?)
-    }
-    fn begin(&self) -> Result<(), String> {
-        Ok(self.0.begin()?)
-    }
-    fn choose(
-        &self,
-        account: &P::Account,
-        decision_id: u64,
-        choice: cloud::Choice,
-    ) -> Result<(), String> {
-        Ok(self
-            .0
-            .choose(P::game_account(account), decision_id, choice.into())?)
-    }
-    fn resume_after_rosetta(&self, account: &P::Account, decision_id: u64) -> Result<(), String> {
-        Ok(self
-            .0
-            .resume_after_rosetta(P::game_account(account), decision_id)?)
-    }
-    fn revoke(&self, account: &P::Account) -> Result<(), String> {
-        Ok(self.0.revoke(P::game_account(account))?)
     }
 }
 
@@ -557,14 +293,6 @@ fn state<P: Bridged>(state: sessions::State<P>) -> GameSessionsState {
     }
 }
 
-fn recovery<P: Bridged>(recovery: Arc<dyn GameRecovery>) -> sessions::Recovery<P> {
-    Box::new(move || {
-        Ok(recovery
-            .recover()?
-            .map(|supervisor| Arc::new(Foreign(supervisor)) as Arc<dyn Supervised<P>>))
-    })
-}
-
 /// The supervisor a previous SailOver left for a game of `P`.
 fn supervisor_recovery<P: Bridged>(sessions: &Path, helper: &Path) -> sessions::Recovery<P>
 where
@@ -622,22 +350,6 @@ impl StorefrontSessions {
         })
     }
 
-    /// Recovers through `recovery` instead of the supervisors on disk.
-    #[uniffi::constructor]
-    pub fn with_recovery(
-        storefront: SessionStorefront,
-        recovery: Arc<dyn GameRecovery>,
-    ) -> Arc<Self> {
-        Self::with(match storefront {
-            SessionStorefront::Steam => {
-                Storefronts::Steam(Arc::new(Sessions::new(self::recovery(recovery))))
-            }
-            SessionStorefront::Epic => {
-                Storefronts::Epic(Arc::new(Sessions::new(self::recovery(recovery))))
-            }
-        })
-    }
-
     pub fn state(&self) -> GameSessionsState {
         match &*self.sessions {
             Storefronts::Steam(sessions) => state(sessions.state()),
@@ -651,22 +363,6 @@ impl StorefrontSessions {
             Storefronts::Steam(sessions) => state(sessions.changed(after).await),
             Storefronts::Epic(sessions) => state(sessions.changed(after).await),
         }
-    }
-
-    /// Admits a launch: the Reservation holds from here. Nil while another
-    /// session or a recovery holds the storefront.
-    pub fn admit(&self, game: GameIdentity) -> Option<Arc<GameAdmission>> {
-        let admission = match &*self.sessions {
-            Storefronts::Steam(sessions) => {
-                let (game, account) = steam::Steam::admission(game)?;
-                Admitted::Steam(Admitted::slot(sessions.admit(game, account)?))
-            }
-            Storefronts::Epic(sessions) => {
-                let (game, account) = epic::Epic::admission(game)?;
-                Admitted::Epic(Admitted::slot(sessions.admit(game, account)?))
-            }
-        };
-        Some(Arc::new(GameAdmission { admission }))
     }
 
     /// Account revocation. The game keeps running.
@@ -742,215 +438,4 @@ async fn blocking(
         .await
         .map_err(|_| GameSessionError::new(failed))?
         .map_err(Into::into)
-}
-
-/// An admission, until its launch takes it, and what cancels it after.
-pub(crate) struct Slot<P: Storefront> {
-    admission: Mutex<Option<sessions::Admission<P>>>,
-    canceller: sessions::Canceller<P>,
-}
-impl<P: Storefront> Slot<P> {
-    fn cancel(&self) {
-        self.canceller.cancel();
-    }
-    /// The admission, once: a second launch of it is refused.
-    pub(crate) fn take(&self) -> Result<sessions::Admission<P>, GameSessionError> {
-        self.admission
-            .lock()
-            .unwrap()
-            .take()
-            .ok_or_else(|| GameSessionError::new(P::INVALID_SESSION))
-    }
-}
-
-pub(crate) enum Admitted {
-    Steam(Slot<steam::Steam>),
-    Epic(Slot<epic::Epic>),
-}
-impl Admitted {
-    fn slot<P: Storefront>(admission: sessions::Admission<P>) -> Slot<P> {
-        Slot {
-            canceller: admission.canceller(),
-            admission: Mutex::new(Some(admission)),
-        }
-    }
-}
-
-/// One admitted launch. It holds the Reservation until its session is
-/// finished, or until it is cancelled before its handoff.
-#[derive(uniffi::Object)]
-pub struct GameAdmission {
-    pub(crate) admission: Admitted,
-}
-
-#[uniffi::export(async_runtime = "tokio")]
-impl GameAdmission {
-    /// Cancels preparation. Before the handoff this releases the Reservation;
-    /// after it, a game that already started keeps running.
-    pub fn cancel(&self) {
-        match &self.admission {
-            Admitted::Steam(slot) => slot.cancel(),
-            Admitted::Epic(slot) => slot.cancel(),
-        }
-    }
-
-    /// Hands the game off through `handoff`, then follows its session until
-    /// it is finished. Cancelling during the handoff keeps the Reservation
-    /// until the supervisor it returns confirms the game is gone.
-    /// `before_start` runs before a waiting supervisor's start gate opens.
-    pub async fn launch(
-        &self,
-        handoff: Arc<dyn GameHandoff>,
-        before_start: Option<Arc<dyn BeforeGameStart>>,
-    ) -> Result<(), GameSessionError> {
-        let before: sessions::BeforeBegin = Box::new(move || {
-            if let Some(before_start) = before_start {
-                before_start.run();
-            }
-        });
-        match &self.admission {
-            Admitted::Steam(slot) => Ok(slot
-                .take()?
-                .launch_before(foreign_handoff(handoff), before)
-                .await?),
-            Admitted::Epic(slot) => Ok(slot
-                .take()?
-                .launch_before(foreign_handoff(handoff), before)
-                .await?),
-        }
-    }
-}
-
-/// A foreign handoff, which blocks, as an admitted launch awaits it.
-async fn foreign_handoff<P: Bridged>(
-    handoff: Arc<dyn GameHandoff>,
-) -> Result<Arc<dyn Supervised<P>>, sessions::Handoff> {
-    let supervisor = tokio::task::spawn_blocking(move || handoff.hand_off())
-        .await
-        .map_err(|_| sessions::Handoff::Refused(Failure::Failed(P::SESSION_FAILED.into())))?
-        .map_err(|error| {
-            sessions::Handoff::Refused(match error {
-                GameSessionError::Cancelled => Failure::Cancelled,
-                GameSessionError::Failure { reason } => Failure::Failed(reason),
-            })
-        })?;
-    Ok(Arc::new(Foreign(supervisor)) as Arc<dyn Supervised<P>>)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// A supervisor whose game already exited.
-    struct Exited(GameStore);
-    impl GameSupervisor for Exited {
-        fn snapshot(&self, _: Option<u64>) -> Result<GameSnapshot, GameSessionError> {
-            Ok(GameSnapshot {
-                id: "session".into(),
-                phase: GamePhase::Finished,
-                finished: true,
-                failure_reason: None,
-                error: None,
-                revision: 2,
-                reconnecting: false,
-                rosetta: None,
-                cloud: CloudStatus {
-                    phase: CloudPhase::Pending,
-                    decision_id: 0,
-                    error: Some("backend.epic.cloud.failed".into()),
-                    allowed_choices: Vec::new(),
-                },
-                store: self.0.clone(),
-            })
-        }
-        fn cancel_preparation(&self) {}
-        fn stop(&self) -> Result<(), GameSessionError> {
-            Ok(())
-        }
-        fn begin(&self) -> Result<(), GameSessionError> {
-            Ok(())
-        }
-        fn choose(&self, _: GameAccount, _: u64, _: CloudChoice) -> Result<(), GameSessionError> {
-            Ok(())
-        }
-        fn resume_after_rosetta(&self, _: GameAccount, _: u64) -> Result<(), GameSessionError> {
-            Ok(())
-        }
-        fn revoke(&self, _: GameAccount) -> Result<(), GameSessionError> {
-            Ok(())
-        }
-    }
-
-    /// Hands off to a supervisor whose game already exited.
-    struct Ready(GameStore);
-    impl GameHandoff for Ready {
-        fn hand_off(&self) -> Result<Arc<dyn GameSupervisor>, GameSessionError> {
-            Ok(Arc::new(Exited(self.0.clone())))
-        }
-    }
-
-    struct Nothing;
-    impl GameRecovery for Nothing {
-        fn recover(&self) -> Result<Option<Arc<dyn GameSupervisor>>, GameSessionError> {
-            Ok(None)
-        }
-    }
-
-    #[tokio::test]
-    async fn a_foreign_supervisor_is_followed_under_its_storefront_identity() {
-        let sessions =
-            StorefrontSessions::with_recovery(SessionStorefront::Epic, Arc::new(Nothing));
-        let mut state = sessions.state();
-        while state.recovering {
-            state = sessions.changed(state.revision).await;
-        }
-        let game = GameIdentity::Epic {
-            account_id: "account".into(),
-            namespace: "ns".into(),
-            app_name: "app".into(),
-        };
-        assert!(
-            sessions
-                .admit(GameIdentity::Steam {
-                    app_id: 42,
-                    account_id: 42
-                })
-                .is_none(),
-            "a Steam game is no Epic session"
-        );
-        let admission = sessions.admit(game.clone()).unwrap();
-        assert!(sessions.state().active.is_some());
-
-        admission
-            .launch(
-                Arc::new(Ready(GameStore::Epic {
-                    account_id: "account".into(),
-                    namespace: "ns".into(),
-                    app_name: "app".into(),
-                })),
-                None,
-            )
-            .await
-            .unwrap();
-
-        let state = sessions.state();
-        assert!(state.active.is_none());
-        let last = state.last.unwrap();
-        assert_eq!(last.game, game);
-        assert_eq!(last.cloud.phase, CloudPhase::Pending);
-        assert_eq!(last.host, None);
-        assert!(matches!(
-            admission
-                .launch(
-                    Arc::new(Ready(GameStore::Epic {
-                        account_id: "account".into(),
-                        namespace: "ns".into(),
-                        app_name: "app".into(),
-                    })),
-                    None
-                )
-                .await,
-            Err(GameSessionError::Failure { .. })
-        ));
-    }
 }

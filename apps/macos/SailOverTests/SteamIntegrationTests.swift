@@ -403,10 +403,6 @@ private actor CachedSteamSession: SteamSessionProtocol {
     func games() -> [SteamGame] { library }
     func profile() async throws -> SteamProfile { try await loadProfile() }
     func details(appId: UInt32, language: String) async throws -> SteamGameDetails { throw CachedSteamFailure.unexpectedOperation }
-    func download(appId: UInt32, platform: String, language: String, directory: String) async throws -> SteamInstallation { throw CachedSteamFailure.unexpectedOperation }
-    nonisolated func downloadProgress() -> GameTransfer? { nil }
-    nonisolated func cancelDownload() {}
-    func launchPlan(appId: UInt32, platform: String, directory: String) async throws -> SteamLaunchPlan { throw CachedSteamFailure.unexpectedOperation }
 }
 
 private let cachedSteamAvatarURL = "https://avatars.steamstatic.com/1111111111111111111111111111111111111111_full.jpg"

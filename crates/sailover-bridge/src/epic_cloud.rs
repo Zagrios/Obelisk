@@ -1,5 +1,5 @@
 //! Presentation of the Rust-owned Epic supervisor and Cloud decisions.
-use crate::{EpicError, EpicSession};
+use crate::EpicError;
 use game_runtime::epic;
 
 impl From<epic::Error> for EpicError {
@@ -7,67 +7,6 @@ impl From<epic::Error> for EpicError {
         Self::Service {
             message: error.to_string(),
         }
-    }
-}
-
-#[derive(Clone, Debug, uniffi::Record)]
-pub struct EpicCloudConfiguration {
-    pub root: String,
-    pub home: String,
-    pub install: String,
-    pub session_directory: String,
-    pub helper: String,
-    pub namespace: String,
-    pub catalog_item_id: String,
-    pub app_name: String,
-    pub platform: String,
-    pub language: String,
-    /// A Windows build's Wine prefix, where its saves live.
-    pub prefix: Option<String>,
-}
-impl From<EpicCloudConfiguration> for epic::Configuration {
-    fn from(c: EpicCloudConfiguration) -> Self {
-        Self {
-            root: c.root.into(),
-            home: c.home.into(),
-            install: c.install.into(),
-            session_directory: c.session_directory.into(),
-            helper: c.helper.into(),
-            namespace: c.namespace,
-            catalog_item_id: c.catalog_item_id,
-            app_name: c.app_name,
-            platform: c.platform,
-            language: c.language,
-            prefix: c.prefix.map(Into::into),
-        }
-    }
-}
-impl From<epic::Configuration> for EpicCloudConfiguration {
-    fn from(c: epic::Configuration) -> Self {
-        Self {
-            root: c.root.to_string_lossy().into_owned(),
-            home: c.home.to_string_lossy().into_owned(),
-            install: c.install.to_string_lossy().into_owned(),
-            session_directory: c.session_directory.to_string_lossy().into_owned(),
-            helper: c.helper.to_string_lossy().into_owned(),
-            namespace: c.namespace,
-            catalog_item_id: c.catalog_item_id,
-            app_name: c.app_name,
-            platform: c.platform,
-            language: c.language,
-            prefix: c.prefix.map(|prefix| prefix.to_string_lossy().into_owned()),
-        }
-    }
-}
-#[uniffi::export(async_runtime = "tokio")]
-impl EpicSession {
-    pub async fn archive_cloud(
-        &self,
-        configuration: EpicCloudConfiguration,
-    ) -> Result<(), EpicError> {
-        epic::archive(configuration.into(), &self.client)
-            .await
-            .map_err(Into::into)
     }
 }
 

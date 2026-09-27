@@ -4,8 +4,6 @@ use std::{path::Path, sync::Arc};
 use steam_kit::{auth, client};
 use tokio::sync::Mutex;
 
-use crate::{GameTransfer, LaunchTarget};
-
 #[uniffi::export]
 pub fn steam_language(locale: String) -> String {
     steam_kit::language::from_locale(&locale).into()
@@ -241,22 +239,6 @@ pub struct SteamGameDetails {
     pub windows_bytes: u64,
     pub macos_bytes: u64,
 }
-#[derive(Clone, Debug, uniffi::Record)]
-pub struct SteamInstallation {
-    pub app_id: u32,
-    pub name: String,
-    pub directory: String,
-    pub platform: String,
-    pub language: String,
-    pub total_bytes: u64,
-}
-#[derive(Clone, Debug, uniffi::Record)]
-pub struct SteamLaunchPlan {
-    pub app_id: u32,
-    pub platform: String,
-    pub install_directory: String,
-    pub target: LaunchTarget,
-}
 #[derive(uniffi::Object)]
 pub struct SteamSession {
     /// Shared with the account's installations.
@@ -367,67 +349,6 @@ impl SteamSession {
             macos_bytes: details.macos_bytes,
         })
     }
-    pub async fn download(
-        &self,
-        app_id: u32,
-        platform: String,
-        language: String,
-        directory: String,
-    ) -> Result<SteamInstallation, SteamError> {
-        let installation = self
-            .client
-            .download(app_id, &platform, &language, Path::new(&directory))
-            .await?;
-        Ok(SteamInstallation {
-            app_id: installation.app_id,
-            name: installation.name,
-            directory: installation.directory,
-            platform: installation.platform,
-            language: installation.language,
-            total_bytes: installation.total_bytes,
-        })
-    }
-    pub async fn launch_plan(
-        &self,
-        app_id: u32,
-        platform: String,
-        directory: String,
-    ) -> Result<SteamLaunchPlan, SteamError> {
-        let plan = self
-            .client
-            .launch_plan(app_id, &platform, Path::new(&directory))
-            .await?;
-        Ok(SteamLaunchPlan {
-            app_id: plan.app_id,
-            platform: plan.platform,
-            install_directory: directory,
-            target: plan.target.into(),
-        })
-    }
-    pub async fn archive_cloud(
-        &self,
-        config: crate::steam_native::SteamCloudConfiguration,
-    ) -> Result<(), SteamError> {
-        let rules = self
-            .client
-            .cloud_archive_metadata(config.app_id)
-            .await
-            .map_err(game_runtime::steam::cloud::Failure::from)?;
-        if let Some((metadata, listing)) = rules {
-            tokio::task::spawn_blocking(move || {
-                game_runtime::steam::cloud::archive_with_rules(&config.into(), metadata, listing)
-            })
-            .await
-            .map_err(|_| game_runtime::Error::Storage)??;
-        }
-        Ok(())
-    }
-    pub fn download_progress(&self) -> Option<GameTransfer> {
-        self.client.progress().map(Into::into)
-    }
-    pub fn cancel_download(&self) {
-        self.client.cancel_download();
-    }
 }
 
 // Gate the entire export: UniFFI otherwise generates Release wrappers for
@@ -502,7 +423,7 @@ mod tests {
         progress.total_bytes = 522_734_781;
         progress.network_bytes = 253;
         progress.current_file = "game.exe".into();
-        let mapped = GameTransfer::from(progress);
+        let mapped = crate::GameTransfer::from(progress);
         assert!(matches!(mapped.state, crate::TransferState::Verifying));
         assert_eq!(mapped.game, "1");
         assert_eq!(mapped.completed_bytes, 522_734_781);

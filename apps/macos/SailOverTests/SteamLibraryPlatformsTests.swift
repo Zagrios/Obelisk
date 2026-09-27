@@ -215,8 +215,4 @@ private actor PlatformMetadataSession: SteamSessionProtocol {
     func games() async throws -> [SteamGame] { throw PlatformMetadataFailure.unexpectedOperation }
     func profile() async throws -> SteamProfile { throw PlatformMetadataFailure.unexpectedOperation }
     func details(appId: UInt32, language: String) async throws -> SteamGameDetails { throw PlatformMetadataFailure.unexpectedOperation }
-    func download(appId: UInt32, platform: String, language: String, directory: String) async throws -> SteamInstallation { throw PlatformMetadataFailure.unexpectedOperation }
-    nonisolated func downloadProgress() -> GameTransfer? { nil }
-    nonisolated func cancelDownload() {}
-    func launchPlan(appId: UInt32, platform: String, directory: String) async throws -> SteamLaunchPlan { throw PlatformMetadataFailure.unexpectedOperation }
 }

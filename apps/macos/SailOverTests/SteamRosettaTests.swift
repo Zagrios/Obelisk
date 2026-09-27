@@ -11,9 +11,9 @@ final class SteamRosettaTests: XCTestCase {
         try await eventually { fixture.model.prompt == nil || fixture.model.installationFailed }
         XCTAssertNil(fixture.model.prompt, "A failed helper callback must not keep the sheet open when Rust can run Rosetta")
         XCTAssertFalse(fixture.model.installationFailed)
-        let resumed = await fixture.game.rosettaResumes
-        XCTAssertEqual(resumed, [.init(accountID: 42, decisionID: 17)])
-        await fixture.finish()
+        let resumed = fixture.sessions.fake.rosettaResumes
+        XCTAssertEqual(resumed.map(\.decisionID), [17])
+        XCTAssertEqual(resumed.map(\.account), [.steam(steamId: 42)])
     }
 
     @MainActor
@@ -23,17 +23,16 @@ final class SteamRosettaTests: XCTestCase {
             openings += 1
             throw NSError(domain: NSOSStatusErrorDomain, code: -10669)
         })
-        await fixture.game.failNextRosettaResumes(2)
+        fixture.sessions.fake.failNextRosettaResumes(2)
         fixture.model.install()
         try await eventually { fixture.model.prompt == nil || fixture.model.installationFailed }
         XCTAssertNil(fixture.model.prompt)
         XCTAssertFalse(fixture.model.installationFailed)
         XCTAssertEqual(openings, 1)
-        let checks = await fixture.game.rosettaChecks
-        let resumed = await fixture.game.rosettaResumes
+        let checks = fixture.sessions.fake.rosettaChecks
+        let resumed = fixture.sessions.fake.rosettaResumes
         XCTAssertEqual(checks.count, 3)
         XCTAssertEqual(resumed.count, 1)
-        await fixture.finish()
     }
 
     @MainActor
@@ -51,9 +50,8 @@ final class SteamRosettaTests: XCTestCase {
         try await eventually { installerReturned }
         XCTAssertFalse(fixture.model.installationFailed)
         XCTAssertNil(fixture.model.prompt)
-        let resumed = await fixture.game.rosettaResumes
+        let resumed = fixture.sessions.fake.rosettaResumes
         XCTAssertEqual(resumed.count, 1)
-        await fixture.finish()
     }
 
     @MainActor
@@ -64,20 +62,19 @@ final class SteamRosettaTests: XCTestCase {
             delays += 1
             if delays == 2 { try await secondDelay.wait() }
         })
-        await fixture.game.failRosettaResume(true)
+        fixture.sessions.fake.failRosetta(SteamGameSessions.rosettaUnavailableKey)
         fixture.model.install()
         try await eventually { await secondDelay.requests == 1 }
         fixture.model.cancel()
-        await fixture.game.failRosettaResume(false)
+        fixture.sessions.fake.failRosetta(nil)
         await secondDelay.resolve(())
-        try await eventually { await fixture.game.cancellations == 1 }
+        try await eventually { fixture.sessions.fake.declines.count == 1 }
         XCTAssertNil(fixture.model.prompt)
-        let resumed = await fixture.game.rosettaResumes
-        let checks = await fixture.game.rosettaChecks
+        let resumed = fixture.sessions.fake.rosettaResumes
+        let checks = fixture.sessions.fake.rosettaChecks
         XCTAssertTrue(resumed.isEmpty)
         XCTAssertEqual(checks.count, 1)
         XCTAssertTrue(fixture.sessions.isBusy)
-        await fixture.finish()
     }
 
     @MainActor
@@ -86,35 +83,33 @@ final class SteamRosettaTests: XCTestCase {
         var delays = 0
         let fixture = try await fixture(install: { try await installation.wait() }, readinessAttempts: 3,
                                         readinessDelay: { delays += 1; await Task.yield() })
-        await fixture.game.failRosettaResume(true)
+        fixture.sessions.fake.failRosetta(SteamGameSessions.rosettaUnavailableKey)
         fixture.model.install()
         try await eventually { fixture.model.installationFailed }
         XCTAssertEqual(delays, 3)
         XCTAssertFalse(fixture.model.isInstalling)
         XCTAssertNotNil(fixture.model.prompt)
-        await fixture.game.failRosettaResume(false)
+        fixture.sessions.fake.failRosetta(nil)
         fixture.model.install()
         try await eventually { fixture.model.prompt == nil }
         XCTAssertFalse(fixture.model.installationFailed)
         XCTAssertEqual(delays, 4)
         await installation.resolve(())
-        let resumed = await fixture.game.rosettaResumes
+        let resumed = fixture.sessions.fake.rosettaResumes
         XCTAssertEqual(resumed.count, 1)
-        await fixture.finish()
     }
 
     @MainActor
     func testSessionAndCloudErrorsAreNotRetriedAsRosettaUnavailability() async throws {
         for error in ["backend.steam.runtime.invalidSession", "backend.steam.cloud.network"] {
             let fixture = try await fixture(install: {})
-            await fixture.game.failRosettaWith(error)
+            fixture.sessions.fake.failRosetta(error)
             fixture.model.install()
             try await eventually { fixture.model.installationFailed }
-            let checks = await fixture.game.rosettaChecks
+            let checks = fixture.sessions.fake.rosettaChecks
             XCTAssertEqual(checks.count, 1)
             XCTAssertNotNil(fixture.model.prompt)
-            await fixture.finish()
-        }
+            }
     }
 
     @MainActor
@@ -126,64 +121,51 @@ final class SteamRosettaTests: XCTestCase {
             instant = instant.advanced(by: .seconds(1))
             await Task.yield()
         }, readinessTimeout: .seconds(2), now: { instant })
-        await fixture.game.failRosettaResume(true)
+        fixture.sessions.fake.failRosetta(SteamGameSessions.rosettaUnavailableKey)
         fixture.model.install()
         try await eventually { fixture.model.installationFailed }
-        let checks = await fixture.game.rosettaChecks
+        let checks = fixture.sessions.fake.rosettaChecks
         XCTAssertEqual(delays, 2)
         XCTAssertEqual(checks.count, 1)
         XCTAssertFalse(fixture.model.isInstalling)
-        await fixture.finish()
     }
 
     @MainActor
     func testOnlyCurrentAccountsPublishedRequirementPresentsPrompt() async throws {
-        let game = RecoveredGameFixture(phase: .preparing, cloudPhase: .checking)
         let sessions = SteamGameSessions()
         let model = SteamRosettaModel(sessions: sessions, install: { XCTFail("No installation without a requirement") })
         model.connect(accountId: 99)
-        let task = try XCTUnwrap(sessions.launch(game: 42, account: 42, prepare: { game }))
+        sessions.fake.show(.steam(phase: .preparing, cloud: .showing(.checking)))
         try await eventually { sessions.active?.cloud.phase == .checking }
         XCTAssertNil(model.prompt)
         model.install()
-        await game.update(cloudPhase: .ready)
-        await game.requireRosetta(decisionId: 17)
+        sessions.fake.requireRosetta(decisionID: 17)
         try await eventually { sessions.rosettaPrompt(accountId: 42) != nil }
         XCTAssertNil(model.prompt)
         model.connect(accountId: 42)
         XCTAssertEqual(model.prompt?.decisionId, 17)
         XCTAssertFalse(model.isInstalling)
-        sessions.signedOut(account: 42)
-        XCTAssertNil(model.prompt)
-        await game.finish()
-        await task.value
     }
 
     @MainActor
     func testInstallationResumesSameSessionOnceAndKeepsAdmissionUntilGameFinishes() async throws {
         let installation = GameSessionGate<Void>()
         let fixture = try await fixture(install: { try await installation.wait() })
-        await fixture.game.failRosettaResume(true)
+        fixture.sessions.fake.failRosetta(SteamGameSessions.rosettaUnavailableKey)
         fixture.model.install()
         fixture.model.install()
         try await eventually { await installation.requests == 1 }
         XCTAssertTrue(fixture.model.isInstalling)
         XCTAssertTrue(fixture.sessions.protects(42))
-        XCTAssertNil(fixture.sessions.launch(game: 570, account: 42, prepare: {
-            XCTFail("Already reserved")
-            return RecoveredGameFixture(appID: 570)
-        }))
-        let before = await fixture.game.rosettaResumes
+        let before = fixture.sessions.fake.rosettaResumes
         XCTAssertTrue(before.isEmpty)
-        await fixture.game.failRosettaResume(false)
+        fixture.sessions.fake.failRosetta(nil)
         await installation.resolve(())
         try await eventually { fixture.model.prompt == nil }
-        let resumed = await fixture.game.rosettaResumes
-        XCTAssertEqual(resumed, [.init(accountID: 42, decisionID: 17)])
-        XCTAssertTrue(fixture.sessions.isBusy)
-        await fixture.game.update(phase: .running)
-        try await eventually { fixture.sessions.active?.running == true }
-        await fixture.finish()
+        let resumed = fixture.sessions.fake.rosettaResumes
+        XCTAssertEqual(resumed.map(\.decisionID), [17])
+        XCTAssertEqual(resumed.map(\.account), [.steam(steamId: 42)])
+        XCTAssertTrue(fixture.sessions.isBusy, "The launch keeps its Reservation until its game exits")
     }
 
     @MainActor
@@ -195,37 +177,35 @@ final class SteamRosettaTests: XCTestCase {
             if attempts == 1 { throw CocoaError(.executableNotLoadable) }
             try await installation.wait()
         })
-        await fixture.game.failRosettaResume(true)
+        fixture.sessions.fake.failRosetta(SteamGameSessions.rosettaUnavailableKey)
         fixture.model.install()
         try await eventually { fixture.model.installationFailed }
         XCTAssertNotNil(fixture.model.prompt)
         XCTAssertFalse(fixture.model.isInstalling)
-        let before = await fixture.game.rosettaResumes
+        let before = fixture.sessions.fake.rosettaResumes
         XCTAssertTrue(before.isEmpty)
         fixture.model.install()
         try await eventually { await installation.requests == 1 }
         XCTAssertFalse(fixture.model.installationFailed)
-        await fixture.game.failRosettaResume(false)
+        fixture.sessions.fake.failRosetta(nil)
         await installation.resolve(())
         try await eventually { fixture.model.prompt == nil }
         XCTAssertEqual(attempts, 2)
-        await fixture.finish()
     }
 
     @MainActor
     func testSuccessfulHelperCannotOverrideFailedRuntimeRecheck() async throws {
         let fixture = try await fixture(install: {}, readinessAttempts: 1)
-        await fixture.game.failRosettaResume(true)
+        fixture.sessions.fake.failRosetta(SteamGameSessions.rosettaUnavailableKey)
         fixture.model.install()
         try await eventually { fixture.model.installationFailed }
         XCTAssertNotNil(fixture.model.prompt)
         XCTAssertEqual(fixture.sessions.active?.phase, .preparing)
-        await fixture.game.failRosettaResume(false)
+        fixture.sessions.fake.failRosetta(nil)
         fixture.model.install()
         try await eventually { fixture.model.prompt == nil }
-        let attempts = await fixture.game.rosettaChecks
+        let attempts = fixture.sessions.fake.rosettaChecks
         XCTAssertEqual(attempts.count, 2)
-        await fixture.finish()
     }
 
     @MainActor
@@ -233,18 +213,17 @@ final class SteamRosettaTests: XCTestCase {
         let installation = GameSessionGate<Void>()
         var installerReturned = false
         let fixture = try await fixture(install: { try await installation.wait(); installerReturned = true })
-        await fixture.game.failRosettaResume(true)
+        fixture.sessions.fake.failRosetta(SteamGameSessions.rosettaUnavailableKey)
         fixture.model.install()
         try await eventually { await installation.requests == 1 }
         fixture.model.cancel()
-        try await eventually { await fixture.game.cancellations == 1 }
+        try await eventually { fixture.sessions.fake.declines.count == 1 }
         XCTAssertNil(fixture.model.prompt)
         XCTAssertTrue(fixture.sessions.isBusy)
         XCTAssertTrue(fixture.sessions.protects(42))
         await installation.resolve(())
         try await eventually { installerReturned }
-        await fixture.finish()
-        let resumed = await fixture.game.rosettaResumes
+        let resumed = fixture.sessions.fake.rosettaResumes
         XCTAssertTrue(resumed.isEmpty)
         XCTAssertFalse(fixture.model.installationFailed)
     }
@@ -254,18 +233,17 @@ final class SteamRosettaTests: XCTestCase {
         let installation = GameSessionGate<Void>()
         var installerReturned = false
         let fixture = try await fixture(install: { try await installation.wait(); installerReturned = true })
-        await fixture.game.failRosettaResume(true)
+        fixture.sessions.fake.failRosetta(SteamGameSessions.rosettaUnavailableKey)
         fixture.model.install()
         try await eventually { await installation.requests == 1 }
         fixture.model.connect(accountId: 99)
-        try await eventually { await fixture.game.cancellations == 1 }
+        try await eventually { fixture.sessions.fake.declines.count == 1 }
         XCTAssertNil(fixture.model.prompt)
         fixture.model.connect(accountId: 42)
         XCTAssertNil(fixture.model.prompt, "Signing back in must not reopen a cancelled attempt")
         await installation.resolve(())
         try await eventually { installerReturned }
-        await fixture.finish()
-        let resumed = await fixture.game.rosettaResumes
+        let resumed = fixture.sessions.fake.rosettaResumes
         XCTAssertTrue(resumed.isEmpty)
         XCTAssertFalse(fixture.model.isInstalling)
     }
@@ -276,13 +254,12 @@ final class SteamRosettaTests: XCTestCase {
                       NSError(domain: NSOSStatusErrorDomain, code: -128)] {
             let fixture = try await fixture(install: { throw error })
             fixture.model.install()
-            try await eventually { await fixture.game.cancellations == 1 }
+            try await eventually { fixture.sessions.fake.declines.count == 1 }
             XCTAssertNil(fixture.model.prompt)
             XCTAssertFalse(fixture.model.installationFailed)
-            let resumed = await fixture.game.rosettaResumes
+            let resumed = fixture.sessions.fake.rosettaResumes
             XCTAssertTrue(resumed.isEmpty)
-            await fixture.finish()
-        }
+            }
     }
 
     @MainActor
@@ -290,46 +267,34 @@ final class SteamRosettaTests: XCTestCase {
         let installation = GameSessionGate<Void>()
         var installerReturned = false
         let fixture = try await fixture(install: { try await installation.wait(); installerReturned = true })
-        await fixture.game.failRosettaResume(true)
+        fixture.sessions.fake.failRosetta(SteamGameSessions.rosettaUnavailableKey)
         fixture.model.install()
         try await eventually { await installation.requests == 1 }
-        await fixture.game.requireRosetta(decisionId: 18)
+        fixture.sessions.fake.requireRosetta(decisionID: 18)
         try await eventually { fixture.model.prompt?.decisionId == 18 }
         await installation.resolve(())
         try await eventually { installerReturned }
         XCTAssertEqual(fixture.model.prompt?.decisionId, 18)
         XCTAssertFalse(fixture.model.isInstalling)
-        let resumed = await fixture.game.rosettaResumes
+        let resumed = fixture.sessions.fake.rosettaResumes
         XCTAssertTrue(resumed.isEmpty)
-        await fixture.finish()
     }
 
     @MainActor
-    func testSessionRejectsStaleRosettaIdentityAccountAndDecisionBeforeBridgeCall() async throws {
+    func testAStaleRosettaPromptCannotCancelTheCurrentRequirement() async throws {
         let fixture = try await fixture(install: {})
         let prompt = try XCTUnwrap(fixture.model.prompt)
         for obsolete in [SteamGameSessions.RosettaPrompt(id: UUID().uuidString, accountId: 42, decisionId: 17),
                          .init(id: prompt.id, accountId: 99, decisionId: 17),
                          .init(id: prompt.id, accountId: 42, decisionId: 16)] {
-            do {
-                try await fixture.sessions.resumeAfterRosetta(obsolete)
-                XCTFail("An obsolete response must not reach the supervisor")
-            } catch {}
             fixture.sessions.cancelRosetta(obsolete)
         }
-        let resumed = await fixture.game.rosettaResumes
-        let cancellations = await fixture.game.cancellations
-        XCTAssertTrue(resumed.isEmpty)
-        XCTAssertEqual(cancellations, 0)
-        await fixture.finish()
+        XCTAssertTrue(fixture.sessions.fake.declines.isEmpty)
+        XCTAssertEqual(fixture.model.prompt, prompt)
     }
 
     @MainActor
     func testPreviousInstallerCompletionCannotResumeOrClearNewAttempt() async throws {
-        let first = RecoveredGameFixture(phase: .preparing, cloudPhase: .ready)
-        let second = RecoveredGameFixture(phase: .preparing, cloudPhase: .ready)
-        await first.requireRosetta(decisionId: 17)
-        await second.requireRosetta(decisionId: 17)
         let sessions = SteamGameSessions()
         let oldInstallation = GameSessionGate<Void>()
         let newInstallation = GameSessionGate<Void>()
@@ -343,46 +308,27 @@ final class SteamRosettaTests: XCTestCase {
             } else { try await newInstallation.wait() }
         })
         model.connect(accountId: 42)
-        let oldTask = try XCTUnwrap(sessions.launch(game: 42, account: 42, prepare: { first }))
+        let first = GameSessionState.steam(phase: .preparing, cloud: .showing(.ready))
+        sessions.fake.show(first)
+        sessions.fake.requireRosetta(decisionID: 17)
         try await eventually { model.prompt != nil }
         model.install()
         try await eventually { await oldInstallation.requests == 1 }
         model.cancel()
-        await first.finish()
-        await oldTask.value
-        let newTask = try XCTUnwrap(sessions.launch(game: 42, account: 42, prepare: { second }))
-        try await eventually { model.prompt?.id == second.sessionID }
+        sessions.fake.show(nil)
+        let second = GameSessionState.steam(phase: .preparing, cloud: .showing(.ready))
+        sessions.fake.show(second)
+        sessions.fake.requireRosetta(decisionID: 17)
+        try await eventually { model.prompt?.id == second.id }
         model.install()
         try await eventually { await newInstallation.requests == 1 }
         await oldInstallation.resolve(())
         try await eventually { oldInstallerReturned }
         XCTAssertTrue(model.isInstalling)
-        let premature = await second.rosettaResumes
-        XCTAssertTrue(premature.isEmpty)
+        XCTAssertTrue(sessions.fake.rosettaResumes.isEmpty)
         await newInstallation.resolve(())
         try await eventually { model.prompt == nil }
-        let oldResumes = await first.rosettaResumes
-        let newResumes = await second.rosettaResumes
-        XCTAssertTrue(oldResumes.isEmpty)
-        XCTAssertEqual(newResumes.count, 1)
-        await second.finish()
-        await newTask.value
-    }
-
-    @MainActor
-    func testCancellingRecoveredRosettaAttemptDoesNotLeaveRecoveryError() async throws {
-        let game = RecoveredGameFixture(phase: .preparing, cloudPhase: .ready)
-        await game.requireRosetta(decisionId: 17)
-        let sessions = SteamGameSessions(recoverExisting: true, recoverSession: { game })
-        let model = SteamRosettaModel(sessions: sessions, install: { XCTFail("Cancellation does not install") })
-        model.connect(accountId: 42)
-        try await eventually { model.prompt != nil }
-        model.cancel()
-        try await eventually { await game.cancellations == 1 }
-        XCTAssertTrue(sessions.isBusy)
-        await game.fail(reason: "backend.steam.runtime.cancelled")
-        try await eventually { !sessions.isBusy }
-        XCTAssertNil(sessions.recoveryError)
+        XCTAssertEqual(sessions.fake.rosettaResumes.map(\.session), [second.id])
     }
 
     @MainActor
@@ -393,12 +339,11 @@ final class SteamRosettaTests: XCTestCase {
         let directory = URL(fileURLWithPath: destination, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let fixture = try await fixture(install: { throw CocoaError(.executableNotLoadable) })
-        await fixture.game.failRosettaResume(true)
+        fixture.sessions.fake.failRosetta(SteamGameSessions.rosettaUnavailableKey)
         try await render(fixture.model, to: directory.appending(path: "steam-rosetta-prompt.png"))
         fixture.model.install()
         try await eventually { fixture.model.installationFailed }
         try await render(fixture.model, to: directory.appending(path: "steam-rosetta-retry.png"))
-        await fixture.finish()
     }
 
     @MainActor
@@ -430,29 +375,21 @@ final class SteamRosettaTests: XCTestCase {
                          readinessDelay: @escaping @MainActor () async throws -> Void = { try await Task.sleep(for: .milliseconds(10)) },
                          readinessTimeout: Duration = .seconds(600),
                          now: @escaping @MainActor () -> ContinuousClock.Instant = { .now }) async throws -> Fixture {
-        let game = RecoveredGameFixture(phase: .preparing, cloudPhase: .ready)
-        await game.requireRosetta(decisionId: 17)
         let sessions = SteamGameSessions()
         let model = SteamRosettaModel(sessions: sessions, install: install,
                                      readinessAttempts: readinessAttempts, readinessDelay: readinessDelay,
                                      readinessTimeout: readinessTimeout, now: now)
         model.connect(accountId: 42)
-        let task = try XCTUnwrap(sessions.launch(game: 42, account: 42, prepare: { game }))
+        sessions.fake.show(.steam(phase: .preparing, cloud: .showing(.ready)))
+        sessions.fake.requireRosetta(decisionID: 17)
         try await eventually { model.prompt != nil }
-        return Fixture(game: game, sessions: sessions, model: model, task: task)
+        return Fixture(sessions: sessions, model: model)
     }
 
+    /// A Steam launch of game 42 waiting for Rosetta, decision 17.
     @MainActor
     private struct Fixture {
-        let game: RecoveredGameFixture
         let sessions: SteamGameSessions
         let model: SteamRosettaModel
-        let task: Task<Void, Never>
-
-        func finish() async {
-            await game.finish()
-            await task.value
-        }
     }
-
 }

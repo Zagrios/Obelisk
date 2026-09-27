@@ -2,38 +2,34 @@ import Foundation
 import XCTest
 @testable import SailOver
 
-/// The installation actions as the game on screen presents them, over Rust's
-/// installations. Steam's adapter stands in for every storefront; Rust's own
-/// suite covers the rules behind them.
+/// The installation actions as the game on screen presents them, over
+/// installations the test drives. Steam stands in for every storefront; Rust's
+/// own suite covers the rules behind them.
 @MainActor
 final class GameInstallationsTests: XCTestCase {
     private let game = SteamGame(appId: 620, name: "Portal 2", iconHash: "", lastPlayed: 0, playtimeMinutes: 0)
 
-    func testCancellingALaunchStillPreparingNeverHandsTheGameOff() async throws {
-        let fixture = try Fixture(game: game)
-        let plan = GameSessionGate<Void>()
-        fixture.content.launchPlan = { appId, platform, directory in
-            try awaitBlocking { try await plan.wait() }
-            return SteamLaunchPlan(appId: appId, platform: platform, installDirectory: directory,
-                                   target: LaunchTarget(executable: directory, arguments: [], workingDirectory: directory,
-                                                        isApplicationBundle: true))
-        }
+    func testThePrimaryActionLaunchesTheInstallationAndCancelReachesItsPreparation() async throws {
+        let fixture = Fixture(game: game)
+        fixture.verifies = true
         let installations = fixture.connect()
 
         installations.primaryAction()
-        XCTAssertTrue(installations.isLaunching)
-        try await eventually { await plan.requests == 1 }
-        installations.cancelDownload()
-        await plan.resolve(())
 
-        try await eventually { !installations.isLaunching && !fixture.sessions.isBusy }
-        XCTAssertEqual(fixture.content.handOffs, 0, "A cancelled launch must not start its game")
-        XCTAssertTrue(fixture.reported.isEmpty)
-        XCTAssertTrue(installations.primaryActionAvailable)
+        XCTAssertEqual(fixture.backend.actions, [.launch(fixture.receipt, verification: fixture.update("macos"),
+                                                         verify: true)])
+        fixture.backend.publish {
+            $0.launching = true
+            $0.launchGame = 620
+        }
+        try await eventually { installations.isLaunching }
+        XCTAssertEqual(installations.primaryActionTitle, L10n.string("model.game.launching"))
+        installations.cancelDownload()
+        XCTAssertEqual(fixture.backend.actions.last, .cancel)
     }
 
     func testAnInstallationLaunchesAndUpdatesBeforeTheStorefrontKnowsWhatItCanInstall() async throws {
-        let fixture = try Fixture(game: game)
+        let fixture = Fixture(game: game)
         // The storefront would install the Windows build, once it knows it can.
         let installations = fixture.connect(platform: "windows", installable: false)
 
@@ -41,84 +37,52 @@ final class GameInstallationsTests: XCTestCase {
         XCTAssertEqual(installations.primaryActionTitle, L10n.string("model.game.launch"))
         XCTAssertTrue(installations.primaryActionAvailable)
         installations.downloadSelected()
-        try await eventually { !fixture.content.downloads.isEmpty }
-        XCTAssertEqual(fixture.content.downloads.first, "macos", "An update keeps the installed build")
+        XCTAssertEqual(fixture.backend.actions, [.download(fixture.update("macos"))], "An update keeps the installed build")
     }
 
-    func testAnInterruptedVerificationKeepsTheReceiptMarked() async throws {
-        let fixture = try Fixture(game: game)
-        fixture.verifies = true
-        fixture.content.download = { _, _ in throw SteamError.Failure(reason: "backend.steam.content.network") }
+    func testAFailedTransferIsReportedAndResumesWhereItStopped() async throws {
+        let fixture = Fixture(game: game)
         let installations = fixture.connect()
+        let request = fixture.update("macos")
 
-        installations.primaryAction()
-        try await eventually { !installations.isLaunching }
+        fixture.backend.publish {
+            $0.lastDownload = request
+            $0.transferGame = 620
+            $0.report = .storefront(key: "backend.steam.content.network")
+        }
 
-        XCTAssertEqual(installations.selectedReceipt?.needsVerification, true)
-        XCTAssertEqual(installations.transfer?.state, .failed)
-        XCTAssertTrue(installations.canResumeDownload)
+        try await eventually { installations.canResumeDownload }
         XCTAssertEqual(fixture.reported, [L10n.message("backend.steam.content.network")])
-        XCTAssertFalse(fixture.sessions.isBusy)
+        XCTAssertEqual(installations.primaryActionTitle, L10n.string("model.game.launch"))
+        installations.downloadSelected()
+        XCTAssertEqual(fixture.backend.actions, [.resume])
     }
 }
 
-/// A Steam session whose calls the test scripts.
-private final class ClosureSteamContent: SteamContent, @unchecked Sendable {
-    private let lock = NSLock()
-    var download: @Sendable (UInt32, String) throws -> Void = { _, _ in throw SteamError.Cancelled }
-    var launchPlan: @Sendable (UInt32, String, String) throws -> SteamLaunchPlan = { _, _, _ in
-        throw SteamError.Failure(reason: "backend.steam.runtime.startFailed")
-    }
-    private var _downloads: [String] = []
-    private var _handOffs = 0
-    var downloads: [String] { lock.withLock { _downloads } }
-    var handOffs: Int { lock.withLock { _handOffs } }
-
-    func download(appId: UInt32, platform: String, language: String, directory: String) throws -> SteamInstallation {
-        lock.withLock { _downloads.append(platform) }
-        try download(appId, platform)
-        throw SteamError.Cancelled
-    }
-    func downloadProgress() -> GameTransfer? { nil }
-    func cancelDownload() {}
-    func launchPlan(appId: UInt32, platform: String, directory: String) throws -> SteamLaunchPlan {
-        try launchPlan(appId, platform, directory)
-    }
-    func handOff(plan: SteamLaunchPlan) throws -> any GameSupervisor {
-        lock.withLock { _handOffs += 1 }
-        return RecoveredGameFixture(appID: plan.appId)
-    }
-    func archiveCloud(config: SteamCloudConfiguration) throws {}
-    func maintainCloud(appId: UInt32, config: SteamCloudConfiguration?, sync: CloudSync) throws {}
-}
-
-/// One signed-in Steam account with one installed game.
+/// One signed-in Steam account with Portal 2 installed for macOS.
 @MainActor
 private final class Fixture {
-    let root: URL
-    let receiptsFile: URL
     let sessions = SteamGameSessions()
-    let content = ClosureSteamContent()
+    let receipt: SteamInstallReceipt
+    private(set) var backend = FakeInstallations<SteamGames>()
     var verifies = false
     private(set) var reported: [String] = []
     private let game: SteamGame
     private let installations: SteamInstallations
 
-    init(game: SteamGame) throws {
+    init(game: SteamGame) {
         self.game = game
-        root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
-            .appending(path: "SailOverInstallationsTests-\(UUID().uuidString)")
-        let directory = root.appending(path: "Games/Steam/steam-620-macos")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        receiptsFile = root.appending(path: "steam-installations-42.json")
-        let receipt = SteamInstallReceipt(appId: 620, name: game.name, directory: directory.path, platform: "macos",
-                                          language: "english", totalBytes: 100)
-        try JSONEncoder().encode([receipt]).write(to: receiptsFile)
-        let cloud = SteamCloudModel(sessions: sessions)
-        installations = SteamInstallations(directory: root, sessions: sessions, cloud: cloud)
+        receipt = SteamInstallReceipt(appId: 620, name: game.name, directory: "/fixture/Games/Steam/steam-620-macos",
+                                      platform: "macos", language: "english", totalBytes: 100)
+        installations = SteamInstallations(directory: URL(fileURLWithPath: "/fixture"), sessions: sessions,
+                                           cloud: SteamCloudModel(sessions: sessions))
     }
 
-    deinit { try? FileManager.default.removeItem(at: root) }
+    /// The Transfer that updates the installation of `platform` in place.
+    func update(_ platform: String) -> SteamDownload {
+        SteamDownload(game: game, platform: platform, language: "english",
+                      directory: URL(fileURLWithPath: receipt.directory).deletingLastPathComponent())
+    }
 
     func connect(platform: String = "macos", installable: Bool = true) -> SteamInstallations {
         let game = game
@@ -128,17 +92,10 @@ private final class Fixture {
                               directory: directory)
             })
         }
-        let backend = SteamInstallationsBackend(try! SteamAccountInstallations.withContent(
-            content: content, accountId: 42, sessions: sessions.core, receipts: receiptsFile.path,
-            locations: .of(library: root)
-        ))
+        backend = FakeInstallations(receipts: [receipt])
         installations.connect(account: 42, backend: backend, port: InstallationPort(
             verifiesBeforeLaunch: { [unowned self] in verifies },
-            uninstallRequest: { receipt in
-                SteamDownload(appId: receipt.appId, name: receipt.name, platform: receipt.platform,
-                              language: receipt.language,
-                              directory: URL(fileURLWithPath: receipt.directory).deletingLastPathComponent())
-            },
+            uninstallRequest: { _ in nil },
             report: { [unowned self] error in if let error { reported.append(SteamModel.message(error)) } },
             warn: { _ in }
         ))

@@ -829,7 +829,7 @@ impl<P: Storefront> std::ops::Deref for Admission<P> {
 }
 
 impl<P: Storefront> Admission<P> {
-    /// What cancels this launch once it is handed to `launch`.
+    /// What cancels this launch once it is handed off.
     pub fn canceller(&self) -> Canceller<P> {
         self.canceller.clone()
     }
@@ -863,25 +863,22 @@ impl<P: Storefront> Admission<P> {
         self.launch_before(handoff, before_begin).await
     }
 
-    /// Hands the admitted game to its supervisor with `handoff`, then follows
-    /// the session until it is finished. The handoff and the observation run
-    /// to their end even when the caller stops waiting, since the supervisor
-    /// may accept the game at any point: only its session releases the
-    /// Reservation then.
-    pub async fn launch<F>(self, handoff: F) -> Result<(), Failure>
+    /// Launches as `launch_before` does, with nothing before the start gate.
+    #[cfg(test)]
+    async fn launch<F>(self, handoff: F) -> Result<(), Failure>
     where
         F: Future<Output = Result<Arc<dyn Supervised<P>>, Handoff>> + Send + 'static,
     {
         self.launch_before(handoff, Box::new(|| {})).await
     }
 
-    /// Launches as `launch` does, running `before_begin` between the handoff
-    /// and the opening of the supervisor's start gate.
-    pub async fn launch_before<F>(
-        self,
-        handoff: F,
-        before_begin: BeforeBegin,
-    ) -> Result<(), Failure>
+    /// Hands the admitted game to its supervisor with `handoff`, runs
+    /// `before_begin` before the supervisor's start gate opens, then follows
+    /// the session until it is finished. The handoff and the observation run
+    /// to their end even when the caller stops waiting, since the supervisor
+    /// may accept the game at any point: only its session releases the
+    /// Reservation then.
+    async fn launch_before<F>(self, handoff: F, before_begin: BeforeBegin) -> Result<(), Failure>
     where
         F: Future<Output = Result<Arc<dyn Supervised<P>>, Handoff>> + Send + 'static,
     {
@@ -925,7 +922,8 @@ impl<P: Storefront> Admission<P> {
     }
 
     /// Follows a supervisor that already accepted the game.
-    pub async fn follow(self, client: Arc<dyn Supervised<P>>) -> Result<(), Failure> {
+    #[cfg(test)]
+    pub(crate) async fn follow(self, client: Arc<dyn Supervised<P>>) -> Result<(), Failure> {
         self.launch(async move { Ok(client) }).await
     }
 }

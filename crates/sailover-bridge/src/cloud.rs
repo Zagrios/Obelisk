@@ -1,9 +1,7 @@
-//! Cloud indicators, and the sync a storefront stand-in runs for Cloud
-//! maintenance, across UniFFI. An account's installations start maintenance
-//! and answer its Cloud question.
-use crate::{CloudChoice, CloudPhase, EpicGameId};
-use game_runtime::{cloud, cloud_status};
-use std::sync::Arc;
+//! Cloud indicators across UniFFI. An account's installations start
+//! maintenance and answer its Cloud question.
+use crate::EpicGameId;
+use game_runtime::cloud_status;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum CloudSavedState {
@@ -69,29 +67,6 @@ pub struct SteamCloudIndicator {
 pub struct EpicCloudIndicator {
     pub game: EpicGameId,
     pub indicator: CloudIndicator,
-}
-
-/// A Cloud maintenance sync, as a storefront stand-in runs it: it shows the
-/// sync's progress and asks the player.
-#[derive(uniffi::Object)]
-pub struct CloudSync(pub(crate) Arc<cloud::Control>);
-
-#[uniffi::export(async_runtime = "tokio")]
-impl CloudSync {
-    /// Shows progress. Any question shown is closed.
-    pub fn show(&self, phase: CloudPhase, error: Option<String>) {
-        self.0.show(phase.into(), error);
-    }
-
-    /// Asks about a conflict and waits for the answer: `None` once the player
-    /// cancels or the account signs out.
-    pub async fn ask_conflict(&self, error: Option<String>) -> Option<CloudChoice> {
-        self.0
-            .ask(cloud::Question::Conflict, error)
-            .await
-            .ok()
-            .map(Into::into)
-    }
 }
 
 #[cfg(test)]

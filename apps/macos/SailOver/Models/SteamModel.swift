@@ -109,7 +109,8 @@ final class SteamModel {
     let gameSessions: SteamGameSessions
     /// The Rust installations of the account a session signed in, whose
     /// receipts a file keeps.
-    typealias MakeInstallations = @MainActor (any SteamSessionProtocol, SteamCredentials, StorefrontSessions, URL)
+    typealias MakeInstallations = @MainActor (any SteamSessionProtocol, SteamCredentials,
+                                              any StorefrontSessionsProtocol, URL)
         -> any InstallationsBackend<SteamGames>
     @ObservationIgnored private let makeInstallations: MakeInstallations
     let cloud: SteamCloudModel
@@ -173,9 +174,13 @@ final class SteamModel {
         self.gameSessions = gameSessions
         let locations = SailOverLocations.of(library: directory)
         self.makeInstallations = makeInstallations ?? { session, credentials, sessions, receipts in
-            SteamInstallationsBackend(try! Self.installations(of: session, credentials: credentials,
-                                                              sessions: sessions, receipts: receipts,
-                                                              locations: locations))
+            guard let session = session as? SteamSession, let sessions = sessions as? StorefrontSessions else {
+                return NoInstallations<SteamGames>()
+            }
+            return SteamInstallationsBackend(try! SteamAccountInstallations(
+                session: session, credentials: credentials, sessions: sessions, receipts: receipts.path,
+                locations: locations
+            ))
         }
         self.cloud = SteamCloudModel(sessions: gameSessions)
         self.rosetta = SteamRosettaModel(sessions: gameSessions)
@@ -847,26 +852,6 @@ final class SteamModel {
         selectedGame = nil
         details = nil
         news = []
-    }
-
-    /// Rust's installations of the account `session` signed in.
-    private static func installations(of session: any SteamSessionProtocol, credentials: SteamCredentials,
-                                      sessions: StorefrontSessions, receipts: URL,
-                                      locations: SailOverLocations) throws -> SteamAccountInstallations {
-        if let session = session as? SteamSession {
-            return try SteamAccountInstallations(session: session, credentials: credentials, sessions: sessions,
-                                                 receipts: receipts.path, locations: locations)
-        }
-        #if DEBUG
-        return try SteamAccountInstallations.withContent(
-            content: SessionSteamContent(session, start: { _ in
-                throw SteamError.Failure(reason: "backend.steam.runtime.startFailed")
-            }),
-            accountId: credentials.steamId, sessions: sessions, receipts: receipts.path, locations: locations
-        )
-        #else
-        preconditionFailure("Only a Rust session signs in")
-        #endif
     }
 
     /// The account's installations, behind `session`.

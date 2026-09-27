@@ -13,8 +13,7 @@ final class StorefrontLibraryFilterTests: XCTestCase {
             steamGame(3, name: "Portal Never"),
             steamGame(4, name: "Other", lastPlayed: 900, playtime: 120)
         ]
-        try saveSteamReceipts([(1, "windows"), (2, "macos")], root: root)
-        let model = steamModel(root: root, games: games)
+        let model = steamModel(root: root, games: games, receipts: steamReceipts([(1, "windows"), (2, "macos")], root: root))
         await model.start()
         defer { model.signOut() }
 
@@ -98,8 +97,8 @@ final class StorefrontLibraryFilterTests: XCTestCase {
         let availableMac = epicGame("available", title: "Étoiles C", macOS: true)
         let unknown = EpicGame(appName: "unknown", namespace: "first", catalogItemId: "unknown", title: "Unknown",
                                description: "", imageUrl: nil, headerImageUrl: nil, developer: "", windows: false, macos: false)
-        try saveEpicReceipts([(installedWindows, "windows"), (installedMac, "macos")], root: root)
-        let model = epicModel(root: root, games: [installedWindows, unknown, availableMac, otherNamespace, installedMac])
+        let model = epicModel(root: root, games: [installedWindows, unknown, availableMac, otherNamespace, installedMac],
+                              receipts: epicReceipts([(installedWindows, "windows"), (installedMac, "macos")], root: root))
         await model.start()
         defer { model.signOut() }
 
@@ -143,12 +142,13 @@ final class StorefrontLibraryFilterTests: XCTestCase {
         SteamGame(appId: appID, name: name, iconHash: "", lastPlayed: lastPlayed, playtimeMinutes: playtime)
     }
 
-    private func steamModel(root: URL, games: [SteamGame],
+    private func steamModel(root: URL, games: [SteamGame], receipts: [SteamInstallReceipt] = [],
                             platforms: @escaping @Sendable ([UInt32]) async throws -> [SteamGamePlatforms] = { _ in [] }) -> SteamModel {
         let session = FilterSteamSession(games: games, platforms: platforms)
         return SteamModel(directory: root, keychain: FilterSteamCredentials(), connect: { _ in session }, news: { _ in [] },
                           beginLogin: { _ in throw FilterFixtureFailure.unexpectedOperation },
-                          gameSessions: SteamGameSessions(recoverExisting: false))
+                          gameSessions: SteamGameSessions(),
+                          installations: SteamModel.installations(FakeInstallations(receipts: receipts)))
     }
 
     private func epicGame(_ appName: String, namespace: String = "first", title: String, macOS: Bool = false) -> EpicGame {
@@ -156,31 +156,26 @@ final class StorefrontLibraryFilterTests: XCTestCase {
                  description: "", imageUrl: nil, headerImageUrl: nil, developer: "", windows: true, macos: macOS)
     }
 
-    private func epicModel(root: URL, games: [EpicGame]) -> EpicModel {
+    private func epicModel(root: URL, games: [EpicGame], receipts: [EpicInstallReceipt] = []) -> EpicModel {
         let credentials = EpicCredentials(accountId: "filters", displayName: "Filter fixture", refreshToken: "fixture-only-never-sent")
         let session = EpicTestSession(credentials: credentials, games: games)
-        return EpicModel(directory: root, keychain: EpicMemoryStore(credentials), restore: { _ in session })
+        return EpicModel(directory: root, keychain: EpicMemoryStore(credentials), restore: { _ in session },
+                         installations: EpicModel.installations(FakeInstallations(receipts: receipts)))
     }
 
-    private func saveSteamReceipts(_ entries: [(UInt32, String)], root: URL) throws {
-        let receipts = try entries.map { appID, platform in
-            let installed = root.appending(path: "steam-\(appID)-\(platform)")
-            try FileManager.default.createDirectory(at: installed, withIntermediateDirectories: true)
-            return SteamInstallReceipt(appId: appID, name: "Game \(appID)", directory: installed.path,
-                                       platform: platform, language: "english", totalBytes: 1)
+    private func steamReceipts(_ entries: [(UInt32, String)], root: URL) -> [SteamInstallReceipt] {
+        entries.map { appID, platform in
+            SteamInstallReceipt(appId: appID, name: "Game \(appID)", directory: root.appending(path: "steam-\(appID)-\(platform)").path,
+                                platform: platform, language: "english", totalBytes: 1)
         }
-        try JSONEncoder().encode(receipts).write(to: root.appending(path: "steam-installations-42.json"))
     }
 
-    private func saveEpicReceipts(_ entries: [(EpicGame, String)], root: URL) throws {
-        let receipts = try entries.map { game, platform in
-            let installed = root.appending(path: "epic-\(game.namespace)-\(game.appName)-\(platform)")
-            try FileManager.default.createDirectory(at: installed, withIntermediateDirectories: true)
-            return EpicInstallReceipt(namespace: game.namespace, appName: game.appName, name: game.title,
-                                      directory: installed.path, platform: platform, totalBytes: 1)
+    private func epicReceipts(_ entries: [(EpicGame, String)], root: URL) -> [EpicInstallReceipt] {
+        entries.map { game, platform in
+            EpicInstallReceipt(namespace: game.namespace, appName: game.appName, name: game.title,
+                               directory: root.appending(path: "epic-\(game.namespace)-\(game.appName)-\(platform)").path,
+                               platform: platform, totalBytes: 1)
         }
-        let accountComponent = "filters".utf8.map { String(format: "%02x", $0) }.joined()
-        try JSONEncoder().encode(receipts).write(to: root.appending(path: "epic-installations-\(accountComponent).json"))
     }
 
     private func eventually(file: StaticString = #filePath, line: UInt = #line,
@@ -217,10 +212,6 @@ private final class FilterSteamSession: SteamSessionProtocol, Sendable {
     func platforms(appIds: [UInt32]) async throws -> [SteamGamePlatforms] { try await loadPlatforms(appIds) }
     func profile() async throws -> SteamProfile { SteamProfile(displayName: nil, avatarUrl: nil) }
     func details(appId: UInt32, language: String) async throws -> SteamGameDetails { throw FilterFixtureFailure.unexpectedOperation }
-    func download(appId: UInt32, platform: String, language: String, directory: String) async throws -> SteamInstallation { throw FilterFixtureFailure.unexpectedOperation }
-    func downloadProgress() -> GameTransfer? { nil }
-    func cancelDownload() {}
-    func launchPlan(appId: UInt32, platform: String, directory: String) async throws -> SteamLaunchPlan { throw FilterFixtureFailure.unexpectedOperation }
 }
 
 private actor FilterPlatformResponses {

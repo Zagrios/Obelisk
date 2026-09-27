@@ -126,13 +126,10 @@ final class GameSessions<Store: GameStorefront> {
     private var revokedAccounts: [Store.AccountID] = []
     private var rosetta: RosettaPrompt?
     /// Rust's Game sessions, which the account's installations admit launches into.
-    @ObservationIgnored let core: StorefrontSessions
+    @ObservationIgnored let core: any StorefrontSessionsProtocol
     @ObservationIgnored private var revision: UInt64 = 0
-    @ObservationIgnored private var operation: Task<Void, Never>?
-    /// Told once the launch's game runs.
-    @ObservationIgnored private var onRunning: (@MainActor () -> Void)?
 
-    init(_ core: StorefrontSessions) {
+    init(_ core: any StorefrontSessionsProtocol) {
         self.core = core
         apply(core.state())
         let revision = revision
@@ -172,41 +169,6 @@ final class GameSessions<Store: GameStorefront> {
             }
         }
         if self.rosetta != rosetta { self.rosetta = rosetta }
-        if let onRunning, active?.running == true {
-            self.onRunning = nil
-            onRunning()
-        }
-    }
-
-    /// Admission happens before verification or authentication can suspend.
-    /// `run` hands the admitted game to its supervisor and returns once the
-    /// session is finished. Cancelling the returned task cancels preparation,
-    /// never a live game.
-    @discardableResult
-    func launch(_ game: GameIdentity,
-                run: @escaping @MainActor (GameAdmission) async throws -> Void,
-                onRunning: @escaping @MainActor () -> Void = {},
-                onCompletion: @escaping @MainActor (Error?) -> Void = { _ in }) -> Task<Void, Never>? {
-        guard let admission = core.admit(game: game) else { return nil }
-        apply(core.state())
-        self.onRunning = onRunning
-        let task = Task {
-            var failure: Error?
-            do {
-                try Task.checkCancellation()
-                try await withTaskCancellationHandler {
-                    try await run(admission)
-                } onCancel: { admission.cancel() }
-            } catch { failure = Self.translated(error) }
-            // An admission never handed off releases its Reservation.
-            admission.cancel()
-            self.onRunning = nil
-            operation = nil
-            apply(core.state())
-            onCompletion(failure)
-        }
-        operation = task
-        return task
     }
 
     /// The game's Reservation: no Transfer, uninstall or other launch of it.
@@ -236,8 +198,6 @@ final class GameSessions<Store: GameStorefront> {
         core.declineRosetta(sessionId: prompt.id, account: Store.account(prompt.accountId),
                             decisionId: prompt.decisionId)
         apply(core.state())
-        // The launch ends as a cancellation, which reports no error.
-        operation?.cancel()
     }
 
     /// Ends the running game, as quitting SailOver does: it gets a few seconds

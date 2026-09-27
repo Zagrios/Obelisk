@@ -12,8 +12,8 @@ pub use steam_native::*;
 mod epic;
 pub use epic::*;
 mod epic_cloud;
-pub use epic_cloud::*;
 mod epic_credentials;
+pub use epic_credentials::EpicCredentialSave;
 mod epic_friends;
 pub use epic_friends::*;
 mod cloud;
@@ -160,37 +160,6 @@ impl From<sailover_core::installation::TransferProgress> for GameTransfer {
             content_bytes: progress.content_bytes,
             current_file: progress.current_file,
             message: progress.message,
-        }
-    }
-}
-
-/// Validated executable, arguments and working directory resolved by a storefront kit.
-#[derive(Clone, Debug, uniffi::Record)]
-pub struct LaunchTarget {
-    pub executable: String,
-    pub arguments: Vec<String>,
-    pub working_directory: String,
-    pub is_application_bundle: bool,
-}
-
-impl From<LaunchTarget> for sailover_core::launch::LaunchTarget {
-    fn from(target: LaunchTarget) -> Self {
-        Self {
-            executable: target.executable,
-            arguments: target.arguments,
-            working_directory: target.working_directory,
-            is_application_bundle: target.is_application_bundle,
-        }
-    }
-}
-
-impl From<sailover_core::launch::LaunchTarget> for LaunchTarget {
-    fn from(target: sailover_core::launch::LaunchTarget) -> Self {
-        Self {
-            executable: target.executable,
-            arguments: target.arguments,
-            working_directory: target.working_directory,
-            is_application_bundle: target.is_application_bundle,
         }
     }
 }

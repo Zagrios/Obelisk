@@ -1,10 +1,16 @@
 //! An Epic account's credentials rotate with its calls. Each rotation is
 //! saved in order, one save at a time, so no call has to remember to.
-use crate::EpicCredentialSave;
 use std::{
     sync::{Arc, Condvar, Mutex},
     time::{Duration, Instant},
 };
+
+/// Saves the Epic account's current credentials, which account calls rotate.
+/// It may block.
+#[uniffi::export(with_foreign)]
+pub trait EpicCredentialSave: Send + Sync {
+    fn save(&self);
+}
 
 /// How long a launch waits for rotated credentials to be saved.
 const SAVE_TIMEOUT: Duration = Duration::from_secs(60);

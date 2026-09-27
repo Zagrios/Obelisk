@@ -37,10 +37,9 @@ final class EpicModel {
 
     let gameSessions: EpicGameSessions
     /// The Rust installations of an account a session signed in: its id, the
-    /// language games launch in, what saves the credentials account calls
-    /// rotate, and the file its receipts keep.
-    typealias MakeInstallations = @MainActor (any EpicSessionProtocol, String, String, any EpicCredentialSave,
-                                              StorefrontSessions, URL) -> any InstallationsBackend<EpicGames>
+    /// language games launch in, and the file its receipts keep.
+    typealias MakeInstallations = @MainActor (any EpicSessionProtocol, String, String,
+                                              any StorefrontSessionsProtocol, URL) -> any InstallationsBackend<EpicGames>
     @ObservationIgnored private let makeInstallations: MakeInstallations
     let cloud: EpicCloudModel
     let rosetta: EpicRosettaModel
@@ -110,10 +109,14 @@ final class EpicModel {
         self.launchLanguage = language
         self.gameSessions = gameSessions
         let locations = SailOverLocations.of(library: directory)
-        self.makeInstallations = makeInstallations ?? { session, account, language, credentials, sessions, receipts in
-            EpicInstallationsBackend(try! Self.installations(of: session, account: account, language: language,
-                                                             credentials: credentials, sessions: sessions,
-                                                             receipts: receipts, locations: locations))
+        self.makeInstallations = makeInstallations ?? { session, account, language, sessions, receipts in
+            guard let session = session as? EpicSession, let sessions = sessions as? StorefrontSessions else {
+                return NoInstallations<EpicGames>()
+            }
+            return EpicInstallationsBackend(try! EpicAccountInstallations(
+                session: session, accountId: account, language: language, sessions: sessions,
+                receipts: receipts.path, locations: locations
+            ))
         }
         self.rosetta = EpicRosettaModel(sessions: gameSessions)
         self.cloud = EpicCloudModel(sessions: gameSessions)
@@ -322,7 +325,6 @@ final class EpicModel {
             guard current == generation else { return }
             rosetta.connect(accountId: credentials.accountId)
             let backend = makeInstallations(connected, credentials.accountId, launchLanguage,
-                                            RememberedCredentials(rememberedSession, session: connected),
                                             gameSessions.core, receiptsFile(for: credentials.accountId))
             installations.connect(account: credentials.accountId, backend: backend, port: installationPort())
 
@@ -505,27 +507,6 @@ final class EpicModel {
         // Account identifiers are opaque. Encode them before using them in a file name.
         let component = account.utf8.map { String(format: "%02x", $0) }.joined()
         return directory.appending(path: "epic-installations-\(component).json")
-    }
-
-    /// Rust's installations of the account `session` signed in.
-    private static func installations(of session: any EpicSessionProtocol, account: String, language: String,
-                                      credentials: any EpicCredentialSave, sessions: StorefrontSessions,
-                                      receipts: URL, locations: SailOverLocations) throws -> EpicAccountInstallations {
-        if let session = session as? EpicSession {
-            return try EpicAccountInstallations(session: session, accountId: account, language: language,
-                                                sessions: sessions, receipts: receipts.path, locations: locations)
-        }
-        #if DEBUG
-        return try EpicAccountInstallations.withContent(
-            content: SessionEpicContent(session, start: { _ in
-                throw EpicError.Service(message: "backend.epic.cloud.failed")
-            }),
-            accountId: account, language: language, credentials: credentials, sessions: sessions,
-            receipts: receipts.path, locations: locations
-        )
-        #else
-        preconditionFailure("Only a Rust session signs in")
-        #endif
     }
 
     /// Epic's part of the installation actions.

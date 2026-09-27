@@ -599,14 +599,6 @@ private actor EpicPresentationSession: EpicSessionProtocol {
         await credentialRevisions.next(after: afterRevision)
     }
 
-    func launchPlan(namespace: String, catalogItemId: String, appName: String, platform: String, directory: String, language: String) async throws -> EpicLaunchPlan {
-        throw EpicError.InvalidResponse
-    }
-    nonisolated func cancelDownload() {}
-    nonisolated func downloadProgress() -> GameTransfer? { nil }
-    func download(namespace: String, catalogItemId: String, appName: String, platform: String, directory: String) async throws -> EpicInstallation {
-        throw EpicError.InvalidResponse
-    }
     private let library: [EpicGame]
     private let details: EpicGameDetails
     private let achievementItems: [EpicAchievement]

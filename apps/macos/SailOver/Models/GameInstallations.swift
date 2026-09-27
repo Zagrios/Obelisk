@@ -483,6 +483,35 @@ extension EpicGames: InstallationStorefront {
 typealias SteamInstallations = GameInstallations<SteamGames>
 typealias EpicInstallations = GameInstallations<EpicGames>
 
+/// The installations of a session that is not Rust's: it has none, and every
+/// action does nothing.
+final class NoInstallations<Store: InstallationStorefront>: InstallationsBackend {
+    private let empty = InstallationsSnapshot<Store>(
+        revision: 1, receipts: [], transfer: nil, transferGame: nil, downloading: false, launching: false,
+        verifyingBeforeLaunch: false, launchGame: nil, uninstalling: false, uninstallGame: nil, lastDownload: nil,
+        report: nil, warning: nil, maintenance: nil
+    )
+
+    func snapshot() -> InstallationsSnapshot<Store> { empty }
+    func changed(after: UInt64) async -> InstallationsSnapshot<Store> {
+        // Nothing ever changes: wait until the observer goes.
+        while !Task.isCancelled { try? await Task.sleep(for: .seconds(3600)) }
+        return empty
+    }
+    func setDiagnostic(_ running: Bool) {}
+    func download(_ request: Store.Request) {}
+    func resumeDownload() {}
+    func cancel() {}
+    func launch(_ receipt: Store.Receipt, verification: Store.Request, verify: Bool) {}
+    func uninstall(_ receipt: Store.Receipt, request: Store.Request) {}
+    func signedOut() {}
+    func maintainCloud(_ game: Store.GameID, installed: (Store.Receipt, Store.Request)?) {}
+    func answerCloud(_ game: Store.GameID, decisionId: UInt64, choice: CloudChoice) async throws {
+        throw Store.failure(Store.invalidSession)
+    }
+    func cloudIndicators(_ games: [Store.GameID]) async throws -> [(Store.GameID, CloudIndicator)] { [] }
+}
+
 /// A Steam account's installations in Rust.
 final class SteamInstallationsBackend: InstallationsBackend {
     typealias Store = SteamGames
