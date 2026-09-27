@@ -297,28 +297,63 @@ pub(crate) fn windows_path(path: &Path) -> String {
     format!("Z:{}", path.to_string_lossy().replace('/', "\\"))
 }
 
-/// Deletes the Wine prefix of the uninstalled Windows installation that was
-/// in `install`, as Steam deletes a Proton prefix. A missing prefix is already
-/// gone; a link in its place is never followed.
-pub fn remove(
-    locations: &crate::Locations,
-    install: &Path,
-) -> Result<(), sailover_core::installation::RemovalFailure> {
-    use sailover_core::installation::RemovalFailure;
-    let prefix = prefix(&locations.wine_prefixes, install)
-        .map_err(|_| RemovalFailure::Unsafe(install.into()))?;
-    match fs::symlink_metadata(&prefix) {
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(error) => return Err(error.into()),
-        Ok(metadata) if !metadata.is_dir() => return Err(RemovalFailure::Unsafe(prefix)),
-        Ok(_) => {}
+/// One Windows installation: its game runs in Wine, in the installation's own
+/// prefix, where its saves live too. The prefix is readied before each launch
+/// and goes when the installation is uninstalled.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Installation {
+    prefix: PathBuf,
+}
+
+impl Installation {
+    /// The installation in `install`, when `platform` names a Windows build as
+    /// either storefront spells it.
+    pub fn of(
+        locations: &crate::Locations,
+        platform: &str,
+        install: &Path,
+    ) -> Result<Option<Self>, Error> {
+        if !platform.eq_ignore_ascii_case("windows") {
+            return Ok(None);
+        }
+        Ok(Some(Self {
+            prefix: prefix(&locations.wine_prefixes, install)?,
+        }))
     }
-    // A Wine server lingers a few seconds after its game and would write the
-    // registry back into the prefix.
-    if let Some(runtime) = crate::voile::runtime(&locations.voile) {
-        let _ = wineserver(&runtime, &prefix, "-k");
+
+    /// The Windows machine the installation runs in.
+    pub fn prefix(&self) -> &Path {
+        &self.prefix
     }
-    Ok(fs::remove_dir_all(&prefix)?)
+
+    /// How its game runs, once Voile is installed. Wine logs into `log`.
+    pub fn runtime(&self, locations: &crate::Locations, log: PathBuf) -> Result<Config, Error> {
+        Config::locate(&locations.voile, self.prefix.clone(), log)
+    }
+
+    /// Deletes the prefix of the uninstalled installation, as Steam deletes a
+    /// Proton prefix. A missing prefix is already gone; a link in its place is
+    /// never followed.
+    pub fn remove(
+        &self,
+        locations: &crate::Locations,
+    ) -> Result<(), sailover_core::installation::RemovalFailure> {
+        use sailover_core::installation::RemovalFailure;
+        match fs::symlink_metadata(&self.prefix) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(error.into()),
+            Ok(metadata) if !metadata.is_dir() => {
+                return Err(RemovalFailure::Unsafe(self.prefix.clone()));
+            }
+            Ok(_) => {}
+        }
+        // A Wine server lingers a few seconds after its game and would write
+        // the registry back into the prefix.
+        if let Some(runtime) = crate::voile::runtime(&locations.voile) {
+            let _ = wineserver(&runtime, &self.prefix, "-k");
+        }
+        Ok(fs::remove_dir_all(&self.prefix)?)
+    }
 }
 
 /// Runs, in order, the prerequisites this prefix has not run yet. One that

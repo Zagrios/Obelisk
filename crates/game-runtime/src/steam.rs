@@ -76,15 +76,12 @@ pub fn prepare(
     target: &sailover_core::launch::LaunchTarget,
 ) -> Result<Request, Error> {
     let home = &locations.home;
-    let wine = match platform {
-        "windows" => Some(crate::wine::Config::locate(
-            &locations.voile,
-            crate::wine::prefix(&locations.wine_prefixes, install)?,
-            locations
-                .steam_diagnostics
-                .join(format!("wine-{app_id}.log")),
-        )?),
-        _ => None,
+    let log = locations
+        .steam_diagnostics
+        .join(format!("wine-{app_id}.log"));
+    let wine = match crate::wine::Installation::of(locations, platform, install)? {
+        Some(windows) => Some(windows.runtime(locations, log)?),
+        None => None,
     };
     let (target, steam_api) = match &wine {
         Some(wine) => {

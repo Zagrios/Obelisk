@@ -387,31 +387,65 @@ fn a_missing_program_leaves_its_prerequisite_pending() {
 }
 
 #[test]
+fn a_windows_installation_runs_in_the_prefix_named_after_its_folder_whatever_the_storefront() {
+    let locations = crate::Locations::new(
+        Path::new("/library"),
+        Path::new("/SailOver.app"),
+        Path::new("/home"),
+    );
+    for (platform, install) in [
+        ("windows", "/library/Games/Steam/steam-42-windows"),
+        ("Windows", "/library/Games/Epic/epic-hash-Windows"),
+    ] {
+        let windows = Installation::of(&locations, platform, Path::new(install))
+            .unwrap()
+            .expect("a Windows build");
+        let folder = Path::new(install).file_name().unwrap();
+        assert_eq!(
+            windows.prefix(),
+            Path::new("/library/Prefixes").join(folder)
+        );
+    }
+    for platform in ["macos", "Mac"] {
+        let native = Installation::of(&locations, platform, Path::new("/library/Games/native"));
+        assert_eq!(native.unwrap(), None, "a Mac build runs outside Wine");
+    }
+    assert!(
+        Installation::of(&locations, "windows", Path::new("/")).is_err(),
+        "no folder names no prefix"
+    );
+}
+
+#[test]
 fn an_uninstalled_windows_game_loses_its_prefix_but_never_what_a_link_points_to() {
     use sailover_core::installation::RemovalFailure;
     let (_directory, root) = installation();
     let library = root.join("library");
     let locations = crate::Locations::new(&library, Path::new("/SailOver.app"), Path::new("/home"));
-    let install = |name: &str| library.join("Games/Steam").join(name);
+    let windows = |name: &str| {
+        Installation::of(
+            &locations,
+            "windows",
+            &library.join("Games/Steam").join(name),
+        )
+        .unwrap()
+        .unwrap()
+    };
     let prefix = library.join("Prefixes/steam-42-windows");
     fs::create_dir_all(prefix.join("drive_c/users")).unwrap();
     fs::write(prefix.join("system.reg"), "registry").unwrap();
-    remove(&locations, &install("steam-42-windows")).unwrap();
+    windows("steam-42-windows").remove(&locations).unwrap();
     assert!(!prefix.exists());
-    remove(&locations, &install("steam-42-windows")).unwrap();
+    windows("steam-42-windows").remove(&locations).unwrap();
 
     let elsewhere = root.join("elsewhere");
     fs::create_dir_all(&elsewhere).unwrap();
     std::os::unix::fs::symlink(&elsewhere, library.join("Prefixes/steam-43-windows")).unwrap();
     assert!(matches!(
-        remove(&locations, &install("steam-43-windows")),
+        windows("steam-43-windows").remove(&locations),
         Err(RemovalFailure::Unsafe(_))
     ));
     assert!(elsewhere.is_dir());
-    assert!(matches!(
-        remove(&locations, Path::new("/")),
-        Err(RemovalFailure::Unsafe(_))
-    ));
 }
 
 #[test]

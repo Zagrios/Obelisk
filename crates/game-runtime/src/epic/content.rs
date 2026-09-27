@@ -174,16 +174,18 @@ impl<N: Network> Content<N> {
             app_name: receipt.app_name.clone(),
             platform: receipt.platform.clone(),
             language: self.language.clone(),
-            prefix: windows(receipt)
-                .then(|| {
-                    crate::wine::prefix(
-                        &self.locations.wine_prefixes,
-                        Path::new(&receipt.directory),
-                    )
-                    .ok()
-                })
-                .flatten(),
+            prefix: self
+                .windows(receipt)
+                .map(|windows| windows.prefix().to_owned()),
         }
+    }
+
+    /// The build's Wine prefix, when it is a Windows one.
+    fn windows(&self, receipt: &Receipt) -> Option<crate::wine::Installation> {
+        let install = Path::new(&receipt.directory);
+        crate::wine::Installation::of(&self.locations, &receipt.platform, install)
+            .ok()
+            .flatten()
     }
 
     /// What maintenance of `game` syncs: its installation, or, uninstalled,
@@ -215,10 +217,6 @@ impl<N: Network> Content<N> {
         configuration.helper = self.locations.helper.clone();
         Ok(configuration)
     }
-}
-
-fn windows(receipt: &Receipt) -> bool {
-    receipt.platform == "Windows"
 }
 
 impl<N: Network> installations::Content<Epic> for Content<N> {
@@ -303,10 +301,12 @@ impl<N: Network> installations::Content<Epic> for Content<N> {
         )
     }
     fn remove_prefix(&self, receipt: &Receipt) -> Option<Result<(), String>> {
-        windows(receipt).then(|| {
-            crate::wine::remove(&self.locations, Path::new(&receipt.directory))
-                .map_err(|error| error.to_string())
-        })
+        let windows = self.windows(receipt)?;
+        Some(
+            windows
+                .remove(&self.locations)
+                .map_err(|error| error.to_string()),
+        )
     }
     fn maintain<'a>(
         &'a self,

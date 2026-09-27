@@ -135,21 +135,19 @@ impl<N: Network> Content<N> {
             home: self.locations.home.clone(),
             install: receipt.directory.clone().into(),
             app_id: receipt.app_id,
-            prefix: windows(receipt)
-                .then(|| {
-                    crate::wine::prefix(
-                        &self.locations.wine_prefixes,
-                        Path::new(&receipt.directory),
-                    )
-                    .ok()
-                })
-                .flatten(),
+            prefix: self
+                .windows(receipt)
+                .map(|windows| windows.prefix().to_owned()),
         }
     }
-}
 
-fn windows(receipt: &Receipt) -> bool {
-    receipt.platform == "windows"
+    /// The installation's Wine prefix, when it is a Windows one.
+    fn windows(&self, receipt: &Receipt) -> Option<crate::wine::Installation> {
+        let install = Path::new(&receipt.directory);
+        crate::wine::Installation::of(&self.locations, &receipt.platform, install)
+            .ok()
+            .flatten()
+    }
 }
 
 /// A Cloud failure, as the player sees it.
@@ -250,10 +248,12 @@ impl<N: Network> installations::Content<Steam> for Content<N> {
         format!("steam-{}-{}", receipt.app_id, receipt.platform)
     }
     fn remove_prefix(&self, receipt: &Receipt) -> Option<Result<(), String>> {
-        windows(receipt).then(|| {
-            crate::wine::remove(&self.locations, Path::new(&receipt.directory))
-                .map_err(|error| error.to_string())
-        })
+        let windows = self.windows(receipt)?;
+        Some(
+            windows
+                .remove(&self.locations)
+                .map_err(|error| error.to_string()),
+        )
     }
     fn maintain<'a>(
         &'a self,
@@ -304,7 +304,8 @@ struct Handover {
 impl sessions::Handover<Steam> for Handover {
     type Prepared = super::Request;
     fn voile(&self) -> Option<PathBuf> {
-        (self.platform == "windows").then(|| self.locations.voile.clone())
+        let windows = crate::wine::Installation::of(&self.locations, &self.platform, &self.install);
+        matches!(windows, Ok(Some(_))).then(|| self.locations.voile.clone())
     }
     fn prepare(&self) -> BoxFuture<'_, Result<super::Request, Failure>> {
         let (locations, app_id) = (self.locations.clone(), self.app_id);

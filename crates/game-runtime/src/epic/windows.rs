@@ -11,13 +11,13 @@ pub fn prepare_windows(
     config: &Configuration,
     locations: &crate::Locations,
 ) -> Result<wine::Config> {
-    let prefix = config.prefix.clone().ok_or(Error::Unsupported)?;
-    if config.platform != "Windows" {
-        return Err(Error::Unsupported);
-    }
-    let wine = wine::Config::locate(
-        &locations.voile,
-        prefix,
+    // The configuration may come from a saved journal: its prefix must be the
+    // one of the installation it names.
+    let windows = wine::Installation::of(locations, &config.platform, &config.install)?
+        .filter(|windows| config.prefix.as_deref() == Some(windows.prefix()))
+        .ok_or(Error::Unsupported)?;
+    let wine = windows.runtime(
+        locations,
         locations
             .epic_diagnostics
             .join(format!("wine-{}.log", config.app_name)),
