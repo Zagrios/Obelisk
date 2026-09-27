@@ -879,28 +879,26 @@ final class SteamPresentationTests: XCTestCase {
 
     @MainActor
     func testCloudMaintenanceHoldsTheReservationAndTheSyncMenuFollowsItsRules() async throws {
-        let services = CloudServicesFixture()
-        services.steamIndicator = CloudIndicator(state: .unavailable, gameSession: false, syncedAt: nil,
-                                                 pendingUpload: false, installationRemoved: false)
+        let maintenance = CloudMaintenanceFixture()
         let game = RecoveredGameFixture(appID: 620)
-        let fixture = try await launchFixture(verify: false, game: game, cloudServices: services.steam)
+        let fixture = try await launchFixture(verify: false, game: game, maintenance: maintenance)
         defer { fixture.cleanUp() }
         let model = fixture.model
-        try await eventually { model.installations.cloudIndicator?.value == L10n.string("ui.cloud.indicator.unavailable") }
-        XCTAssertTrue(model.installations.canSyncCloud, "Cloud found unavailable can be checked again")
+        try await eventually { model.installations.cloudIndicator != nil }
+        XCTAssertTrue(model.installations.canSyncCloud)
         XCTAssertTrue(model.installations.primaryActionAvailable)
 
         model.syncCloud()
 
         XCTAssertTrue(model.cloud.isMaintaining)
-        try await eventually { services.steamMaintenance.count == 1 }
-        XCTAssertEqual(services.steamMaintenance.last?.request.appId, 620)
-        XCTAssertNotNil(services.steamMaintenance.last?.request.install)
+        try await eventually { maintenance.starts.count == 1 }
+        XCTAssertEqual(maintenance.starts.last?.appId, 620)
+        XCTAssertNotNil(maintenance.starts.last?.steam?.install)
         XCTAssertFalse(model.installations.primaryActionAvailable, "Maintenance holds the game's Reservation")
         XCTAssertFalse(model.installations.canUninstallSelectedGame)
         XCTAssertFalse(model.installations.canSyncCloud)
         XCTAssertEqual(model.installations.cloudIndicator?.value, L10n.string("ui.cloud.indicator.syncing"))
-        services.steamMaintenance.last?.attempt.finish(.unavailable)
+        maintenance.finish()
         try await eventually { !model.cloud.isMaintaining }
         XCTAssertTrue(model.installations.primaryActionAvailable)
         XCTAssertTrue(model.installations.canSyncCloud)
@@ -918,26 +916,27 @@ final class SteamPresentationTests: XCTestCase {
 
     @MainActor
     func testAFailedSyncShowsNoBannerAndSyncNowRetries() async throws {
-        let services = CloudServicesFixture()
-        let fixture = try await launchFixture(verify: false, cloudServices: services.steam)
+        let maintenance = CloudMaintenanceFixture()
+        let fixture = try await launchFixture(verify: false, maintenance: maintenance)
         defer { fixture.cleanUp() }
         let model = fixture.model
         model.syncCloud()
-        try await eventually { services.steamMaintenance.count == 1 }
+        try await eventually { maintenance.starts.count == 1 }
 
-        services.steamMaintenance.last?.attempt.finish(.failed, error: "backend.steam.cloud.network")
+        maintenance.finish(SteamError.Failure(reason: "backend.steam.cloud.network"))
 
         try await eventually { !model.cloud.isMaintaining }
         XCTAssertFalse(model.cloud.failurePresented)
         XCTAssertTrue(model.installations.canSyncCloud, "Sync now is the retry")
         model.syncCloud()
-        try await eventually { services.steamMaintenance.count == 2 }
+        try await eventually { maintenance.starts.count == 2 }
+        maintenance.finish()
     }
 
     @MainActor
     func testACloudQuestionAppearsOverTheWholeAppWhateverTabIsOpen() async throws {
-        let services = CloudServicesFixture()
-        let fixture = try await launchFixture(verify: false, cloudServices: services.steam)
+        let maintenance = CloudMaintenanceFixture()
+        let fixture = try await launchFixture(verify: false, maintenance: maintenance)
         defer { fixture.cleanUp() }
         let app = AppModel(directory: fixture.root, defaults: fixture.preferences, steam: fixture.model,
                            epic: EpicModel(directory: fixture.root, gameSessions: EpicGameSessions(recoverSession: { nil })))
@@ -945,16 +944,15 @@ final class SteamPresentationTests: XCTestCase {
         XCTAssertNil(app.presentedPrompt)
 
         fixture.model.syncCloud()
-        try await eventually { services.steamMaintenance.count == 1 }
-        let attempt = try XCTUnwrap(services.steamMaintenance.last?.attempt)
-        attempt.publish(.conflict, decisionId: 1, choices: [.local, .cloud, .cancel])
+        try await eventually { maintenance.starts.count == 1 }
+        maintenance.askConflict()
 
         try await eventually { app.presentedPrompt == .steamCloud }
         app.selection = .recent
         XCTAssertEqual(app.presentedPrompt, .steamCloud, "The question does not wait for the Steam tab")
         fixture.model.cloud.respond(.cancel)
-        XCTAssertEqual(attempt.answers.map(\.1), [.cancel])
-        attempt.finish(.cancelled)
+        try await eventually { maintenance.answers == [nil] }
+        maintenance.finish()
         try await eventually { app.presentedPrompt == nil }
     }
 
@@ -1131,7 +1129,7 @@ final class SteamPresentationTests: XCTestCase {
     }
 
     @MainActor
-    private func launchFixture(verify: Bool? = nil, needsVerification: Bool? = nil, failVerification: Bool = false, game: RecoveredGameFixture? = nil, failLaunch: Bool = false, sessions: SteamGameSessions? = nil, startGame: (@MainActor (SteamLaunchPlan, SteamCredentials) async throws -> any GameSupervisor)? = nil, accountID: UInt64 = 42, cloudServices: SteamCloudServices = .live) async throws -> LaunchFixture {
+    private func launchFixture(verify: Bool? = nil, needsVerification: Bool? = nil, failVerification: Bool = false, game: RecoveredGameFixture? = nil, failLaunch: Bool = false, sessions: SteamGameSessions? = nil, startGame: (@MainActor (SteamLaunchPlan, SteamCredentials) async throws -> any GameSupervisor)? = nil, accountID: UInt64 = 42, maintenance: CloudMaintenanceFixture = CloudMaintenanceFixture()) async throws -> LaunchFixture {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let parent = root.appending(path: "Installed games")
         let installedDirectory = parent.appending(path: "steam-620-macos")
@@ -1167,12 +1165,14 @@ final class SteamPresentationTests: XCTestCase {
         }
         let credentials = SteamCredentials(accountName: "Test account", steamId: accountID,
                                            refreshToken: "fixture-only-never-sent")
-        let startGame = SteamModel.installations(library: root) { plan in try await startSupervisor(plan, credentials) }
+        let startGame = SteamModel.installations(library: root, maintenance: maintenance) { plan in
+            try await startSupervisor(plan, credentials)
+        }
         let gameSessions = sessions ?? SteamGameSessions(recoverSession: {
             XCTFail("A confirmed local launch must not recover another session")
             return nil
         })
-        let model = SteamModel(directory: root, keychain: credentialStore, connect: { _ in session }, news: { _ in [] }, beginLogin: { _ in throw SteamError.Failure(reason: "Fixture: sign-in is offline in tests") }, localeIdentifier: "fr-FR", preferences: preferences, gameSessions: gameSessions, cloudServices: cloudServices, installations: startGame)
+        let model = SteamModel(directory: root, keychain: credentialStore, connect: { _ in session }, news: { _ in [] }, beginLogin: { _ in throw SteamError.Failure(reason: "Fixture: sign-in is offline in tests") }, localeIdentifier: "fr-FR", preferences: preferences, gameSessions: gameSessions, installations: startGame)
         await model.start()
         model.open(fixtureGames[0])
         return LaunchFixture(root: root, model: model, preferences: preferences, suite: suite, downloads: downloads, events: events, request: DownloadRequest(appId: 620, platform: "macos", language: "french", directory: parent.path), installation: SteamInstallation(appId: 620, name: "Portal 2", directory: installedDirectory.path, platform: "macos", language: "french", totalBytes: 100))

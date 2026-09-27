@@ -1,50 +1,64 @@
 import Foundation
 @testable import SailOver
 
-/// A Cloud maintenance attempt driven by the test instead of Rust.
-final class CloudMaintenanceFixture: CloudMaintenanceProtocol, @unchecked Sendable {
+/// Cloud maintenance syncs a test runs in place of a storefront's. Each one
+/// shows and asks through Rust's `CloudSync`, and runs until the test ends it.
+final class CloudMaintenanceFixture: @unchecked Sendable {
+    struct Start {
+        let appId: UInt32?
+        let steam: SteamCloudConfiguration?
+        let epic: EpicCloudConfiguration?
+        let sync: CloudSync
+    }
+
     private let lock = NSLock()
-    private var current = CloudMaintenanceStatus(revision: 0, phase: .checking, decisionId: 0,
-                                                 allowedChoices: [], error: nil, finished: false)
-    private var waiters: [CheckedContinuation<CloudMaintenanceStatus, Never>] = []
-    private var recordedAnswers: [(UInt64, CloudChoice)] = []
-    private var wasCancelled = false
+    private var recorded: [Start] = []
+    private var ending: CheckedContinuation<Error?, Never>?
+    private var recordedAnswers: [CloudChoice?] = []
 
-    var answers: [(UInt64, CloudChoice)] { lock.withLock { recordedAnswers } }
-    var cancelled: Bool { lock.withLock { wasCancelled } }
+    var starts: [Start] { lock.withLock { recorded } }
+    /// Each question's answer: nil once the player cancelled or signed out.
+    var answers: [CloudChoice?] { lock.withLock { recordedAnswers } }
 
-    func publish(_ phase: CloudMaintenancePhase, decisionId: UInt64 = 0,
-                 choices: [CloudChoice] = [], error: String? = nil, finished: Bool = false) {
-        let (status, ready) = lock.withLock { () -> (CloudMaintenanceStatus, [CheckedContinuation<CloudMaintenanceStatus, Never>]) in
-            current = CloudMaintenanceStatus(revision: current.revision + 1, phase: phase, decisionId: decisionId,
-                                             allowedChoices: choices, error: error, finished: finished)
-            defer { waiters.removeAll() }
-            return (current, waiters)
-        }
-        for waiter in ready { waiter.resume(returning: status) }
+    var steam: SteamCloudMaintenanceStandIn {
+        { [self] appId, config, sync in try await run(Start(appId: appId, steam: config, epic: nil, sync: sync)) }
+    }
+    var epic: EpicCloudMaintenanceStandIn {
+        { [self] configuration, sync in try await run(Start(appId: nil, steam: nil, epic: configuration, sync: sync)) }
     }
 
-    func finish(_ phase: CloudMaintenancePhase, error: String? = nil) {
-        publish(phase, error: error, finished: true)
-    }
-
-    func status(after: UInt64?) async -> CloudMaintenanceStatus {
-        await withCheckedContinuation { continuation in
-            let ready: CloudMaintenanceStatus? = lock.withLock {
-                if current.finished || after != current.revision { return current }
-                waiters.append(continuation)
-                return nil
+    private func run(_ start: Start) async throws {
+        let failure: Error? = await withCheckedContinuation { continuation in
+            lock.withLock {
+                recorded.append(start)
+                ending = continuation
             }
-            if let ready { continuation.resume(returning: ready) }
+        }
+        if let failure { throw failure }
+    }
+
+    /// Shows progress in the running sync.
+    func show(_ phase: CloudPhase, error: String? = nil) {
+        starts.last?.sync.show(phase: phase, error: error)
+    }
+
+    /// Asks about a conflict in the running sync and records its answer.
+    @discardableResult
+    func askConflict(error: String? = nil) -> Task<CloudChoice?, Never> {
+        let sync = starts.last?.sync
+        return Task { [self] in
+            let answer = await sync?.askConflict(error: error)
+            lock.withLock { recordedAnswers.append(answer) }
+            return answer
         }
     }
 
-    func answer(decisionId: UInt64, choice: CloudChoice) -> Bool {
-        lock.withLock {
-            recordedAnswers.append((decisionId, choice))
-            return decisionId == current.decisionId && current.allowedChoices.contains(choice)
+    /// Ends the running sync, failed with `failure`.
+    func finish(_ failure: Error? = nil) {
+        let ending: CheckedContinuation<Error?, Never>? = lock.withLock {
+            defer { self.ending = nil }
+            return self.ending
         }
+        ending?.resume(returning: failure)
     }
-
-    func cancel() { lock.withLock { wasCancelled = true } }
 }

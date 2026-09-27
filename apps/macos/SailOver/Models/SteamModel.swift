@@ -112,7 +112,6 @@ final class SteamModel {
     typealias MakeInstallations = @MainActor (any SteamSessionProtocol, SteamCredentials, StorefrontSessions, URL)
         -> any InstallationsBackend<SteamGames>
     @ObservationIgnored private let makeInstallations: MakeInstallations
-    @ObservationIgnored private let startCloudMaintenance: @MainActor @Sendable (SteamCredentials, SteamCloudMaintenanceRequest) -> any CloudMaintenanceProtocol
     let cloud: SteamCloudModel
     let rosetta: SteamRosettaModel
     let libraryPlatforms = SteamLibraryPlatforms()
@@ -159,7 +158,6 @@ final class SteamModel {
             try await Task.sleep(for: .seconds(1 << attempt))
         },
         gameSessions: SteamGameSessions = .shared,
-        cloudServices: SteamCloudServices = .live,
         installations makeInstallations: MakeInstallations? = nil
     ) {
         self.directory = directory
@@ -179,9 +177,7 @@ final class SteamModel {
                                                               sessions: sessions, receipts: receipts,
                                                               locations: locations))
         }
-        self.startCloudMaintenance = cloudServices.startMaintenance
-        self.cloud = SteamCloudModel(locations: .of(library: directory), sessions: gameSessions,
-                                     indicators: cloudServices.indicators)
+        self.cloud = SteamCloudModel(sessions: gameSessions)
         self.rosetta = SteamRosettaModel(sessions: gameSessions)
         self.installations = SteamInstallations(directory: directory, sessions: gameSessions, cloud: cloud)
         wakeObserver = SystemWakeObservation { [weak self] in
@@ -199,10 +195,7 @@ final class SteamModel {
 
     var isConnected: Bool { sessionCredentials != nil }
 
-    func syncCloud() {
-        guard installations.canSyncCloud, let game = selectedGame else { return }
-        cloud.startMaintenance(appId: game.appId, receipt: installations.selectedReceipt)
-    }
+    func syncCloud() { installations.syncCloud() }
 
     func refreshCloudIndicator() {
         guard let game = selectedGame else { return }
@@ -469,8 +462,6 @@ final class SteamModel {
             installations.connect(account: credentials.steamId,
                                   backend: makeInstallations(connected, credentials, gameSessions.core, receipts),
                                   port: installationPort())
-            let startMaintenance = startCloudMaintenance
-            cloud.connect(account: credentials.steamId) { startMaintenance(credentials, $0) }
             rosetta.connect(accountId: credentials.steamId)
             do {
                 if persist { try await keychain.save(credentials) }

@@ -216,13 +216,6 @@ final class GameSessions<Store: GameStorefront> {
 
     func revoked(_ account: Store.AccountID) -> Bool { revokedAccounts.contains(account) }
 
-    /// Answers the Cloud question `expected` shows. Cancel stops a launch
-    /// check still in progress.
-    func choose(_ choice: CloudChoice, expected: Session) async throws {
-        do { try await core.choose(sessionId: expected.id, decisionId: expected.cloud.decisionId, choice: choice) }
-        catch { throw Self.translated(error) }
-    }
-
     typealias RosettaPrompt = RosettaLaunchPrompt<String, Store.AccountID>
 
     func rosettaPrompt(accountId: Store.AccountID) -> RosettaPrompt? {
@@ -262,7 +255,7 @@ final class GameSessions<Store: GameStorefront> {
     }
 
     /// A session call's failure, reported as the storefront's error.
-    private static func translated(_ error: Error) -> Error {
+    static func translated(_ error: Error) -> Error {
         switch error {
         case GameSessionError.Cancelled: CancellationError()
         case let GameSessionError.Failure(reason): Store.failure(reason)

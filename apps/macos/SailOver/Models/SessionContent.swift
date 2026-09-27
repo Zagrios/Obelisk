@@ -55,16 +55,29 @@ private func epicError(_ error: Error) -> EpicError {
     }
 }
 
+/// A Cloud maintenance sync a test runs in place of a storefront's: it shows
+/// progress and asks through `CloudSync`, and ends when it returns.
+typealias SteamCloudMaintenanceStandIn = @Sendable (_ appId: UInt32, _ config: SteamCloudConfiguration?,
+                                                    _ sync: CloudSync) async throws -> Void
+typealias EpicCloudMaintenanceStandIn = @Sendable (_ configuration: EpicCloudConfiguration,
+                                                   _ sync: CloudSync) async throws -> Void
+
 /// A Steam session a test drives, as Rust's installations reach it.
-/// `start` hands a launch plan to the supervisor the test stands in.
+/// `start` hands a launch plan to the supervisor the test stands in, and
+/// `maintain` runs its Cloud maintenance.
 final class SessionSteamContent: SteamContent, @unchecked Sendable {
     private let session: any SteamSessionProtocol
     private let start: @MainActor (SteamLaunchPlan) async throws -> any GameSupervisor
+    private let maintain: SteamCloudMaintenanceStandIn
 
     init(_ session: any SteamSessionProtocol,
-         start: @escaping @MainActor (SteamLaunchPlan) async throws -> any GameSupervisor) {
+         start: @escaping @MainActor (SteamLaunchPlan) async throws -> any GameSupervisor,
+         maintain: @escaping SteamCloudMaintenanceStandIn = { _, _, _ in
+             throw SteamError.Failure(reason: "backend.steam.cloud.network")
+         }) {
         self.session = session
         self.start = start
+        self.maintain = maintain
     }
 
     func download(appId: UInt32, platform: String, language: String, directory: String) throws -> SteamInstallation {
@@ -89,18 +102,28 @@ final class SessionSteamContent: SteamContent, @unchecked Sendable {
         let session = session
         try blockingResult { try await session.archiveCloud(config: config) }.mapError(steamError).get()
     }
+    func maintainCloud(appId: UInt32, config: SteamCloudConfiguration?, sync: CloudSync) throws {
+        let maintain = maintain
+        try blockingResult { try await maintain(appId, config, sync) }.mapError(steamError).get()
+    }
 }
 
 /// An Epic session a test drives, as Rust's installations reach it.
-/// `start` hands a build to the supervisor the test stands in.
+/// `start` hands a build to the supervisor the test stands in, and
+/// `maintain` runs its Cloud maintenance.
 final class SessionEpicContent: EpicContent, @unchecked Sendable {
     private let session: any EpicSessionProtocol
     private let start: @MainActor (EpicCloudConfiguration) async throws -> any GameSupervisor
+    private let maintain: EpicCloudMaintenanceStandIn
 
     init(_ session: any EpicSessionProtocol,
-         start: @escaping @MainActor (EpicCloudConfiguration) async throws -> any GameSupervisor) {
+         start: @escaping @MainActor (EpicCloudConfiguration) async throws -> any GameSupervisor,
+         maintain: @escaping EpicCloudMaintenanceStandIn = { _, _ in
+             throw EpicError.Service(message: "backend.epic.cloud.failed")
+         }) {
         self.session = session
         self.start = start
+        self.maintain = maintain
     }
 
     func prepare() throws {
@@ -124,6 +147,10 @@ final class SessionEpicContent: EpicContent, @unchecked Sendable {
     func archiveCloud(configuration: EpicCloudConfiguration) throws {
         let session = session
         try blockingResult { try await session.archiveCloud(configuration: configuration) }.mapError(epicError).get()
+    }
+    func maintainCloud(configuration: EpicCloudConfiguration, sync: CloudSync) throws {
+        let maintain = maintain
+        try blockingResult { try await maintain(configuration, sync) }.mapError(epicError).get()
     }
 }
 #endif

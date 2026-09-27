@@ -7,12 +7,11 @@ final class SteamCloudModelTests: XCTestCase {
 
     @MainActor
     func testCancelledLiveDecisionDoesNotHideSameDecisionInNextSession() async throws {
-        let directory = try temporaryDirectory()
+        let fixture = try Fixture()
         let first = RecoveredGameFixture(accountID: accountID, phase: .preparing, cloudPhase: .conflict, decisionID: 2)
         let second = RecoveredGameFixture(accountID: accountID, phase: .preparing, cloudPhase: .conflict, decisionID: 2)
-        let sessions = SteamGameSessions()
-        let model = model(directory, sessions: sessions)
-        connect(model)
+        let (sessions, model) = (fixture.sessions, fixture.model)
+        fixture.connect()
         let firstTask = try XCTUnwrap(sessions.launch(game: 42, account: accountID, prepare: { first }))
         try await eventually { model.prompt?.cloud.decisionId == 2 }
         XCTAssertTrue(model.promptPresented)
@@ -27,16 +26,15 @@ final class SteamCloudModelTests: XCTestCase {
         XCTAssertTrue(model.promptPresented, "Decision IDs restart in each supervisor session")
         await second.finish()
         await secondTask.value
-        model.signedOut()
+        fixture.signOut()
     }
 
     @MainActor
     func testSecondLiveChoiceIsIgnoredWhileFirstResponseIsInFlight() async throws {
-        let directory = try temporaryDirectory()
+        let fixture = try Fixture()
         let game = RecoveredGameFixture(accountID: accountID, phase: .preparing, cloudPhase: .conflict, decisionID: 2)
-        let sessions = SteamGameSessions()
-        let model = model(directory, sessions: sessions)
-        connect(model)
+        let (sessions, model) = (fixture.sessions, fixture.model)
+        fixture.connect()
         let task = try XCTUnwrap(sessions.launch(game: 42, account: accountID, prepare: { game }))
         try await eventually { model.prompt?.cloud.decisionId == 2 }
 
@@ -48,165 +46,147 @@ final class SteamCloudModelTests: XCTestCase {
         XCTAssertTrue(model.promptPresented, "An ignored cancellation cannot dismiss the accepted choice")
         await game.finish()
         await task.value
-        model.signedOut()
+        fixture.signOut()
     }
 
     @MainActor
     func testConnectingStartsNoCloudWorkAndCreatesNoFiles() throws {
-        let directory = try temporaryDirectory()
-        let model = model(directory)
-        let before = try files(in: directory)
+        let fixture = try Fixture()
+        let before = try files(in: fixture.root)
 
-        connect(model)
+        fixture.connect()
 
-        XCTAssertFalse(model.promptPresented)
-        XCTAssertEqual(try files(in: directory), before)
-        model.signedOut()
+        XCTAssertFalse(fixture.model.promptPresented)
+        XCTAssertEqual(try files(in: fixture.root), before)
+        fixture.signOut()
     }
 
     @MainActor
     func testIndicatorsBelongOnlyToTheirAccount() async throws {
-        let directory = try temporaryDirectory()
-        let services = CloudServicesFixture()
-        let model = model(directory, services: services)
-        connect(model, services)
+        let fixture = try Fixture()
+        fixture.connect()
 
-        model.refreshIndicators(for: [42])
+        fixture.model.refreshIndicators(for: [42])
 
-        try await eventually { model.indicator(for: 42)?.state == .synced }
-        XCTAssertEqual(services.steamRequests.last?.accountId, accountID)
-        XCTAssertEqual(services.steamRequests.last?.root, SailOverLocations.of(library: directory).cloudArchive)
-        connect(model, services, accountID + 1)
-        XCTAssertNil(model.indicator(for: 42))
-        let reads = services.steamRequests.count
-        model.signedOut()
-        model.refreshIndicators(for: [42])
-        XCTAssertNil(model.indicator(for: 42))
-        XCTAssertEqual(services.steamRequests.count, reads, "A signed-out model reads nothing")
+        try await eventually { fixture.model.indicator(for: 42)?.state == .neverSynced }
+        fixture.connect(accountID + 1)
+        XCTAssertNil(fixture.model.indicator(for: 42))
+        fixture.signOut()
+        fixture.model.refreshIndicators(for: [42])
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertNil(fixture.model.indicator(for: 42), "A signed-out model reads nothing")
     }
 
     @MainActor
     func testMaintenanceAsksLiveAndRefreshesTheIndicatorWhenItEnds() async throws {
-        let directory = try temporaryDirectory()
-        let services = CloudServicesFixture()
-        let model = model(directory, services: services)
-        connect(model, services)
+        let fixture = try Fixture(installed: "macos")
+        let (model, maintenance) = (fixture.model, fixture.maintenance)
+        fixture.connect()
 
-        model.startMaintenance(appId: 42, receipt: receipt(platform: "macos"))
+        fixture.installations.syncCloud()
 
-        XCTAssertTrue(model.isMaintaining, "The Reservation holds before the attempt exists")
-        try await eventually { services.steamMaintenance.count == 1 }
-        XCTAssertEqual(services.steamMaintenance.last?.request.install, "/fixture/steam-42-macos")
-        XCTAssertNil(services.steamMaintenance.last?.request.prefix)
-        XCTAssertEqual(services.steamMaintenance.last?.request.root, SailOverLocations.of(library: directory).cloudArchive)
-        XCTAssertEqual(services.steamMaintenance.last?.credentials.steamId, accountID)
-        let attempt = try XCTUnwrap(services.steamMaintenance.last?.attempt)
-        attempt.publish(.syncing)
+        XCTAssertTrue(model.isMaintaining, "Rust holds the Reservation from the call")
+        try await eventually { maintenance.starts.count == 1 }
+        XCTAssertEqual(maintenance.starts.last?.steam?.install, fixture.installation("macos").path)
+        XCTAssertNil(maintenance.starts.last?.steam?.prefix)
+        XCTAssertEqual(maintenance.starts.last?.steam?.root, SailOverLocations.of(library: fixture.root).cloudArchive)
+        maintenance.show(.syncing)
         try await eventually { model.isSynchronizing(for: 42) }
-        attempt.publish(.conflict, decisionId: 7, choices: [.local, .cloud, .cancel], error: "backend.steam.cloud.conflict")
+        maintenance.askConflict(error: "backend.steam.cloud.conflict")
         try await eventually { model.promptPresented }
         XCTAssertEqual(model.promptGame, 42)
         XCTAssertEqual(model.promptMessage, "backend.steam.cloud.conflict")
 
         model.respond(.local)
 
-        XCTAssertEqual(attempt.answers.map(\.0), [7])
-        XCTAssertEqual(attempt.answers.map(\.1), [.local])
-        attempt.finish(.synced)
+        try await eventually { maintenance.answers == [.local] }
+        maintenance.finish()
         try await eventually { !model.isMaintaining }
         XCTAssertFalse(model.promptPresented)
         XCTAssertFalse(model.failurePresented)
-        try await eventually { model.indicator(for: 42)?.state == .synced }
+        try await eventually { model.indicator(for: 42)?.state == .neverSynced }
     }
 
     @MainActor
     func testAWindowsInstallationSyncsTheSavesOfItsWinePrefix() async throws {
-        let directory = try temporaryDirectory()
-        let services = CloudServicesFixture()
-        let model = model(directory, services: services)
-        connect(model, services)
+        let fixture = try Fixture(installed: "windows")
+        fixture.connect()
 
-        model.startMaintenance(appId: 42, receipt: receipt(platform: "windows"))
+        fixture.installations.syncCloud()
 
-        try await eventually { services.steamMaintenance.count == 1 }
-        XCTAssertEqual(services.steamMaintenance.last?.request.install, "/fixture/steam-42-windows")
-        XCTAssertEqual(services.steamMaintenance.last?.request.prefix,
-                       SailOverLocations.of(library: directory).winePrefixes + "/steam-42-windows")
-        try XCTUnwrap(services.steamMaintenance.last?.attempt).finish(.synced)
-        try await eventually { !model.isMaintaining }
-    }
-
-    private func receipt(platform: String) -> SteamInstallReceipt {
-        SteamInstallReceipt(appId: 42, name: "Fixture", directory: "/fixture/steam-42-\(platform)",
-                            platform: platform, language: "english", totalBytes: 0)
+        try await eventually { fixture.maintenance.starts.count == 1 }
+        XCTAssertEqual(fixture.maintenance.starts.last?.steam?.install, fixture.installation("windows").path)
+        XCTAssertEqual(fixture.maintenance.starts.last?.steam?.prefix,
+                       SailOverLocations.of(library: fixture.root).winePrefixes + "/steam-42-windows")
+        fixture.maintenance.finish()
+        try await eventually { !fixture.model.isMaintaining }
     }
 
     @MainActor
     func testAFailedMaintenanceShowsNoBannerAndSyncNowStartsTheNextAttempt() async throws {
-        let directory = try temporaryDirectory()
-        let services = CloudServicesFixture()
-        let model = model(directory, services: services)
-        connect(model, services)
-        model.startMaintenance(appId: 42, receipt: nil)
-        try await eventually { services.steamMaintenance.count == 1 }
-        let first = try XCTUnwrap(services.steamMaintenance.last?.attempt)
+        let fixture = try Fixture()
+        let (model, maintenance) = (fixture.model, fixture.maintenance)
+        fixture.connect()
+        fixture.installations.syncCloud()
+        try await eventually { maintenance.starts.count == 1 }
 
-        first.finish(.failed, error: "backend.steam.cloud.network")
+        maintenance.finish(SteamError.Failure(reason: "backend.steam.cloud.network"))
 
         try await eventually { !model.isMaintaining }
         XCTAssertFalse(model.failurePresented, "Only a launch check shows a banner")
         XCTAssertEqual(model.promptMessage, L10n.string("ui.cloud.working"))
-        model.startMaintenance(appId: 42, receipt: nil)
-        try await eventually { services.steamMaintenance.count == 2 }
-        XCTAssertNil(services.steamMaintenance.last?.request.install)
+        fixture.installations.syncCloud()
+        try await eventually { maintenance.starts.count == 2 }
+        XCTAssertNil(maintenance.starts.last?.steam, "An uninstalled game syncs from its saved context")
+        maintenance.finish()
     }
 
     @MainActor
     func testARejectedMaintenanceAnswerDoesNotOutliveItsAttempt() async throws {
-        let directory = try temporaryDirectory()
-        let services = CloudServicesFixture()
-        let model = model(directory, services: services)
-        connect(model, services)
-        model.startMaintenance(appId: 42, receipt: nil)
-        try await eventually { services.steamMaintenance.count == 1 }
-        let attempt = try XCTUnwrap(services.steamMaintenance.last?.attempt)
-        attempt.publish(.conflict, decisionId: 4, choices: [.local, .cancel], error: "backend.steam.cloud.conflict")
+        let fixture = try Fixture()
+        let (model, maintenance) = (fixture.model, fixture.maintenance)
+        fixture.connect()
+        fixture.installations.syncCloud()
+        try await eventually { maintenance.starts.count == 1 }
+        let question = maintenance.askConflict(error: "backend.steam.cloud.conflict")
         try await eventually { model.promptPresented }
 
-        model.respond(.cloud)
+        model.respond(.retry)
 
-        XCTAssertEqual(model.promptMessage, L10n.message("backend.steam.runtime.invalidSession"))
-        attempt.finish(.cancelled)
+        try await eventually { model.promptMessage == L10n.message("backend.steam.runtime.invalidSession") }
+        model.respond(.cancel)
+        _ = await question.value
+        maintenance.finish()
         try await eventually { !model.isMaintaining }
+        XCTAssertEqual(maintenance.answers, [nil])
         XCTAssertEqual(model.promptMessage, L10n.string("ui.cloud.working"), "A later question starts without the old error")
     }
 
     @MainActor
     func testSigningOutCancelsMaintenanceAndItsQuestion() async throws {
-        let directory = try temporaryDirectory()
-        let services = CloudServicesFixture()
-        let model = model(directory, services: services)
-        connect(model, services)
-        model.startMaintenance(appId: 42, receipt: nil)
-        try await eventually { services.steamMaintenance.count == 1 }
-        let attempt = try XCTUnwrap(services.steamMaintenance.last?.attempt)
-        attempt.publish(.conflict, decisionId: 2, choices: [.local, .cloud, .cancel])
+        let fixture = try Fixture()
+        let (model, maintenance) = (fixture.model, fixture.maintenance)
+        fixture.connect()
+        fixture.installations.syncCloud()
+        try await eventually { maintenance.starts.count == 1 }
+        let question = maintenance.askConflict()
         try await eventually { model.promptPresented }
 
-        model.signedOut()
+        fixture.signOut()
 
-        XCTAssertTrue(attempt.cancelled)
         XCTAssertFalse(model.isMaintaining)
         XCTAssertFalse(model.promptPresented)
+        let answer = await question.value
+        XCTAssertNil(answer, "Signing out cancels the sync's question")
+        maintenance.finish()
     }
 
     @MainActor
     func testExitConflictIsPresentedLiveAndNeverReopensByItself() async throws {
-        let directory = try temporaryDirectory()
+        let fixture = try Fixture()
         let game = RecoveredGameFixture(accountID: accountID)
-        let sessions = SteamGameSessions()
-        let model = model(directory, sessions: sessions)
-        connect(model)
+        let (sessions, model) = (fixture.sessions, fixture.model)
+        fixture.connect()
         let task = try XCTUnwrap(sessions.launch(game: 42, account: accountID, prepare: { game }))
         try await eventually { sessions.active?.running == true }
         await game.update(phase: .finalizing, cloudPhase: .conflict, cloudError: "backend.steam.cloud.conflict",
@@ -224,36 +204,9 @@ final class SteamCloudModelTests: XCTestCase {
         await game.finish()
         await task.value
         XCTAssertFalse(model.promptPresented, "An unanswered exit conflict waits for the next launch or maintenance")
-        connect(model)
+        fixture.connect()
         XCTAssertFalse(model.promptPresented)
-        model.signedOut()
-    }
-
-    @MainActor
-    private func model(_ directory: URL, sessions: SteamGameSessions = SteamGameSessions(),
-                       services: CloudServicesFixture = CloudServicesFixture()) -> SteamCloudModel {
-        SteamCloudModel(locations: .of(library: directory), sessions: sessions, indicators: services.steam.indicators)
-    }
-
-    /// Connects the account as SteamModel does, with its Cloud maintenance.
-    @MainActor
-    private func connect(_ model: SteamCloudModel, _ services: CloudServicesFixture = CloudServicesFixture(),
-                         _ id: UInt64? = nil) {
-        let credentials = credentials(id)
-        let start = services.steam.startMaintenance
-        model.connect(account: credentials.steamId) { start(credentials, $0) }
-    }
-
-    private func credentials(_ id: UInt64? = nil) -> SteamCredentials {
-        SteamCredentials(accountName: "Local fixture", steamId: id ?? accountID, refreshToken: "fixture-only-never-sent")
-    }
-
-    private func temporaryDirectory() throws -> URL {
-        let directory = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
-            .appending(path: "SailOverCloudTests-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
-        return directory
+        fixture.signOut()
     }
 
     private func files(in root: URL) throws -> [String: Data] {
@@ -264,5 +217,99 @@ final class SteamCloudModelTests: XCTestCase {
         }
         return result
     }
+}
 
+/// One Steam account's installations in Rust, whose Cloud maintenance the
+/// test runs, with game 42 installed for `installed` or not at all.
+@MainActor
+private final class Fixture {
+    let root: URL
+    let sessions = SteamGameSessions()
+    let maintenance = CloudMaintenanceFixture()
+    let installations: SteamInstallations
+    var model: SteamCloudModel { installations.cloud }
+    private let platform: String
+
+    init(installed: String? = nil) throws {
+        root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+            .appending(path: "SailOverCloudTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        platform = installed ?? "macos"
+        installations = SteamInstallations(directory: root, sessions: sessions, cloud: SteamCloudModel(sessions: sessions))
+        if let installed {
+            try FileManager.default.createDirectory(at: installation(installed), withIntermediateDirectories: true)
+            let receipt = SteamInstallReceipt(appId: 42, name: "Fixture", directory: installation(installed).path,
+                                              platform: installed, language: "english", totalBytes: 0)
+            for account in [UInt64(0x0110_0001_0000_002a), 0x0110_0001_0000_002b] {
+                try JSONEncoder().encode([receipt]).write(to: receipts(account))
+            }
+        }
+    }
+
+    deinit { try? FileManager.default.removeItem(at: root) }
+
+    func installation(_ platform: String) -> URL { root.appending(path: "Games/Steam/steam-42-\(platform)") }
+    private func receipts(_ account: UInt64) -> URL { root.appending(path: "steam-installations-\(account).json") }
+
+    /// Connects the account as SteamModel does, game 42 on screen.
+    func connect(_ account: UInt64 = 0x0110_0001_0000_002a) {
+        let platform = platform
+        installations.selection = {
+            InstallationSelection(game: 42, platform: platform, installable: true, request: { receipt, directory in
+                SteamDownload(appId: 42, name: "Fixture", platform: receipt?.platform ?? platform,
+                              language: "english", directory: directory)
+            })
+        }
+        let backend = SteamInstallationsBackend(try! SteamAccountInstallations.withContent(
+            content: CloudContent(maintenance),
+            accountId: account, sessions: sessions.core, receipts: receipts(account).path,
+            locations: .of(library: root)
+        ))
+        installations.connect(account: account, backend: backend, port: InstallationPort(
+            verifiesBeforeLaunch: { false }, uninstallRequest: { _ in nil }, report: { _ in }, warn: { _ in }
+        ))
+    }
+
+    /// Signs out as SteamModel does.
+    func signOut() {
+        installations.signedOut()
+        model.signedOut()
+    }
+}
+
+/// A Steam session that only syncs Cloud saves, through the test's fixture.
+private final class CloudContent: SteamContent, @unchecked Sendable {
+    private let maintenance: CloudMaintenanceFixture
+    init(_ maintenance: CloudMaintenanceFixture) { self.maintenance = maintenance }
+
+    func download(appId: UInt32, platform: String, language: String, directory: String) throws -> SteamInstallation {
+        throw SteamError.Cancelled
+    }
+    func downloadProgress() -> GameTransfer? { nil }
+    func cancelDownload() {}
+    func launchPlan(appId: UInt32, platform: String, directory: String) throws -> SteamLaunchPlan {
+        throw SteamError.Failure(reason: "backend.steam.runtime.startFailed")
+    }
+    func handOff(plan: SteamLaunchPlan) throws -> any GameSupervisor {
+        throw GameSessionError.Cancelled
+    }
+    func archiveCloud(config: SteamCloudConfiguration) throws {}
+    func maintainCloud(appId: UInt32, config: SteamCloudConfiguration?, sync: CloudSync) throws {
+        let maintain = maintenance.steam
+        let done = DispatchSemaphore(value: 0)
+        let failure = LockedFailure()
+        Task {
+            do { try await maintain(appId, config, sync) } catch { failure.set(error) }
+            done.signal()
+        }
+        done.wait()
+        if let error = failure.get() { throw error }
+    }
+}
+
+private final class LockedFailure: @unchecked Sendable {
+    private let lock = NSLock()
+    private var error: Error?
+    func set(_ error: Error) { lock.withLock { self.error = error } }
+    func get() -> Error? { lock.withLock { error } }
 }

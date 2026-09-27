@@ -813,23 +813,28 @@ public func FfiConverterTypeBeforeGameStart_lower(_ value: BeforeGameStart) -> U
 
 
 /**
- * One Cloud maintenance attempt. Dropping it does not stop the sync; only
- * `cancel`, sign-out or SailOver quitting does.
+ * A Cloud maintenance sync, as a storefront stand-in runs it: it shows the
+ * sync's progress and asks the player.
  */
-public protocol CloudMaintenanceProtocol: AnyObject, Sendable {
+public protocol CloudSyncProtocol: AnyObject, Sendable {
     
-    func answer(decisionId: UInt64, choice: CloudChoice)  -> Bool
+    /**
+     * Asks about a conflict and waits for the answer: `None` once the player
+     * cancels or the account signs out.
+     */
+    func askConflict(error: String?) async  -> CloudChoice?
     
-    func cancel() 
-    
-    func status(after: UInt64?) async  -> CloudMaintenanceStatus
+    /**
+     * Shows progress. Any question shown is closed.
+     */
+    func show(phase: CloudPhase, error: String?) 
     
 }
 /**
- * One Cloud maintenance attempt. Dropping it does not stop the sync; only
- * `cancel`, sign-out or SailOver quitting does.
+ * A Cloud maintenance sync, as a storefront stand-in runs it: it shows the
+ * sync's progress and asks the player.
  */
-open class CloudMaintenance: CloudMaintenanceProtocol, @unchecked Sendable {
+open class CloudSync: CloudSyncProtocol, @unchecked Sendable {
     fileprivate let handle: UInt64
 
     /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
@@ -866,7 +871,7 @@ open class CloudMaintenance: CloudMaintenanceProtocol, @unchecked Sendable {
     @_documentation(visibility: private)
 #endif
     public func uniffiCloneHandle() -> UInt64 {
-        return try! rustCall { uniffi_sailover_bridge_fn_clone_cloudmaintenance(self.handle, $0) }
+        return try! rustCall { uniffi_sailover_bridge_fn_clone_cloudsync(self.handle, $0) }
     }
     // No primary constructor declared for this class.
 
@@ -876,46 +881,44 @@ open class CloudMaintenance: CloudMaintenanceProtocol, @unchecked Sendable {
             return
         }
 
-        try! rustCall { uniffi_sailover_bridge_fn_free_cloudmaintenance(handle, $0) }
+        try! rustCall { uniffi_sailover_bridge_fn_free_cloudsync(handle, $0) }
     }
 
     
 
     
-open func answer(decisionId: UInt64, choice: CloudChoice) -> Bool  {
-    return try!  FfiConverterBool.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_sailover_bridge_fn_method_cloudmaintenance_answer(
-            self.uniffiCloneHandle(),
-        FfiConverterUInt64.lower(decisionId),
-        FfiConverterTypeCloudChoice_lower(choice),uniffiCallStatus
-    )
-})
-}
-    
-open func cancel()  {try! rustCall() {
-        uniffiCallStatus in
-    uniffi_sailover_bridge_fn_method_cloudmaintenance_cancel(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-}
-}
-    
-open func status(after: UInt64?)async  -> CloudMaintenanceStatus  {
+    /**
+     * Asks about a conflict and waits for the answer: `None` once the player
+     * cancels or the account signs out.
+     */
+open func askConflict(error: String?)async  -> CloudChoice?  {
     return
         try!  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_sailover_bridge_fn_method_cloudmaintenance_status(
-                        self.uniffiCloneHandle(),FfiConverterOptionUInt64.lower(after)
+                uniffi_sailover_bridge_fn_method_cloudsync_ask_conflict(
+                        self.uniffiCloneHandle(),FfiConverterOptionString.lower(error)
                 )
             },
             pollFunc: ffi_sailover_bridge_rust_future_poll_rust_buffer,
             completeFunc: ffi_sailover_bridge_rust_future_complete_rust_buffer,
             freeFunc: ffi_sailover_bridge_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypeCloudMaintenanceStatus_lift,
+            liftFunc: FfiConverterOptionTypeCloudChoice.lift,
             errorHandler: nil
             
         )
+}
+    
+    /**
+     * Shows progress. Any question shown is closed.
+     */
+open func show(phase: CloudPhase, error: String?)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_sailover_bridge_fn_method_cloudsync_show(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeCloudPhase_lower(phase),
+        FfiConverterOptionString.lower(error),uniffiCallStatus
+    )
+}
 }
     
 
@@ -926,24 +929,24 @@ open func status(after: UInt64?)async  -> CloudMaintenanceStatus  {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypeCloudMaintenance: FfiConverter {
+public struct FfiConverterTypeCloudSync: FfiConverter {
     typealias FfiType = UInt64
-    typealias SwiftType = CloudMaintenance
+    typealias SwiftType = CloudSync
 
-    public static func lift(_ handle: UInt64) throws -> CloudMaintenance {
-        return CloudMaintenance(unsafeFromHandle: handle)
+    public static func lift(_ handle: UInt64) throws -> CloudSync {
+        return CloudSync(unsafeFromHandle: handle)
     }
 
-    public static func lower(_ value: CloudMaintenance) -> UInt64 {
+    public static func lower(_ value: CloudSync) -> UInt64 {
         return value.uniffiCloneHandle()
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CloudMaintenance {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CloudSync {
         let handle: UInt64 = try readInt(&buf)
         return try lift(handle)
     }
 
-    public static func write(_ value: CloudMaintenance, into buf: inout [UInt8]) {
+    public static func write(_ value: CloudSync, into buf: inout [UInt8]) {
         writeInt(&buf, lower(value))
     }
 }
@@ -952,15 +955,15 @@ public struct FfiConverterTypeCloudMaintenance: FfiConverter {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeCloudMaintenance_lift(_ handle: UInt64) throws -> CloudMaintenance {
-    return try FfiConverterTypeCloudMaintenance.lift(handle)
+public func FfiConverterTypeCloudSync_lift(_ handle: UInt64) throws -> CloudSync {
+    return try FfiConverterTypeCloudSync.lift(handle)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeCloudMaintenance_lower(_ value: CloudMaintenance) -> UInt64 {
-    return FfiConverterTypeCloudMaintenance.lower(value)
+public func FfiConverterTypeCloudSync_lower(_ value: CloudSync) -> UInt64 {
+    return FfiConverterTypeCloudSync.lower(value)
 }
 
 
@@ -972,6 +975,17 @@ public func FfiConverterTypeCloudMaintenance_lower(_ value: CloudMaintenance) ->
  * One Epic account's installed games and the actions on them.
  */
 public protocol EpicAccountInstallationsProtocol: AnyObject, Sendable {
+    
+    /**
+     * Answers the Cloud question the game shows with `decision_id`, its
+     * maintenance's or its Game session's.
+     */
+    func answerCloud(game: EpicGameId, decisionId: UInt64, choice: CloudChoice) async throws 
+    
+    /**
+     * Whether the player may sync the game's Cloud saves now.
+     */
+    func canMaintainCloud(game: EpicGameId)  -> Bool
     
     /**
      * Whether an action may touch the game's installation now.
@@ -988,6 +1002,12 @@ public protocol EpicAccountInstallationsProtocol: AnyObject, Sendable {
      */
     func changed(after: UInt64) async  -> EpicInstallationsState
     
+    /**
+     * The Cloud indicators of `games`, and of every other game of the
+     * account with pending work, which Swift does not know about.
+     */
+    func cloudIndicators(games: [EpicGameId]) async throws  -> [EpicCloudIndicator]
+    
     func download(request: EpicDownloadRequest) 
     
     /**
@@ -995,6 +1015,13 @@ public protocol EpicAccountInstallationsProtocol: AnyObject, Sendable {
      * when `verify` asks for it or its receipt needs it.
      */
     func launch(receipt: EpicReceipt, verification: EpicDownloadRequest, verify: Bool) 
+    
+    /**
+     * Syncs the game's Cloud saves: those of the build `receipt` records,
+     * with the Transfer `request` names, or, when both are `None`, those the
+     * uninstalled game's journal saved.
+     */
+    func maintainCloud(game: EpicGameId, receipt: EpicReceipt?, request: EpicDownloadRequest?) 
     
     func resumeDownload() 
     
@@ -1004,7 +1031,8 @@ public protocol EpicAccountInstallationsProtocol: AnyObject, Sendable {
     func setDiagnostic(running: Bool) 
     
     /**
-     * Stops the account's Transfer and launch still preparing.
+     * Stops the account's Transfer, Cloud maintenance and launch still
+     * preparing.
      */
     func signedOut() 
     
@@ -1108,6 +1136,39 @@ public static func withContent(content: EpicContent, accountId: String, language
 
     
     /**
+     * Answers the Cloud question the game shows with `decision_id`, its
+     * maintenance's or its Game session's.
+     */
+open func answerCloud(game: EpicGameId, decisionId: UInt64, choice: CloudChoice)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_sailover_bridge_fn_method_epicaccountinstallations_answer_cloud(
+                        self.uniffiCloneHandle(),FfiConverterTypeEpicGameId_lower(game),FfiConverterUInt64.lower(decisionId),FfiConverterTypeCloudChoice_lower(choice)
+                )
+            },
+            pollFunc: ffi_sailover_bridge_rust_future_poll_void,
+            completeFunc: ffi_sailover_bridge_rust_future_complete_void,
+            freeFunc: ffi_sailover_bridge_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeGameSessionError_lift
+        )
+}
+    
+    /**
+     * Whether the player may sync the game's Cloud saves now.
+     */
+open func canMaintainCloud(game: EpicGameId) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_sailover_bridge_fn_method_epicaccountinstallations_can_maintain_cloud(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeEpicGameId_lower(game),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * Whether an action may touch the game's installation now.
      */
 open func canModify(game: EpicGameId) -> Bool  {
@@ -1151,6 +1212,26 @@ open func changed(after: UInt64)async  -> EpicInstallationsState  {
         )
 }
     
+    /**
+     * The Cloud indicators of `games`, and of every other game of the
+     * account with pending work, which Swift does not know about.
+     */
+open func cloudIndicators(games: [EpicGameId])async throws  -> [EpicCloudIndicator]  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_sailover_bridge_fn_method_epicaccountinstallations_cloud_indicators(
+                        self.uniffiCloneHandle(),FfiConverterSequenceTypeEpicGameId.lower(games)
+                )
+            },
+            pollFunc: ffi_sailover_bridge_rust_future_poll_rust_buffer,
+            completeFunc: ffi_sailover_bridge_rust_future_complete_rust_buffer,
+            freeFunc: ffi_sailover_bridge_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterSequenceTypeEpicCloudIndicator.lift,
+            errorHandler: FfiConverterTypeGameSessionError_lift
+        )
+}
+    
 open func download(request: EpicDownloadRequest)  {try! rustCall() {
         uniffiCallStatus in
     uniffi_sailover_bridge_fn_method_epicaccountinstallations_download(
@@ -1171,6 +1252,22 @@ open func launch(receipt: EpicReceipt, verification: EpicDownloadRequest, verify
         FfiConverterTypeEpicReceipt_lower(receipt),
         FfiConverterTypeEpicDownloadRequest_lower(verification),
         FfiConverterBool.lower(verify),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * Syncs the game's Cloud saves: those of the build `receipt` records,
+     * with the Transfer `request` names, or, when both are `None`, those the
+     * uninstalled game's journal saved.
+     */
+open func maintainCloud(game: EpicGameId, receipt: EpicReceipt?, request: EpicDownloadRequest?)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_sailover_bridge_fn_method_epicaccountinstallations_maintain_cloud(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeEpicGameId_lower(game),
+        FfiConverterOptionTypeEpicReceipt.lower(receipt),
+        FfiConverterOptionTypeEpicDownloadRequest.lower(request),uniffiCallStatus
     )
 }
 }
@@ -1196,7 +1293,8 @@ open func setDiagnostic(running: Bool)  {try! rustCall() {
 }
     
     /**
-     * Stops the account's Transfer and launch still preparing.
+     * Stops the account's Transfer, Cloud maintenance and launch still
+     * preparing.
      */
 open func signedOut()  {try! rustCall() {
         uniffiCallStatus in
@@ -1298,6 +1396,12 @@ public protocol EpicContent: AnyObject, Sendable {
     func handOff(configuration: EpicCloudConfiguration) throws  -> GameSupervisor
     
     func archiveCloud(configuration: EpicCloudConfiguration) throws 
+    
+    /**
+     * Syncs the Cloud saves of the build `configuration` names, on the
+     * player's request.
+     */
+    func maintainCloud(configuration: EpicCloudConfiguration, sync: CloudSync) throws 
     
 }
 /**
@@ -1417,6 +1521,20 @@ open func archiveCloud(configuration: EpicCloudConfiguration)throws   {try rustC
     uniffi_sailover_bridge_fn_method_epiccontent_archive_cloud(
             self.uniffiCloneHandle(),
         FfiConverterTypeEpicCloudConfiguration_lower(configuration),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * Syncs the Cloud saves of the build `configuration` names, on the
+     * player's request.
+     */
+open func maintainCloud(configuration: EpicCloudConfiguration, sync: CloudSync)throws   {try rustCallWithError(FfiConverterTypeEpicError_lift) {
+        uniffiCallStatus in
+    uniffi_sailover_bridge_fn_method_epiccontent_maintain_cloud(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeEpicCloudConfiguration_lower(configuration),
+        FfiConverterTypeCloudSync_lower(sync),uniffiCallStatus
     )
 }
 }
@@ -1587,6 +1705,33 @@ fileprivate struct UniffiCallbackInterfaceEpicContent {
                 }
                 return try uniffiObj.archiveCloud(
                      configuration: try FfiConverterTypeEpicCloudConfiguration_lift(configuration)
+                )
+            }
+
+            
+            let writeReturn = { () }
+            uniffiTraitInterfaceCallWithError(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn,
+                lowerError: FfiConverterTypeEpicError_lower
+            )
+        },
+        maintainCloud: { (
+            uniffiHandle: UInt64,
+            configuration: RustBuffer,
+            sync: UInt64,
+            uniffiOutReturn: UnsafeMutableRawPointer,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> () in
+                guard let uniffiObj = try? FfiConverterTypeEpicContent.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return try uniffiObj.maintainCloud(
+                     configuration: try FfiConverterTypeEpicCloudConfiguration_lift(configuration),
+                     sync: try FfiConverterTypeCloudSync_lift(sync)
                 )
             }
 
@@ -1883,11 +2028,6 @@ public func FfiConverterTypeEpicCredentialSave_lower(_ value: EpicCredentialSave
 
 public protocol EpicSessionProtocol: AnyObject, Sendable {
     
-    /**
-     * Starts Cloud maintenance of one Epic game with this session's account.
-     */
-    func maintainCloud(configuration: EpicCloudConfiguration) async  -> CloudMaintenance
-    
     func achievements(namespace: String, locale: String) async throws  -> [EpicAchievement]
     
     func cancelDownload() 
@@ -2012,26 +2152,6 @@ public static func signIn(authorizationCode: String)async throws  -> EpicSession
 }
     
 
-    
-    /**
-     * Starts Cloud maintenance of one Epic game with this session's account.
-     */
-open func maintainCloud(configuration: EpicCloudConfiguration)async  -> CloudMaintenance  {
-    return
-        try!  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_sailover_bridge_fn_method_epicsession_maintain_cloud(
-                        self.uniffiCloneHandle(),FfiConverterTypeEpicCloudConfiguration_lower(configuration)
-                )
-            },
-            pollFunc: ffi_sailover_bridge_rust_future_poll_u64,
-            completeFunc: ffi_sailover_bridge_rust_future_complete_u64,
-            freeFunc: ffi_sailover_bridge_rust_future_free_u64,
-            liftFunc: FfiConverterTypeCloudMaintenance_lift,
-            errorHandler: nil
-            
-        )
-}
     
 open func achievements(namespace: String, locale: String)async throws  -> [EpicAchievement]  {
     return
@@ -3547,6 +3667,17 @@ public func FfiConverterTypeLibrary_lower(_ value: Library) -> UInt64 {
 public protocol SteamAccountInstallationsProtocol: AnyObject, Sendable {
     
     /**
+     * Answers the Cloud question the game shows with `decision_id`, its
+     * maintenance's or its Game session's.
+     */
+    func answerCloud(appId: UInt32, decisionId: UInt64, choice: CloudChoice) async throws 
+    
+    /**
+     * Whether the player may sync the game's Cloud saves now.
+     */
+    func canMaintainCloud(appId: UInt32)  -> Bool
+    
+    /**
      * Whether an action may touch the game's installation now.
      */
     func canModify(appId: UInt32)  -> Bool
@@ -3561,6 +3692,12 @@ public protocol SteamAccountInstallationsProtocol: AnyObject, Sendable {
      */
     func changed(after: UInt64) async  -> SteamInstallationsState
     
+    /**
+     * The Cloud indicators of `app_ids`, and of every other game of the
+     * account with pending work, which Swift does not know about.
+     */
+    func cloudIndicators(appIds: [UInt32]) async throws  -> [SteamCloudIndicator]
+    
     func download(request: SteamDownloadRequest) 
     
     /**
@@ -3568,6 +3705,13 @@ public protocol SteamAccountInstallationsProtocol: AnyObject, Sendable {
      * when `verify` asks for it or its receipt needs it.
      */
     func launch(receipt: SteamReceipt, verification: SteamDownloadRequest, verify: Bool) 
+    
+    /**
+     * Syncs the game's Cloud saves: those of the installation `receipt`
+     * records, with the Transfer `request` names, or an uninstalled game's
+     * when both are `None`.
+     */
+    func maintainCloud(appId: UInt32, receipt: SteamReceipt?, request: SteamDownloadRequest?) 
     
     func resumeDownload() 
     
@@ -3577,7 +3721,8 @@ public protocol SteamAccountInstallationsProtocol: AnyObject, Sendable {
     func setDiagnostic(running: Bool) 
     
     /**
-     * Stops the account's Transfer and launch still preparing.
+     * Stops the account's Transfer, Cloud maintenance and launch still
+     * preparing.
      */
     func signedOut() 
     
@@ -3677,6 +3822,39 @@ public static func withContent(content: SteamContent, accountId: UInt64, session
 
     
     /**
+     * Answers the Cloud question the game shows with `decision_id`, its
+     * maintenance's or its Game session's.
+     */
+open func answerCloud(appId: UInt32, decisionId: UInt64, choice: CloudChoice)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_sailover_bridge_fn_method_steamaccountinstallations_answer_cloud(
+                        self.uniffiCloneHandle(),FfiConverterUInt32.lower(appId),FfiConverterUInt64.lower(decisionId),FfiConverterTypeCloudChoice_lower(choice)
+                )
+            },
+            pollFunc: ffi_sailover_bridge_rust_future_poll_void,
+            completeFunc: ffi_sailover_bridge_rust_future_complete_void,
+            freeFunc: ffi_sailover_bridge_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeGameSessionError_lift
+        )
+}
+    
+    /**
+     * Whether the player may sync the game's Cloud saves now.
+     */
+open func canMaintainCloud(appId: UInt32) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_sailover_bridge_fn_method_steamaccountinstallations_can_maintain_cloud(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(appId),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * Whether an action may touch the game's installation now.
      */
 open func canModify(appId: UInt32) -> Bool  {
@@ -3720,6 +3898,26 @@ open func changed(after: UInt64)async  -> SteamInstallationsState  {
         )
 }
     
+    /**
+     * The Cloud indicators of `app_ids`, and of every other game of the
+     * account with pending work, which Swift does not know about.
+     */
+open func cloudIndicators(appIds: [UInt32])async throws  -> [SteamCloudIndicator]  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_sailover_bridge_fn_method_steamaccountinstallations_cloud_indicators(
+                        self.uniffiCloneHandle(),FfiConverterSequenceUInt32.lower(appIds)
+                )
+            },
+            pollFunc: ffi_sailover_bridge_rust_future_poll_rust_buffer,
+            completeFunc: ffi_sailover_bridge_rust_future_complete_rust_buffer,
+            freeFunc: ffi_sailover_bridge_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterSequenceTypeSteamCloudIndicator.lift,
+            errorHandler: FfiConverterTypeGameSessionError_lift
+        )
+}
+    
 open func download(request: SteamDownloadRequest)  {try! rustCall() {
         uniffiCallStatus in
     uniffi_sailover_bridge_fn_method_steamaccountinstallations_download(
@@ -3740,6 +3938,22 @@ open func launch(receipt: SteamReceipt, verification: SteamDownloadRequest, veri
         FfiConverterTypeSteamReceipt_lower(receipt),
         FfiConverterTypeSteamDownloadRequest_lower(verification),
         FfiConverterBool.lower(verify),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * Syncs the game's Cloud saves: those of the installation `receipt`
+     * records, with the Transfer `request` names, or an uninstalled game's
+     * when both are `None`.
+     */
+open func maintainCloud(appId: UInt32, receipt: SteamReceipt?, request: SteamDownloadRequest?)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_sailover_bridge_fn_method_steamaccountinstallations_maintain_cloud(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(appId),
+        FfiConverterOptionTypeSteamReceipt.lower(receipt),
+        FfiConverterOptionTypeSteamDownloadRequest.lower(request),uniffiCallStatus
     )
 }
 }
@@ -3765,7 +3979,8 @@ open func setDiagnostic(running: Bool)  {try! rustCall() {
 }
     
     /**
-     * Stops the account's Transfer and launch still preparing.
+     * Stops the account's Transfer, Cloud maintenance and launch still
+     * preparing.
      */
 open func signedOut()  {try! rustCall() {
         uniffiCallStatus in
@@ -4013,6 +4228,12 @@ public protocol SteamContent: AnyObject, Sendable {
     
     func archiveCloud(config: SteamCloudConfiguration) throws 
     
+    /**
+     * Syncs the game's Cloud saves on the player's request: those `config`
+     * names, or an uninstalled game's when `None`.
+     */
+    func maintainCloud(appId: UInt32, config: SteamCloudConfiguration?, sync: CloudSync) throws 
+    
 }
 /**
  * A Steam account's storefront session, as its installations use it. The
@@ -4131,6 +4352,21 @@ open func archiveCloud(config: SteamCloudConfiguration)throws   {try rustCallWit
     uniffi_sailover_bridge_fn_method_steamcontent_archive_cloud(
             self.uniffiCloneHandle(),
         FfiConverterTypeSteamCloudConfiguration_lower(config),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * Syncs the game's Cloud saves on the player's request: those `config`
+     * names, or an uninstalled game's when `None`.
+     */
+open func maintainCloud(appId: UInt32, config: SteamCloudConfiguration?, sync: CloudSync)throws   {try rustCallWithError(FfiConverterTypeSteamError_lift) {
+        uniffiCallStatus in
+    uniffi_sailover_bridge_fn_method_steamcontent_maintain_cloud(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(appId),
+        FfiConverterOptionTypeSteamCloudConfiguration.lower(config),
+        FfiConverterTypeCloudSync_lower(sync),uniffiCallStatus
     )
 }
 }
@@ -4305,6 +4541,35 @@ fileprivate struct UniffiCallbackInterfaceSteamContent {
                 }
                 return try uniffiObj.archiveCloud(
                      config: try FfiConverterTypeSteamCloudConfiguration_lift(config)
+                )
+            }
+
+            
+            let writeReturn = { () }
+            uniffiTraitInterfaceCallWithError(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn,
+                lowerError: FfiConverterTypeSteamError_lower
+            )
+        },
+        maintainCloud: { (
+            uniffiHandle: UInt64,
+            appId: UInt32,
+            config: RustBuffer,
+            sync: UInt64,
+            uniffiOutReturn: UnsafeMutableRawPointer,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> () in
+                guard let uniffiObj = try? FfiConverterTypeSteamContent.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return try uniffiObj.maintainCloud(
+                     appId: try FfiConverterUInt32.lift(appId),
+                     config: try FfiConverterOptionTypeSteamCloudConfiguration.lift(config),
+                     sync: try FfiConverterTypeCloudSync_lift(sync)
                 )
             }
 
@@ -5224,12 +5489,6 @@ public protocol StorefrontSessionsProtocol: AnyObject, Sendable {
     func changed(after: UInt64) async  -> GameSessionsState
     
     /**
-     * Answers the Cloud question session `session_id` shows with
-     * `decision_id`. Cancel stops a launch check still in progress.
-     */
-    func choose(sessionId: String, decisionId: UInt64, choice: CloudChoice) async throws 
-    
-    /**
      * The player declined to install Rosetta: the waiting launch stops.
      */
     func declineRosetta(sessionId: String, account: GameAccount, decisionId: UInt64) 
@@ -5363,26 +5622,6 @@ open func changed(after: UInt64)async  -> GameSessionsState  {
             liftFunc: FfiConverterTypeGameSessionsState_lift,
             errorHandler: nil
             
-        )
-}
-    
-    /**
-     * Answers the Cloud question session `session_id` shows with
-     * `decision_id`. Cancel stops a launch check still in progress.
-     */
-open func choose(sessionId: String, decisionId: UInt64, choice: CloudChoice)async throws   {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_sailover_bridge_fn_method_storefrontsessions_choose(
-                        self.uniffiCloneHandle(),FfiConverterString.lower(sessionId),FfiConverterUInt64.lower(decisionId),FfiConverterTypeCloudChoice_lower(choice)
-                )
-            },
-            pollFunc: ffi_sailover_bridge_rust_future_poll_void,
-            completeFunc: ffi_sailover_bridge_rust_future_complete_void,
-            freeFunc: ffi_sailover_bridge_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeGameSessionError_lift
         )
 }
     
@@ -5578,82 +5817,6 @@ public func FfiConverterTypeCloudIndicator_lift(_ buf: RustBuffer) throws -> Clo
 #endif
 public func FfiConverterTypeCloudIndicator_lower(_ value: CloudIndicator) -> RustBuffer {
     return FfiConverterTypeCloudIndicator.lower(value)
-}
-
-
-public struct CloudMaintenanceStatus: Equatable, Hashable {
-    public var revision: UInt64
-    public var phase: CloudMaintenancePhase
-    /**
-     * Binds an answer to the question this status shows.
-     */
-    public var decisionId: UInt64
-    public var allowedChoices: [CloudChoice]
-    public var error: String?
-    public var finished: Bool
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(revision: UInt64, phase: CloudMaintenancePhase, 
-        /**
-         * Binds an answer to the question this status shows.
-         */decisionId: UInt64, allowedChoices: [CloudChoice], error: String?, finished: Bool) {
-        self.revision = revision
-        self.phase = phase
-        self.decisionId = decisionId
-        self.allowedChoices = allowedChoices
-        self.error = error
-        self.finished = finished
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension CloudMaintenanceStatus: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeCloudMaintenanceStatus: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CloudMaintenanceStatus {
-        return
-            try CloudMaintenanceStatus(
-                revision: FfiConverterUInt64.read(from: &buf), 
-                phase: FfiConverterTypeCloudMaintenancePhase.read(from: &buf), 
-                decisionId: FfiConverterUInt64.read(from: &buf), 
-                allowedChoices: FfiConverterSequenceTypeCloudChoice.read(from: &buf), 
-                error: FfiConverterOptionString.read(from: &buf), 
-                finished: FfiConverterBool.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: CloudMaintenanceStatus, into buf: inout [UInt8]) {
-        FfiConverterUInt64.write(value.revision, into: &buf)
-        FfiConverterTypeCloudMaintenancePhase.write(value.phase, into: &buf)
-        FfiConverterUInt64.write(value.decisionId, into: &buf)
-        FfiConverterSequenceTypeCloudChoice.write(value.allowedChoices, into: &buf)
-        FfiConverterOptionString.write(value.error, into: &buf)
-        FfiConverterBool.write(value.finished, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeCloudMaintenanceStatus_lift(_ buf: RustBuffer) throws -> CloudMaintenanceStatus {
-    return try FfiConverterTypeCloudMaintenanceStatus.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeCloudMaintenanceStatus_lower(_ value: CloudMaintenanceStatus) -> RustBuffer {
-    return FfiConverterTypeCloudMaintenanceStatus.lower(value)
 }
 
 
@@ -5910,79 +6073,15 @@ public func FfiConverterTypeEpicCloudConfiguration_lower(_ value: EpicCloudConfi
 }
 
 
-public struct EpicCloudGame: Equatable, Hashable {
-    public var namespace: String
-    public var appName: String
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(namespace: String, appName: String) {
-        self.namespace = namespace
-        self.appName = appName
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension EpicCloudGame: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeEpicCloudGame: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EpicCloudGame {
-        return
-            try EpicCloudGame(
-                namespace: FfiConverterString.read(from: &buf), 
-                appName: FfiConverterString.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: EpicCloudGame, into buf: inout [UInt8]) {
-        FfiConverterString.write(value.namespace, into: &buf)
-        FfiConverterString.write(value.appName, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeEpicCloudGame_lift(_ buf: RustBuffer) throws -> EpicCloudGame {
-    return try FfiConverterTypeEpicCloudGame.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeEpicCloudGame_lower(_ value: EpicCloudGame) -> RustBuffer {
-    return FfiConverterTypeEpicCloudGame.lower(value)
-}
-
-
 public struct EpicCloudIndicator: Equatable, Hashable {
-    public var namespace: String
-    public var appName: String
+    public var game: EpicGameId
     public var indicator: CloudIndicator
-    /**
-     * The saved configuration, which an uninstalled game's maintenance uses.
-     */
-    public var configuration: EpicCloudConfiguration?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(namespace: String, appName: String, indicator: CloudIndicator, 
-        /**
-         * The saved configuration, which an uninstalled game's maintenance uses.
-         */configuration: EpicCloudConfiguration?) {
-        self.namespace = namespace
-        self.appName = appName
+    public init(game: EpicGameId, indicator: CloudIndicator) {
+        self.game = game
         self.indicator = indicator
-        self.configuration = configuration
     }
 
     
@@ -6001,18 +6100,14 @@ public struct FfiConverterTypeEpicCloudIndicator: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EpicCloudIndicator {
         return
             try EpicCloudIndicator(
-                namespace: FfiConverterString.read(from: &buf), 
-                appName: FfiConverterString.read(from: &buf), 
-                indicator: FfiConverterTypeCloudIndicator.read(from: &buf), 
-                configuration: FfiConverterOptionTypeEpicCloudConfiguration.read(from: &buf)
+                game: FfiConverterTypeEpicGameId.read(from: &buf), 
+                indicator: FfiConverterTypeCloudIndicator.read(from: &buf)
         )
     }
 
     public static func write(_ value: EpicCloudIndicator, into buf: inout [UInt8]) {
-        FfiConverterString.write(value.namespace, into: &buf)
-        FfiConverterString.write(value.appName, into: &buf)
+        FfiConverterTypeEpicGameId.write(value.game, into: &buf)
         FfiConverterTypeCloudIndicator.write(value.indicator, into: &buf)
-        FfiConverterOptionTypeEpicCloudConfiguration.write(value.configuration, into: &buf)
     }
 }
 
@@ -6029,6 +6124,60 @@ public func FfiConverterTypeEpicCloudIndicator_lift(_ buf: RustBuffer) throws ->
 #endif
 public func FfiConverterTypeEpicCloudIndicator_lower(_ value: EpicCloudIndicator) -> RustBuffer {
     return FfiConverterTypeEpicCloudIndicator.lower(value)
+}
+
+
+public struct EpicCloudMaintenance: Equatable, Hashable {
+    public var game: EpicGameId
+    public var cloud: CloudStatus
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(game: EpicGameId, cloud: CloudStatus) {
+        self.game = game
+        self.cloud = cloud
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension EpicCloudMaintenance: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeEpicCloudMaintenance: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EpicCloudMaintenance {
+        return
+            try EpicCloudMaintenance(
+                game: FfiConverterTypeEpicGameId.read(from: &buf), 
+                cloud: FfiConverterTypeCloudStatus.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: EpicCloudMaintenance, into buf: inout [UInt8]) {
+        FfiConverterTypeEpicGameId.write(value.game, into: &buf)
+        FfiConverterTypeCloudStatus.write(value.cloud, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeEpicCloudMaintenance_lift(_ buf: RustBuffer) throws -> EpicCloudMaintenance {
+    return try FfiConverterTypeEpicCloudMaintenance.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeEpicCloudMaintenance_lower(_ value: EpicCloudMaintenance) -> RustBuffer {
+    return FfiConverterTypeEpicCloudMaintenance.lower(value)
 }
 
 
@@ -6626,6 +6775,7 @@ public struct EpicInstallationsState: Equatable, Hashable {
     public var lastDownload: EpicDownloadRequest?
     public var report: InstallationReport?
     public var warning: InstallationWarning?
+    public var maintenance: EpicCloudMaintenance?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -6635,7 +6785,7 @@ public struct EpicInstallationsState: Equatable, Hashable {
          */revision: UInt64, receipts: [EpicReceipt], transfer: GameTransfer?, transferGame: EpicGameId?, downloading: Bool, launching: Bool, verifyingBeforeLaunch: Bool, launchGame: EpicGameId?, uninstalling: Bool, uninstallGame: EpicGameId?, 
         /**
          * A Transfer that stopped before its receipt, which the player can resume.
-         */lastDownload: EpicDownloadRequest?, report: InstallationReport?, warning: InstallationWarning?) {
+         */lastDownload: EpicDownloadRequest?, report: InstallationReport?, warning: InstallationWarning?, maintenance: EpicCloudMaintenance?) {
         self.revision = revision
         self.receipts = receipts
         self.transfer = transfer
@@ -6649,6 +6799,7 @@ public struct EpicInstallationsState: Equatable, Hashable {
         self.lastDownload = lastDownload
         self.report = report
         self.warning = warning
+        self.maintenance = maintenance
     }
 
     
@@ -6679,7 +6830,8 @@ public struct FfiConverterTypeEpicInstallationsState: FfiConverterRustBuffer {
                 uninstallGame: FfiConverterOptionTypeEpicGameId.read(from: &buf), 
                 lastDownload: FfiConverterOptionTypeEpicDownloadRequest.read(from: &buf), 
                 report: FfiConverterOptionTypeInstallationReport.read(from: &buf), 
-                warning: FfiConverterOptionTypeInstallationWarning.read(from: &buf)
+                warning: FfiConverterOptionTypeInstallationWarning.read(from: &buf), 
+                maintenance: FfiConverterOptionTypeEpicCloudMaintenance.read(from: &buf)
         )
     }
 
@@ -6697,6 +6849,7 @@ public struct FfiConverterTypeEpicInstallationsState: FfiConverterRustBuffer {
         FfiConverterOptionTypeEpicDownloadRequest.write(value.lastDownload, into: &buf)
         FfiConverterOptionTypeInstallationReport.write(value.report, into: &buf)
         FfiConverterOptionTypeInstallationWarning.write(value.warning, into: &buf)
+        FfiConverterOptionTypeEpicCloudMaintenance.write(value.maintenance, into: &buf)
     }
 }
 
@@ -7964,37 +8117,19 @@ public func FfiConverterTypeSteamCloudIndicator_lower(_ value: SteamCloudIndicat
 }
 
 
-public struct SteamCloudMaintenanceRequest: Equatable, Hashable {
-    public var root: String
-    public var home: String
-    /**
-     * `None` for an uninstalled game: its saved context names the rest.
-     */
-    public var install: String?
-    /**
-     * The Wine prefix of a Windows installation, where its saves live.
-     */
-    public var prefix: String?
+/**
+ * Cloud maintenance of one game: its sync's progress and the Cloud question
+ * it waits on.
+ */
+public struct SteamCloudMaintenance: Equatable, Hashable {
     public var appId: UInt32
-    public var sessionDirectory: String
-    public var helper: String
+    public var cloud: CloudStatus
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(root: String, home: String, 
-        /**
-         * `None` for an uninstalled game: its saved context names the rest.
-         */install: String?, 
-        /**
-         * The Wine prefix of a Windows installation, where its saves live.
-         */prefix: String?, appId: UInt32, sessionDirectory: String, helper: String) {
-        self.root = root
-        self.home = home
-        self.install = install
-        self.prefix = prefix
+    public init(appId: UInt32, cloud: CloudStatus) {
         self.appId = appId
-        self.sessionDirectory = sessionDirectory
-        self.helper = helper
+        self.cloud = cloud
     }
 
     
@@ -8003,34 +8138,24 @@ public struct SteamCloudMaintenanceRequest: Equatable, Hashable {
 }
 
 #if compiler(>=6)
-extension SteamCloudMaintenanceRequest: Sendable {}
+extension SteamCloudMaintenance: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypeSteamCloudMaintenanceRequest: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SteamCloudMaintenanceRequest {
+public struct FfiConverterTypeSteamCloudMaintenance: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SteamCloudMaintenance {
         return
-            try SteamCloudMaintenanceRequest(
-                root: FfiConverterString.read(from: &buf), 
-                home: FfiConverterString.read(from: &buf), 
-                install: FfiConverterOptionString.read(from: &buf), 
-                prefix: FfiConverterOptionString.read(from: &buf), 
+            try SteamCloudMaintenance(
                 appId: FfiConverterUInt32.read(from: &buf), 
-                sessionDirectory: FfiConverterString.read(from: &buf), 
-                helper: FfiConverterString.read(from: &buf)
+                cloud: FfiConverterTypeCloudStatus.read(from: &buf)
         )
     }
 
-    public static func write(_ value: SteamCloudMaintenanceRequest, into buf: inout [UInt8]) {
-        FfiConverterString.write(value.root, into: &buf)
-        FfiConverterString.write(value.home, into: &buf)
-        FfiConverterOptionString.write(value.install, into: &buf)
-        FfiConverterOptionString.write(value.prefix, into: &buf)
+    public static func write(_ value: SteamCloudMaintenance, into buf: inout [UInt8]) {
         FfiConverterUInt32.write(value.appId, into: &buf)
-        FfiConverterString.write(value.sessionDirectory, into: &buf)
-        FfiConverterString.write(value.helper, into: &buf)
+        FfiConverterTypeCloudStatus.write(value.cloud, into: &buf)
     }
 }
 
@@ -8038,15 +8163,15 @@ public struct FfiConverterTypeSteamCloudMaintenanceRequest: FfiConverterRustBuff
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeSteamCloudMaintenanceRequest_lift(_ buf: RustBuffer) throws -> SteamCloudMaintenanceRequest {
-    return try FfiConverterTypeSteamCloudMaintenanceRequest.lift(buf)
+public func FfiConverterTypeSteamCloudMaintenance_lift(_ buf: RustBuffer) throws -> SteamCloudMaintenance {
+    return try FfiConverterTypeSteamCloudMaintenance.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeSteamCloudMaintenanceRequest_lower(_ value: SteamCloudMaintenanceRequest) -> RustBuffer {
-    return FfiConverterTypeSteamCloudMaintenanceRequest.lower(value)
+public func FfiConverterTypeSteamCloudMaintenance_lower(_ value: SteamCloudMaintenance) -> RustBuffer {
+    return FfiConverterTypeSteamCloudMaintenance.lower(value)
 }
 
 
@@ -8694,6 +8819,7 @@ public struct SteamInstallationsState: Equatable, Hashable {
     public var lastDownload: SteamDownloadRequest?
     public var report: InstallationReport?
     public var warning: InstallationWarning?
+    public var maintenance: SteamCloudMaintenance?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -8703,7 +8829,7 @@ public struct SteamInstallationsState: Equatable, Hashable {
          */revision: UInt64, receipts: [SteamReceipt], transfer: GameTransfer?, transferGame: UInt32?, downloading: Bool, launching: Bool, verifyingBeforeLaunch: Bool, launchGame: UInt32?, uninstalling: Bool, uninstallGame: UInt32?, 
         /**
          * A Transfer that stopped before its receipt, which the player can resume.
-         */lastDownload: SteamDownloadRequest?, report: InstallationReport?, warning: InstallationWarning?) {
+         */lastDownload: SteamDownloadRequest?, report: InstallationReport?, warning: InstallationWarning?, maintenance: SteamCloudMaintenance?) {
         self.revision = revision
         self.receipts = receipts
         self.transfer = transfer
@@ -8717,6 +8843,7 @@ public struct SteamInstallationsState: Equatable, Hashable {
         self.lastDownload = lastDownload
         self.report = report
         self.warning = warning
+        self.maintenance = maintenance
     }
 
     
@@ -8747,7 +8874,8 @@ public struct FfiConverterTypeSteamInstallationsState: FfiConverterRustBuffer {
                 uninstallGame: FfiConverterOptionUInt32.read(from: &buf), 
                 lastDownload: FfiConverterOptionTypeSteamDownloadRequest.read(from: &buf), 
                 report: FfiConverterOptionTypeInstallationReport.read(from: &buf), 
-                warning: FfiConverterOptionTypeInstallationWarning.read(from: &buf)
+                warning: FfiConverterOptionTypeInstallationWarning.read(from: &buf), 
+                maintenance: FfiConverterOptionTypeSteamCloudMaintenance.read(from: &buf)
         )
     }
 
@@ -8765,6 +8893,7 @@ public struct FfiConverterTypeSteamInstallationsState: FfiConverterRustBuffer {
         FfiConverterOptionTypeSteamDownloadRequest.write(value.lastDownload, into: &buf)
         FfiConverterOptionTypeInstallationReport.write(value.report, into: &buf)
         FfiConverterOptionTypeInstallationWarning.write(value.warning, into: &buf)
+        FfiConverterOptionTypeSteamCloudMaintenance.write(value.maintenance, into: &buf)
     }
 }
 
@@ -9191,107 +9320,6 @@ public func FfiConverterTypeCloudChoice_lift(_ buf: RustBuffer) throws -> CloudC
 #endif
 public func FfiConverterTypeCloudChoice_lower(_ value: CloudChoice) -> RustBuffer {
     return FfiConverterTypeCloudChoice.lower(value)
-}
-
-
-
-
-public enum CloudMaintenancePhase: Equatable, Hashable {
-    
-    case checking
-    case syncing
-    case conflict
-    case synced
-    case unavailable
-    case failed
-    case cancelled
-
-
-
-
-
-}
-
-#if compiler(>=6)
-extension CloudMaintenancePhase: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeCloudMaintenancePhase: FfiConverterRustBuffer {
-    typealias SwiftType = CloudMaintenancePhase
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CloudMaintenancePhase {
-        let variant: Int32 = try readInt(&buf)
-        switch variant {
-        
-        case 1: return .checking
-        
-        case 2: return .syncing
-        
-        case 3: return .conflict
-        
-        case 4: return .synced
-        
-        case 5: return .unavailable
-        
-        case 6: return .failed
-        
-        case 7: return .cancelled
-        
-        default: throw UniffiInternalError.unexpectedEnumCase
-        }
-    }
-
-    public static func write(_ value: CloudMaintenancePhase, into buf: inout [UInt8]) {
-        switch value {
-        
-        
-        case .checking:
-            writeInt(&buf, Int32(1))
-        
-        
-        case .syncing:
-            writeInt(&buf, Int32(2))
-        
-        
-        case .conflict:
-            writeInt(&buf, Int32(3))
-        
-        
-        case .synced:
-            writeInt(&buf, Int32(4))
-        
-        
-        case .unavailable:
-            writeInt(&buf, Int32(5))
-        
-        
-        case .failed:
-            writeInt(&buf, Int32(6))
-        
-        
-        case .cancelled:
-            writeInt(&buf, Int32(7))
-        
-        }
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeCloudMaintenancePhase_lift(_ buf: RustBuffer) throws -> CloudMaintenancePhase {
-    return try FfiConverterTypeCloudMaintenancePhase.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeCloudMaintenancePhase_lower(_ value: CloudMaintenancePhase) -> RustBuffer {
-    return FfiConverterTypeCloudMaintenancePhase.lower(value)
 }
 
 
@@ -11511,8 +11539,8 @@ fileprivate struct FfiConverterOptionTypeGameSupervisor: FfiConverterRustBuffer 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterOptionTypeEpicCloudConfiguration: FfiConverterRustBuffer {
-    typealias SwiftType = EpicCloudConfiguration?
+fileprivate struct FfiConverterOptionTypeEpicCloudMaintenance: FfiConverterRustBuffer {
+    typealias SwiftType = EpicCloudMaintenance?
 
     public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
         guard let value = value else {
@@ -11520,13 +11548,13 @@ fileprivate struct FfiConverterOptionTypeEpicCloudConfiguration: FfiConverterRus
             return
         }
         writeInt(&buf, Int8(1))
-        FfiConverterTypeEpicCloudConfiguration.write(value, into: &buf)
+        FfiConverterTypeEpicCloudMaintenance.write(value, into: &buf)
     }
 
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
-        case 1: return try FfiConverterTypeEpicCloudConfiguration.read(from: &buf)
+        case 1: return try FfiConverterTypeEpicCloudMaintenance.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -11599,6 +11627,30 @@ fileprivate struct FfiConverterOptionTypeEpicGameId: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeEpicGameId.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeEpicReceipt: FfiConverterRustBuffer {
+    typealias SwiftType = EpicReceipt?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeEpicReceipt.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeEpicReceipt.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -11727,6 +11779,54 @@ fileprivate struct FfiConverterOptionTypeRosettaRequest: FfiConverterRustBuffer 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeSteamCloudConfiguration: FfiConverterRustBuffer {
+    typealias SwiftType = SteamCloudConfiguration?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeSteamCloudConfiguration.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeSteamCloudConfiguration.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeSteamCloudMaintenance: FfiConverterRustBuffer {
+    typealias SwiftType = SteamCloudMaintenance?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeSteamCloudMaintenance.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeSteamCloudMaintenance.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeSteamCredentials: FfiConverterRustBuffer {
     typealias SwiftType = SteamCredentials?
 
@@ -11791,6 +11891,54 @@ fileprivate struct FfiConverterOptionTypeSteamFriendGame: FfiConverterRustBuffer
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeSteamFriendGame.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeSteamReceipt: FfiConverterRustBuffer {
+    typealias SwiftType = SteamReceipt?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeSteamReceipt.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeSteamReceipt.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeCloudChoice: FfiConverterRustBuffer {
+    typealias SwiftType = CloudChoice?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeCloudChoice.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeCloudChoice.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -11946,31 +12094,6 @@ fileprivate struct FfiConverterSequenceTypeEpicAchievement: FfiConverterRustBuff
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterSequenceTypeEpicCloudGame: FfiConverterRustBuffer {
-    typealias SwiftType = [EpicCloudGame]
-
-    public static func write(_ value: [EpicCloudGame], into buf: inout [UInt8]) {
-        let len = Int32(value.count)
-        writeInt(&buf, len)
-        for item in value {
-            FfiConverterTypeEpicCloudGame.write(item, into: &buf)
-        }
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [EpicCloudGame] {
-        let len: Int32 = try readInt(&buf)
-        var seq = [EpicCloudGame]()
-        seq.reserveCapacity(Int(len))
-        for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeEpicCloudGame.read(from: &buf))
-        }
-        return seq
-    }
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
 fileprivate struct FfiConverterSequenceTypeEpicCloudIndicator: FfiConverterRustBuffer {
     typealias SwiftType = [EpicCloudIndicator]
 
@@ -12038,6 +12161,31 @@ fileprivate struct FfiConverterSequenceTypeEpicGame: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeEpicGame.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeEpicGameId: FfiConverterRustBuffer {
+    typealias SwiftType = [EpicGameId]
+
+    public static func write(_ value: [EpicGameId], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeEpicGameId.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [EpicGameId] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [EpicGameId]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeEpicGameId.read(from: &buf))
         }
         return seq
     }
@@ -12429,46 +12577,6 @@ public func storefronts() -> [StorefrontInfo]  {
     )
 })
 }
-/**
- * Reads journals without any lock. Also lists uninstalled games with pending
- * work, which Swift does not know about.
- */
-public func epicCloudIndicators(root: String, accountId: String, games: [EpicCloudGame])throws  -> [EpicCloudIndicator]  {
-    return try  FfiConverterSequenceTypeEpicCloudIndicator.lift(try rustCallWithError(FfiConverterTypeEpicError_lift) {
-        uniffiCallStatus in
-    uniffi_sailover_bridge_fn_func_epic_cloud_indicators(
-        FfiConverterString.lower(root),
-        FfiConverterString.lower(accountId),
-        FfiConverterSequenceTypeEpicCloudGame.lower(games),uniffiCallStatus
-    )
-})
-}
-/**
- * Starts Cloud maintenance of one Steam game on its own thread.
- */
-public func startSteamCloudMaintenance(credentials: SteamCredentials, request: SteamCloudMaintenanceRequest) -> CloudMaintenance  {
-    return try!  FfiConverterTypeCloudMaintenance_lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_sailover_bridge_fn_func_start_steam_cloud_maintenance(
-        FfiConverterTypeSteamCredentials_lower(credentials),
-        FfiConverterTypeSteamCloudMaintenanceRequest_lower(request),uniffiCallStatus
-    )
-})
-}
-/**
- * Reads journals without any lock. Also lists uninstalled games with pending
- * work, which Swift does not know about.
- */
-public func steamCloudIndicators(root: String, accountId: UInt64, appIds: [UInt32])throws  -> [SteamCloudIndicator]  {
-    return try  FfiConverterSequenceTypeSteamCloudIndicator.lift(try rustCallWithError(FfiConverterTypeSteamError_lift) {
-        uniffiCallStatus in
-    uniffi_sailover_bridge_fn_func_steam_cloud_indicators(
-        FfiConverterString.lower(root),
-        FfiConverterUInt64.lower(accountId),
-        FfiConverterSequenceUInt32.lower(appIds),uniffiCallStatus
-    )
-})
-}
 public func epicAuthorizationCode(input: String)throws  -> String  {
     return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeEpicError_lift) {
         uniffiCallStatus in
@@ -12496,36 +12604,6 @@ public func epicLoginUrl() -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
         uniffiCallStatus in
     uniffi_sailover_bridge_fn_func_epic_login_url(uniffiCallStatus
-    )
-})
-}
-/**
- * The Cloud configuration of an Epic build installed in `install`: a Windows
- * build keeps its saves in its prefix.
- */
-public func epicCloudConfiguration(locations: SailOverLocations, request: EpicDownloadRequest, install: String, language: String) -> EpicCloudConfiguration  {
-    return try!  FfiConverterTypeEpicCloudConfiguration_lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_sailover_bridge_fn_func_epic_cloud_configuration(
-        FfiConverterTypeSailOverLocations_lower(locations),
-        FfiConverterTypeEpicDownloadRequest_lower(request),
-        FfiConverterString.lower(install),
-        FfiConverterString.lower(language),uniffiCallStatus
-    )
-})
-}
-/**
- * Cloud maintenance of a Steam game, installed in `install` for `platform`
- * or uninstalled: a Windows installation keeps its saves in its prefix.
- */
-public func steamCloudMaintenanceRequest(locations: SailOverLocations, appId: UInt32, install: String?, platform: String?) -> SteamCloudMaintenanceRequest  {
-    return try!  FfiConverterTypeSteamCloudMaintenanceRequest_lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_sailover_bridge_fn_func_steam_cloud_maintenance_request(
-        FfiConverterTypeSailOverLocations_lower(locations),
-        FfiConverterUInt32.lower(appId),
-        FfiConverterOptionString.lower(install),
-        FfiConverterOptionString.lower(platform),uniffiCallStatus
     )
 })
 }
@@ -12595,15 +12673,6 @@ private let initializationResult: InitializationResult = {
     if (uniffi_sailover_bridge_checksum_func_storefronts() != 40473) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sailover_bridge_checksum_func_epic_cloud_indicators() != 906) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_sailover_bridge_checksum_func_start_steam_cloud_maintenance() != 8158) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_sailover_bridge_checksum_func_steam_cloud_indicators() != 14484) {
-        return InitializationResult.apiChecksumMismatch
-    }
     if (uniffi_sailover_bridge_checksum_func_epic_authorization_code() != 51058) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -12611,12 +12680,6 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sailover_bridge_checksum_func_epic_login_url() != 44029) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_sailover_bridge_checksum_func_epic_cloud_configuration() != 16278) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_sailover_bridge_checksum_func_steam_cloud_maintenance_request() != 48509) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sailover_bridge_checksum_func_end_orphaned_windows_games() != 22191) {
@@ -12643,16 +12706,10 @@ private let initializationResult: InitializationResult = {
     if (uniffi_sailover_bridge_checksum_method_library_remove_game() != 29871) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sailover_bridge_checksum_method_cloudmaintenance_answer() != 41720) {
+    if (uniffi_sailover_bridge_checksum_method_cloudsync_ask_conflict() != 44127) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sailover_bridge_checksum_method_cloudmaintenance_cancel() != 55532) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_sailover_bridge_checksum_method_cloudmaintenance_status() != 19057) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_sailover_bridge_checksum_method_epicsession_maintain_cloud() != 32746) {
+    if (uniffi_sailover_bridge_checksum_method_cloudsync_show() != 21055) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sailover_bridge_checksum_method_epicsession_achievements() != 23071) {
@@ -12751,9 +12808,6 @@ private let initializationResult: InitializationResult = {
     if (uniffi_sailover_bridge_checksum_method_storefrontsessions_changed() != 59563) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sailover_bridge_checksum_method_storefrontsessions_choose() != 64504) {
-        return InitializationResult.apiChecksumMismatch
-    }
     if (uniffi_sailover_bridge_checksum_method_storefrontsessions_decline_rosetta() != 17050) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -12769,6 +12823,12 @@ private let initializationResult: InitializationResult = {
     if (uniffi_sailover_bridge_checksum_method_storefrontsessions_stop() != 41062) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_sailover_bridge_checksum_method_epicaccountinstallations_answer_cloud() != 52452) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sailover_bridge_checksum_method_epicaccountinstallations_can_maintain_cloud() != 12380) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_sailover_bridge_checksum_method_epicaccountinstallations_can_modify() != 17451) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -12778,10 +12838,16 @@ private let initializationResult: InitializationResult = {
     if (uniffi_sailover_bridge_checksum_method_epicaccountinstallations_changed() != 5371) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_sailover_bridge_checksum_method_epicaccountinstallations_cloud_indicators() != 57280) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_sailover_bridge_checksum_method_epicaccountinstallations_download() != 48854) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sailover_bridge_checksum_method_epicaccountinstallations_launch() != 24051) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sailover_bridge_checksum_method_epicaccountinstallations_maintain_cloud() != 62837) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sailover_bridge_checksum_method_epicaccountinstallations_resume_download() != 24743) {
@@ -12790,7 +12856,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_sailover_bridge_checksum_method_epicaccountinstallations_set_diagnostic() != 55072) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sailover_bridge_checksum_method_epicaccountinstallations_signed_out() != 60633) {
+    if (uniffi_sailover_bridge_checksum_method_epicaccountinstallations_signed_out() != 19965) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sailover_bridge_checksum_method_epicaccountinstallations_state() != 16113) {
@@ -12817,7 +12883,16 @@ private let initializationResult: InitializationResult = {
     if (uniffi_sailover_bridge_checksum_method_epiccontent_archive_cloud() != 53053) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_sailover_bridge_checksum_method_epiccontent_maintain_cloud() != 4217) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_sailover_bridge_checksum_method_epiccredentialsave_save() != 19357) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sailover_bridge_checksum_method_steamaccountinstallations_answer_cloud() != 31308) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sailover_bridge_checksum_method_steamaccountinstallations_can_maintain_cloud() != 33141) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sailover_bridge_checksum_method_steamaccountinstallations_can_modify() != 56972) {
@@ -12829,10 +12904,16 @@ private let initializationResult: InitializationResult = {
     if (uniffi_sailover_bridge_checksum_method_steamaccountinstallations_changed() != 49684) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_sailover_bridge_checksum_method_steamaccountinstallations_cloud_indicators() != 15451) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_sailover_bridge_checksum_method_steamaccountinstallations_download() != 62408) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sailover_bridge_checksum_method_steamaccountinstallations_launch() != 22467) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sailover_bridge_checksum_method_steamaccountinstallations_maintain_cloud() != 61459) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sailover_bridge_checksum_method_steamaccountinstallations_resume_download() != 64960) {
@@ -12841,7 +12922,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_sailover_bridge_checksum_method_steamaccountinstallations_set_diagnostic() != 47687) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sailover_bridge_checksum_method_steamaccountinstallations_signed_out() != 36948) {
+    if (uniffi_sailover_bridge_checksum_method_steamaccountinstallations_signed_out() != 32976) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sailover_bridge_checksum_method_steamaccountinstallations_state() != 36435) {
@@ -12866,6 +12947,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sailover_bridge_checksum_method_steamcontent_archive_cloud() != 62985) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sailover_bridge_checksum_method_steamcontent_maintain_cloud() != 25479) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sailover_bridge_checksum_method_steamlogin_challenge() != 58131) {

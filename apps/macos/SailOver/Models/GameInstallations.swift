@@ -12,9 +12,11 @@ protocol GameTransferRequest: Equatable, Sendable {
 }
 
 /// What a storefront adds to its installation actions.
-protocol InstallationStorefront: CloudStorefront {
+protocol InstallationStorefront: GameStorefront {
     associatedtype Receipt: InstallReceipt where Receipt.GameID == GameID
     associatedtype Request: GameTransferRequest where Request.GameID == GameID
+    /// A failed answer, as the storefront's models describe errors.
+    @MainActor static func describe(_ error: Error) -> String
     /// The game and account a launch of `receipt` is admitted for.
     static func identity(of receipt: Receipt, account: AccountID) -> GameIdentity
     /// Where new installations go, inside SailOver's library directory.
@@ -62,6 +64,7 @@ struct InstallationsSnapshot<Store: InstallationStorefront>: Equatable {
     var lastDownload: Store.Request?
     var report: InstallationReport?
     var warning: InstallationWarning?
+    var maintenance: GameCloudMaintenance<Store.GameID>?
 }
 
 /// One account's installations of one storefront, in Rust. Each action
@@ -79,6 +82,15 @@ protocol InstallationsBackend<Store>: AnyObject {
     func launch(_ receipt: Store.Receipt, verification: Store.Request, verify: Bool)
     func uninstall(_ receipt: Store.Receipt, request: Store.Request)
     func signedOut()
+    /// Syncs the game's Cloud saves: those of `installed`, or an uninstalled
+    /// game's when nil.
+    func maintainCloud(_ game: Store.GameID, installed: (Store.Receipt, Store.Request)?)
+    /// Answers the Cloud question the game shows: its maintenance's or its
+    /// Game session's.
+    func answerCloud(_ game: Store.GameID, decisionId: UInt64, choice: CloudChoice) async throws
+    /// The games' Cloud indicators, and those of every other game of the
+    /// account with pending work.
+    func cloudIndicators(_ games: [Store.GameID]) async throws -> [(Store.GameID, CloudIndicator)]
 }
 
 /// One storefront's installed games and the actions on them, as Rust keeps
@@ -137,6 +149,7 @@ final class GameInstallations<Store: InstallationStorefront> {
         self.account = account
         self.backend = backend
         self.port = port
+        cloud.connect(account: account, backend: backend)
         backend.setDiagnostic(diagnosticReservation)
         apply(backend.snapshot())
         observation = Task { [weak self, backend] in
@@ -193,6 +206,7 @@ final class GameInstallations<Store: InstallationStorefront> {
         if isUninstalling != snapshot.uninstalling { isUninstalling = snapshot.uninstalling }
         if uninstallGame != snapshot.uninstallGame { uninstallGame = snapshot.uninstallGame }
         if lastDownload != snapshot.lastDownload { lastDownload = snapshot.lastDownload }
+        if cloud.maintenance != snapshot.maintenance { cloud.maintenance = snapshot.maintenance }
         if report != snapshot.report {
             report = snapshot.report
             if let report { port?.report(Self.failure(report)) }
@@ -287,6 +301,14 @@ final class GameInstallations<Store: InstallationStorefront> {
     }
 
     var canSyncCloud: Bool { selection().map { canMaintainCloud($0.game) } ?? false }
+
+    /// Syncs the Cloud saves of the game on screen: of its installation, or
+    /// of an uninstalled game.
+    func syncCloud() {
+        guard canSyncCloud, let selection = selection() else { return }
+        let installed = selectedReceipt.map { ($0, selection.request($0, parent(of: $0))) }
+        act { $0.maintainCloud(selection.game, installed: installed) }
+    }
 
     /// The game on screen's Cloud indicator, or nil when it is hidden.
     var cloudIndicator: CloudIndicatorPresentation? {
@@ -421,6 +443,7 @@ extension SteamGames: InstallationStorefront {
     }
     static let gamesDirectory = "Games/Steam"
     static let otherGameOperation = "ui.steam.other_game_operation"
+    @MainActor static func describe(_ error: Error) -> String { SteamModel.message(error) }
 }
 
 struct EpicDownload: GameTransferRequest {
@@ -454,6 +477,7 @@ extension EpicGames: InstallationStorefront {
     }
     static let gamesDirectory = "Games/Epic"
     static let otherGameOperation = "ui.epic.other_game_operation"
+    @MainActor static func describe(_ error: Error) -> String { EpicModel.message(error) }
 }
 
 typealias SteamInstallations = GameInstallations<SteamGames>
@@ -481,6 +505,17 @@ final class SteamInstallationsBackend: InstallationsBackend {
         core.uninstall(receipt: Self.receipt(receipt), request: Self.request(request))
     }
     func signedOut() { core.signedOut() }
+    func maintainCloud(_ game: UInt32, installed: (SteamInstallReceipt, SteamDownload)?) {
+        core.maintainCloud(appId: game, receipt: installed.map { Self.receipt($0.0) },
+                           request: installed.map { Self.request($0.1) })
+    }
+    func answerCloud(_ game: UInt32, decisionId: UInt64, choice: CloudChoice) async throws {
+        do { try await core.answerCloud(appId: game, decisionId: decisionId, choice: choice) }
+        catch { throw SteamGameSessions.translated(error) }
+    }
+    func cloudIndicators(_ games: [UInt32]) async throws -> [(UInt32, CloudIndicator)] {
+        try await core.cloudIndicators(appIds: games).map { ($0.appId, $0.indicator) }
+    }
 
     private static func snapshot(_ state: SteamInstallationsState) -> InstallationsSnapshot<SteamGames> {
         InstallationsSnapshot(
@@ -488,7 +523,8 @@ final class SteamInstallationsBackend: InstallationsBackend {
             transferGame: state.transferGame, downloading: state.downloading, launching: state.launching,
             verifyingBeforeLaunch: state.verifyingBeforeLaunch, launchGame: state.launchGame,
             uninstalling: state.uninstalling, uninstallGame: state.uninstallGame,
-            lastDownload: state.lastDownload.map(request), report: state.report, warning: state.warning
+            lastDownload: state.lastDownload.map(request), report: state.report, warning: state.warning,
+            maintenance: state.maintenance.map { GameCloudMaintenance(game: $0.appId, cloud: $0.cloud) }
         )
     }
     private static func receipt(_ receipt: SteamReceipt) -> SteamInstallReceipt {
@@ -533,9 +569,28 @@ final class EpicInstallationsBackend: InstallationsBackend {
         core.uninstall(receipt: Self.receipt(receipt), request: Self.request(request))
     }
     func signedOut() { core.signedOut() }
+    func maintainCloud(_ game: String, installed: (EpicInstallReceipt, EpicDownload)?) {
+        guard let id = Self.id(game) else { return }
+        core.maintainCloud(game: id, receipt: installed.map { Self.receipt($0.0) },
+                           request: installed.map { Self.request($0.1) })
+    }
+    func answerCloud(_ game: String, decisionId: UInt64, choice: CloudChoice) async throws {
+        guard let id = Self.id(game) else { throw EpicGames.failure(EpicGames.invalidSession) }
+        do { try await core.answerCloud(game: id, decisionId: decisionId, choice: choice) }
+        catch { throw EpicGameSessions.translated(error) }
+    }
+    func cloudIndicators(_ games: [String]) async throws -> [(String, CloudIndicator)] {
+        try await core.cloudIndicators(games: games.compactMap(Self.id)).map {
+            (epicLibraryID(namespace: $0.game.namespace, appName: $0.game.appName), $0.indicator)
+        }
+    }
 
     private static func game(_ game: EpicGameId?) -> String? {
         game.map { epicLibraryID(namespace: $0.namespace, appName: $0.appName) }
+    }
+    /// The game a library ID names.
+    private static func id(_ libraryID: String) -> EpicGameId? {
+        epicGameID(libraryID).map { EpicGameId(namespace: $0.namespace, appName: $0.appName) }
     }
     private static func snapshot(_ state: EpicInstallationsState) -> InstallationsSnapshot<EpicGames> {
         InstallationsSnapshot(
@@ -543,7 +598,11 @@ final class EpicInstallationsBackend: InstallationsBackend {
             transferGame: game(state.transferGame), downloading: state.downloading, launching: state.launching,
             verifyingBeforeLaunch: state.verifyingBeforeLaunch, launchGame: game(state.launchGame),
             uninstalling: state.uninstalling, uninstallGame: game(state.uninstallGame),
-            lastDownload: state.lastDownload.map(request), report: state.report, warning: state.warning
+            lastDownload: state.lastDownload.map(request), report: state.report, warning: state.warning,
+            maintenance: state.maintenance.map {
+                GameCloudMaintenance(game: epicLibraryID(namespace: $0.game.namespace, appName: $0.game.appName),
+                                     cloud: $0.cloud)
+            }
         )
     }
     private static func receipt(_ receipt: EpicReceipt) -> EpicInstallReceipt {

@@ -685,24 +685,6 @@ impl StorefrontSessions {
         }
     }
 
-    /// Answers the Cloud question session `session_id` shows with
-    /// `decision_id`. Cancel stops a launch check still in progress.
-    pub async fn choose(
-        &self,
-        session_id: String,
-        decision_id: u64,
-        choice: CloudChoice,
-    ) -> Result<(), GameSessionError> {
-        let sessions = self.sessions.clone();
-        blocking(self.sessions.failed(), move || match &*sessions {
-            Storefronts::Steam(sessions) => {
-                sessions.choose(&session_id, decision_id, choice.into())
-            }
-            Storefronts::Epic(sessions) => sessions.choose(&session_id, decision_id, choice.into()),
-        })
-        .await
-    }
-
     pub async fn resume_after_rosetta(
         &self,
         session_id: String,

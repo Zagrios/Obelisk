@@ -1,91 +1,43 @@
 import Foundation
 import Observation
 
-/// What a storefront adds to its Cloud presentation.
-protocol CloudStorefront: GameStorefront {
-    /// A game's persisted Cloud indicator, as the bridge returns it.
-    associatedtype Indicator: Sendable
-    /// What an indicator read names for one game.
-    associatedtype IndicatorRequest: Sendable
-    /// What Cloud maintenance of one game starts from.
-    associatedtype Maintenance
-    static func game(of indicator: Indicator) -> GameID
-    static func cloud(of indicator: Indicator) -> CloudIndicator
-    static func game(of maintenance: Maintenance) -> GameID
-    static func request(of maintenance: Maintenance) -> IndicatorRequest
-    /// A failed answer, as the storefront's models describe errors.
-    @MainActor static func describe(_ error: Error) -> String
-    /// Where the storefront's Game sessions keep their journals.
-    static func sessions(in locations: SailOverLocations) -> String
-}
+/// Cloud maintenance of one game as the account's installations run it in
+/// Rust. While it exists, it holds the Reservation of every game.
+struct GameCloudMaintenance<Game: Equatable>: Equatable {
+    let game: Game
+    var cloud: CloudStatus
 
-extension SteamGames: CloudStorefront {
-    static func game(of indicator: SteamCloudIndicator) -> UInt32 { indicator.appId }
-    static func cloud(of indicator: SteamCloudIndicator) -> CloudIndicator { indicator.indicator }
-    static func game(of maintenance: SteamCloudMaintenanceRequest) -> UInt32 { maintenance.appId }
-    static func request(of maintenance: SteamCloudMaintenanceRequest) -> UInt32 { maintenance.appId }
-    @MainActor static func describe(_ error: Error) -> String { SteamModel.message(error) }
-    static func sessions(in locations: SailOverLocations) -> String { locations.steamSessions }
-}
-
-extension EpicGames: CloudStorefront {
-    static func game(of indicator: EpicCloudIndicator) -> String {
-        epicLibraryID(namespace: indicator.namespace, appName: indicator.appName)
+    /// The conflict question the sync waits on, if any.
+    var conflict: CloudStatus? {
+        cloud.phase == .conflict && !cloud.allowedChoices.isEmpty ? cloud : nil
     }
-    static func cloud(of indicator: EpicCloudIndicator) -> CloudIndicator { indicator.indicator }
-    static func game(of maintenance: EpicCloudConfiguration) -> String { maintenance.libraryID }
-    static func request(of maintenance: EpicCloudConfiguration) -> EpicCloudGame {
-        EpicCloudGame(namespace: maintenance.namespace, appName: maintenance.appName)
-    }
-    @MainActor static func describe(_ error: Error) -> String { EpicModel.message(error) }
-    static func sessions(in locations: SailOverLocations) -> String { locations.epicSessions }
-}
 
-extension EpicCloudConfiguration {
-    var libraryID: String { epicLibraryID(namespace: namespace, appName: appName) }
-}
-
-/// The Rust entry points the Steam Cloud presentation uses. Tests replace them.
-struct SteamCloudServices: Sendable {
-    var indicators: @Sendable (_ root: String, _ accountId: UInt64, _ appIds: [UInt32]) throws -> [SteamCloudIndicator]
-    var startMaintenance: @MainActor @Sendable (SteamCredentials, SteamCloudMaintenanceRequest) -> any CloudMaintenanceProtocol
-
-    static let live = SteamCloudServices(
-        indicators: { try steamCloudIndicators(root: $0, accountId: $1, appIds: $2) },
-        startMaintenance: { startSteamCloudMaintenance(credentials: $0, request: $1) }
-    )
-}
-
-/// The Rust entry point the Epic Cloud presentation reads. Tests replace it.
-struct EpicCloudServices: Sendable {
-    var indicators: @Sendable (_ root: String, _ accountId: String, _ games: [EpicCloudGame]) throws -> [EpicCloudIndicator]
-
-    static let live = EpicCloudServices(indicators: { try epicCloudIndicators(root: $0, accountId: $1, games: $2) })
+    var isSyncing: Bool { conflict == nil }
 }
 
 typealias SteamCloudModel = CloudModel<SteamGames>
 typealias EpicCloudModel = CloudModel<EpicGames>
 
-/// Presents one account's Cloud: indicators, Cloud questions of its Game
-/// sessions, and Cloud maintenance. It owns no save comparison or transfer.
+/// Presents one account's Cloud: indicators, and the one Cloud question its
+/// Game session or Cloud maintenance asks. Rust runs every sync and routes
+/// each answer; this owns no save comparison or transfer.
 @MainActor @Observable
-final class CloudModel<Store: CloudStorefront> {
-    typealias Indicators = @Sendable (_ root: String, _ account: Store.AccountID,
-                                      _ games: [Store.IndicatorRequest]) throws -> [Store.Indicator]
-    typealias StartMaintenance = @MainActor (Store.Maintenance) async -> any CloudMaintenanceProtocol
-
-    let locations: SailOverLocations
-    /// The Cloud archive.
-    var root: String { locations.cloudArchive }
-    var sessionDirectory: String { Store.sessions(in: locations) }
+final class CloudModel<Store: InstallationStorefront> {
     private let sessions: GameSessions<Store>
-    @ObservationIgnored private let loadIndicators: Indicators
     private(set) var account: Store.AccountID?
+    @ObservationIgnored private var backend: (any InstallationsBackend<Store>)?
     private var generation = 0
-    private(set) var indicators: [Store.GameID: Store.Indicator] = [:]
-    private(set) var maintenance: CloudMaintenanceState<Store.GameID>?
-    @ObservationIgnored private var attempt: (any CloudMaintenanceProtocol)?
-    @ObservationIgnored private var startAttempt: StartMaintenance?
+    private(set) var indicators: [Store.GameID: CloudIndicator] = [:]
+    /// The account's Cloud maintenance, as its installations mirror it. Once
+    /// it ends, the game's indicator is read again and its question's error
+    /// goes.
+    var maintenance: GameCloudMaintenance<Store.GameID>? {
+        didSet {
+            guard let ended = oldValue, maintenance?.game != ended.game else { return }
+            if prompt == nil { promptError = nil }
+            refreshIndicators(for: [ended.game])
+        }
+    }
     private(set) var promptBusy = false
     private var promptError: String?
     private var dismissed: Decision?
@@ -99,17 +51,15 @@ final class CloudModel<Store: CloudStorefront> {
         }
     }
 
-    init(locations: SailOverLocations, sessions: GameSessions<Store>, indicators: @escaping Indicators) {
-        self.locations = locations
+    init(sessions: GameSessions<Store>) {
         self.sessions = sessions
-        loadIndicators = indicators
     }
 
-    /// `startMaintenance` runs Cloud maintenance with the account's session.
-    func connect(account: Store.AccountID, startMaintenance: StartMaintenance? = nil) {
+    /// `backend` holds the account's installations, which run its Cloud.
+    func connect(account: Store.AccountID, backend: any InstallationsBackend<Store>) {
         reset()
         self.account = account
-        startAttempt = startMaintenance
+        self.backend = backend
     }
 
     func signedOut() {
@@ -121,11 +71,8 @@ final class CloudModel<Store: CloudStorefront> {
     /// Everything presented belongs to one account; a change invalidates it all.
     private func reset() {
         generation += 1
-        // Cloud maintenance runs inside SailOver for one account only.
-        attempt?.cancel()
-        attempt = nil
+        backend = nil
         maintenance = nil
-        startAttempt = nil
         indicators = [:]
         account = nil
         dismissed = nil
@@ -133,58 +80,22 @@ final class CloudModel<Store: CloudStorefront> {
         promptBusy = false
     }
 
-    func indicator(for game: Store.GameID) -> CloudIndicator? {
-        indicators[game].map { Store.cloud(of: $0) }
-    }
+    func indicator(for game: Store.GameID) -> CloudIndicator? { indicators[game] }
 
     /// Reads the journals off the main thread. Never polls: callers refresh
     /// when a game page opens, the account changes, or a sync ends.
-    func refreshIndicators(for requests: [Store.IndicatorRequest]) {
-        guard let account else { return }
+    func refreshIndicators(for games: [Store.GameID]) {
+        guard account != nil, let backend else { return }
         let current = generation
-        let (root, load) = (root, loadIndicators)
         Task {
-            guard let values = try? await Task.detached(operation: { try load(root, account, requests) }).value,
-                  current == generation else { return }
-            for value in values { indicators[Store.game(of: value)] = value }
+            guard let values = try? await backend.cloudIndicators(games), current == generation else { return }
+            for (game, indicator) in values { indicators[game] = indicator }
         }
     }
 
     var isMaintaining: Bool { maintenance != nil }
 
-    /// Starts Cloud maintenance of one game. Its Reservation holds from here,
-    /// before the Rust attempt and its idle guard exist.
-    func startMaintenance(_ request: Store.Maintenance) {
-        guard account != nil, let startAttempt, maintenance == nil else { return }
-        promptError = nil
-        maintenance = CloudMaintenanceState(game: Store.game(of: request))
-        let refresh = Store.request(of: request)
-        let current = generation
-        Task {
-            let attempt = await startAttempt(request)
-            guard current == generation else {
-                attempt.cancel()
-                return
-            }
-            self.attempt = attempt
-            await followCloudMaintenance(attempt) { status in
-                guard current == generation, self.attempt === attempt else { return false }
-                maintenance?.status = status
-                if status.finished { finish(refresh) }
-                return true
-            }
-        }
-    }
-
-    /// A failure shows only in the game's Cloud indicator; Sync now retries.
-    private func finish(_ refresh: Store.IndicatorRequest) {
-        attempt = nil
-        maintenance = nil
-        promptError = nil
-        refreshIndicators(for: [refresh])
-    }
-
-    private var maintenanceConflict: CloudMaintenanceStatus? { maintenance?.conflict }
+    private var maintenanceConflict: CloudStatus? { maintenance?.conflict }
 
     private var active: GameSessions<Store>.Session? {
         guard let account, let active = sessions.active, active.observed, active.account == account else { return nil }
@@ -226,57 +137,31 @@ final class CloudModel<Store: CloudStorefront> {
         return [.checking, .syncing].contains(active.cloud.phase)
     }
 
+    /// Answers the question shown. Rust gives it to the sync that asked.
     func respond(_ choice: CloudChoice) {
-        if prompt == nil, let conflict = maintenanceConflict, let attempt {
-            promptError = attempt.answer(decisionId: conflict.decisionId, choice: choice)
-                ? nil : L10n.message(Store.invalidSession)
+        guard account != nil, let backend, !promptBusy else { return }
+        let prompt = prompt
+        let question: (game: Store.GameID, decision: UInt64)
+        if let prompt {
+            question = (prompt.game, prompt.cloud.decisionId)
+        } else if let maintenance, let conflict = maintenanceConflict {
+            question = (maintenance.game, conflict.decisionId)
+        } else {
             return
         }
-        guard account != nil, let prompt, !promptBusy else { return }
         let current = generation
         promptBusy = true
         promptError = nil
         Task {
             defer { if current == generation { promptBusy = false } }
-            guard current == generation else { return }
             do {
-                try await sessions.choose(choice, expected: prompt)
+                try await backend.answerCloud(question.game, decisionId: question.decision, choice: choice)
                 guard current == generation else { return }
-                if choice == .cancel { dismissed = Decision(prompt) }
+                if choice == .cancel, let prompt { dismissed = Decision(prompt) }
             } catch {
                 guard current == generation else { return }
                 promptError = Store.describe(error)
             }
         }
-    }
-}
-
-extension CloudModel where Store == SteamGames {
-    /// Starts Cloud maintenance. `receipt` is nil for an uninstalled game.
-    func startMaintenance(appId: UInt32, receipt: SteamInstallReceipt?) {
-        startMaintenance(steamCloudMaintenanceRequest(locations: locations, appId: appId,
-                                                      install: receipt?.directory, platform: receipt?.platform))
-    }
-}
-
-extension CloudModel where Store == EpicGames {
-    func refreshIndicators(for games: [EpicGame]) {
-        refreshIndicators(for: games.map { EpicCloudGame(namespace: $0.namespace, appName: $0.appName) })
-    }
-
-    /// An uninstalled game's saved configuration, with this SailOver's paths.
-    func savedConfiguration(for libraryID: String) -> EpicCloudConfiguration? {
-        guard var configuration = indicators[libraryID]?.configuration else { return nil }
-        configuration.root = root
-        configuration.sessionDirectory = sessionDirectory
-        configuration.helper = locations.helper
-        return configuration
-    }
-
-    func configuration(game: EpicGame, receipt: EpicInstallReceipt, language: String) -> EpicCloudConfiguration {
-        let build = EpicDownload(game: game, platform: receipt.platform,
-                                 directory: URL(fileURLWithPath: receipt.directory).deletingLastPathComponent())
-        return epicCloudConfiguration(locations: locations, request: EpicInstallationsBackend.request(build),
-                                      install: receipt.directory, language: language)
     }
 }

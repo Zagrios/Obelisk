@@ -89,6 +89,7 @@ private final class ClosureSteamContent: SteamContent, @unchecked Sendable {
         return RecoveredGameFixture(appID: plan.appId)
     }
     func archiveCloud(config: SteamCloudConfiguration) throws {}
+    func maintainCloud(appId: UInt32, config: SteamCloudConfiguration?, sync: CloudSync) throws {}
 }
 
 /// One signed-in Steam account with one installed game.
@@ -113,7 +114,7 @@ private final class Fixture {
         let receipt = SteamInstallReceipt(appId: 620, name: game.name, directory: directory.path, platform: "macos",
                                           language: "english", totalBytes: 100)
         try JSONEncoder().encode([receipt]).write(to: receiptsFile)
-        let cloud = SteamCloudModel(locations: .of(library: root), sessions: sessions, indicators: { _, _, _ in [] })
+        let cloud = SteamCloudModel(sessions: sessions)
         installations = SteamInstallations(directory: root, sessions: sessions, cloud: cloud)
     }
 

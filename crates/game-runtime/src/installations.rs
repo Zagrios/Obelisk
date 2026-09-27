@@ -1,9 +1,13 @@
 //! One account's installed games of one storefront, and the actions on them:
-//! Transfers, verified launches and uninstalls. Every action asks one
-//! Reservation gate, so a new one cannot touch a running game's files. The
-//! account's Installation receipts live here, in the file SailOver keeps per
-//! storefront and account.
-use crate::sessions::{self, Admission, Canceller, Failure, Sessions};
+//! Transfers, verified launches, uninstalls and Cloud maintenance. Every
+//! action asks one Reservation gate, so a new one cannot touch a running
+//! game's files. The account's Installation receipts live here, in the file
+//! SailOver keeps per storefront and account. So does the account's one Cloud
+//! question, whichever sync asks it.
+use crate::{
+    cloud, cloud_status,
+    sessions::{self, Admission, Canceller, Failure, Sessions},
+};
 use sailover_core::{installation::TransferProgress, transfer::TransferState};
 use serde::{Serialize, de::DeserializeOwned};
 use std::{
@@ -80,6 +84,29 @@ pub trait Content<S: Storefront>: Send + Sync {
     /// Deletes a Windows installation's Wine prefix once its folder is gone.
     /// `None` when the installation has none.
     fn remove_prefix(&self, receipt: &S::Receipt) -> Option<Result<(), String>>;
+    /// Syncs the game's Cloud saves on the player's request: those of
+    /// `installed`, or, for an uninstalled game, those its saved Cloud context
+    /// names. `control` shows the sync's progress and asks the player.
+    fn maintain<'a>(
+        &'a self,
+        game: &'a S::Game,
+        installed: Option<(&'a S::Receipt, &'a S::Request)>,
+        control: Arc<cloud::Control>,
+    ) -> BoxFuture<'a, Result<(), Failure>>;
+    /// The Cloud indicators of `games` from their journals, and of every other
+    /// game of the account with pending work. It blocks on file reads.
+    fn indicators(
+        &self,
+        games: &[S::Game],
+    ) -> Result<Vec<(S::Game, cloud_status::Indicator)>, Failure>;
+}
+
+/// Cloud maintenance of one game, which the player asked for: its sync's
+/// progress and the Cloud question it waits on.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Maintenance<S: Storefront> {
+    pub game: S::Game,
+    pub cloud: cloud::Status,
 }
 
 /// A failure the player sees, and what it is about.
@@ -116,6 +143,7 @@ pub struct State<S: Storefront> {
     /// A storage warning, a localization key, with an id that changes each
     /// time one is raised.
     pub warning: Option<(u64, String)>,
+    pub maintenance: Option<Maintenance<S>>,
 }
 
 struct Inner<S: Storefront> {
@@ -127,6 +155,9 @@ struct Inner<S: Storefront> {
     /// Cancels the launch still preparing.
     launch: Option<Canceller<S>>,
     warnings: u64,
+    /// The running maintenance, which its number tells from a later one.
+    maintenance: Option<(u64, Arc<cloud::Control>)>,
+    maintenances: u64,
 }
 
 struct Shared<S: Storefront> {
@@ -186,7 +217,40 @@ impl<S: Storefront> Shared<S> {
             && !state.launching
             && !state.uninstalling
             && !inner.diagnostic
+            && state.maintenance.is_none()
             && !protects(&self.sessions.state(), game)
+    }
+
+    /// One Cloud operation at a time: a Game session or recovery, a launch,
+    /// or maintenance of any game keeps it closed, and so does this game's
+    /// Transfer or uninstall.
+    fn can_maintain_cloud(&self, inner: &Inner<S>, game: &S::Game) -> bool {
+        let state = &inner.state;
+        !inner.signed_out
+            && !inner.diagnostic
+            && state.maintenance.is_none()
+            && !state.launching
+            && !(state.downloading && state.transfer_game.as_ref() == Some(game))
+            && !(state.uninstalling && state.uninstall_game.as_ref() == Some(game))
+            && !self.sessions.state().busy()
+    }
+
+    /// Shows maintenance `number`'s progress while it runs. Retry and Launch
+    /// anyway belong to a launch.
+    fn show_maintenance(&self, number: u64, mut status: cloud::Status) {
+        status
+            .allowed_choices
+            .retain(|choice| !matches!(choice, cloud::Choice::Retry | cloud::Choice::LaunchAnyway));
+        self.update(|inner| {
+            if inner
+                .maintenance
+                .as_ref()
+                .is_some_and(|(running, _)| *running == number)
+                && let Some(maintenance) = &mut inner.state.maintenance
+            {
+                maintenance.cloud = status;
+            }
+        });
     }
 
     /// Marks the Transfer's game before its first progress snapshot arrives.
@@ -334,9 +398,18 @@ fn save<R: Serialize>(file: &Path, receipts: &[R]) -> std::io::Result<()> {
     std::fs::rename(&partial, file)
 }
 
-/// One account's installations of one storefront.
+/// One account's installations of one storefront. A clone is the same
+/// installations.
 pub struct Installations<S: Storefront> {
     shared: Arc<Shared<S>>,
+}
+
+impl<S: Storefront> Clone for Installations<S> {
+    fn clone(&self) -> Self {
+        Self {
+            shared: self.shared.clone(),
+        }
+    }
 }
 
 impl<S: Storefront> Installations<S> {
@@ -365,12 +438,15 @@ impl<S: Storefront> Installations<S> {
                 last_download: None,
                 report: None,
                 warning: None,
+                maintenance: None,
             },
             signed_out: false,
             diagnostic: false,
             cancellation_requested: false,
             launch: None,
             warnings: 0,
+            maintenance: None,
+            maintenances: 0,
         };
         match load(&receipts_file, |receipt: &S::Receipt| {
             S::receipt_directory(receipt)
@@ -624,19 +700,132 @@ impl<S: Storefront> Installations<S> {
         });
     }
 
-    /// Stops the account's Transfer and launch still preparing. A running
-    /// game keeps its Game session; an uninstall already removing files
-    /// finishes.
+    /// Stops the account's Transfer, Cloud maintenance and launch still
+    /// preparing. A running game keeps its Game session; an uninstall already
+    /// removing files finishes.
     pub fn signed_out(&self) {
-        let launch = self.shared.update(|inner| {
+        let (launch, maintenance) = self.shared.update(|inner| {
             inner.signed_out = true;
             inner.cancellation_requested = true;
-            inner.launch.take()
+            let maintenance = inner
+                .maintenance
+                .as_ref()
+                .map(|(_, control)| control.clone());
+            (inner.launch.take(), maintenance)
         });
         self.shared.content.cancel();
         if let Some(launch) = launch {
             launch.cancel();
         }
+        if let Some(maintenance) = maintenance {
+            maintenance.cancel();
+        }
+    }
+
+    /// Whether the player may sync `game`'s Cloud saves now.
+    pub fn can_maintain_cloud(&self, game: &S::Game) -> bool {
+        let inner = self.shared.inner.lock().unwrap();
+        self.shared.can_maintain_cloud(&inner, game)
+    }
+
+    /// Syncs `game`'s Cloud saves: those of its installation `installed`
+    /// names, or, uninstalled, those its saved Cloud context names. Its idle
+    /// guard keeps every launch of the storefront out, so it holds the
+    /// Reservation of every game until it ends. A failure shows only in the
+    /// game's Cloud indicator: Sync now is the retry.
+    pub fn maintain_cloud(&self, game: S::Game, installed: Option<(S::Receipt, S::Request)>) {
+        let shared = &self.shared;
+        let started = shared.update(|inner| {
+            if !shared.can_maintain_cloud(inner, &game)
+                || installed.as_ref().is_some_and(|(receipt, _)| {
+                    S::receipt_game(receipt) != game || !inner.state.receipts.contains(receipt)
+                })
+            {
+                return None;
+            }
+            inner.maintenances += 1;
+            let number = inner.maintenances;
+            let weak = Arc::downgrade(shared);
+            let control = Arc::new(cloud::Control::new(move |status| {
+                if let Some(shared) = weak.upgrade() {
+                    shared.show_maintenance(number, status);
+                }
+            }));
+            inner.maintenance = Some((number, control.clone()));
+            inner.state.maintenance = Some(Maintenance {
+                game: game.clone(),
+                cloud: cloud::Status {
+                    phase: cloud::Phase::Checking,
+                    ..Default::default()
+                },
+            });
+            Some((number, control))
+        });
+        let Some((number, control)) = started else {
+            return;
+        };
+        let shared = shared.clone();
+        runtime().spawn(async move {
+            let installed = installed
+                .as_ref()
+                .map(|(receipt, request)| (receipt, request));
+            let _ = shared.content.maintain(&game, installed, control).await;
+            shared.update(|inner| {
+                if inner
+                    .maintenance
+                    .as_ref()
+                    .is_some_and(|(running, _)| *running == number)
+                {
+                    inner.maintenance = None;
+                    inner.state.maintenance = None;
+                }
+            });
+        });
+    }
+
+    /// Answers the Cloud question `game` shows with `decision_id`: its
+    /// maintenance's, else its Game session's. Cancel stops either sync.
+    pub fn answer_cloud(
+        &self,
+        game: &S::Game,
+        decision_id: u64,
+        choice: cloud::Choice,
+    ) -> Result<(), Failure> {
+        let refused = || Failure::Failed(S::INVALID_SESSION.to_owned());
+        let maintenance = {
+            let inner = self.shared.inner.lock().unwrap();
+            if inner.signed_out {
+                return Err(refused());
+            }
+            match (&inner.state.maintenance, &inner.maintenance) {
+                (Some(maintenance), Some((_, control))) if &maintenance.game == game => {
+                    Some(control.clone())
+                }
+                _ => None,
+            }
+        };
+        if let Some(control) = maintenance {
+            return control.answer(decision_id, choice).map_err(|_| refused());
+        }
+        let active = self
+            .shared
+            .sessions
+            .state()
+            .active
+            .filter(|active| &active.game == game && active.account == self.shared.account)
+            .ok_or_else(refused)?;
+        self.shared.sessions.choose(&active.id, decision_id, choice)
+    }
+
+    /// The Cloud indicators of `games`, and of every other game of the
+    /// account with pending work, such as an uninstalled one. Nothing here
+    /// takes a lock: a game or maintenance may be writing meanwhile. It
+    /// blocks on file reads.
+    pub fn cloud_indicators(
+        &self,
+        games: &[S::Game],
+    ) -> Result<Vec<(S::Game, cloud_status::Indicator)>, Failure> {
+        self.shared.content.indicators(games)
     }
 }
 

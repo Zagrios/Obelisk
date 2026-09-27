@@ -3,6 +3,11 @@ import Observation
 
 /// Epic library entries are unique per namespace and app name across platforms.
 func epicLibraryID(namespace: String, appName: String) -> String { "\(namespace):\(appName)" }
+/// The game a library ID names: an Epic namespace has no colon.
+func epicGameID(_ libraryID: String) -> (namespace: String, appName: String)? {
+    guard let colon = libraryID.firstIndex(of: ":") else { return nil }
+    return (String(libraryID[..<colon]), String(libraryID[libraryID.index(after: colon)...]))
+}
 
 struct EpicInstallReceipt: InstallReceipt {
     var id: String { "\(namespace):\(appName):\(platform)" }
@@ -37,7 +42,6 @@ final class EpicModel {
     typealias MakeInstallations = @MainActor (any EpicSessionProtocol, String, String, any EpicCredentialSave,
                                               StorefrontSessions, URL) -> any InstallationsBackend<EpicGames>
     @ObservationIgnored private let makeInstallations: MakeInstallations
-    @ObservationIgnored private let maintainCloud: @MainActor (any EpicSessionProtocol, EpicCloudConfiguration) async -> any CloudMaintenanceProtocol
     let cloud: EpicCloudModel
     let rosetta: EpicRosettaModel
     let installations: EpicInstallations
@@ -96,11 +100,7 @@ final class EpicModel {
         restore: @escaping @Sendable (EpicCredentials) async throws -> any EpicSessionProtocol = { try await EpicSession.restore(credentials: $0) },
         language: String = Locale.preferredLanguages.first ?? "en",
         gameSessions: EpicGameSessions = .shared,
-        cloudServices: EpicCloudServices = .live,
-        installations makeInstallations: MakeInstallations? = nil,
-        maintainCloud: @escaping @MainActor (any EpicSessionProtocol, EpicCloudConfiguration) async -> any CloudMaintenanceProtocol = {
-            await $0.maintainCloud(configuration: $1)
-        }
+        installations makeInstallations: MakeInstallations? = nil
     ) {
         self.directory = directory
         self.rememberedSession = EpicRememberedSession(store: keychain)
@@ -115,10 +115,8 @@ final class EpicModel {
                                                              credentials: credentials, sessions: sessions,
                                                              receipts: receipts, locations: locations))
         }
-        self.maintainCloud = maintainCloud
         self.rosetta = EpicRosettaModel(sessions: gameSessions)
-        self.cloud = EpicCloudModel(locations: .of(library: directory), sessions: gameSessions,
-                                    indicators: cloudServices.indicators)
+        self.cloud = EpicCloudModel(sessions: gameSessions)
         self.installations = EpicInstallations(directory: directory, sessions: gameSessions, cloud: cloud)
         wakeObserver = SystemWakeObservation { [weak self] in
             Task { @MainActor [weak self] in self?.retryFriends() }
@@ -144,18 +142,11 @@ final class EpicModel {
         )
     }
 
-    func syncCloud() {
-        guard installations.canSyncCloud, let game = selectedGame else { return }
-        let configuration = installations.selectedReceipt.map {
-            cloud.configuration(game: game, receipt: $0, language: launchLanguage)
-        } ?? cloud.savedConfiguration(for: game.libraryID)
-        guard let configuration else { return }
-        cloud.startMaintenance(configuration)
-    }
+    func syncCloud() { installations.syncCloud() }
 
     func refreshCloudIndicator() {
         guard let game = selectedGame else { return }
-        cloud.refreshIndicators(for: [game])
+        cloud.refreshIndicators(for: [game.libraryID])
     }
 
     /// Names the game a Cloud question or banner is about.
@@ -330,10 +321,6 @@ final class EpicModel {
             await rememberedSession.activate(connected, accountID: credentials.accountId)
             guard current == generation else { return }
             rosetta.connect(accountId: credentials.accountId)
-            let maintainCloud = maintainCloud
-            cloud.connect(account: credentials.accountId) { configuration in
-                await maintainCloud(connected, configuration)
-            }
             let backend = makeInstallations(connected, credentials.accountId, launchLanguage,
                                             RememberedCredentials(rememberedSession, session: connected),
                                             gameSessions.core, receiptsFile(for: credentials.accountId))

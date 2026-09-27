@@ -186,12 +186,56 @@ impl super::Content<Steam> for Content {
             })
         })
     }
+    /// Asks about a conflict, and ends with the player's answer.
+    fn maintain<'a>(
+        &'a self,
+        game: &'a u32,
+        installed: Option<(&'a Receipt, &'a Download)>,
+        control: Arc<cloud::Control>,
+    ) -> BoxFuture<'a, Result<(), Failure>> {
+        Box::pin(async move {
+            let target = if installed.is_some() {
+                "installed"
+            } else {
+                "uninstalled"
+            };
+            self.0
+                .with(|script| script.calls.push(format!("maintain:{game}:{target}")));
+            control.show(cloud::Phase::Syncing, None);
+            match control.ask(cloud::Question::Conflict, None).await {
+                Ok(choice) => {
+                    self.0
+                        .with(|script| script.calls.push(format!("answer:{choice:?}")));
+                    Ok(())
+                }
+                Err(_) => Err(Failure::Cancelled),
+            }
+        })
+    }
+    fn indicators(&self, games: &[u32]) -> Result<Vec<(u32, cloud_status::Indicator)>, Failure> {
+        Ok(games
+            .iter()
+            .map(|game| {
+                (
+                    *game,
+                    cloud_status::Indicator {
+                        state: cloud_status::SavedState::NeverSynced,
+                        game_session: false,
+                        synced_at: None,
+                        pending_upload: false,
+                        installation_removed: false,
+                    },
+                )
+            })
+            .collect())
+    }
 }
 
 /// A supervisor whose game runs until the test ends it.
 struct Game {
     state: Mutex<Observation<Steam>>,
     changed: Condvar,
+    choices: Mutex<Vec<(u64, crate::cloud::Choice)>>,
 }
 impl Game {
     fn running() -> Arc<Self> {
@@ -213,7 +257,15 @@ impl Game {
                 cloud: Default::default(),
             }),
             changed: Condvar::new(),
+            choices: Mutex::new(Vec::new()),
         })
+    }
+    /// The session's sync shows `cloud`.
+    fn show(&self, cloud: cloud::Status) {
+        let mut state = self.state.lock().unwrap();
+        state.cloud = cloud;
+        state.revision += 1;
+        self.changed.notify_all();
     }
     fn end(&self, failure: Option<&str>) {
         let mut state = self.state.lock().unwrap();
@@ -245,7 +297,13 @@ impl Supervised<Steam> for Game {
     fn begin(&self) -> Result<(), String> {
         Ok(())
     }
-    fn choose(&self, _: &u64, _: u64, _: crate::cloud::Choice) -> Result<(), String> {
+    fn choose(
+        &self,
+        _: &u64,
+        decision_id: u64,
+        choice: crate::cloud::Choice,
+    ) -> Result<(), String> {
+        self.choices.lock().unwrap().push((decision_id, choice));
         Ok(())
     }
     fn resume_after_rosetta(&self, _: &u64, _: u64) -> Result<(), String> {
@@ -659,4 +717,160 @@ async fn signing_out_stops_the_transfer_and_later_actions() {
     assert_eq!(fixture.installations.state().report, None);
     fixture.installations.download(fixture.request("macos"));
     assert!(!fixture.installations.state().downloading);
+}
+
+/// The conflict a sync asks about, with its choices.
+fn conflict(decision_id: u64) -> cloud::Status {
+    cloud::Status {
+        phase: cloud::Phase::Conflict,
+        decision_id,
+        error: None,
+        allowed_choices: vec![
+            cloud::Choice::Local,
+            cloud::Choice::Cloud,
+            cloud::Choice::Cancel,
+        ],
+    }
+}
+
+#[tokio::test]
+async fn cloud_maintenance_holds_every_reservation_and_asks_its_question_until_it_ends() {
+    let fixture = Fixture::new(true).await;
+    let installations = &fixture.installations;
+    assert!(installations.can_maintain_cloud(&620));
+    installations.maintain_cloud(620, Some((fixture.receipt(), fixture.request("macos"))));
+
+    let state = installations.state();
+    assert_eq!(
+        state
+            .maintenance
+            .as_ref()
+            .map(|maintenance| maintenance.game),
+        Some(620)
+    );
+    assert!(!installations.can_modify(&620));
+    assert!(
+        !installations.can_modify(&730),
+        "its idle guard keeps every launch out"
+    );
+    assert!(
+        !installations.can_maintain_cloud(&730),
+        "one Cloud operation at a time"
+    );
+    installations.download(fixture.request("macos"));
+    installations.launch(fixture.receipt(), fixture.request("macos"), false);
+    assert!(!installations.state().downloading && !installations.state().launching);
+
+    eventually(|| {
+        installations
+            .state()
+            .maintenance
+            .is_some_and(|maintenance| maintenance.cloud.phase == cloud::Phase::Conflict)
+    })
+    .await;
+    let question = installations.state().maintenance.unwrap().cloud;
+    assert_eq!(
+        question.allowed_choices,
+        conflict(question.decision_id).allowed_choices
+    );
+    assert!(
+        installations
+            .answer_cloud(&620, question.decision_id + 1, cloud::Choice::Local)
+            .is_err(),
+        "an answer binds to the question shown"
+    );
+    assert!(
+        installations
+            .answer_cloud(&730, question.decision_id, cloud::Choice::Local)
+            .is_err()
+    );
+    installations
+        .answer_cloud(&620, question.decision_id, cloud::Choice::Local)
+        .unwrap();
+
+    eventually(|| installations.state().maintenance.is_none()).await;
+    assert_eq!(
+        fixture.fake.calls(),
+        ["maintain:620:installed", "answer:Local"]
+    );
+    assert!(installations.can_modify(&620));
+    assert!(
+        installations.can_maintain_cloud(&620),
+        "Sync now starts the next attempt"
+    );
+}
+
+#[tokio::test]
+async fn an_uninstalled_game_syncs_from_its_saved_context_and_a_stranger_receipt_is_refused() {
+    let fixture = Fixture::new(true).await;
+    let mut stranger = fixture.receipt();
+    stranger.directory = fixture
+        .root
+        .join("elsewhere")
+        .to_string_lossy()
+        .into_owned();
+    fixture
+        .installations
+        .maintain_cloud(620, Some((stranger, fixture.request("macos"))));
+    assert!(fixture.installations.state().maintenance.is_none());
+
+    fixture.installations.maintain_cloud(730, None);
+    eventually(|| fixture.fake.calls() == ["maintain:730:uninstalled"]).await;
+    fixture.installations.signed_out();
+    eventually(|| fixture.installations.state().maintenance.is_none()).await;
+    assert_eq!(
+        fixture.fake.calls(),
+        ["maintain:730:uninstalled"],
+        "signing out cancels it"
+    );
+}
+
+#[tokio::test]
+async fn a_game_sessions_cloud_question_is_answered_through_the_same_call() {
+    let fixture = Fixture::new(true).await;
+    let game = Game::running();
+    fixture.fake.with(|script| {
+        script
+            .launches
+            .push_back(Ok(Some(game.clone() as Arc<dyn Supervised<Steam>>)))
+    });
+    fixture
+        .installations
+        .launch(fixture.receipt(), fixture.request("macos"), false);
+    eventually(|| !fixture.installations.state().launching).await;
+    assert!(
+        !fixture.installations.can_maintain_cloud(&730),
+        "a Game session keeps Cloud maintenance closed"
+    );
+
+    game.show(conflict(7));
+    eventually(|| {
+        fixture
+            .sessions
+            .state()
+            .active
+            .is_some_and(|active| active.cloud.decision_id == 7)
+    })
+    .await;
+    assert!(
+        fixture
+            .installations
+            .answer_cloud(&620, 6, cloud::Choice::Cloud)
+            .is_err()
+    );
+    fixture
+        .installations
+        .answer_cloud(&620, 7, cloud::Choice::Cloud)
+        .unwrap();
+    assert_eq!(*game.choices.lock().unwrap(), [(7, cloud::Choice::Cloud)]);
+    game.end(None);
+    eventually(|| !fixture.sessions.state().busy()).await;
+}
+
+#[tokio::test]
+async fn cloud_indicators_come_from_the_storefronts_journals() {
+    let fixture = Fixture::new(false).await;
+    let indicators = fixture.installations.cloud_indicators(&[620]).unwrap();
+    assert_eq!(indicators.len(), 1);
+    assert_eq!(indicators[0].1.state, cloud_status::SavedState::NeverSynced);
 }
