@@ -4,7 +4,7 @@ use super::*;
 use crate::{
     HostState,
     sessions::{Observation, Supervised},
-    steam::{Download, Receipt, Steam, Store},
+    steam::{Download, Offer, Receipt, Steam, Store},
     supervisor::{FailureReason, Phase},
 };
 use std::{
@@ -29,6 +29,8 @@ struct Script {
     prefix: Option<Result<(), String>>,
     held: bool,
     calls: Vec<String>,
+    /// Each Transfer's request, launches' verifications included.
+    requests: Vec<Download>,
     progress: Option<TransferProgress>,
 }
 
@@ -80,6 +82,7 @@ impl super::Content<Steam> for Content {
         Box::pin(async move {
             self.0.with(|script| {
                 script.calls.push(format!("download:{}", request.app_id));
+                script.requests.push(request.clone());
                 script.progress = Some(TransferProgress {
                     state: TransferState::Downloading,
                     completed_bytes: 50,
@@ -364,6 +367,14 @@ impl Fixture {
             directory: self.root.join("Games/Steam"),
         }
     }
+    fn offer(&self, platform: &str) -> Offer {
+        Offer {
+            app_id: 620,
+            name: "Portal 2".into(),
+            platform: platform.into(),
+            language: "french".into(),
+        }
+    }
     fn receipt(&self) -> Receipt {
         self.installations.state().receipts[0].clone()
     }
@@ -386,6 +397,16 @@ fn receipt(directory: &Path, platform: &str) -> Receipt {
         total_bytes: 100,
         needs_verification: None,
     }
+}
+
+/// Whether a Transfer or uninstall of `game` may start, as the state shows it.
+fn modifiable(installations: &Installations<Steam>, game: u32) -> bool {
+    installations.state().gate.modify.allows(&game)
+}
+
+/// Whether Cloud maintenance of `game` may start, as the state shows it.
+fn maintainable(installations: &Installations<Steam>, game: u32) -> bool {
+    installations.state().gate.maintain.allows(&game)
 }
 
 async fn eventually(predicate: impl Fn() -> bool) {
@@ -432,12 +453,12 @@ async fn receipts_load_from_the_account_file_without_games_removed_outside_sailo
 async fn a_transfer_reports_its_progress_and_publishes_its_receipt_once_complete() {
     let fixture = Fixture::new(false).await;
     fixture.fake.hold();
-    fixture.installations.download(fixture.request("windows"));
+    fixture.installations.install(fixture.offer("windows"));
     let state = fixture.installations.state();
     assert!(state.downloading);
     assert_eq!(state.transfer_game, Some(620));
     assert_eq!(state.transfer.unwrap().state, TransferState::Preparing);
-    assert!(!fixture.installations.can_modify(&620));
+    assert!(!modifiable(&fixture.installations, 620));
 
     eventually(|| {
         fixture
@@ -466,7 +487,7 @@ async fn a_failed_transfer_is_reported_and_stays_resumable_and_its_installation_
             .downloads
             .push_back(Err(Failure::Failed("backend.steam.content.network".into())))
     });
-    fixture.installations.download(fixture.request("macos"));
+    fixture.installations.install(fixture.offer("macos"));
     eventually(|| !fixture.installations.state().downloading).await;
 
     let state = fixture.installations.state();
@@ -479,7 +500,7 @@ async fn a_failed_transfer_is_reported_and_stays_resumable_and_its_installation_
     assert_eq!(state.receipts[0].needs_verification, Some(true));
     assert_eq!(fixture.saved()[0].needs_verification, Some(true));
 
-    fixture.installations.resume_download();
+    fixture.installations.install(fixture.offer("macos"));
     eventually(|| !fixture.installations.state().downloading).await;
     let state = fixture.installations.state();
     assert_eq!(state.report, None);
@@ -491,7 +512,7 @@ async fn a_failed_transfer_is_reported_and_stays_resumable_and_its_installation_
 async fn a_cancelled_transfer_ends_silently() {
     let fixture = Fixture::new(false).await;
     fixture.fake.hold();
-    fixture.installations.download(fixture.request("macos"));
+    fixture.installations.install(fixture.offer("macos"));
     eventually(|| fixture.fake.calls().len() == 1).await;
     fixture.installations.cancel();
     eventually(|| !fixture.installations.state().downloading).await;
@@ -506,10 +527,10 @@ async fn a_cancelled_transfer_ends_silently() {
 #[tokio::test]
 async fn a_folder_that_cannot_be_created_is_reported_before_any_transfer() {
     let fixture = Fixture::new(false).await;
-    std::fs::write(fixture.root.join("file"), b"").unwrap();
-    let mut request = fixture.request("macos");
-    request.directory = fixture.root.join("file/games");
-    fixture.installations.download(request);
+    let games = fixture.root.join("Games/Steam");
+    std::fs::remove_dir_all(&games).unwrap();
+    std::fs::write(&games, b"").unwrap();
+    fixture.installations.install(fixture.offer("macos"));
     let state = fixture.installations.state();
     assert!(matches!(state.report, Some(Report::DownloadDirectory(_))));
     assert!(!state.downloading);
@@ -525,9 +546,7 @@ async fn a_launch_verifies_first_when_asked_then_ends_its_preparation_once_the_g
             .launches
             .push_back(Ok(Some(game.clone() as Arc<dyn Supervised<Steam>>)))
     });
-    fixture
-        .installations
-        .launch(fixture.receipt(), fixture.request("macos"), true);
+    fixture.installations.launch("620-macos", true);
     let state = fixture.installations.state();
     assert!(state.launching);
     assert!(state.verifying_before_launch);
@@ -540,7 +559,7 @@ async fn a_launch_verifies_first_when_asked_then_ends_its_preparation_once_the_g
     eventually(|| !fixture.installations.state().launching).await;
     assert_eq!(fixture.fake.calls(), ["download:620", "launch:620"]);
     assert!(fixture.sessions.state().busy());
-    assert!(!fixture.installations.can_modify(&620));
+    assert!(!modifiable(&fixture.installations, 620));
 
     game.end(None);
     eventually(|| !fixture.sessions.state().busy()).await;
@@ -556,12 +575,10 @@ async fn an_unverified_installation_is_verified_before_it_launches_and_a_failure
             .downloads
             .push_back(Err(Failure::Failed("backend.steam.content.network".into())))
     });
-    fixture.installations.download(fixture.request("macos"));
+    fixture.installations.install(fixture.offer("macos"));
     eventually(|| !fixture.installations.state().downloading).await;
 
-    fixture
-        .installations
-        .launch(fixture.receipt(), fixture.request("macos"), false);
+    fixture.installations.launch("620-macos", false);
     eventually(|| !fixture.installations.state().launching).await;
     assert_eq!(
         fixture.fake.calls(),
@@ -586,9 +603,7 @@ async fn cancelling_a_launch_still_preparing_never_hands_the_game_off() {
             .push_back(Ok(Some(game.clone() as Arc<dyn Supervised<Steam>>)))
     });
     fixture.fake.hold();
-    fixture
-        .installations
-        .launch(fixture.receipt(), fixture.request("macos"), false);
+    fixture.installations.launch("620-macos", false);
     eventually(|| fixture.fake.calls() == ["launch:620"]).await;
 
     fixture.installations.cancel();
@@ -596,41 +611,35 @@ async fn cancelling_a_launch_still_preparing_never_hands_the_game_off() {
     eventually(|| !fixture.installations.state().launching).await;
     eventually(|| !fixture.sessions.state().busy()).await;
     assert_eq!(fixture.installations.state().report, None);
-    assert!(fixture.installations.can_modify(&620));
+    assert!(modifiable(&fixture.installations, 620));
 }
 
 #[tokio::test]
 async fn nothing_touches_an_installation_its_game_session_or_another_action_holds() {
     let fixture = Fixture::new(true).await;
     let admission = fixture.sessions.admit(620, 42).unwrap();
-    fixture.installations.download(fixture.request("macos"));
-    fixture
-        .installations
-        .uninstall(fixture.receipt(), fixture.request("macos"));
-    fixture
-        .installations
-        .launch(fixture.receipt(), fixture.request("macos"), false);
+    fixture.installations.install(fixture.offer("macos"));
+    fixture.installations.uninstall("620-macos");
+    fixture.installations.launch("620-macos", false);
     let state = fixture.installations.state();
     assert!(!state.downloading && !state.uninstalling && !state.launching);
     drop(admission);
 
     fixture.installations.set_diagnostic(true);
-    assert!(!fixture.installations.can_modify(&620));
+    assert!(!modifiable(&fixture.installations, 620));
     fixture.installations.set_diagnostic(false);
-    assert!(fixture.installations.can_modify(&620));
+    assert!(modifiable(&fixture.installations, 620));
     assert!(fixture.fake.calls().is_empty());
 }
 
 #[tokio::test]
 async fn an_uninstall_archives_removes_records_and_deletes_the_prefix_in_order() {
     let fixture = Fixture::new(false).await;
-    fixture.installations.download(fixture.request("windows"));
+    fixture.installations.install(fixture.offer("windows"));
     eventually(|| !fixture.installations.state().downloading).await;
     let receipt = fixture.receipt();
 
-    fixture
-        .installations
-        .uninstall(receipt.clone(), fixture.request("windows"));
+    fixture.installations.uninstall("620-windows");
     assert!(fixture.installations.state().uninstalling);
     eventually(|| !fixture.installations.state().uninstalling).await;
 
@@ -653,9 +662,7 @@ async fn a_failed_archive_keeps_the_game_and_a_lost_prefix_is_only_a_warning() {
         script.archive = Some(Failure::Failed("backend.steam.cloud.network".into()))
     });
     let receipt = fixture.receipt();
-    fixture
-        .installations
-        .uninstall(receipt.clone(), fixture.request("macos"));
+    fixture.installations.uninstall("620-macos");
     eventually(|| !fixture.installations.state().uninstalling).await;
     let state = fixture.installations.state();
     assert_eq!(
@@ -666,14 +673,12 @@ async fn a_failed_archive_keeps_the_game_and_a_lost_prefix_is_only_a_warning() {
     assert!(Path::new(&state.receipts[0].directory).is_dir());
 
     let fixture = Fixture::new(false).await;
-    fixture.installations.download(fixture.request("windows"));
+    fixture.installations.install(fixture.offer("windows"));
     eventually(|| !fixture.installations.state().downloading).await;
     fixture
         .fake
         .with(|script| script.prefix = Some(Err("busy".into())));
-    fixture
-        .installations
-        .uninstall(fixture.receipt(), fixture.request("windows"));
+    fixture.installations.uninstall("620-windows");
     eventually(|| !fixture.installations.state().uninstalling).await;
     let state = fixture.installations.state();
     assert!(state.receipts.is_empty());
@@ -691,9 +696,7 @@ async fn a_removal_is_recorded_even_when_the_receipts_cannot_be_saved_after_it()
     std::fs::remove_file(&file).unwrap();
     std::fs::create_dir_all(&file).unwrap();
 
-    fixture
-        .installations
-        .uninstall(receipt.clone(), fixture.request("macos"));
+    fixture.installations.uninstall("620-macos");
     eventually(|| !fixture.installations.state().uninstalling).await;
 
     let state = fixture.installations.state();
@@ -710,12 +713,12 @@ async fn a_removal_is_recorded_even_when_the_receipts_cannot_be_saved_after_it()
 async fn signing_out_stops_the_transfer_and_later_actions() {
     let fixture = Fixture::new(false).await;
     fixture.fake.hold();
-    fixture.installations.download(fixture.request("macos"));
+    fixture.installations.install(fixture.offer("macos"));
     eventually(|| fixture.fake.calls().len() == 1).await;
     fixture.installations.signed_out();
     eventually(|| !fixture.installations.state().downloading).await;
     assert_eq!(fixture.installations.state().report, None);
-    fixture.installations.download(fixture.request("macos"));
+    fixture.installations.install(fixture.offer("macos"));
     assert!(!fixture.installations.state().downloading);
 }
 
@@ -737,8 +740,8 @@ fn conflict(decision_id: u64) -> cloud::Status {
 async fn cloud_maintenance_holds_every_reservation_and_asks_its_question_until_it_ends() {
     let fixture = Fixture::new(true).await;
     let installations = &fixture.installations;
-    assert!(installations.can_maintain_cloud(&620));
-    installations.maintain_cloud(620, Some((fixture.receipt(), fixture.request("macos"))));
+    assert!(maintainable(installations, 620));
+    installations.maintain_cloud(620, Some("620-macos"));
 
     let state = installations.state();
     assert_eq!(
@@ -748,17 +751,17 @@ async fn cloud_maintenance_holds_every_reservation_and_asks_its_question_until_i
             .map(|maintenance| maintenance.game),
         Some(620)
     );
-    assert!(!installations.can_modify(&620));
+    assert!(!modifiable(installations, 620));
     assert!(
-        !installations.can_modify(&730),
+        !modifiable(installations, 730),
         "its idle guard keeps every launch out"
     );
     assert!(
-        !installations.can_maintain_cloud(&730),
+        !maintainable(installations, 730),
         "one Cloud operation at a time"
     );
-    installations.download(fixture.request("macos"));
-    installations.launch(fixture.receipt(), fixture.request("macos"), false);
+    installations.install(fixture.offer("macos"));
+    installations.launch("620-macos", false);
     assert!(!installations.state().downloading && !installations.state().launching);
 
     eventually(|| {
@@ -793,26 +796,24 @@ async fn cloud_maintenance_holds_every_reservation_and_asks_its_question_until_i
         fixture.fake.calls(),
         ["maintain:620:installed", "answer:Local"]
     );
-    assert!(installations.can_modify(&620));
+    assert!(modifiable(installations, 620));
     assert!(
-        installations.can_maintain_cloud(&620),
+        maintainable(installations, 620),
         "Sync now starts the next attempt"
     );
 }
 
 #[tokio::test]
-async fn an_uninstalled_game_syncs_from_its_saved_context_and_a_stranger_receipt_is_refused() {
+async fn an_uninstalled_game_syncs_from_its_saved_context_and_a_stranger_installation_is_refused() {
     let fixture = Fixture::new(true).await;
-    let mut stranger = fixture.receipt();
-    stranger.directory = fixture
-        .root
-        .join("elsewhere")
-        .to_string_lossy()
-        .into_owned();
     fixture
         .installations
-        .maintain_cloud(620, Some((stranger, fixture.request("macos"))));
-    assert!(fixture.installations.state().maintenance.is_none());
+        .maintain_cloud(620, Some("620-windows"));
+    fixture.installations.maintain_cloud(730, Some("620-macos"));
+    assert!(
+        fixture.installations.state().maintenance.is_none(),
+        "an installation the account lacks, or another game's, is refused"
+    );
 
     fixture.installations.maintain_cloud(730, None);
     eventually(|| fixture.fake.calls() == ["maintain:730:uninstalled"]).await;
@@ -834,12 +835,10 @@ async fn a_game_sessions_cloud_question_is_answered_through_the_same_call() {
             .launches
             .push_back(Ok(Some(game.clone() as Arc<dyn Supervised<Steam>>)))
     });
-    fixture
-        .installations
-        .launch(fixture.receipt(), fixture.request("macos"), false);
+    fixture.installations.launch("620-macos", false);
     eventually(|| !fixture.installations.state().launching).await;
     assert!(
-        !fixture.installations.can_maintain_cloud(&730),
+        !maintainable(&fixture.installations, 730),
         "a Game session keeps Cloud maintenance closed"
     );
 
@@ -873,4 +872,102 @@ async fn cloud_indicators_come_from_the_storefronts_journals() {
     let indicators = fixture.installations.cloud_indicators(&[620]).unwrap();
     assert_eq!(indicators.len(), 1);
     assert_eq!(indicators[0].1.state, cloud_status::SavedState::NeverSynced);
+}
+
+#[tokio::test]
+async fn the_gate_shows_what_may_start_and_follows_every_game_session() {
+    let fixture = Fixture::new(true).await;
+    let open = Gate {
+        modify: Opening::Open { except: vec![] },
+        launch: true,
+        maintain: Opening::Open { except: vec![] },
+    };
+    assert_eq!(fixture.installations.state().gate, open);
+
+    // A Game session holds its own game's files and every Cloud operation.
+    let admission = fixture.sessions.admit(620, 42).unwrap();
+    let held = Gate {
+        modify: Opening::Open { except: vec![620] },
+        launch: false,
+        maintain: Opening::Closed,
+    };
+    eventually(|| fixture.installations.state().gate == held).await;
+    drop(admission);
+    eventually(|| fixture.installations.state().gate == open).await;
+
+    // A Transfer holds every installation, and only its own game's Cloud.
+    fixture.fake.hold();
+    fixture.installations.install(fixture.offer("windows"));
+    assert_eq!(
+        fixture.installations.state().gate,
+        Gate {
+            modify: Opening::Closed,
+            launch: false,
+            maintain: Opening::Open { except: vec![620] },
+        }
+    );
+    fixture.fake.release();
+    eventually(|| fixture.installations.state().gate == open).await;
+
+    fixture.installations.set_diagnostic(true);
+    assert_eq!(
+        fixture.installations.state().gate,
+        Gate {
+            modify: Opening::Closed,
+            launch: false,
+            maintain: Opening::Closed,
+        }
+    );
+}
+
+#[tokio::test]
+async fn a_new_installation_goes_to_the_library_and_an_update_or_launch_stays_where_it_is() {
+    let fixture = Fixture::new(false).await;
+    fixture.installations.install(fixture.offer("windows"));
+    eventually(|| !fixture.installations.state().downloading).await;
+    let requests = fixture.fake.with(|script| script.requests.clone());
+    assert_eq!(requests, [fixture.request("windows")]);
+
+    // An installation SailOver made in another folder keeps it.
+    let previous = fixture.root.join("Previous location");
+    let installed = previous.join("steam-620-macos");
+    std::fs::create_dir_all(&installed).unwrap();
+    let file = fixture.root.join("steam-installations-43.json");
+    let mut receipt = receipt(&installed, "macos");
+    receipt.language = "english".into();
+    save(&file, &[receipt]).unwrap();
+    let fake = Fake::new();
+    let moved = Installations::new(
+        Arc::new(Content(fake.clone())),
+        fixture.sessions.clone(),
+        43,
+        file,
+        fixture.root.clone(),
+        fixture.root.join("home"),
+    );
+    moved.update("620-macos");
+    eventually(|| !moved.state().downloading).await;
+    moved.launch("620-macos", true);
+    eventually(|| !moved.state().launching).await;
+    moved.install(Offer {
+        platform: "macos".into(),
+        ..fixture.offer("macos")
+    });
+    eventually(|| fake.calls().len() == 4).await;
+    let update = Download {
+        language: "english".into(),
+        directory: previous,
+        ..fixture.request("macos")
+    };
+    assert_eq!(
+        fake.with(|script| script.requests.clone()),
+        [update.clone(), update.clone(), update],
+        "an update, a launch's verification and an offer of the installed build"
+    );
+    moved.update("620-windows");
+    assert_eq!(
+        fake.calls().len(),
+        4,
+        "the account has no such installation"
+    );
 }

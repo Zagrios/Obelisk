@@ -10,6 +10,10 @@ One account-scoped attempt to install, verify or repair a game's files. Its life
 **Installation receipt**:
 A record identifying a game installation whose required files were successfully installed. Partial download data is not an installation receipt.
 
+**Offer**:
+What a storefront says SailOver can install of one game: its build for one platform, with Steam's language, before any folder is chosen. A new installation starts from an offer; an installed game launches, updates and uninstalls from its Installation receipt alone.
+_Avoid_: download request, install target
+
 **Cloud archive**:
 SailOver's own local store of each account's save versions, together with the record of which account currently owns each physical save location. One archive serves every storefront, so two storefront copies of a game that share a save location cannot silently adopt each other's saves.
 _Avoid_: vault root, SteamCloud folder

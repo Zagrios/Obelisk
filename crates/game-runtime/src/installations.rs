@@ -1,9 +1,10 @@
 //! One account's installed games of one storefront, and the actions on them:
 //! Transfers, verified launches, uninstalls and Cloud maintenance. Every
-//! action asks one Reservation gate, so a new one cannot touch a running
-//! game's files. The account's Installation receipts live here, in the file
-//! SailOver keeps per storefront and account. So does the account's one Cloud
-//! question, whichever sync asks it.
+//! action asks one Reservation gate, which the state publishes so the UI
+//! shows exactly what may start. The account's Installation receipts live
+//! here, in the file SailOver keeps per storefront and account, and each
+//! action names one of them: the Transfers it needs are built here. So is the
+//! account's one Cloud question, whichever sync asks it.
 use crate::{
     cloud, cloud_status,
     sessions::{self, Admission, Canceller, Failure, Sessions},
@@ -27,12 +28,16 @@ pub use crate::sessions::BoxFuture;
 pub trait Storefront: sessions::Storefront {
     /// An Installation receipt, as the account's receipt file records it.
     type Receipt: Clone + fmt::Debug + PartialEq + Serialize + DeserializeOwned + Send + Sync;
-    /// One Transfer the player asked for: a game's platform, installed under
-    /// a parent folder.
+    /// One Transfer: a game's platform, installed under a parent folder.
     type Request: Clone + fmt::Debug + PartialEq + Send + Sync;
+    /// What the storefront offers to install: one game's build, before any
+    /// folder is chosen.
+    type Offer: Clone + fmt::Debug + PartialEq + Send + Sync;
     /// Shown when the receipt file cannot be read, or saved.
     const RECEIPTS_UNAVAILABLE: &'static str;
     const RECEIPTS_NOT_SAVED: &'static str;
+    /// Where new installations go, inside SailOver's library directory.
+    const GAMES_DIRECTORY: &'static str;
 
     fn receipt_game(receipt: &Self::Receipt) -> Self::Game;
     /// A receipt's identity: one per game and platform.
@@ -47,6 +52,19 @@ pub trait Storefront: sessions::Storefront {
     fn request_directory(request: &Self::Request) -> &Path;
     /// The name a Transfer's progress gives the game.
     fn transfer_name(request: &Self::Request) -> String;
+    fn offer_game(offer: &Self::Offer) -> Self::Game;
+    fn offer_platform(offer: &Self::Offer) -> &str;
+    /// The Transfer that installs `offer` under `directory`.
+    fn install_request(offer: &Self::Offer, directory: &Path) -> Self::Request;
+    /// The Transfer that verifies `receipt`'s installation, or updates it in
+    /// place, with the build it records.
+    fn update_request(receipt: &Self::Receipt) -> Self::Request;
+    /// Fills in what an older receipt file did not record, from the
+    /// installation itself. `true` when it changed the receipt.
+    fn complete(receipt: &mut Self::Receipt) -> bool {
+        let _ = receipt;
+        false
+    }
 }
 
 /// A storefront's part of one account's installations: where its games and
@@ -110,6 +128,37 @@ pub struct Maintenance<S: Storefront> {
     pub cloud: cloud::Status,
 }
 
+/// What may start now, of one kind of action.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Opening<G> {
+    Closed,
+    /// It may start, for any game but these.
+    Open {
+        except: Vec<G>,
+    },
+}
+
+impl<G: PartialEq> Opening<G> {
+    pub fn allows(&self, game: &G) -> bool {
+        match self {
+            Self::Closed => false,
+            Self::Open { except } => !except.contains(game),
+        }
+    }
+}
+
+/// What the Reservation lets start now. One action of the storefront at a time
+/// holds every game; a Game session holds only its own game, and a Transfer or
+/// uninstall keeps only its own game's Cloud maintenance out.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Gate<G> {
+    /// A Transfer or uninstall.
+    pub modify: Opening<G>,
+    /// A launch, of any game a Transfer may touch: no Game session runs.
+    pub launch: bool,
+    pub maintain: Opening<G>,
+}
+
 /// A failure the player sees, and what it is about.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Report {
@@ -145,6 +194,7 @@ pub struct State<S: Storefront> {
     /// time one is raised.
     pub warning: Option<(u64, String)>,
     pub maintenance: Option<Maintenance<S>>,
+    pub gate: Gate<S::Game>,
 }
 
 struct Inner<S: Storefront> {
@@ -168,8 +218,20 @@ struct Shared<S: Storefront> {
     sessions: Arc<Sessions<S>>,
     account: S::Account,
     receipts_file: PathBuf,
+    /// SailOver's library directory, where new installations go.
+    library: PathBuf,
     /// SailOver's library directory and the user's home: never removed.
     protected: Vec<PathBuf>,
+    /// Publishes the gate again whenever the Game sessions change.
+    watcher: Mutex<Option<tokio::task::JoinHandle<()>>>,
+}
+
+impl<S: Storefront> Drop for Shared<S> {
+    fn drop(&mut self) {
+        if let Some(watcher) = self.watcher.lock().unwrap().take() {
+            watcher.abort();
+        }
+    }
 }
 
 /// The runtime every installation action runs on.
@@ -190,6 +252,7 @@ impl<S: Storefront> Shared<S> {
         let mut inner = self.inner.lock().unwrap();
         let before = inner.state.clone();
         let result = change(&mut inner);
+        inner.state.gate = gate(&inner, &self.sessions.state());
         let mut after = inner.state.clone();
         after.revision = before.revision;
         if after != before {
@@ -212,28 +275,11 @@ impl<S: Storefront> Shared<S> {
 
     /// The Reservation gate every installation-mutating action asks.
     fn can_modify(&self, inner: &Inner<S>, game: &S::Game) -> bool {
-        let state = &inner.state;
-        !inner.signed_out
-            && !state.downloading
-            && !state.launching
-            && !state.uninstalling
-            && !inner.diagnostic
-            && state.maintenance.is_none()
-            && !protects(&self.sessions.state(), game)
+        gate(inner, &self.sessions.state()).modify.allows(game)
     }
 
-    /// One Cloud operation at a time: a Game session or recovery, a launch,
-    /// or maintenance of any game keeps it closed, and so does this game's
-    /// Transfer or uninstall.
     fn can_maintain_cloud(&self, inner: &Inner<S>, game: &S::Game) -> bool {
-        let state = &inner.state;
-        !inner.signed_out
-            && !inner.diagnostic
-            && state.maintenance.is_none()
-            && !state.launching
-            && !(state.downloading && state.transfer_game.as_ref() == Some(game))
-            && !(state.uninstalling && state.uninstall_game.as_ref() == Some(game))
-            && !self.sessions.state().busy()
+        gate(inner, &self.sessions.state()).maintain.allows(game)
     }
 
     /// Shows maintenance `number`'s progress while it runs. Retry and Launch
@@ -373,13 +419,71 @@ fn active(state: TransferState) -> bool {
     )
 }
 
-/// Game sessions or recovery hold the game.
-fn protects<S: sessions::Storefront>(state: &sessions::State<S>, game: &S::Game) -> bool {
-    state.recovering
-        || state
-            .active
-            .as_ref()
-            .is_some_and(|active| &active.game == game)
+/// What the Reservation lets start, given the account's installations and the
+/// storefront's Game sessions.
+fn gate<S: Storefront>(inner: &Inner<S>, sessions: &sessions::State<S>) -> Gate<S::Game> {
+    let state = &inner.state;
+    // One action of the storefront at a time; recovery may hold any game.
+    let storefront = inner.signed_out
+        || inner.diagnostic
+        || state.downloading
+        || state.launching
+        || state.uninstalling
+        || state.maintenance.is_some()
+        || sessions.recovering;
+    let modify = match storefront {
+        true => Opening::Closed,
+        false => Opening::Open {
+            except: sessions
+                .active
+                .iter()
+                .map(|active| active.game.clone())
+                .collect(),
+        },
+    };
+    // One Cloud operation at a time: a Game session, a launch or maintenance
+    // keeps every game out, a Transfer or uninstall only its own.
+    let cloud = inner.signed_out
+        || inner.diagnostic
+        || state.maintenance.is_some()
+        || state.launching
+        || sessions.busy();
+    let maintain = match cloud {
+        true => Opening::Closed,
+        false => Opening::Open {
+            except: [
+                state.transfer_game.clone().filter(|_| state.downloading),
+                state.uninstall_game.clone().filter(|_| state.uninstalling),
+            ]
+            .into_iter()
+            .flatten()
+            .collect(),
+        },
+    };
+    Gate {
+        modify,
+        launch: !storefront && !sessions.busy(),
+        maintain,
+    }
+}
+
+impl<S: Storefront> Inner<S> {
+    /// The receipt `id` names, of this account's installations.
+    fn receipt(&self, id: &str) -> Option<S::Receipt> {
+        self.state
+            .receipts
+            .iter()
+            .find(|receipt| S::receipt_id(receipt) == id)
+            .cloned()
+    }
+
+    /// The Transfer of `game` that stopped before its receipt.
+    fn resumable(&self, game: &S::Game) -> Option<S::Request> {
+        self.state
+            .last_download
+            .clone()
+            .filter(|last| &S::request_game(last) == game)
+    }
 }
 
 /// The receipts in `file`, without those whose folder has vanished: the game
@@ -451,6 +555,11 @@ impl<S: Storefront> Installations<S> {
                 report: None,
                 warning: None,
                 maintenance: None,
+                gate: Gate {
+                    modify: Opening::Closed,
+                    launch: false,
+                    maintain: Opening::Closed,
+                },
             },
             signed_out: false,
             diagnostic: false,
@@ -463,21 +572,45 @@ impl<S: Storefront> Installations<S> {
         match load(&receipts_file, |receipt: &S::Receipt| {
             S::receipt_directory(receipt)
         }) {
-            Ok(receipts) => inner.state.receipts = receipts,
+            Ok(mut receipts) => {
+                // Every receipt is completed, not only the first that changes.
+                let mut completed = false;
+                for receipt in &mut receipts {
+                    completed |= S::complete(receipt);
+                }
+                if completed && save(&receipts_file, &receipts).is_err() {
+                    Shared::<S>::warn(&mut inner, S::RECEIPTS_NOT_SAVED);
+                }
+                inner.state.receipts = receipts;
+            }
             Err(_) => Shared::<S>::warn(&mut inner, S::RECEIPTS_UNAVAILABLE),
         }
+        // The watcher follows the sessions from the state this gate shows.
+        let seen = sessions.state();
+        inner.state.gate = gate(&inner, &seen);
         let (published, _) = watch::channel(inner.state.clone());
-        Self {
-            shared: Arc::new(Shared {
-                inner: Mutex::new(inner),
-                published,
-                content,
-                sessions,
-                account,
-                receipts_file,
-                protected: vec![library, home],
-            }),
-        }
+        let shared = Arc::new(Shared {
+            inner: Mutex::new(inner),
+            published,
+            content,
+            sessions: sessions.clone(),
+            account,
+            receipts_file,
+            protected: vec![library.clone(), home],
+            library,
+            watcher: Mutex::new(None),
+        });
+        let weak = Arc::downgrade(&shared);
+        let watcher = runtime().spawn(async move {
+            let mut after = seen.revision;
+            loop {
+                after = sessions.changed(after).await.revision;
+                let Some(shared) = weak.upgrade() else { return };
+                shared.update(|_| {});
+            }
+        });
+        *shared.watcher.lock().unwrap() = Some(watcher);
+        Self { shared }
     }
 
     pub fn state(&self) -> State<S> {
@@ -491,19 +624,50 @@ impl<S: Storefront> Installations<S> {
         receiver.borrow().clone()
     }
 
-    /// Whether an action may touch `game`'s installation now.
-    pub fn can_modify(&self, game: &S::Game) -> bool {
-        let inner = self.shared.inner.lock().unwrap();
-        self.shared.can_modify(&inner, game)
-    }
-
     /// A DEBUG diagnostic holds the storefront while it runs.
     pub fn set_diagnostic(&self, running: bool) {
         self.shared.update(|inner| inner.diagnostic = running);
     }
 
-    /// Installs `request`'s game, or updates its installation in place.
-    pub fn download(&self, request: S::Request) {
+    /// Installs what `offer` names under SailOver's library, or updates the
+    /// installation of its platform in place. A Transfer of the game that
+    /// stopped before its receipt resumes instead.
+    pub fn install(&self, offer: S::Offer) {
+        let request = {
+            let inner = self.shared.inner.lock().unwrap();
+            let game = S::offer_game(&offer);
+            let installed = inner.state.receipts.iter().find(|receipt| {
+                S::receipt_game(receipt) == game
+                    && S::receipt_platform(receipt) == S::offer_platform(&offer)
+            });
+            inner
+                .resumable(&game)
+                .or_else(|| installed.map(S::update_request))
+                .unwrap_or_else(|| {
+                    S::install_request(&offer, &self.shared.library.join(S::GAMES_DIRECTORY))
+                })
+        };
+        self.download(request);
+    }
+
+    /// Updates the installation `receipt` names in place, with the build it
+    /// records. A Transfer of the game that stopped before its receipt
+    /// resumes instead.
+    pub fn update(&self, receipt: &str) {
+        let request = {
+            let inner = self.shared.inner.lock().unwrap();
+            inner.receipt(receipt).map(|receipt| {
+                inner
+                    .resumable(&S::receipt_game(&receipt))
+                    .unwrap_or_else(|| S::update_request(&receipt))
+            })
+        };
+        if let Some(request) = request {
+            self.download(request);
+        }
+    }
+
+    fn download(&self, request: S::Request) {
         let shared = &self.shared;
         let started = shared.update(|inner| {
             if !shared.can_modify(inner, &S::request_game(&request)) {
@@ -533,21 +697,6 @@ impl<S: Storefront> Installations<S> {
         });
     }
 
-    /// Resumes the Transfer that stopped before its receipt.
-    pub fn resume_download(&self) {
-        let last = self
-            .shared
-            .inner
-            .lock()
-            .unwrap()
-            .state
-            .last_download
-            .clone();
-        if let Some(request) = last {
-            self.download(request);
-        }
-    }
-
     /// Stops the Transfer, and a launch still preparing. A running game keeps
     /// its Game session.
     pub fn cancel(&self) {
@@ -565,16 +714,14 @@ impl<S: Storefront> Installations<S> {
         }
     }
 
-    /// Launches the installed game, verifying it first with `verification`
-    /// when `verify` asks for it or its receipt needs it.
-    pub fn launch(&self, receipt: S::Receipt, verification: S::Request, verify: bool) {
+    /// Launches the installation `receipt` names, verifying it first when
+    /// `verify` asks for it or its receipt needs it.
+    pub fn launch(&self, receipt: &str, verify: bool) {
         let shared = &self.shared;
-        let game = S::receipt_game(&receipt);
         let admission = shared.update(|inner| {
-            if !shared.can_modify(inner, &game)
-                || !inner.state.receipts.contains(&receipt)
-                || shared.sessions.state().busy()
-            {
+            let receipt = inner.receipt(receipt)?;
+            let game = S::receipt_game(&receipt);
+            if !shared.can_modify(inner, &game) || shared.sessions.state().busy() {
                 return None;
             }
             let admission = shared
@@ -587,11 +734,12 @@ impl<S: Storefront> Installations<S> {
             inner.state.report = None;
             inner.cancellation_requested = false;
             inner.launch = Some(admission.canceller());
-            Some((admission, verify))
+            Some((admission, verify, receipt, game))
         });
-        let Some((admission, verify)) = admission else {
+        let Some((admission, verify, receipt, game)) = admission else {
             return;
         };
+        let verification = S::update_request(&receipt);
         let canceller = admission.canceller();
         let shared = shared.clone();
         runtime().spawn(async move {
@@ -653,15 +801,15 @@ impl<S: Storefront> Installations<S> {
         });
     }
 
-    /// Removes the installation of `receipt`. `request` names the game as the
-    /// storefront knows it. The Cloud archive takes the saves first; the
-    /// removal is recorded for Cloud sync even if the account signs out
-    /// meanwhile, and a Windows installation's prefix goes last.
-    pub fn uninstall(&self, receipt: S::Receipt, request: S::Request) {
+    /// Removes the installation `receipt` names. The Cloud archive takes the
+    /// saves first; the removal is recorded for Cloud sync even if the account
+    /// signs out meanwhile, and a Windows installation's prefix goes last.
+    pub fn uninstall(&self, receipt: &str) {
         let shared = &self.shared;
-        let game = S::receipt_game(&receipt);
         let remaining = shared.update(|inner| {
-            if !shared.can_modify(inner, &game) || !inner.state.receipts.contains(&receipt) {
+            let receipt = inner.receipt(receipt)?;
+            let game = S::receipt_game(&receipt);
+            if !shared.can_modify(inner, &game) {
                 return None;
             }
             inner.state.uninstalling = true;
@@ -674,9 +822,12 @@ impl<S: Storefront> Installations<S> {
                 .filter(|kept| **kept != receipt)
                 .cloned()
                 .collect();
-            Some(remaining)
+            Some((remaining, receipt, game))
         });
-        let Some(remaining) = remaining else { return };
+        let Some((remaining, receipt, game)) = remaining else {
+            return;
+        };
+        let request = S::update_request(&receipt);
         let shared = shared.clone();
         runtime().spawn(async move {
             let outcome = shared.remove(&receipt, &request, &remaining).await;
@@ -734,25 +885,25 @@ impl<S: Storefront> Installations<S> {
         }
     }
 
-    /// Whether the player may sync `game`'s Cloud saves now.
-    pub fn can_maintain_cloud(&self, game: &S::Game) -> bool {
-        let inner = self.shared.inner.lock().unwrap();
-        self.shared.can_maintain_cloud(&inner, game)
-    }
-
-    /// Syncs `game`'s Cloud saves: those of its installation `installed`
+    /// Syncs `game`'s Cloud saves: those of the installation `installed`
     /// names, or, uninstalled, those its saved Cloud context names. Its idle
     /// guard keeps every launch of the storefront out, so it holds the
     /// Reservation of every game until it ends. A failure shows only in the
     /// game's Cloud indicator: Sync now is the retry.
-    pub fn maintain_cloud(&self, game: S::Game, installed: Option<(S::Receipt, S::Request)>) {
+    pub fn maintain_cloud(&self, game: S::Game, installed: Option<&str>) {
         let shared = &self.shared;
         let started = shared.update(|inner| {
-            if !shared.can_maintain_cloud(inner, &game)
-                || installed.as_ref().is_some_and(|(receipt, _)| {
-                    S::receipt_game(receipt) != game || !inner.state.receipts.contains(receipt)
-                })
-            {
+            let installed = match installed {
+                None => None,
+                Some(id) => {
+                    let receipt = inner
+                        .receipt(id)
+                        .filter(|receipt| S::receipt_game(receipt) == game)?;
+                    let request = S::update_request(&receipt);
+                    Some((receipt, request))
+                }
+            };
+            if !shared.can_maintain_cloud(inner, &game) {
                 return None;
             }
             inner.maintenances += 1;
@@ -771,9 +922,9 @@ impl<S: Storefront> Installations<S> {
                     ..Default::default()
                 },
             });
-            Some((number, control))
+            Some((number, control, installed))
         });
-        let Some((number, control)) = started else {
+        let Some((number, control, installed)) = started else {
             return;
         };
         let shared = shared.clone();

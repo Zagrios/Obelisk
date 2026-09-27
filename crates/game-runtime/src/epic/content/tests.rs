@@ -158,6 +158,7 @@ impl Fixture {
         std::fs::create_dir_all(&directory).unwrap();
         let receipt = Receipt {
             namespace: "sandbox".into(),
+            catalog_item_id: "catalog".into(),
             app_name: "game".into(),
             name: "Fixture".into(),
             directory: directory.to_string_lossy().into_owned(),
@@ -337,5 +338,59 @@ fn an_uninstalled_windows_build_loses_its_prefix_and_a_mac_build_has_none() {
     assert_eq!(
         fixture.content.directory_name(&windows, &request),
         epic_kit::client::installation_directory_name("sandbox", "catalog", "game", "Windows")
+    );
+}
+
+#[tokio::test]
+async fn an_older_receipt_learns_its_catalog_item_from_the_installation_itself() {
+    let fixture = Fixture::new();
+    let (mut receipt, _) = fixture.installed("Mac");
+    let installed = epic_kit::client::Installation {
+        app_name: "game".into(),
+        namespace: "sandbox".into(),
+        catalog_item_id: "catalog".into(),
+        account_id: ACCOUNT.into(),
+        directory: receipt.directory.clone(),
+        platform: "Mac".into(),
+        total_bytes: 100,
+        build_version: "1".into(),
+        launch_executable: "Game.app".into(),
+        launch_command: String::new(),
+        deployment_id: None,
+        prerequisite: None,
+    };
+    std::fs::write(
+        Path::new(&receipt.directory).join(".sailover-install.json"),
+        serde_json::to_vec(&installed).unwrap(),
+    )
+    .unwrap();
+    receipt.catalog_item_id.clear();
+    let file = fixture.locations.library.join("epic-installations.json");
+    // An older receipt file has no catalog item at all.
+    let mut older = serde_json::to_value([&receipt]).unwrap();
+    older[0].as_object_mut().unwrap().remove("catalogItemId");
+    std::fs::write(&file, serde_json::to_vec(&older).unwrap()).unwrap();
+    let sessions = Arc::new(Sessions::<Epic>::new(Box::new(|| Ok(None))));
+
+    let installations = crate::installations::Installations::new(
+        Arc::new(Content::new(
+            fixture.fake.clone(),
+            Arc::new(|| {}),
+            ACCOUNT.into(),
+            "fr".into(),
+            fixture.locations.clone(),
+        )),
+        sessions,
+        ACCOUNT.to_string(),
+        file.clone(),
+        fixture.locations.library.clone(),
+        fixture.locations.home.clone(),
+    );
+
+    assert_eq!(installations.state().receipts[0].catalog_item_id, "catalog");
+    let saved: Vec<Receipt> = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    assert_eq!(
+        saved[0].catalog_item_id, "catalog",
+        "the file keeps what it learnt"
     );
 }

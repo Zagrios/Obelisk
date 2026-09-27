@@ -1540,6 +1540,17 @@ fn an_installation_names_its_game_and_prerequisite_from_its_own_receipt_only() {
     assert!(read("game", "Windows").is_err());
 }
 
+#[test]
+fn an_installation_tells_its_catalog_item_from_its_own_receipt() {
+    let temp = tempfile::tempdir().unwrap();
+    let installation = launch_installation(temp.path());
+    let directory = std::path::PathBuf::from(&installation.directory);
+    assert_eq!(super::installed_catalog_item(&directory).unwrap(), "base");
+    let incomplete = temp.path().join("incomplete");
+    std::fs::create_dir_all(&incomplete).unwrap();
+    assert!(super::installed_catalog_item(&incomplete).is_err());
+}
+
 #[tokio::test]
 async fn launch_rejects_missing_mismatched_and_escaping_receipts_before_network() {
     let mock = Mock::new(Vec::new());

@@ -359,11 +359,12 @@ final class SteamPresentationTests: XCTestCase {
         let news = FixtureResponses<UInt32, [SteamNews]>()
         let backend = FakeInstallations<SteamGames>()
         backend.onCall = { call in
-            guard case let .download(request) = call else { return }
+            guard case let .install(offer) = call else { return }
             backend.publish {
                 $0.downloading = true
-                $0.transferGame = request.appId
-                $0.transfer = GameTransfer(game: "\(request.appId)", state: .preparing, completedBytes: 0, totalBytes: 0,
+                $0.gate = .action(offer.appId)
+                $0.transferGame = offer.appId
+                $0.transfer = GameTransfer(game: "\(offer.appId)", state: .preparing, completedBytes: 0, totalBytes: 0,
                                            networkBytes: 0, contentBytes: 0, currentFile: "", message: "")
             }
         }
@@ -379,8 +380,7 @@ final class SteamPresentationTests: XCTestCase {
 
         model.installations.downloadSelected()
 
-        XCTAssertEqual(backend.actions, [.download(SteamDownload(game: fixtureGames[0], platform: "macos", language: "tchinese",
-                                                                 directory: root.appending(path: "Games/Steam", directoryHint: .isDirectory)))])
+        XCTAssertEqual(backend.actions, [.install(SteamOffer(appId: 620, name: "Portal 2", platform: "macos", language: "tchinese"))])
         XCTAssertEqual(model.installations.transfer?.state, .preparing, "Progress shows before its first snapshot")
         XCTAssertEqual(model.installations.activeTransferGame, 620)
         model.backToLibrary()
@@ -397,6 +397,7 @@ final class SteamPresentationTests: XCTestCase {
 
         backend.publish {
             $0.downloading = false
+            $0.gate = .open
             $0.transfer?.state = .complete
             $0.receipts = [SteamInstallReceipt(appId: 620, name: "Portal 2", directory: root.appending(path: "Games/Steam/steam-620-macos").path,
                                                platform: "macos", language: "tchinese", totalBytes: 100)]
@@ -412,11 +413,11 @@ final class SteamPresentationTests: XCTestCase {
     }
 
     @MainActor
-    func testExistingInstallationKeepsItsDownloadDirectory() async throws {
-        let fixture = try await launchFixture(parent: "Previous location")
+    func testAnInstalledGameUpdatesItsOwnInstallation() async throws {
+        let fixture = try await launchFixture()
         defer { fixture.cleanUp() }
         fixture.model.installations.downloadSelected()
-        XCTAssertEqual(fixture.backend.actions, [.download(fixture.verification)])
+        XCTAssertEqual(fixture.backend.actions, [.update(fixture.receipt)])
     }
 
     @MainActor
@@ -428,7 +429,7 @@ final class SteamPresentationTests: XCTestCase {
 
         fixture.model.installations.primaryAction()
 
-        XCTAssertEqual(fixture.backend.actions, [.launch(fixture.receipt, verification: fixture.verification, verify: true)])
+        XCTAssertEqual(fixture.backend.actions, [.launch(fixture.receipt, verify: true)])
         fixture.preparing(verifying: true)
         try await eventually { fixture.model.installations.isVerifyingBeforeLaunch }
         XCTAssertEqual(fixture.model.installations.activeTransferGame, 620)
@@ -444,7 +445,7 @@ final class SteamPresentationTests: XCTestCase {
         let fixture = try await launchFixture(verify: false)
         defer { fixture.cleanUp() }
         fixture.model.installations.primaryAction()
-        XCTAssertEqual(fixture.backend.actions, [.launch(fixture.receipt, verification: fixture.verification, verify: false)])
+        XCTAssertEqual(fixture.backend.actions, [.launch(fixture.receipt, verify: false)])
         let restarted = SteamModel(directory: fixture.root, preferences: fixture.preferences)
         XCTAssertFalse(restarted.verifyBeforeLaunch)
         restarted.verifyBeforeLaunch = true
@@ -478,10 +479,11 @@ final class SteamPresentationTests: XCTestCase {
 
         fixture.model.installations.uninstall(receipt)
 
-        XCTAssertEqual(fixture.backend.actions, [.uninstall(receipt, request: fixture.verification)])
+        XCTAssertEqual(fixture.backend.actions, [.uninstall(receipt)])
         fixture.backend.publish {
             $0.uninstalling = true
             $0.uninstallGame = 620
+            $0.gate = .action(620)
         }
         try await eventually { fixture.model.installations.isUninstalling }
         XCTAssertFalse(fixture.model.installations.primaryActionAvailable)
@@ -493,6 +495,7 @@ final class SteamPresentationTests: XCTestCase {
             $0.uninstalling = false
             $0.uninstallGame = nil
             $0.receipts = []
+            $0.gate = .open
         }
         try await eventually { !fixture.model.installations.isUninstalling }
         XCTAssertNil(fixture.model.errorMessage)
@@ -602,7 +605,7 @@ final class SteamPresentationTests: XCTestCase {
         XCTAssertEqual(model.installations.primaryActionTitle, L10n.string("ui.cloud.sync_short"))
         XCTAssertFalse(model.cloud.promptPresented)
         XCTAssertFalse(model.cloud.canCancelSynchronization(for: 620))
-        fixture.sessions.fake.show(nil)
+        fixture.run(nil)
         try await eventually { !model.gameSessions.isBusy }
         XCTAssertFalse(model.installations.isSynchronizingSaves)
         XCTAssertEqual(model.installations.primaryActionTitle, L10n.string("model.game.launch"))
@@ -651,7 +654,7 @@ final class SteamPresentationTests: XCTestCase {
         XCTAssertNil(model.rosetta.prompt)
         XCTAssertTrue(model.gameSessions.isBusy)
         XCTAssertEqual(fixture.sessions.fake.declines.count, 1)
-        fixture.sessions.fake.show(nil)
+        fixture.run(nil)
         try await eventually { !model.gameSessions.isBusy }
         XCTAssertNil(model.errorMessage)
         XCTAssertFalse(model.installations.isLaunching)
@@ -680,7 +683,7 @@ final class SteamPresentationTests: XCTestCase {
         XCTAssertEqual(fixture.backend.actions.last, .answer(620, decision: 4, .cancel))
         session.cloud = .showing(.pending, error: "backend.steam.cloud.conflict")
         fixture.sessions.fake.show(session)
-        fixture.sessions.fake.show(nil)
+        fixture.run(nil)
         try await eventually { !model.gameSessions.isBusy }
         XCTAssertFalse(model.cloud.promptPresented, "A finished session never reopens the sheet by itself")
         XCTAssertNil(model.errorMessage)
@@ -713,7 +716,12 @@ final class SteamPresentationTests: XCTestCase {
         defer { fixture.cleanUp() }
         let (model, backend) = (fixture.model, fixture.backend)
         backend.onCall = { call in
-            if case .maintain = call { backend.publish { $0.maintenance = .init(game: 620, cloud: .showing(.syncing)) } }
+            if case .maintain = call {
+                backend.publish {
+                    $0.maintenance = .init(game: 620, cloud: .showing(.syncing))
+                    $0.gate = .closed
+                }
+            }
         }
         XCTAssertTrue(model.installations.canSyncCloud)
         XCTAssertTrue(model.installations.primaryActionAvailable)
@@ -726,7 +734,10 @@ final class SteamPresentationTests: XCTestCase {
         XCTAssertFalse(model.installations.canUninstallSelectedGame)
         XCTAssertFalse(model.installations.canSyncCloud)
         XCTAssertEqual(model.installations.cloudIndicator?.value, L10n.string("ui.cloud.indicator.syncing"))
-        backend.publish { $0.maintenance = nil }
+        backend.publish {
+            $0.maintenance = nil
+            $0.gate = .open
+        }
         try await eventually { !model.cloud.isMaintaining }
         XCTAssertTrue(model.installations.primaryActionAvailable)
         XCTAssertTrue(model.installations.canSyncCloud)
@@ -735,7 +746,7 @@ final class SteamPresentationTests: XCTestCase {
         fixture.run(.steam(appID: 620))
         try await eventually { model.gameSessions.active?.running == true }
         XCTAssertFalse(model.installations.canSyncCloud, "A running Steam game keeps Steam Cloud maintenance closed")
-        fixture.sessions.fake.show(nil)
+        fixture.run(nil)
         try await eventually { !model.gameSessions.isBusy }
         XCTAssertTrue(model.installations.canSyncCloud)
         model.signOut()
@@ -798,7 +809,6 @@ final class SteamPresentationTests: XCTestCase {
         fixture.model.installations.primaryAction()
         fixture.model.installations.uninstall(fixture.receipt)
         fixture.model.installations.downloadSelected()
-        fixture.model.installations.download(SteamDownload(game: fixtureGames[0], platform: "macos", language: "french", directory: fixture.root))
         XCTAssertEqual(fixture.backend.actions.count, 1, "Only the first launch reached Rust")
         XCTAssertNotNil(fixture.model.installations.selectedReceipt)
         session.host = .disconnected
@@ -815,7 +825,7 @@ final class SteamPresentationTests: XCTestCase {
         XCTAssertEqual(fixture.model.gameSessionMessage, L10n.string("model.steam.gameHostLost"))
         XCTAssertFalse(fixture.model.installations.primaryActionAvailable)
         XCTAssertTrue(fixture.model.gameSessions.isBusy)
-        fixture.sessions.fake.show(nil)
+        fixture.run(nil)
         try await eventually { !fixture.model.gameSessions.isBusy }
         XCTAssertTrue(fixture.model.installations.primaryActionAvailable)
         XCTAssertTrue(fixture.model.installations.canUninstallSelectedGame)
@@ -828,16 +838,16 @@ final class SteamPresentationTests: XCTestCase {
         sessions.fake.show(.steam(appID: 620))
         let fixture = try await launchFixture(verify: false, sessions: sessions)
         defer { fixture.cleanUp() }
-        try await eventually { sessions.active?.running == true }
+        fixture.backend.publish { $0.gate = .session(620) }
+        try await eventually { sessions.active?.running == true && fixture.model.installations.gate == .session(620) }
         XCTAssertEqual(fixture.model.installations.primaryActionTitle, L10n.string("model.game.running"))
         XCTAssertFalse(fixture.model.installations.primaryActionAvailable)
         XCTAssertFalse(fixture.model.installations.canUninstallSelectedGame)
         fixture.model.installations.primaryAction()
         fixture.model.installations.uninstall(fixture.receipt)
         fixture.model.installations.downloadSelected()
-        fixture.model.installations.download(SteamDownload(game: fixtureGames[0], platform: "macos", language: "french", directory: fixture.root))
         XCTAssertEqual(fixture.backend.actions, [])
-        sessions.fake.show(nil)
+        fixture.run(nil)
         try await eventually { !sessions.isBusy }
         XCTAssertEqual(fixture.model.installations.primaryActionTitle, L10n.string("model.game.launch"))
         XCTAssertTrue(fixture.model.installations.primaryActionAvailable)
@@ -872,6 +882,7 @@ final class SteamPresentationTests: XCTestCase {
         fixture.backend.publish {
             $0.launching = false
             $0.launchGame = nil
+            $0.gate = .open
             $0.report = .storefront(key: "backend.steam.runtime.startFailed")
         }
         try await eventually { fixture.model.errorMessage != nil }
@@ -959,10 +970,9 @@ final class SteamPresentationTests: XCTestCase {
     }
 
     @MainActor
-    private func launchFixture(verify: Bool? = nil, parent: String = "Installed games",
-                               sessions: SteamGameSessions? = nil) async throws -> LaunchFixture {
+    private func launchFixture(verify: Bool? = nil, sessions: SteamGameSessions? = nil) async throws -> LaunchFixture {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
-        let installedDirectory = root.appending(path: parent).appending(path: "steam-620-macos")
+        let installedDirectory = root.appending(path: "Installed games/steam-620-macos")
         let receipt = SteamInstallReceipt(appId: 620, name: "Portal 2", directory: installedDirectory.path, platform: "macos", language: "french", totalBytes: 100)
         let suite = "SailOverLaunchFixture.\(UUID().uuidString)"
         let preferences = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -975,11 +985,12 @@ final class SteamPresentationTests: XCTestCase {
         backend.indicators = [(620, .neverSynced)]
         // Rust holds a launch from the call on.
         backend.onCall = { call in
-            guard case let .launch(_, _, verify) = call else { return }
+            guard case let .launch(_, verify) = call else { return }
             backend.publish {
                 $0.launching = true
                 $0.verifyingBeforeLaunch = verify
                 $0.launchGame = 620
+                $0.gate = .action(620)
             }
         }
         let gameSessions = sessions ?? SteamGameSessions()
@@ -1224,28 +1235,25 @@ private struct LaunchFixture {
     let sessions: SteamGameSessions
     let receipt: SteamInstallReceipt
 
-    /// The Transfer that verifies or updates the installation in place.
-    var verification: SteamDownload {
-        SteamDownload(game: fixtureGames[0], platform: "macos", language: "french",
-                      directory: URL(fileURLWithPath: receipt.directory).deletingLastPathComponent())
-    }
-
-    /// Rust admitted the launch, which prepares.
+    /// Rust admitted the launch, which prepares and holds the storefront.
     func preparing(verifying: Bool = false) {
         backend.publish {
             $0.launching = true
             $0.verifyingBeforeLaunch = verifying
             $0.launchGame = 620
+            $0.gate = .action(620)
         }
     }
 
-    /// The launch's supervisor shows `session`: it no longer prepares.
+    /// The launch's supervisor shows `session`, which holds its game; nil once
+    /// the game exited.
     func run(_ session: GameSessionState?) {
         sessions.fake.show(session)
         backend.publish {
             $0.launching = false
             $0.verifyingBeforeLaunch = false
             $0.launchGame = nil
+            $0.gate = session == nil ? .open : .session(620)
         }
     }
 

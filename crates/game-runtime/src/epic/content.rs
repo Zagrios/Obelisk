@@ -228,6 +228,7 @@ impl<N: Network> installations::Content<Epic> for Content<N> {
             let installed = installed?;
             Ok(Receipt {
                 namespace: request.namespace.clone(),
+                catalog_item_id: request.catalog_item_id.clone(),
                 app_name: installed.app_name,
                 name: request.title.clone(),
                 directory: installed.directory,

@@ -619,16 +619,6 @@ public protocol EpicAccountInstallationsProtocol: AnyObject, Sendable {
     func answerCloud(game: EpicGameId, decisionId: UInt64, choice: CloudChoice) async throws 
     
     /**
-     * Whether the player may sync the game's Cloud saves now.
-     */
-    func canMaintainCloud(game: EpicGameId)  -> Bool
-    
-    /**
-     * Whether an action may touch the game's installation now.
-     */
-    func canModify(game: EpicGameId)  -> Bool
-    
-    /**
      * Stops the Transfer, and a launch still preparing.
      */
     func cancel() 
@@ -644,22 +634,23 @@ public protocol EpicAccountInstallationsProtocol: AnyObject, Sendable {
      */
     func cloudIndicators(games: [EpicGameId]) async throws  -> [EpicCloudIndicator]
     
-    func download(request: EpicDownloadRequest) 
+    /**
+     * Installs what `offer` names, or updates the installation of its
+     * platform; a Transfer of the game that stopped resumes instead.
+     */
+    func install(offer: EpicOffer) 
     
     /**
-     * Launches the installed build, verifying it first with `verification`
-     * when `verify` asks for it or its receipt needs it.
+     * Launches the installation `receipt` names, verifying it first when
+     * `verify` asks for it or its receipt needs it.
      */
-    func launch(receipt: EpicReceipt, verification: EpicDownloadRequest, verify: Bool) 
+    func launch(receipt: String, verify: Bool) 
     
     /**
-     * Syncs the game's Cloud saves: those of the build `receipt` records,
-     * with the Transfer `request` names, or, when both are `None`, those the
-     * uninstalled game's journal saved.
+     * Syncs the game's Cloud saves: those of the installation `receipt`
+     * names, or, when `None`, those the uninstalled game's journal saved.
      */
-    func maintainCloud(game: EpicGameId, receipt: EpicReceipt?, request: EpicDownloadRequest?) 
-    
-    func resumeDownload() 
+    func maintainCloud(game: EpicGameId, receipt: String?) 
     
     /**
      * A DEBUG diagnostic holds the storefront while it runs.
@@ -674,7 +665,12 @@ public protocol EpicAccountInstallationsProtocol: AnyObject, Sendable {
     
     func state()  -> EpicInstallationsState
     
-    func uninstall(receipt: EpicReceipt, request: EpicDownloadRequest) 
+    func uninstall(receipt: String) 
+    
+    /**
+     * Updates the installation `receipt` names in place.
+     */
+    func update(receipt: String) 
     
 }
 /**
@@ -773,32 +769,6 @@ open func answerCloud(game: EpicGameId, decisionId: UInt64, choice: CloudChoice)
 }
     
     /**
-     * Whether the player may sync the game's Cloud saves now.
-     */
-open func canMaintainCloud(game: EpicGameId) -> Bool  {
-    return try!  FfiConverterBool.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_sailover_bridge_fn_method_epicaccountinstallations_can_maintain_cloud(
-            self.uniffiCloneHandle(),
-        FfiConverterTypeEpicGameId_lower(game),uniffiCallStatus
-    )
-})
-}
-    
-    /**
-     * Whether an action may touch the game's installation now.
-     */
-open func canModify(game: EpicGameId) -> Bool  {
-    return try!  FfiConverterBool.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_sailover_bridge_fn_method_epicaccountinstallations_can_modify(
-            self.uniffiCloneHandle(),
-        FfiConverterTypeEpicGameId_lower(game),uniffiCallStatus
-    )
-})
-}
-    
-    /**
      * Stops the Transfer, and a launch still preparing.
      */
 open func cancel()  {try! rustCall() {
@@ -849,50 +819,43 @@ open func cloudIndicators(games: [EpicGameId])async throws  -> [EpicCloudIndicat
         )
 }
     
-open func download(request: EpicDownloadRequest)  {try! rustCall() {
+    /**
+     * Installs what `offer` names, or updates the installation of its
+     * platform; a Transfer of the game that stopped resumes instead.
+     */
+open func install(offer: EpicOffer)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_sailover_bridge_fn_method_epicaccountinstallations_download(
+    uniffi_sailover_bridge_fn_method_epicaccountinstallations_install(
             self.uniffiCloneHandle(),
-        FfiConverterTypeEpicDownloadRequest_lower(request),uniffiCallStatus
+        FfiConverterTypeEpicOffer_lower(offer),uniffiCallStatus
     )
 }
 }
     
     /**
-     * Launches the installed build, verifying it first with `verification`
-     * when `verify` asks for it or its receipt needs it.
+     * Launches the installation `receipt` names, verifying it first when
+     * `verify` asks for it or its receipt needs it.
      */
-open func launch(receipt: EpicReceipt, verification: EpicDownloadRequest, verify: Bool)  {try! rustCall() {
+open func launch(receipt: String, verify: Bool)  {try! rustCall() {
         uniffiCallStatus in
     uniffi_sailover_bridge_fn_method_epicaccountinstallations_launch(
             self.uniffiCloneHandle(),
-        FfiConverterTypeEpicReceipt_lower(receipt),
-        FfiConverterTypeEpicDownloadRequest_lower(verification),
+        FfiConverterString.lower(receipt),
         FfiConverterBool.lower(verify),uniffiCallStatus
     )
 }
 }
     
     /**
-     * Syncs the game's Cloud saves: those of the build `receipt` records,
-     * with the Transfer `request` names, or, when both are `None`, those the
-     * uninstalled game's journal saved.
+     * Syncs the game's Cloud saves: those of the installation `receipt`
+     * names, or, when `None`, those the uninstalled game's journal saved.
      */
-open func maintainCloud(game: EpicGameId, receipt: EpicReceipt?, request: EpicDownloadRequest?)  {try! rustCall() {
+open func maintainCloud(game: EpicGameId, receipt: String?)  {try! rustCall() {
         uniffiCallStatus in
     uniffi_sailover_bridge_fn_method_epicaccountinstallations_maintain_cloud(
             self.uniffiCloneHandle(),
         FfiConverterTypeEpicGameId_lower(game),
-        FfiConverterOptionTypeEpicReceipt.lower(receipt),
-        FfiConverterOptionTypeEpicDownloadRequest.lower(request),uniffiCallStatus
-    )
-}
-}
-    
-open func resumeDownload()  {try! rustCall() {
-        uniffiCallStatus in
-    uniffi_sailover_bridge_fn_method_epicaccountinstallations_resume_download(
-            self.uniffiCloneHandle(),uniffiCallStatus
+        FfiConverterOptionString.lower(receipt),uniffiCallStatus
     )
 }
 }
@@ -930,12 +893,23 @@ open func state() -> EpicInstallationsState  {
 })
 }
     
-open func uninstall(receipt: EpicReceipt, request: EpicDownloadRequest)  {try! rustCall() {
+open func uninstall(receipt: String)  {try! rustCall() {
         uniffiCallStatus in
     uniffi_sailover_bridge_fn_method_epicaccountinstallations_uninstall(
             self.uniffiCloneHandle(),
-        FfiConverterTypeEpicReceipt_lower(receipt),
-        FfiConverterTypeEpicDownloadRequest_lower(request),uniffiCallStatus
+        FfiConverterString.lower(receipt),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * Updates the installation `receipt` names in place.
+     */
+open func update(receipt: String)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_sailover_bridge_fn_method_epicaccountinstallations_update(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(receipt),uniffiCallStatus
     )
 }
 }
@@ -1716,16 +1690,6 @@ public protocol SteamAccountInstallationsProtocol: AnyObject, Sendable {
     func answerCloud(appId: UInt32, decisionId: UInt64, choice: CloudChoice) async throws 
     
     /**
-     * Whether the player may sync the game's Cloud saves now.
-     */
-    func canMaintainCloud(appId: UInt32)  -> Bool
-    
-    /**
-     * Whether an action may touch the game's installation now.
-     */
-    func canModify(appId: UInt32)  -> Bool
-    
-    /**
      * Stops the Transfer, and a launch still preparing.
      */
     func cancel() 
@@ -1741,22 +1705,23 @@ public protocol SteamAccountInstallationsProtocol: AnyObject, Sendable {
      */
     func cloudIndicators(appIds: [UInt32]) async throws  -> [SteamCloudIndicator]
     
-    func download(request: SteamDownloadRequest) 
+    /**
+     * Installs what `offer` names, or updates the installation of its
+     * platform; a Transfer of the game that stopped resumes instead.
+     */
+    func install(offer: SteamOffer) 
     
     /**
-     * Launches the installed game, verifying it first with `verification`
-     * when `verify` asks for it or its receipt needs it.
+     * Launches the installation `receipt` names, verifying it first when
+     * `verify` asks for it or its receipt needs it.
      */
-    func launch(receipt: SteamReceipt, verification: SteamDownloadRequest, verify: Bool) 
+    func launch(receipt: String, verify: Bool) 
     
     /**
      * Syncs the game's Cloud saves: those of the installation `receipt`
-     * records, with the Transfer `request` names, or an uninstalled game's
-     * when both are `None`.
+     * names, or an uninstalled game's when `None`.
      */
-    func maintainCloud(appId: UInt32, receipt: SteamReceipt?, request: SteamDownloadRequest?) 
-    
-    func resumeDownload() 
+    func maintainCloud(appId: UInt32, receipt: String?) 
     
     /**
      * A DEBUG diagnostic holds the storefront while it runs.
@@ -1771,7 +1736,12 @@ public protocol SteamAccountInstallationsProtocol: AnyObject, Sendable {
     
     func state()  -> SteamInstallationsState
     
-    func uninstall(receipt: SteamReceipt, request: SteamDownloadRequest) 
+    func uninstall(receipt: String) 
+    
+    /**
+     * Updates the installation `receipt` names in place.
+     */
+    func update(receipt: String) 
     
 }
 /**
@@ -1868,32 +1838,6 @@ open func answerCloud(appId: UInt32, decisionId: UInt64, choice: CloudChoice)asy
 }
     
     /**
-     * Whether the player may sync the game's Cloud saves now.
-     */
-open func canMaintainCloud(appId: UInt32) -> Bool  {
-    return try!  FfiConverterBool.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_sailover_bridge_fn_method_steamaccountinstallations_can_maintain_cloud(
-            self.uniffiCloneHandle(),
-        FfiConverterUInt32.lower(appId),uniffiCallStatus
-    )
-})
-}
-    
-    /**
-     * Whether an action may touch the game's installation now.
-     */
-open func canModify(appId: UInt32) -> Bool  {
-    return try!  FfiConverterBool.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_sailover_bridge_fn_method_steamaccountinstallations_can_modify(
-            self.uniffiCloneHandle(),
-        FfiConverterUInt32.lower(appId),uniffiCallStatus
-    )
-})
-}
-    
-    /**
      * Stops the Transfer, and a launch still preparing.
      */
 open func cancel()  {try! rustCall() {
@@ -1944,25 +1888,28 @@ open func cloudIndicators(appIds: [UInt32])async throws  -> [SteamCloudIndicator
         )
 }
     
-open func download(request: SteamDownloadRequest)  {try! rustCall() {
+    /**
+     * Installs what `offer` names, or updates the installation of its
+     * platform; a Transfer of the game that stopped resumes instead.
+     */
+open func install(offer: SteamOffer)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_sailover_bridge_fn_method_steamaccountinstallations_download(
+    uniffi_sailover_bridge_fn_method_steamaccountinstallations_install(
             self.uniffiCloneHandle(),
-        FfiConverterTypeSteamDownloadRequest_lower(request),uniffiCallStatus
+        FfiConverterTypeSteamOffer_lower(offer),uniffiCallStatus
     )
 }
 }
     
     /**
-     * Launches the installed game, verifying it first with `verification`
-     * when `verify` asks for it or its receipt needs it.
+     * Launches the installation `receipt` names, verifying it first when
+     * `verify` asks for it or its receipt needs it.
      */
-open func launch(receipt: SteamReceipt, verification: SteamDownloadRequest, verify: Bool)  {try! rustCall() {
+open func launch(receipt: String, verify: Bool)  {try! rustCall() {
         uniffiCallStatus in
     uniffi_sailover_bridge_fn_method_steamaccountinstallations_launch(
             self.uniffiCloneHandle(),
-        FfiConverterTypeSteamReceipt_lower(receipt),
-        FfiConverterTypeSteamDownloadRequest_lower(verification),
+        FfiConverterString.lower(receipt),
         FfiConverterBool.lower(verify),uniffiCallStatus
     )
 }
@@ -1970,24 +1917,14 @@ open func launch(receipt: SteamReceipt, verification: SteamDownloadRequest, veri
     
     /**
      * Syncs the game's Cloud saves: those of the installation `receipt`
-     * records, with the Transfer `request` names, or an uninstalled game's
-     * when both are `None`.
+     * names, or an uninstalled game's when `None`.
      */
-open func maintainCloud(appId: UInt32, receipt: SteamReceipt?, request: SteamDownloadRequest?)  {try! rustCall() {
+open func maintainCloud(appId: UInt32, receipt: String?)  {try! rustCall() {
         uniffiCallStatus in
     uniffi_sailover_bridge_fn_method_steamaccountinstallations_maintain_cloud(
             self.uniffiCloneHandle(),
         FfiConverterUInt32.lower(appId),
-        FfiConverterOptionTypeSteamReceipt.lower(receipt),
-        FfiConverterOptionTypeSteamDownloadRequest.lower(request),uniffiCallStatus
-    )
-}
-}
-    
-open func resumeDownload()  {try! rustCall() {
-        uniffiCallStatus in
-    uniffi_sailover_bridge_fn_method_steamaccountinstallations_resume_download(
-            self.uniffiCloneHandle(),uniffiCallStatus
+        FfiConverterOptionString.lower(receipt),uniffiCallStatus
     )
 }
 }
@@ -2025,12 +1962,23 @@ open func state() -> SteamInstallationsState  {
 })
 }
     
-open func uninstall(receipt: SteamReceipt, request: SteamDownloadRequest)  {try! rustCall() {
+open func uninstall(receipt: String)  {try! rustCall() {
         uniffiCallStatus in
     uniffi_sailover_bridge_fn_method_steamaccountinstallations_uninstall(
             self.uniffiCloneHandle(),
-        FfiConverterTypeSteamReceipt_lower(receipt),
-        FfiConverterTypeSteamDownloadRequest_lower(request),uniffiCallStatus
+        FfiConverterString.lower(receipt),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * Updates the installation `receipt` names in place.
+     */
+open func update(receipt: String)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_sailover_bridge_fn_method_steamaccountinstallations_update(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(receipt),uniffiCallStatus
     )
 }
 }
@@ -3607,80 +3555,6 @@ public func FfiConverterTypeEpicCredentials_lower(_ value: EpicCredentials) -> R
 }
 
 
-/**
- * An Epic Transfer of one game's build; `directory` is the parent folder the
- * installation goes in.
- */
-public struct EpicDownloadRequest: Equatable, Hashable {
-    public var namespace: String
-    public var catalogItemId: String
-    public var appName: String
-    public var title: String
-    public var platform: String
-    public var directory: String
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(namespace: String, catalogItemId: String, appName: String, title: String, platform: String, directory: String) {
-        self.namespace = namespace
-        self.catalogItemId = catalogItemId
-        self.appName = appName
-        self.title = title
-        self.platform = platform
-        self.directory = directory
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension EpicDownloadRequest: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeEpicDownloadRequest: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EpicDownloadRequest {
-        return
-            try EpicDownloadRequest(
-                namespace: FfiConverterString.read(from: &buf), 
-                catalogItemId: FfiConverterString.read(from: &buf), 
-                appName: FfiConverterString.read(from: &buf), 
-                title: FfiConverterString.read(from: &buf), 
-                platform: FfiConverterString.read(from: &buf), 
-                directory: FfiConverterString.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: EpicDownloadRequest, into buf: inout [UInt8]) {
-        FfiConverterString.write(value.namespace, into: &buf)
-        FfiConverterString.write(value.catalogItemId, into: &buf)
-        FfiConverterString.write(value.appName, into: &buf)
-        FfiConverterString.write(value.title, into: &buf)
-        FfiConverterString.write(value.platform, into: &buf)
-        FfiConverterString.write(value.directory, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeEpicDownloadRequest_lift(_ buf: RustBuffer) throws -> EpicDownloadRequest {
-    return try FfiConverterTypeEpicDownloadRequest.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeEpicDownloadRequest_lower(_ value: EpicDownloadRequest) -> RustBuffer {
-    return FfiConverterTypeEpicDownloadRequest.lower(value)
-}
-
-
 public struct EpicFriend: Equatable, Hashable {
     public var accountId: String
     public var displayName: String?
@@ -4076,12 +3950,14 @@ public struct EpicInstallationsState: Equatable, Hashable {
     public var uninstalling: Bool
     public var uninstallGame: EpicGameId?
     /**
-     * A Transfer that stopped before its receipt, which the player can resume.
+     * The game whose Transfer stopped before its receipt: the player can
+     * resume it.
      */
-    public var lastDownload: EpicDownloadRequest?
+    public var resumable: String?
     public var report: InstallationReport?
     public var warning: InstallationWarning?
     public var maintenance: EpicCloudMaintenance?
+    public var gate: InstallationGate
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -4090,8 +3966,9 @@ public struct EpicInstallationsState: Equatable, Hashable {
          * Grows with every change.
          */revision: UInt64, receipts: [EpicReceipt], transfer: GameTransfer?, transferGame: EpicGameId?, downloading: Bool, launching: Bool, verifyingBeforeLaunch: Bool, launchGame: EpicGameId?, uninstalling: Bool, uninstallGame: EpicGameId?, 
         /**
-         * A Transfer that stopped before its receipt, which the player can resume.
-         */lastDownload: EpicDownloadRequest?, report: InstallationReport?, warning: InstallationWarning?, maintenance: EpicCloudMaintenance?) {
+         * The game whose Transfer stopped before its receipt: the player can
+         * resume it.
+         */resumable: String?, report: InstallationReport?, warning: InstallationWarning?, maintenance: EpicCloudMaintenance?, gate: InstallationGate) {
         self.revision = revision
         self.receipts = receipts
         self.transfer = transfer
@@ -4102,10 +3979,11 @@ public struct EpicInstallationsState: Equatable, Hashable {
         self.launchGame = launchGame
         self.uninstalling = uninstalling
         self.uninstallGame = uninstallGame
-        self.lastDownload = lastDownload
+        self.resumable = resumable
         self.report = report
         self.warning = warning
         self.maintenance = maintenance
+        self.gate = gate
     }
 
     
@@ -4134,10 +4012,11 @@ public struct FfiConverterTypeEpicInstallationsState: FfiConverterRustBuffer {
                 launchGame: FfiConverterOptionTypeEpicGameId.read(from: &buf), 
                 uninstalling: FfiConverterBool.read(from: &buf), 
                 uninstallGame: FfiConverterOptionTypeEpicGameId.read(from: &buf), 
-                lastDownload: FfiConverterOptionTypeEpicDownloadRequest.read(from: &buf), 
+                resumable: FfiConverterOptionString.read(from: &buf), 
                 report: FfiConverterOptionTypeInstallationReport.read(from: &buf), 
                 warning: FfiConverterOptionTypeInstallationWarning.read(from: &buf), 
-                maintenance: FfiConverterOptionTypeEpicCloudMaintenance.read(from: &buf)
+                maintenance: FfiConverterOptionTypeEpicCloudMaintenance.read(from: &buf), 
+                gate: FfiConverterTypeInstallationGate.read(from: &buf)
         )
     }
 
@@ -4152,10 +4031,11 @@ public struct FfiConverterTypeEpicInstallationsState: FfiConverterRustBuffer {
         FfiConverterOptionTypeEpicGameId.write(value.launchGame, into: &buf)
         FfiConverterBool.write(value.uninstalling, into: &buf)
         FfiConverterOptionTypeEpicGameId.write(value.uninstallGame, into: &buf)
-        FfiConverterOptionTypeEpicDownloadRequest.write(value.lastDownload, into: &buf)
+        FfiConverterOptionString.write(value.resumable, into: &buf)
         FfiConverterOptionTypeInstallationReport.write(value.report, into: &buf)
         FfiConverterOptionTypeInstallationWarning.write(value.warning, into: &buf)
         FfiConverterOptionTypeEpicCloudMaintenance.write(value.maintenance, into: &buf)
+        FfiConverterTypeInstallationGate.write(value.gate, into: &buf)
     }
 }
 
@@ -4172,6 +4052,75 @@ public func FfiConverterTypeEpicInstallationsState_lift(_ buf: RustBuffer) throw
 #endif
 public func FfiConverterTypeEpicInstallationsState_lower(_ value: EpicInstallationsState) -> RustBuffer {
     return FfiConverterTypeEpicInstallationsState.lower(value)
+}
+
+
+/**
+ * An Epic game SailOver can install: its build for `platform`.
+ */
+public struct EpicOffer: Equatable, Hashable {
+    public var namespace: String
+    public var catalogItemId: String
+    public var appName: String
+    public var title: String
+    public var platform: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(namespace: String, catalogItemId: String, appName: String, title: String, platform: String) {
+        self.namespace = namespace
+        self.catalogItemId = catalogItemId
+        self.appName = appName
+        self.title = title
+        self.platform = platform
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension EpicOffer: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeEpicOffer: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EpicOffer {
+        return
+            try EpicOffer(
+                namespace: FfiConverterString.read(from: &buf), 
+                catalogItemId: FfiConverterString.read(from: &buf), 
+                appName: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                platform: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: EpicOffer, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.namespace, into: &buf)
+        FfiConverterString.write(value.catalogItemId, into: &buf)
+        FfiConverterString.write(value.appName, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterString.write(value.platform, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeEpicOffer_lift(_ buf: RustBuffer) throws -> EpicOffer {
+    return try FfiConverterTypeEpicOffer.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeEpicOffer_lower(_ value: EpicOffer) -> RustBuffer {
+    return FfiConverterTypeEpicOffer.lower(value)
 }
 
 
@@ -4621,6 +4570,79 @@ public func FfiConverterTypeGameTransfer_lift(_ buf: RustBuffer) throws -> GameT
 #endif
 public func FfiConverterTypeGameTransfer_lower(_ value: GameTransfer) -> RustBuffer {
     return FfiConverterTypeGameTransfer.lower(value)
+}
+
+
+/**
+ * What the Reservation lets start now.
+ */
+public struct InstallationGate: Equatable, Hashable {
+    /**
+     * A Transfer or uninstall.
+     */
+    public var modify: GameOpening
+    /**
+     * A launch, of any game a Transfer may touch.
+     */
+    public var launch: Bool
+    public var maintain: GameOpening
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * A Transfer or uninstall.
+         */modify: GameOpening, 
+        /**
+         * A launch, of any game a Transfer may touch.
+         */launch: Bool, maintain: GameOpening) {
+        self.modify = modify
+        self.launch = launch
+        self.maintain = maintain
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension InstallationGate: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeInstallationGate: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> InstallationGate {
+        return
+            try InstallationGate(
+                modify: FfiConverterTypeGameOpening.read(from: &buf), 
+                launch: FfiConverterBool.read(from: &buf), 
+                maintain: FfiConverterTypeGameOpening.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: InstallationGate, into buf: inout [UInt8]) {
+        FfiConverterTypeGameOpening.write(value.modify, into: &buf)
+        FfiConverterBool.write(value.launch, into: &buf)
+        FfiConverterTypeGameOpening.write(value.maintain, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeInstallationGate_lift(_ buf: RustBuffer) throws -> InstallationGate {
+    return try FfiConverterTypeInstallationGate.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeInstallationGate_lower(_ value: InstallationGate) -> RustBuffer {
+    return FfiConverterTypeInstallationGate.lower(value)
 }
 
 
@@ -5184,76 +5206,6 @@ public func FfiConverterTypeSteamCredentials_lower(_ value: SteamCredentials) ->
 }
 
 
-/**
- * A Steam Transfer: `language` picks the depots; `directory` is the parent
- * folder the installation goes in.
- */
-public struct SteamDownloadRequest: Equatable, Hashable {
-    public var appId: UInt32
-    public var name: String
-    public var platform: String
-    public var language: String
-    public var directory: String
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(appId: UInt32, name: String, platform: String, language: String, directory: String) {
-        self.appId = appId
-        self.name = name
-        self.platform = platform
-        self.language = language
-        self.directory = directory
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension SteamDownloadRequest: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeSteamDownloadRequest: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SteamDownloadRequest {
-        return
-            try SteamDownloadRequest(
-                appId: FfiConverterUInt32.read(from: &buf), 
-                name: FfiConverterString.read(from: &buf), 
-                platform: FfiConverterString.read(from: &buf), 
-                language: FfiConverterString.read(from: &buf), 
-                directory: FfiConverterString.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: SteamDownloadRequest, into buf: inout [UInt8]) {
-        FfiConverterUInt32.write(value.appId, into: &buf)
-        FfiConverterString.write(value.name, into: &buf)
-        FfiConverterString.write(value.platform, into: &buf)
-        FfiConverterString.write(value.language, into: &buf)
-        FfiConverterString.write(value.directory, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeSteamDownloadRequest_lift(_ buf: RustBuffer) throws -> SteamDownloadRequest {
-    return try FfiConverterTypeSteamDownloadRequest.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeSteamDownloadRequest_lower(_ value: SteamDownloadRequest) -> RustBuffer {
-    return FfiConverterTypeSteamDownloadRequest.lower(value)
-}
-
-
 public struct SteamFriend: Equatable, Hashable {
     public var steamId: UInt64
     public var displayName: String?
@@ -5695,12 +5647,14 @@ public struct SteamInstallationsState: Equatable, Hashable {
     public var uninstalling: Bool
     public var uninstallGame: UInt32?
     /**
-     * A Transfer that stopped before its receipt, which the player can resume.
+     * The game whose Transfer stopped before its receipt: the player can
+     * resume it.
      */
-    public var lastDownload: SteamDownloadRequest?
+    public var resumable: String?
     public var report: InstallationReport?
     public var warning: InstallationWarning?
     public var maintenance: SteamCloudMaintenance?
+    public var gate: InstallationGate
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -5709,8 +5663,9 @@ public struct SteamInstallationsState: Equatable, Hashable {
          * Grows with every change.
          */revision: UInt64, receipts: [SteamReceipt], transfer: GameTransfer?, transferGame: UInt32?, downloading: Bool, launching: Bool, verifyingBeforeLaunch: Bool, launchGame: UInt32?, uninstalling: Bool, uninstallGame: UInt32?, 
         /**
-         * A Transfer that stopped before its receipt, which the player can resume.
-         */lastDownload: SteamDownloadRequest?, report: InstallationReport?, warning: InstallationWarning?, maintenance: SteamCloudMaintenance?) {
+         * The game whose Transfer stopped before its receipt: the player can
+         * resume it.
+         */resumable: String?, report: InstallationReport?, warning: InstallationWarning?, maintenance: SteamCloudMaintenance?, gate: InstallationGate) {
         self.revision = revision
         self.receipts = receipts
         self.transfer = transfer
@@ -5721,10 +5676,11 @@ public struct SteamInstallationsState: Equatable, Hashable {
         self.launchGame = launchGame
         self.uninstalling = uninstalling
         self.uninstallGame = uninstallGame
-        self.lastDownload = lastDownload
+        self.resumable = resumable
         self.report = report
         self.warning = warning
         self.maintenance = maintenance
+        self.gate = gate
     }
 
     
@@ -5753,10 +5709,11 @@ public struct FfiConverterTypeSteamInstallationsState: FfiConverterRustBuffer {
                 launchGame: FfiConverterOptionUInt32.read(from: &buf), 
                 uninstalling: FfiConverterBool.read(from: &buf), 
                 uninstallGame: FfiConverterOptionUInt32.read(from: &buf), 
-                lastDownload: FfiConverterOptionTypeSteamDownloadRequest.read(from: &buf), 
+                resumable: FfiConverterOptionString.read(from: &buf), 
                 report: FfiConverterOptionTypeInstallationReport.read(from: &buf), 
                 warning: FfiConverterOptionTypeInstallationWarning.read(from: &buf), 
-                maintenance: FfiConverterOptionTypeSteamCloudMaintenance.read(from: &buf)
+                maintenance: FfiConverterOptionTypeSteamCloudMaintenance.read(from: &buf), 
+                gate: FfiConverterTypeInstallationGate.read(from: &buf)
         )
     }
 
@@ -5771,10 +5728,11 @@ public struct FfiConverterTypeSteamInstallationsState: FfiConverterRustBuffer {
         FfiConverterOptionUInt32.write(value.launchGame, into: &buf)
         FfiConverterBool.write(value.uninstalling, into: &buf)
         FfiConverterOptionUInt32.write(value.uninstallGame, into: &buf)
-        FfiConverterOptionTypeSteamDownloadRequest.write(value.lastDownload, into: &buf)
+        FfiConverterOptionString.write(value.resumable, into: &buf)
         FfiConverterOptionTypeInstallationReport.write(value.report, into: &buf)
         FfiConverterOptionTypeInstallationWarning.write(value.warning, into: &buf)
         FfiConverterOptionTypeSteamCloudMaintenance.write(value.maintenance, into: &buf)
+        FfiConverterTypeInstallationGate.write(value.gate, into: &buf)
     }
 }
 
@@ -5861,6 +5819,72 @@ public func FfiConverterTypeSteamNews_lift(_ buf: RustBuffer) throws -> SteamNew
 #endif
 public func FfiConverterTypeSteamNews_lower(_ value: SteamNews) -> RustBuffer {
     return FfiConverterTypeSteamNews.lower(value)
+}
+
+
+/**
+ * A Steam game SailOver can install: its build for `platform`, with the
+ * depots of `language`.
+ */
+public struct SteamOffer: Equatable, Hashable {
+    public var appId: UInt32
+    public var name: String
+    public var platform: String
+    public var language: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(appId: UInt32, name: String, platform: String, language: String) {
+        self.appId = appId
+        self.name = name
+        self.platform = platform
+        self.language = language
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SteamOffer: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSteamOffer: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SteamOffer {
+        return
+            try SteamOffer(
+                appId: FfiConverterUInt32.read(from: &buf), 
+                name: FfiConverterString.read(from: &buf), 
+                platform: FfiConverterString.read(from: &buf), 
+                language: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SteamOffer, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.appId, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.platform, into: &buf)
+        FfiConverterString.write(value.language, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSteamOffer_lift(_ buf: RustBuffer) throws -> SteamOffer {
+    return try FfiConverterTypeSteamOffer.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSteamOffer_lower(_ value: SteamOffer) -> RustBuffer {
+    return FfiConverterTypeSteamOffer.lower(value)
 }
 
 
@@ -7005,6 +7029,82 @@ public func FfiConverterTypeGameKind_lower(_ value: GameKind) -> RustBuffer {
 
 
 
+/**
+ * What may start now, of one kind of action. Games are named as Swift names
+ * them: a Steam app id, or an Epic `namespace:app` pair.
+ */
+
+public enum GameOpening: Equatable, Hashable {
+    
+    case closed
+    /**
+     * It may start, for any game but these.
+     */
+    case `open`(except: [String]
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension GameOpening: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGameOpening: FfiConverterRustBuffer {
+    typealias SwiftType = GameOpening
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GameOpening {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .closed
+        
+        case 2: return .`open`(except: try FfiConverterSequenceString.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: GameOpening, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .closed:
+            writeInt(&buf, Int32(1))
+        
+        
+        case let .`open`(except):
+            writeInt(&buf, Int32(2))
+            FfiConverterSequenceString.write(except, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGameOpening_lift(_ buf: RustBuffer) throws -> GameOpening {
+    return try FfiConverterTypeGameOpening.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGameOpening_lower(_ value: GameOpening) -> RustBuffer {
+    return FfiConverterTypeGameOpening.lower(value)
+}
+
+
+
 
 public enum GamePhase: Equatable, Hashable {
     
@@ -8135,30 +8235,6 @@ fileprivate struct FfiConverterOptionTypeEpicCloudMaintenance: FfiConverterRustB
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterOptionTypeEpicDownloadRequest: FfiConverterRustBuffer {
-    typealias SwiftType = EpicDownloadRequest?
-
-    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
-        guard let value = value else {
-            writeInt(&buf, Int8(0))
-            return
-        }
-        writeInt(&buf, Int8(1))
-        FfiConverterTypeEpicDownloadRequest.write(value, into: &buf)
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
-        switch try readInt(&buf) as Int8 {
-        case 0: return nil
-        case 1: return try FfiConverterTypeEpicDownloadRequest.read(from: &buf)
-        default: throw UniffiInternalError.unexpectedOptionalTag
-        }
-    }
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
 fileprivate struct FfiConverterOptionTypeEpicFriendActivity: FfiConverterRustBuffer {
     typealias SwiftType = EpicFriendActivity?
 
@@ -8199,30 +8275,6 @@ fileprivate struct FfiConverterOptionTypeEpicGameId: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeEpicGameId.read(from: &buf)
-        default: throw UniffiInternalError.unexpectedOptionalTag
-        }
-    }
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-fileprivate struct FfiConverterOptionTypeEpicReceipt: FfiConverterRustBuffer {
-    typealias SwiftType = EpicReceipt?
-
-    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
-        guard let value = value else {
-            writeInt(&buf, Int8(0))
-            return
-        }
-        writeInt(&buf, Int8(1))
-        FfiConverterTypeEpicReceipt.write(value, into: &buf)
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
-        switch try readInt(&buf) as Int8 {
-        case 0: return nil
-        case 1: return try FfiConverterTypeEpicReceipt.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -8375,30 +8427,6 @@ fileprivate struct FfiConverterOptionTypeSteamCredentials: FfiConverterRustBuffe
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterOptionTypeSteamDownloadRequest: FfiConverterRustBuffer {
-    typealias SwiftType = SteamDownloadRequest?
-
-    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
-        guard let value = value else {
-            writeInt(&buf, Int8(0))
-            return
-        }
-        writeInt(&buf, Int8(1))
-        FfiConverterTypeSteamDownloadRequest.write(value, into: &buf)
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
-        switch try readInt(&buf) as Int8 {
-        case 0: return nil
-        case 1: return try FfiConverterTypeSteamDownloadRequest.read(from: &buf)
-        default: throw UniffiInternalError.unexpectedOptionalTag
-        }
-    }
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
 fileprivate struct FfiConverterOptionTypeSteamFriendGame: FfiConverterRustBuffer {
     typealias SwiftType = SteamFriendGame?
 
@@ -8415,30 +8443,6 @@ fileprivate struct FfiConverterOptionTypeSteamFriendGame: FfiConverterRustBuffer
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeSteamFriendGame.read(from: &buf)
-        default: throw UniffiInternalError.unexpectedOptionalTag
-        }
-    }
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-fileprivate struct FfiConverterOptionTypeSteamReceipt: FfiConverterRustBuffer {
-    typealias SwiftType = SteamReceipt?
-
-    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
-        guard let value = value else {
-            writeInt(&buf, Int8(0))
-            return
-        }
-        writeInt(&buf, Int8(1))
-        FfiConverterTypeSteamReceipt.write(value, into: &buf)
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
-        switch try readInt(&buf) as Int8 {
-        case 0: return nil
-        case 1: return try FfiConverterTypeSteamReceipt.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -9242,12 +9246,6 @@ private let initializationResult: InitializationResult = {
     if (uniffi_sailover_bridge_checksum_method_epicaccountinstallations_answer_cloud() != 52452) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sailover_bridge_checksum_method_epicaccountinstallations_can_maintain_cloud() != 12380) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_sailover_bridge_checksum_method_epicaccountinstallations_can_modify() != 17451) {
-        return InitializationResult.apiChecksumMismatch
-    }
     if (uniffi_sailover_bridge_checksum_method_epicaccountinstallations_cancel() != 53509) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -9257,16 +9255,13 @@ private let initializationResult: InitializationResult = {
     if (uniffi_sailover_bridge_checksum_method_epicaccountinstallations_cloud_indicators() != 57280) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sailover_bridge_checksum_method_epicaccountinstallations_download() != 48854) {
+    if (uniffi_sailover_bridge_checksum_method_epicaccountinstallations_install() != 12586) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sailover_bridge_checksum_method_epicaccountinstallations_launch() != 24051) {
+    if (uniffi_sailover_bridge_checksum_method_epicaccountinstallations_launch() != 30298) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sailover_bridge_checksum_method_epicaccountinstallations_maintain_cloud() != 62837) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_sailover_bridge_checksum_method_epicaccountinstallations_resume_download() != 24743) {
+    if (uniffi_sailover_bridge_checksum_method_epicaccountinstallations_maintain_cloud() != 12794) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sailover_bridge_checksum_method_epicaccountinstallations_set_diagnostic() != 55072) {
@@ -9278,16 +9273,13 @@ private let initializationResult: InitializationResult = {
     if (uniffi_sailover_bridge_checksum_method_epicaccountinstallations_state() != 16113) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sailover_bridge_checksum_method_epicaccountinstallations_uninstall() != 19299) {
+    if (uniffi_sailover_bridge_checksum_method_epicaccountinstallations_uninstall() != 60701) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sailover_bridge_checksum_method_epicaccountinstallations_update() != 2200) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sailover_bridge_checksum_method_steamaccountinstallations_answer_cloud() != 31308) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_sailover_bridge_checksum_method_steamaccountinstallations_can_maintain_cloud() != 33141) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_sailover_bridge_checksum_method_steamaccountinstallations_can_modify() != 56972) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sailover_bridge_checksum_method_steamaccountinstallations_cancel() != 36497) {
@@ -9299,16 +9291,13 @@ private let initializationResult: InitializationResult = {
     if (uniffi_sailover_bridge_checksum_method_steamaccountinstallations_cloud_indicators() != 15451) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sailover_bridge_checksum_method_steamaccountinstallations_download() != 62408) {
+    if (uniffi_sailover_bridge_checksum_method_steamaccountinstallations_install() != 23389) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sailover_bridge_checksum_method_steamaccountinstallations_launch() != 22467) {
+    if (uniffi_sailover_bridge_checksum_method_steamaccountinstallations_launch() != 6173) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sailover_bridge_checksum_method_steamaccountinstallations_maintain_cloud() != 61459) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_sailover_bridge_checksum_method_steamaccountinstallations_resume_download() != 64960) {
+    if (uniffi_sailover_bridge_checksum_method_steamaccountinstallations_maintain_cloud() != 46607) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sailover_bridge_checksum_method_steamaccountinstallations_set_diagnostic() != 47687) {
@@ -9320,7 +9309,10 @@ private let initializationResult: InitializationResult = {
     if (uniffi_sailover_bridge_checksum_method_steamaccountinstallations_state() != 36435) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sailover_bridge_checksum_method_steamaccountinstallations_uninstall() != 3822) {
+    if (uniffi_sailover_bridge_checksum_method_steamaccountinstallations_uninstall() != 33980) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sailover_bridge_checksum_method_steamaccountinstallations_update() != 31997) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sailover_bridge_checksum_method_steamlogin_challenge() != 58131) {

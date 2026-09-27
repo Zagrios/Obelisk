@@ -106,6 +106,15 @@ fn native_platform(platform: &str) -> Result<&'static str, EpicError> {
     }
 }
 
+/// The catalog item of the build installed in `directory`, as its own receipt
+/// records it.
+pub fn installed_catalog_item(directory: &Path) -> Result<String, EpicError> {
+    open_installation(directory)?
+        .receipt
+        .map(|receipt| receipt.catalog_item_id)
+        .ok_or_else(|| launch_error("incompleteInstallation"))
+}
+
 fn open_installation(
     directory: &Path,
 ) -> Result<installation::Installation<Installation>, EpicError> {

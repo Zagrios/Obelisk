@@ -196,8 +196,7 @@ private final class Fixture {
     var model: SteamCloudModel { installations.cloud }
 
     init(installed: Bool = false) {
-        let root = URL(fileURLWithPath: "/fixture")
-        installations = SteamInstallations(directory: root, sessions: sessions, cloud: SteamCloudModel(sessions: sessions))
+        installations = SteamInstallations(sessions: sessions, cloud: SteamCloudModel(sessions: sessions))
         receipt = installed ? SteamInstallReceipt(appId: 42, name: "Fixture", directory: "/fixture/Games/Steam/steam-42-macos",
                                                   platform: "macos", language: "english", totalBytes: 0) : nil
     }
@@ -205,14 +204,12 @@ private final class Fixture {
     /// Connects the account as SteamModel does.
     func connect(_ account: UInt64 = 0x0110_0001_0000_002a) {
         installations.selection = {
-            InstallationSelection(game: 42, platform: "macos", installable: true, request: { receipt, directory in
-                SteamDownload(appId: 42, name: "Fixture", platform: receipt?.platform ?? "macos",
-                              language: "english", directory: directory)
-            })
+            InstallationSelection(game: 42, platform: "macos",
+                                  offer: SteamOffer(appId: 42, name: "Fixture", platform: "macos", language: "english"))
         }
         backend = FakeInstallations(receipts: receipt.map { [$0] } ?? [])
         installations.connect(account: account, backend: backend, port: InstallationPort(
-            verifiesBeforeLaunch: { false }, uninstallRequest: { _ in nil }, report: { _ in }, warn: { _ in }
+            verifiesBeforeLaunch: { false }, report: { _ in }, warn: { _ in }
         ))
     }
 

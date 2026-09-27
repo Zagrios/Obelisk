@@ -8,11 +8,11 @@ import Foundation
 final class FakeInstallations<Store: InstallationStorefront>: InstallationsBackend {
     enum Call: Equatable {
         case diagnostic(Bool)
-        case download(Store.Request)
-        case resume
+        case install(Store.Offer)
+        case update(Store.Receipt)
         case cancel
-        case launch(Store.Receipt, verification: Store.Request, verify: Bool)
-        case uninstall(Store.Receipt, request: Store.Request)
+        case launch(Store.Receipt, verify: Bool)
+        case uninstall(Store.Receipt)
         case signedOut
         case maintain(Store.GameID, installed: Store.Receipt?)
         case answer(Store.GameID, decision: UInt64, CloudChoice)
@@ -32,7 +32,7 @@ final class FakeInstallations<Store: InstallationStorefront>: InstallationsBacke
         state = InstallationsSnapshot(
             revision: 1, receipts: receipts, transfer: nil, transferGame: nil, downloading: false, launching: false,
             verifyingBeforeLaunch: false, launchGame: nil, uninstalling: false, uninstallGame: nil,
-            lastDownload: nil, report: nil, warning: nil, maintenance: nil
+            resumable: nil, report: nil, warning: nil, maintenance: nil, gate: .open
         )
     }
 
@@ -60,16 +60,14 @@ final class FakeInstallations<Store: InstallationStorefront>: InstallationsBacke
     }
 
     func setDiagnostic(_ running: Bool) { record(.diagnostic(running)) }
-    func download(_ request: Store.Request) { record(.download(request)) }
-    func resumeDownload() { record(.resume) }
+    func install(_ offer: Store.Offer) { record(.install(offer)) }
+    func update(_ receipt: Store.Receipt) { record(.update(receipt)) }
     func cancel() { record(.cancel) }
-    func launch(_ receipt: Store.Receipt, verification: Store.Request, verify: Bool) {
-        record(.launch(receipt, verification: verification, verify: verify))
-    }
-    func uninstall(_ receipt: Store.Receipt, request: Store.Request) { record(.uninstall(receipt, request: request)) }
+    func launch(_ receipt: Store.Receipt, verify: Bool) { record(.launch(receipt, verify: verify)) }
+    func uninstall(_ receipt: Store.Receipt) { record(.uninstall(receipt)) }
     func signedOut() { record(.signedOut) }
-    func maintainCloud(_ game: Store.GameID, installed: (Store.Receipt, Store.Request)?) {
-        record(.maintain(game, installed: installed?.0))
+    func maintainCloud(_ game: Store.GameID, installed: Store.Receipt?) {
+        record(.maintain(game, installed: installed))
     }
     func answerCloud(_ game: Store.GameID, decisionId: UInt64, choice: CloudChoice) async throws {
         record(.answer(game, decision: decisionId, choice))
@@ -80,6 +78,24 @@ final class FakeInstallations<Store: InstallationStorefront>: InstallationsBacke
     /// The actions Swift forwarded, without diagnostics.
     var actions: [Call] {
         calls.filter { if case .diagnostic = $0 { false } else { true } }
+    }
+}
+
+/// Gates Rust publishes, as a test shows them.
+extension InstallationsGate {
+    /// Nothing holds the storefront.
+    static var open: Self { Self(modify: .open(except: []), launch: true, maintain: .open(except: [])) }
+
+    /// A Game session runs `game`: its files, every launch and every Cloud
+    /// operation wait.
+    static func session(_ game: GameID) -> Self {
+        Self(modify: .open(except: [game]), launch: false, maintain: .closed)
+    }
+
+    /// A Transfer, launch or uninstall of `game` runs: every installation
+    /// waits, and so does the game's own Cloud maintenance.
+    static func action(_ game: GameID) -> Self {
+        Self(modify: .closed, launch: false, maintain: .open(except: [game]))
     }
 }
 

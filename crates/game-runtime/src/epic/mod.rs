@@ -239,6 +239,10 @@ struct Request {
 #[serde(rename_all = "camelCase")]
 pub struct Receipt {
     pub namespace: String,
+    /// The catalog item the build belongs to. Older receipt files lack it;
+    /// the installation's own receipt records it.
+    #[serde(default)]
+    pub catalog_item_id: String,
     pub app_name: String,
     pub name: String,
     pub directory: String,
@@ -261,11 +265,23 @@ pub struct Download {
     pub directory: PathBuf,
 }
 
+/// An Epic game SailOver can install: its build for `platform`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Offer {
+    pub namespace: String,
+    pub catalog_item_id: String,
+    pub app_name: String,
+    pub title: String,
+    pub platform: String,
+}
+
 impl crate::installations::Storefront for Epic {
     type Receipt = Receipt;
     type Request = Download;
+    type Offer = Offer;
     const RECEIPTS_UNAVAILABLE: &'static str = "model.epic.receiptsUnavailable";
     const RECEIPTS_NOT_SAVED: &'static str = "model.epic.receiptsNotSaved";
+    const GAMES_DIRECTORY: &'static str = "Games/Epic";
     fn receipt_game(receipt: &Receipt) -> Store {
         Store {
             namespace: receipt.namespace.clone(),
@@ -304,5 +320,47 @@ impl crate::installations::Storefront for Epic {
     }
     fn transfer_name(request: &Download) -> String {
         request.app_name.clone()
+    }
+    fn offer_game(offer: &Offer) -> Store {
+        Store {
+            namespace: offer.namespace.clone(),
+            app_name: offer.app_name.clone(),
+        }
+    }
+    fn offer_platform(offer: &Offer) -> &str {
+        &offer.platform
+    }
+    fn install_request(offer: &Offer, directory: &std::path::Path) -> Download {
+        Download {
+            namespace: offer.namespace.clone(),
+            catalog_item_id: offer.catalog_item_id.clone(),
+            app_name: offer.app_name.clone(),
+            title: offer.title.clone(),
+            platform: offer.platform.clone(),
+            directory: directory.to_owned(),
+        }
+    }
+    fn update_request(receipt: &Receipt) -> Download {
+        Download {
+            namespace: receipt.namespace.clone(),
+            catalog_item_id: receipt.catalog_item_id.clone(),
+            app_name: receipt.app_name.clone(),
+            title: receipt.name.clone(),
+            platform: receipt.platform.clone(),
+            directory: crate::steam::parent(&receipt.directory),
+        }
+    }
+    fn complete(receipt: &mut Receipt) -> bool {
+        if !receipt.catalog_item_id.is_empty() {
+            return false;
+        }
+        let directory = std::path::Path::new(&receipt.directory);
+        match epic_kit::client::installed_catalog_item(directory) {
+            Ok(catalog_item_id) => {
+                receipt.catalog_item_id = catalog_item_id;
+                true
+            }
+            Err(_) => false,
+        }
     }
 }

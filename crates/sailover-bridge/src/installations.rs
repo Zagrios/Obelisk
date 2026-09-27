@@ -28,15 +28,14 @@ pub struct SteamReceipt {
     pub needs_verification: Option<bool>,
 }
 
-/// A Steam Transfer: `language` picks the depots; `directory` is the parent
-/// folder the installation goes in.
+/// A Steam game SailOver can install: its build for `platform`, with the
+/// depots of `language`.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
-pub struct SteamDownloadRequest {
+pub struct SteamOffer {
     pub app_id: u32,
     pub name: String,
     pub platform: String,
     pub language: String,
-    pub directory: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
@@ -51,16 +50,14 @@ pub struct EpicReceipt {
     pub needs_verification: Option<bool>,
 }
 
-/// An Epic Transfer of one game's build; `directory` is the parent folder the
-/// installation goes in.
+/// An Epic game SailOver can install: its build for `platform`.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
-pub struct EpicDownloadRequest {
+pub struct EpicOffer {
     pub namespace: String,
     pub catalog_item_id: String,
     pub app_name: String,
     pub title: String,
     pub platform: String,
-    pub directory: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
@@ -78,6 +75,45 @@ pub enum InstallationReport {
     DownloadDirectory { message: String },
     /// An uninstall failed for this reason, a localization key.
     Uninstall { reason: String },
+}
+
+/// What may start now, of one kind of action. Games are named as Swift names
+/// them: a Steam app id, or an Epic `namespace:app` pair.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum GameOpening {
+    Closed,
+    /// It may start, for any game but these.
+    Open {
+        except: Vec<String>,
+    },
+}
+
+/// What the Reservation lets start now.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct InstallationGate {
+    /// A Transfer or uninstall.
+    pub modify: GameOpening,
+    /// A launch, of any game a Transfer may touch.
+    pub launch: bool,
+    pub maintain: GameOpening,
+}
+
+fn gate<G>(gate: installations::Gate<G>, name: impl Fn(&G) -> String) -> InstallationGate {
+    let opening = |opening: installations::Opening<G>| match opening {
+        installations::Opening::Closed => GameOpening::Closed,
+        installations::Opening::Open { except } => GameOpening::Open {
+            except: except.iter().map(&name).collect(),
+        },
+    };
+    InstallationGate {
+        modify: opening(gate.modify),
+        launch: gate.launch,
+        maintain: opening(gate.maintain),
+    }
+}
+
+fn epic_name(game: &epic::Store) -> String {
+    format!("{}:{}", game.namespace, game.app_name)
 }
 
 /// A storage warning, a localization key; `id` changes each time one is raised.
@@ -100,11 +136,13 @@ pub struct SteamInstallationsState {
     pub launch_game: Option<u32>,
     pub uninstalling: bool,
     pub uninstall_game: Option<u32>,
-    /// A Transfer that stopped before its receipt, which the player can resume.
-    pub last_download: Option<SteamDownloadRequest>,
+    /// The game whose Transfer stopped before its receipt: the player can
+    /// resume it.
+    pub resumable: Option<String>,
     pub report: Option<InstallationReport>,
     pub warning: Option<InstallationWarning>,
     pub maintenance: Option<SteamCloudMaintenance>,
+    pub gate: InstallationGate,
 }
 
 /// Cloud maintenance of one game: its sync's progress and the Cloud question
@@ -134,11 +172,13 @@ pub struct EpicInstallationsState {
     pub launch_game: Option<EpicGameId>,
     pub uninstalling: bool,
     pub uninstall_game: Option<EpicGameId>,
-    /// A Transfer that stopped before its receipt, which the player can resume.
-    pub last_download: Option<EpicDownloadRequest>,
+    /// The game whose Transfer stopped before its receipt: the player can
+    /// resume it.
+    pub resumable: Option<String>,
     pub report: Option<InstallationReport>,
     pub warning: Option<InstallationWarning>,
     pub maintenance: Option<EpicCloudMaintenance>,
+    pub gate: InstallationGate,
 }
 
 impl From<Report> for InstallationReport {
@@ -168,38 +208,13 @@ impl From<steam::Receipt> for SteamReceipt {
         }
     }
 }
-impl From<SteamReceipt> for steam::Receipt {
-    fn from(receipt: SteamReceipt) -> Self {
+impl From<SteamOffer> for steam::Offer {
+    fn from(offer: SteamOffer) -> Self {
         Self {
-            app_id: receipt.app_id,
-            name: receipt.name,
-            directory: receipt.directory,
-            platform: receipt.platform,
-            language: receipt.language,
-            total_bytes: receipt.total_bytes,
-            needs_verification: receipt.needs_verification,
-        }
-    }
-}
-impl From<steam::Download> for SteamDownloadRequest {
-    fn from(request: steam::Download) -> Self {
-        Self {
-            app_id: request.app_id,
-            name: request.name,
-            platform: request.platform,
-            language: request.language,
-            directory: request.directory.to_string_lossy().into_owned(),
-        }
-    }
-}
-impl From<SteamDownloadRequest> for steam::Download {
-    fn from(request: SteamDownloadRequest) -> Self {
-        Self {
-            app_id: request.app_id,
-            name: request.name,
-            platform: request.platform,
-            language: request.language,
-            directory: request.directory.into(),
+            app_id: offer.app_id,
+            name: offer.name,
+            platform: offer.platform,
+            language: offer.language,
         }
     }
 }
@@ -216,40 +231,14 @@ impl From<epic::Receipt> for EpicReceipt {
         }
     }
 }
-impl From<EpicReceipt> for epic::Receipt {
-    fn from(receipt: EpicReceipt) -> Self {
+impl From<EpicOffer> for epic::Offer {
+    fn from(offer: EpicOffer) -> Self {
         Self {
-            namespace: receipt.namespace,
-            app_name: receipt.app_name,
-            name: receipt.name,
-            directory: receipt.directory,
-            platform: receipt.platform,
-            total_bytes: receipt.total_bytes,
-            needs_verification: receipt.needs_verification,
-        }
-    }
-}
-impl From<epic::Download> for EpicDownloadRequest {
-    fn from(request: epic::Download) -> Self {
-        Self {
-            namespace: request.namespace,
-            catalog_item_id: request.catalog_item_id,
-            app_name: request.app_name,
-            title: request.title,
-            platform: request.platform,
-            directory: request.directory.to_string_lossy().into_owned(),
-        }
-    }
-}
-impl From<EpicDownloadRequest> for epic::Download {
-    fn from(request: EpicDownloadRequest) -> Self {
-        Self {
-            namespace: request.namespace,
-            catalog_item_id: request.catalog_item_id,
-            app_name: request.app_name,
-            title: request.title,
-            platform: request.platform,
-            directory: request.directory.into(),
+            namespace: offer.namespace,
+            catalog_item_id: offer.catalog_item_id,
+            app_name: offer.app_name,
+            title: offer.title,
+            platform: offer.platform,
         }
     }
 }
@@ -365,22 +354,20 @@ impl SteamAccountInstallations {
         steam_state(self.installations.changed(after).await)
     }
 
-    /// Whether an action may touch the game's installation now.
-    pub fn can_modify(&self, app_id: u32) -> bool {
-        self.installations.can_modify(&app_id)
-    }
-
     /// A DEBUG diagnostic holds the storefront while it runs.
     pub fn set_diagnostic(&self, running: bool) {
         self.installations.set_diagnostic(running);
     }
 
-    pub fn download(&self, request: SteamDownloadRequest) {
-        self.installations.download(request.into());
+    /// Installs what `offer` names, or updates the installation of its
+    /// platform; a Transfer of the game that stopped resumes instead.
+    pub fn install(&self, offer: SteamOffer) {
+        self.installations.install(offer.into());
     }
 
-    pub fn resume_download(&self) {
-        self.installations.resume_download();
+    /// Updates the installation `receipt` names in place.
+    pub fn update(&self, receipt: String) {
+        self.installations.update(&receipt);
     }
 
     /// Stops the Transfer, and a launch still preparing.
@@ -388,15 +375,14 @@ impl SteamAccountInstallations {
         self.installations.cancel();
     }
 
-    /// Launches the installed game, verifying it first with `verification`
-    /// when `verify` asks for it or its receipt needs it.
-    pub fn launch(&self, receipt: SteamReceipt, verification: SteamDownloadRequest, verify: bool) {
-        self.installations
-            .launch(receipt.into(), verification.into(), verify);
+    /// Launches the installation `receipt` names, verifying it first when
+    /// `verify` asks for it or its receipt needs it.
+    pub fn launch(&self, receipt: String, verify: bool) {
+        self.installations.launch(&receipt, verify);
     }
 
-    pub fn uninstall(&self, receipt: SteamReceipt, request: SteamDownloadRequest) {
-        self.installations.uninstall(receipt.into(), request.into());
+    pub fn uninstall(&self, receipt: String) {
+        self.installations.uninstall(&receipt);
     }
 
     /// Stops the account's Transfer, Cloud maintenance and launch still
@@ -405,22 +391,11 @@ impl SteamAccountInstallations {
         self.installations.signed_out();
     }
 
-    /// Whether the player may sync the game's Cloud saves now.
-    pub fn can_maintain_cloud(&self, app_id: u32) -> bool {
-        self.installations.can_maintain_cloud(&app_id)
-    }
-
     /// Syncs the game's Cloud saves: those of the installation `receipt`
-    /// records, with the Transfer `request` names, or an uninstalled game's
-    /// when both are `None`.
-    pub fn maintain_cloud(
-        &self,
-        app_id: u32,
-        receipt: Option<SteamReceipt>,
-        request: Option<SteamDownloadRequest>,
-    ) {
-        let installed = receipt.map(Into::into).zip(request.map(Into::into));
-        self.installations.maintain_cloud(app_id, installed);
+    /// names, or an uninstalled game's when `None`.
+    pub fn maintain_cloud(&self, app_id: u32, receipt: Option<String>) {
+        self.installations
+            .maintain_cloud(app_id, receipt.as_deref());
     }
 
     /// Answers the Cloud question the game shows with `decision_id`, its
@@ -473,13 +448,14 @@ fn steam_state(state: installations::State<steam::Steam>) -> SteamInstallationsS
         launch_game: state.launch_game,
         uninstalling: state.uninstalling,
         uninstall_game: state.uninstall_game,
-        last_download: state.last_download.map(Into::into),
+        resumable: state.last_download.map(|last| last.app_id.to_string()),
         report: state.report.map(Into::into),
         warning: warning(state.warning),
         maintenance: state.maintenance.map(|maintenance| SteamCloudMaintenance {
             app_id: maintenance.game,
             cloud: maintenance.cloud.into(),
         }),
+        gate: gate(state.gate, u32::to_string),
     }
 }
 
@@ -534,22 +510,20 @@ impl EpicAccountInstallations {
         epic_state(self.installations.changed(after).await)
     }
 
-    /// Whether an action may touch the game's installation now.
-    pub fn can_modify(&self, game: EpicGameId) -> bool {
-        self.installations.can_modify(&game.into())
-    }
-
     /// A DEBUG diagnostic holds the storefront while it runs.
     pub fn set_diagnostic(&self, running: bool) {
         self.installations.set_diagnostic(running);
     }
 
-    pub fn download(&self, request: EpicDownloadRequest) {
-        self.installations.download(request.into());
+    /// Installs what `offer` names, or updates the installation of its
+    /// platform; a Transfer of the game that stopped resumes instead.
+    pub fn install(&self, offer: EpicOffer) {
+        self.installations.install(offer.into());
     }
 
-    pub fn resume_download(&self) {
-        self.installations.resume_download();
+    /// Updates the installation `receipt` names in place.
+    pub fn update(&self, receipt: String) {
+        self.installations.update(&receipt);
     }
 
     /// Stops the Transfer, and a launch still preparing.
@@ -557,15 +531,14 @@ impl EpicAccountInstallations {
         self.installations.cancel();
     }
 
-    /// Launches the installed build, verifying it first with `verification`
-    /// when `verify` asks for it or its receipt needs it.
-    pub fn launch(&self, receipt: EpicReceipt, verification: EpicDownloadRequest, verify: bool) {
-        self.installations
-            .launch(receipt.into(), verification.into(), verify);
+    /// Launches the installation `receipt` names, verifying it first when
+    /// `verify` asks for it or its receipt needs it.
+    pub fn launch(&self, receipt: String, verify: bool) {
+        self.installations.launch(&receipt, verify);
     }
 
-    pub fn uninstall(&self, receipt: EpicReceipt, request: EpicDownloadRequest) {
-        self.installations.uninstall(receipt.into(), request.into());
+    pub fn uninstall(&self, receipt: String) {
+        self.installations.uninstall(&receipt);
     }
 
     /// Stops the account's Transfer, Cloud maintenance and launch still
@@ -574,22 +547,11 @@ impl EpicAccountInstallations {
         self.installations.signed_out();
     }
 
-    /// Whether the player may sync the game's Cloud saves now.
-    pub fn can_maintain_cloud(&self, game: EpicGameId) -> bool {
-        self.installations.can_maintain_cloud(&game.into())
-    }
-
-    /// Syncs the game's Cloud saves: those of the build `receipt` records,
-    /// with the Transfer `request` names, or, when both are `None`, those the
-    /// uninstalled game's journal saved.
-    pub fn maintain_cloud(
-        &self,
-        game: EpicGameId,
-        receipt: Option<EpicReceipt>,
-        request: Option<EpicDownloadRequest>,
-    ) {
-        let installed = receipt.map(Into::into).zip(request.map(Into::into));
-        self.installations.maintain_cloud(game.into(), installed);
+    /// Syncs the game's Cloud saves: those of the installation `receipt`
+    /// names, or, when `None`, those the uninstalled game's journal saved.
+    pub fn maintain_cloud(&self, game: EpicGameId, receipt: Option<String>) {
+        self.installations
+            .maintain_cloud(game.into(), receipt.as_deref());
     }
 
     /// Answers the Cloud question the game shows with `decision_id`, its
@@ -635,12 +597,18 @@ fn epic_state(state: installations::State<epic::Epic>) -> EpicInstallationsState
         launch_game: state.launch_game.map(Into::into),
         uninstalling: state.uninstalling,
         uninstall_game: state.uninstall_game.map(Into::into),
-        last_download: state.last_download.map(Into::into),
+        resumable: state.last_download.map(|last| {
+            epic_name(&epic::Store {
+                namespace: last.namespace,
+                app_name: last.app_name,
+            })
+        }),
         report: state.report.map(Into::into),
         warning: warning(state.warning),
         maintenance: state.maintenance.map(|maintenance| EpicCloudMaintenance {
             game: maintenance.game.into(),
             cloud: maintenance.cloud.into(),
         }),
+        gate: gate(state.gate, epic_name),
     }
 }

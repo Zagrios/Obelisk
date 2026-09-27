@@ -210,11 +210,23 @@ pub struct Download {
     pub directory: PathBuf,
 }
 
+/// A Steam game SailOver can install: its build for `platform`, with the
+/// depots of `language`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Offer {
+    pub app_id: u32,
+    pub name: String,
+    pub platform: String,
+    pub language: String,
+}
+
 impl crate::installations::Storefront for Steam {
     type Receipt = Receipt;
     type Request = Download;
+    type Offer = Offer;
     const RECEIPTS_UNAVAILABLE: &'static str = "model.steam.receiptsUnavailable";
     const RECEIPTS_NOT_SAVED: &'static str = "model.steam.receiptsNotSaved";
+    const GAMES_DIRECTORY: &'static str = "Games/Steam";
     fn receipt_game(receipt: &Receipt) -> u32 {
         receipt.app_id
     }
@@ -245,4 +257,36 @@ impl crate::installations::Storefront for Steam {
     fn transfer_name(request: &Download) -> String {
         request.app_id.to_string()
     }
+    fn offer_game(offer: &Offer) -> u32 {
+        offer.app_id
+    }
+    fn offer_platform(offer: &Offer) -> &str {
+        &offer.platform
+    }
+    fn install_request(offer: &Offer, directory: &Path) -> Download {
+        Download {
+            app_id: offer.app_id,
+            name: offer.name.clone(),
+            platform: offer.platform.clone(),
+            language: offer.language.clone(),
+            directory: directory.to_owned(),
+        }
+    }
+    fn update_request(receipt: &Receipt) -> Download {
+        Download {
+            app_id: receipt.app_id,
+            name: receipt.name.clone(),
+            platform: receipt.platform.clone(),
+            language: receipt.language.clone(),
+            directory: parent(&receipt.directory),
+        }
+    }
+}
+
+/// The folder an installation's own folder sits in.
+pub(crate) fn parent(directory: &str) -> PathBuf {
+    Path::new(directory)
+        .parent()
+        .map(Path::to_owned)
+        .unwrap_or_default()
 }

@@ -25,7 +25,7 @@ mod launch;
 pub use download::{
     Installation, Prerequisite, TransferProgress, TransferState, installation_directory_name,
 };
-pub use launch::{InstalledLaunch, LaunchPlan, installed_launch};
+pub use launch::{InstalledLaunch, LaunchPlan, installed_catalog_item, installed_launch};
 
 const MAX_LIBRARY_PAGES: usize = 1000;
 const MAX_LIBRARY_RECORDS: usize = 100_000;

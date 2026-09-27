@@ -146,6 +146,7 @@ final class EpicCloudTests: XCTestCase {
         model.open(owned)
         XCTAssertTrue(model.installations.primaryActionAvailable)
         sessions.fake.show(.epic(account: "account", namespace: "sandbox", appName: "game"))
+        backend.publish { $0.gate = .session("sandbox:game") }
         try await eventually { sessions.active?.phase == .running }
         XCTAssertEqual(model.installations.primaryActionTitle, L10n.string("model.game.running"))
         XCTAssertFalse(model.installations.primaryActionAvailable)
@@ -168,7 +169,10 @@ final class EpicCloudTests: XCTestCase {
         let backend = FakeInstallations<EpicGames>(receipts: [receipt])
         backend.onCall = { call in
             if case .maintain = call {
-                backend.publish { $0.maintenance = .init(game: "sandbox:game", cloud: .showing(.checking)) }
+                backend.publish {
+                    $0.maintenance = .init(game: "sandbox:game", cloud: .showing(.checking))
+                    $0.gate = .closed
+                }
             }
         }
         let model = EpicModel(directory: directory, keychain: EpicMemoryStore(credentials),
@@ -189,7 +193,10 @@ final class EpicCloudTests: XCTestCase {
         model.cloud.respond(.cloud)
         try await eventually { backend.actions.last == .answer("sandbox:game", decision: 1, .cloud) }
         backend.indicators = [("sandbox:game", .neverSynced)]
-        backend.publish { $0.maintenance = nil }
+        backend.publish {
+            $0.maintenance = nil
+            $0.gate = .open
+        }
         try await eventually { !model.cloud.isMaintaining }
         XCTAssertFalse(model.cloud.failurePresented, "Only a launch check shows a banner")
         try await eventually { model.cloud.indicator(for: "sandbox:game") != nil }

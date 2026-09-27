@@ -184,7 +184,7 @@ final class SteamModel {
         }
         self.cloud = SteamCloudModel(sessions: gameSessions)
         self.rosetta = SteamRosettaModel(sessions: gameSessions)
-        self.installations = SteamInstallations(directory: directory, sessions: gameSessions, cloud: cloud)
+        self.installations = SteamInstallations(sessions: gameSessions, cloud: cloud)
         wakeObserver = SystemWakeObservation { [weak self] in
             Task { @MainActor [weak self] in self?.retryFriends() }
         }
@@ -221,16 +221,13 @@ final class SteamModel {
     /// tell which builds the account can install.
     private var installationSelection: InstallationSelection<SteamGames>? {
         guard let game = selectedGame else { return nil }
-        let details = details?.appId == game.appId ? details : nil
-        let language = language
-        return InstallationSelection(
-            game: game.appId, platform: platform,
-            installable: !isLoadingDetails && (details?.macos == true || details?.windows == true),
-            request: { receipt, directory in
-                SteamDownload(game: game, platform: receipt?.platform ?? details?.preferredPlatform ?? "windows",
-                              language: receipt?.language ?? language, directory: directory)
-            }
-        )
+        let details = details?.appId == game.appId && !isLoadingDetails ? details : nil
+        let offer = details.flatMap { details in
+            details.macos || details.windows
+                ? SteamOffer(appId: game.appId, name: game.name, platform: details.preferredPlatform, language: language)
+                : nil
+        }
+        return InstallationSelection(game: game.appId, platform: platform, offer: offer)
     }
 
     /// The active session when it belongs to the game on screen.
@@ -493,7 +490,7 @@ final class SteamModel {
     #if DEBUG
     /// A Cloud diagnostic needs the storefront idle, and keeps it fenced.
     private func reserveCloudProbe() -> Bool {
-        guard !installations.isBusy, gameSessions.recoveryError == nil else { return false }
+        guard installations.gate.launch, gameSessions.recoveryError == nil else { return false }
         installations.diagnosticReservation = true
         return true
     }
@@ -866,11 +863,6 @@ final class SteamModel {
     private func installationPort() -> InstallationPort<SteamGames> {
         InstallationPort(
             verifiesBeforeLaunch: { [weak self] in self?.verifyBeforeLaunch ?? true },
-            uninstallRequest: { receipt in
-                SteamDownload(appId: receipt.appId, name: receipt.name, platform: receipt.platform,
-                              language: receipt.language,
-                              directory: URL(fileURLWithPath: receipt.directory).deletingLastPathComponent())
-            },
             report: { [weak self] error in self?.errorMessage = error.map(Self.message) },
             warn: { [weak self] in self?.storageWarning = $0 },
             uninstalled: { [weak self] game in

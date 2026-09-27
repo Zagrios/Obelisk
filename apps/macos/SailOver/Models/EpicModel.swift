@@ -120,7 +120,7 @@ final class EpicModel {
         }
         self.rosetta = EpicRosettaModel(sessions: gameSessions)
         self.cloud = EpicCloudModel(sessions: gameSessions)
-        self.installations = EpicInstallations(directory: directory, sessions: gameSessions, cloud: cloud)
+        self.installations = EpicInstallations(sessions: gameSessions, cloud: cloud)
         wakeObserver = SystemWakeObservation { [weak self] in
             Task { @MainActor [weak self] in self?.retryFriends() }
         }
@@ -137,12 +137,11 @@ final class EpicModel {
     /// The game on screen, for its installation actions.
     private var installationSelection: InstallationSelection<EpicGames>? {
         guard let game = selectedGame else { return nil }
-        return InstallationSelection(
-            game: game.libraryID, platform: game.preferredPlatform, installable: game.macos || game.windows,
-            request: { receipt, directory in
-                EpicDownload(game: game, platform: receipt?.platform ?? game.preferredPlatform, directory: directory)
-            }
-        )
+        let offer = game.macos || game.windows
+            ? EpicOffer(namespace: game.namespace, catalogItemId: game.catalogItemId, appName: game.appName,
+                        title: game.title, platform: game.preferredPlatform)
+            : nil
+        return InstallationSelection(game: game.libraryID, platform: game.preferredPlatform, offer: offer)
     }
 
     func syncCloud() { installations.syncCloud() }
@@ -513,11 +512,6 @@ final class EpicModel {
     private func installationPort() -> InstallationPort<EpicGames> {
         InstallationPort(
             verifiesBeforeLaunch: { true },
-            uninstallRequest: { [weak self] receipt in
-                guard let game = self?.games.first(where: { $0.libraryID == receipt.libraryID }) else { return nil }
-                return EpicDownload(game: game, platform: receipt.platform,
-                                    directory: URL(fileURLWithPath: receipt.directory).deletingLastPathComponent())
-            },
             report: { [weak self] error in
                 guard let self else { return }
                 guard let error else { return errorMessage = nil }
