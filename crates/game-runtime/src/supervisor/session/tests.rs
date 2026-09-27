@@ -391,6 +391,12 @@ macro_rules! lifecycle_suite {
             lifecycle::cancelling_after_spawn_leaves_the_game_running::<$harness>()
         }
         #[test]
+        fn a_supervisor_asked_to_quit_stops_its_game_and_still_finishes_the_session() {
+            lifecycle::a_supervisor_asked_to_quit_stops_its_game_and_still_finishes_the_session::<
+                $harness,
+            >()
+        }
+        #[test]
         fn stopping_a_running_game_ends_it_and_still_finishes_the_session() {
             lifecycle::stopping_a_running_game_ends_it_and_still_finishes_the_session::<$harness>()
         }
@@ -633,6 +639,30 @@ pub(crate) fn cancelling_after_spawn_leaves_the_game_running<H: Harness>() {
     let finished = run.until(Record::finished);
     assert_eq!(finished.phase, Phase::Finished);
     assert_eq!(finished.exit_code, Some(3));
+}
+
+/// macOS asks every process SailOver started to quit when SailOver ends.
+pub(crate) fn a_supervisor_asked_to_quit_stops_its_game_and_still_finishes_the_session<
+    H: Harness,
+>() {
+    let run = launch::<H>(script(HELD));
+    let running = run.until(|r| r.phase == Phase::Running);
+    assert!(
+        Process::new("/bin/kill")
+            .args(["-TERM", &running.supervisor.pid.to_string()])
+            .status()
+            .unwrap()
+            .success()
+    );
+    let finished = run.until(Record::finished);
+    assert_eq!(
+        finished.phase,
+        Phase::Finished,
+        "the supervisor settled the session"
+    );
+    // Only a supervisor that saw its game go records its exit.
+    assert!(finished.exit_code.is_some());
+    assert!(finished.game.is_none());
 }
 
 pub(crate) fn stopping_a_running_game_ends_it_and_still_finishes_the_session<H: Harness>() {

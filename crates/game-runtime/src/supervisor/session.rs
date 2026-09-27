@@ -229,6 +229,22 @@ pub(crate) struct Session<P: Provider> {
     wine: OnceLock<Option<crate::wine::Config>>,
 }
 impl<P: Provider> Session<P> {
+    /// SailOver is ending: macOS asks every process it started to quit, the
+    /// Wine server of a Windows game included. The game stops as on a quit,
+    /// and the Windows processes left frozen without their server go too; the
+    /// session then settles its Cloud saves.
+    fn terminated(&self) {
+        if !self.state.lock().unwrap().spawned {
+            self.stop_preparation();
+            self.notify();
+            return;
+        }
+        self.stop_game();
+        if let Some(wine) = self.wine.get().cloned().flatten() {
+            crate::wine::end_orphans(&wine.runtime);
+        }
+    }
+
     /// Ends the running game: it gets `STOP_GRACE` to quit before it is
     /// killed. A Windows game's prefix is emptied, which also ends the
     /// processes Wine started apart from it.
@@ -433,7 +449,22 @@ pub(crate) fn serve<L: Launch>(
     drop(output);
     let alive = |id: &str| owner.session_alive(id, inspect);
     let outcome = executor.block_on(async {
+        // Catching SIGTERM keeps this supervisor alive when SailOver ends,
+        // long enough to stop its game and settle its Cloud saves.
+        let terminated = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .ok()
+            .map(|mut terminate| {
+                let session = session.clone();
+                tokio::spawn(async move {
+                    if terminate.recv().await.is_some() {
+                        std::thread::spawn(move || session.terminated());
+                    }
+                })
+            });
         let outcome = run(&mut launch, &session, inspect, &alive).await;
+        if let Some(terminated) = terminated {
+            terminated.abort();
+        }
         if outcome.is_err() && !session.state.lock().unwrap().spawned {
             launch.abort(&session);
         }
