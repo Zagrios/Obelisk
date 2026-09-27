@@ -141,6 +141,7 @@ struct Recorder<const BEGIN: bool> {
 impl<const BEGIN: bool> Launch for Recorder<BEGIN> {
     type P = Recording;
     type Host = ();
+    type Cloud = Cloud;
     const BEGIN: bool = BEGIN;
 
     fn open(input: &mut dyn Read) -> Result<(Opening<Recording>, Self), Failure> {
@@ -166,26 +167,12 @@ impl<const BEGIN: bool> Launch for Recorder<BEGIN> {
         Ok(())
     }
 
-    async fn prepare_cloud(
-        &mut self,
-        session: &Arc<Session<Recording>>,
-        _: &SessionAlive<'_>,
-    ) -> Result<(), Failure> {
-        record(&self.directory, "cloud.prepare");
-        if self.script.hold_cloud {
-            fs::write(self.directory.join("cloud-ready"), b"").unwrap();
-            hold(&self.directory, "release-cloud", || session.check()).await?;
-        }
-        if self.script.ask {
-            let cloud = session.cloud();
-            let answer = cloud
-                .ask(crate::cloud::Question::Conflict, None)
-                .await
-                .map_err(|_| Failure::Cancelled)?;
-            record(&self.directory, &format!("answered:{answer:?}"));
-            cloud.show(crate::cloud::Phase::Ready, None);
-        }
-        Ok(())
+    async fn cloud(&mut self, session: &Arc<Session<Recording>>) -> Result<Option<Cloud>, Failure> {
+        Ok(Some(Cloud {
+            directory: self.directory.clone(),
+            script: self.script.clone(),
+            session: session.clone(),
+        }))
     }
 
     async fn target(
@@ -204,6 +191,7 @@ impl<const BEGIN: bool> Launch for Recorder<BEGIN> {
         _: &Arc<Session<Recording>>,
         target: &Target,
         _: Option<Architecture>,
+        _: Option<&Cloud>,
     ) -> Result<Prepared<()>, Failure> {
         record(&self.directory, "host.prepare");
         Ok(Prepared {
@@ -214,29 +202,12 @@ impl<const BEGIN: bool> Launch for Recorder<BEGIN> {
         })
     }
 
-    fn admitted(&mut self) -> Result<(), Failure> {
-        record(&self.directory, "cloud.started");
-        Ok(())
-    }
-
     fn running(&self, _: &Arc<()>, _: u32) -> Box<dyn Fn(bool) + Send + Sync> {
         let directory = self.directory.clone();
         Box::new(move |active| record(&directory, &format!("presence:{active}")))
     }
 
     fn stopped(&self, _: &(), _: Option<i32>) {}
-
-    async fn finish(&mut self, _: &Arc<Session<Recording>>, confirmed: bool) {
-        if self.script.hold_finish {
-            fs::write(self.directory.join("finish-ready"), b"").unwrap();
-            let _ = hold(&self.directory, "release-finish", || Ok::<_, Error>(())).await;
-        }
-        record(&self.directory, &format!("cloud.finished:{confirmed}"));
-    }
-
-    fn abort(&mut self, _: &Arc<Session<Recording>>) {
-        record(&self.directory, "cloud.aborted");
-    }
 
     fn rosetta(helper: &Path) -> Result<bool, Error> {
         Ok(helper.exists())
@@ -250,4 +221,49 @@ mod lifecycle_of_the_core {
 #[test]
 fn begin_opens_the_start_gate_once_and_only_for_its_account() {
     super::begin_opens_the_start_gate_once_and_only_for_its_account::<Gated>();
+}
+
+/// The recorded Cloud sync, which follows the test's script.
+pub(crate) struct Cloud {
+    directory: PathBuf,
+    script: Script,
+    session: Arc<Session<Recording>>,
+}
+
+impl LaunchCloud<Failure> for Cloud {
+    fn prepare<'a>(&'a mut self, _: &'a SessionAlive<'a>) -> Operation<'a, Result<(), Failure>> {
+        Box::pin(async move {
+            record(&self.directory, "cloud.prepare");
+            if self.script.hold_cloud {
+                fs::write(self.directory.join("cloud-ready"), b"").unwrap();
+                hold(&self.directory, "release-cloud", || self.session.check()).await?;
+            }
+            if self.script.ask {
+                let cloud = self.session.cloud();
+                let answer = cloud
+                    .ask(crate::cloud::Question::Conflict, None)
+                    .await
+                    .map_err(|_| Failure::Cancelled)?;
+                record(&self.directory, &format!("answered:{answer:?}"));
+                cloud.show(crate::cloud::Phase::Ready, None);
+            }
+            Ok(())
+        })
+    }
+    fn started(&mut self) -> Result<(), Failure> {
+        record(&self.directory, "cloud.started");
+        Ok(())
+    }
+    fn finished(&mut self, confirmed: bool) -> Operation<'_, ()> {
+        Box::pin(async move {
+            if self.script.hold_finish {
+                fs::write(self.directory.join("finish-ready"), b"").unwrap();
+                let _ = hold(&self.directory, "release-finish", || Ok::<_, Error>(())).await;
+            }
+            record(&self.directory, &format!("cloud.finished:{confirmed}"));
+        })
+    }
+    fn aborted(&mut self) {
+        record(&self.directory, "cloud.aborted");
+    }
 }

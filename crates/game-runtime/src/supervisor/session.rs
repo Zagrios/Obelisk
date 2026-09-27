@@ -61,16 +61,66 @@ pub(crate) struct Prepared<H> {
     pub environment: std::collections::HashMap<String, String>,
 }
 
+/// A launch's Cloud sync, which the core drives around the game: prepared
+/// before it, started inside the admission lock, finished once the game
+/// exits, or abandoned when it never starts.
+pub(crate) trait LaunchCloud<E>: Send {
+    /// `alive` answers for a previous session whose Cloud game guard remains.
+    fn prepare<'a>(&'a mut self, alive: &'a SessionAlive<'a>) -> Operation<'a, Result<(), E>>;
+    fn started(&mut self) -> Result<(), E>;
+    /// Settles the exit save. Never fails the session: its result lives in
+    /// the Cloud status. `confirmed` is false when exec was never confirmed;
+    /// the exit save is then only captured and kept pending.
+    fn finished(&mut self, confirmed: bool) -> Operation<'_, ()>;
+    /// Releases the Cloud work of a launch abandoned before spawn.
+    fn aborted(&mut self);
+}
+impl<E, C: LaunchCloud<E> + ?Sized> LaunchCloud<E> for Box<C> {
+    fn prepare<'a>(&'a mut self, alive: &'a SessionAlive<'a>) -> Operation<'a, Result<(), E>> {
+        (**self).prepare(alive)
+    }
+    fn started(&mut self) -> Result<(), E> {
+        (**self).started()
+    }
+    fn finished(&mut self, confirmed: bool) -> Operation<'_, ()> {
+        (**self).finished(confirmed)
+    }
+    fn aborted(&mut self) {
+        (**self).aborted();
+    }
+}
+impl<S, E> LaunchCloud<E> for crate::cloud::sync::CloudSync<S>
+where
+    S: crate::cloud::sync::Storefront + Send,
+    E: From<S::Failure>,
+    Self: Send,
+{
+    fn prepare<'a>(&'a mut self, alive: &'a SessionAlive<'a>) -> Operation<'a, Result<(), E>> {
+        Box::pin(async move { Ok(crate::cloud::sync::CloudSync::prepare(self, alive).await?) })
+    }
+    fn started(&mut self) -> Result<(), E> {
+        Ok(crate::cloud::sync::CloudSync::started(self)?)
+    }
+    fn finished(&mut self, confirmed: bool) -> Operation<'_, ()> {
+        Box::pin(crate::cloud::sync::CloudSync::finished(self, confirmed))
+    }
+    fn aborted(&mut self) {
+        crate::cloud::sync::CloudSync::aborted(self);
+    }
+}
+
 /// A storefront's launch. The core calls it in this order: authentication,
-/// Cloud preparation, target and architecture, the Rosetta gate (then the
-/// target again, once Rosetta was just installed), host preparation, then
-/// `admitted` inside the admission lock and exec admission.
+/// the Cloud sync it opens and prepares, target and architecture, the Rosetta
+/// gate (then the target again, once Rosetta was just installed), host
+/// preparation, then exec admission, where the Cloud sync starts.
 #[allow(async_fn_in_trait)]
 pub(crate) trait Launch: Sized + 'static {
     type P: Provider;
     /// What preparation leaves running until the game exits, such as
     /// Steam's native host.
     type Host: Send + Sync + 'static;
+    /// The launch's Cloud sync.
+    type Cloud: LaunchCloud<Failure<Self>>;
     /// Only a launch that waits for its UI's Begin sets this.
     const BEGIN: bool = false;
 
@@ -90,26 +140,25 @@ pub(crate) trait Launch: Sized + 'static {
     ) -> Result<(), Failure<Self>> {
         Ok(())
     }
-    /// `alive` answers for a previous session whose Cloud game guard remains.
-    async fn prepare_cloud(
+    /// Opens the launch's Cloud sync, if its game has one.
+    async fn cloud(
         &mut self,
         session: &Arc<Session<Self::P>>,
-        alive: &SessionAlive<'_>,
-    ) -> Result<(), Failure<Self>>;
+    ) -> Result<Option<Self::Cloud>, Failure<Self>>;
     /// Called again after Rosetta was just installed: short-lived launch
     /// credentials may need refreshing.
     async fn target(
         &mut self,
         session: &Arc<Session<Self::P>>,
     ) -> Result<(Target, Option<Architecture>), Failure<Self>>;
+    /// `cloud` is the prepared Cloud sync.
     async fn prepare_host(
         &mut self,
         session: &Arc<Session<Self::P>>,
         target: &Target,
         architecture: Option<Architecture>,
+        cloud: Option<&Self::Cloud>,
     ) -> Result<Prepared<Self::Host>, Failure<Self>>;
-    /// Inside the admission lock, after the cancellation and revocation check.
-    fn admitted(&mut self) -> Result<(), Failure<Self>>;
     /// The game runs. Returns how its presence is published.
     fn running(&self, host: &Arc<Self::Host>, pid: u32) -> Box<dyn Fn(bool) + Send + Sync>;
     /// Reports host changes while the game runs, until the host stops.
@@ -121,12 +170,6 @@ pub(crate) trait Launch: Sized + 'static {
         None
     }
     fn stopped(&self, host: &Self::Host, exit: Option<i32>);
-    /// Settles Cloud saves after the game exits. Never fails the session: its
-    /// result lives in the Cloud status. `confirmed` is false when exec was
-    /// never confirmed; the exit save is then only captured and kept pending.
-    async fn finish(&mut self, session: &Arc<Session<Self::P>>, confirmed: bool);
-    /// Releases Cloud work of a launch abandoned before spawn.
-    fn abort(&mut self, session: &Arc<Session<Self::P>>);
     /// Ends the launch's own network session, whatever the outcome.
     async fn close(&mut self) {}
     /// Storefront facts of a terminal record.
@@ -461,12 +504,18 @@ pub(crate) fn serve<L: Launch>(
                     }
                 })
             });
-        let outcome = run(&mut launch, &session, inspect, &alive).await;
+        // Kept even if preparation fails, so an abandoned launch still
+        // releases its Cloud work.
+        let mut cloud = None;
+        let outcome = run(&mut launch, &mut cloud, &session, inspect, &alive).await;
         if let Some(terminated) = terminated {
             terminated.abort();
         }
-        if outcome.is_err() && !session.state.lock().unwrap().spawned {
-            launch.abort(&session);
+        if outcome.is_err()
+            && !session.state.lock().unwrap().spawned
+            && let Some(cloud) = &mut cloud
+        {
+            cloud.aborted();
         }
         launch.close().await;
         outcome
@@ -510,6 +559,7 @@ pub(crate) fn serve<L: Launch>(
 
 async fn run<L: Launch>(
     launch: &mut L,
+    cloud: &mut Option<L::Cloud>,
     session: &Arc<Session<L::P>>,
     inspect: Inspect,
     alive: &SessionAlive<'_>,
@@ -520,7 +570,9 @@ async fn run<L: Launch>(
         session.begun().await?;
     }
     launch.authenticate(session).await?;
-    launch.prepare_cloud(session, alive).await?;
+    if let Some(opened) = launch.cloud(session).await? {
+        cloud.insert(opened).prepare(alive).await?;
+    }
     session.check()?;
     let mut refreshed = false;
     let (target, architecture) = loop {
@@ -541,7 +593,9 @@ async fn run<L: Launch>(
         break (target, architecture);
     };
     session.check()?;
-    let prepared = launch.prepare_host(session, &target, architecture).await?;
+    let prepared = launch
+        .prepare_host(session, &target, architecture, cloud.as_ref())
+        .await?;
     let host = Arc::new(prepared.host);
     let mut command = Process::new(&prepared.helper);
     let (mut pipe, child_pipe) = UnixStream::pair().map_err(Error::from)?;
@@ -563,7 +617,9 @@ async fn run<L: Launch>(
         // after it never ends a game, including sign-out and UI loss.
         let _admission = session.admission.lock().unwrap();
         session.check()?;
-        launch.admitted()?;
+        if let Some(cloud) = cloud.as_mut() {
+            cloud.started()?;
+        }
         let game = tokio::process::Command::from(command)
             .kill_on_drop(false)
             .spawn()
@@ -653,7 +709,9 @@ async fn run<L: Launch>(
         r.game = None;
         r.starting = None;
     });
-    launch.finish(session, started).await;
+    if let Some(cloud) = cloud.as_mut() {
+        cloud.finished(started).await;
+    }
     let _ = session.update(|r| {
         r.phase = if started {
             Phase::Finished

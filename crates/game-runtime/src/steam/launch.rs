@@ -6,8 +6,7 @@ use crate::{
     supervisor::{
         Error as Core,
         architecture::Architecture,
-        client::SessionAlive,
-        session::{self, Opening, Operation, Prepared, Session},
+        session::{self, LaunchCloud, Opening, Prepared, Session},
         storage,
     },
 };
@@ -65,29 +64,14 @@ impl Machine for Mac {
     }
 }
 
-/// Steam Cloud as a launch uses it.
-pub(crate) trait SteamCloud: Send {
+/// Steam Cloud as a launch uses it: its prepared sync also names the SDK
+/// Cloud storage the native host serves.
+pub(crate) trait SteamCloud: LaunchCloud<Error> {
     fn native_storage(&self) -> Result<Option<NativeStorage>, Error>;
-    fn prepare<'a>(&'a mut self, alive: &'a SessionAlive<'a>) -> Operation<'a, Result<(), Error>>;
-    fn started(&mut self) -> Result<(), Error>;
-    fn finished(&mut self, confirmed: bool) -> Operation<'_, ()>;
-    fn aborted(&mut self);
 }
 impl SteamCloud for cloud::Session {
     fn native_storage(&self) -> Result<Option<NativeStorage>, Error> {
         self.store().native_storage()
-    }
-    fn prepare<'a>(&'a mut self, alive: &'a SessionAlive<'a>) -> Operation<'a, Result<(), Error>> {
-        Box::pin(async move { Ok(cloud::Session::prepare(self, alive).await?) })
-    }
-    fn started(&mut self) -> Result<(), Error> {
-        Ok(cloud::Session::started(self)?)
-    }
-    fn finished(&mut self, confirmed: bool) -> Operation<'_, ()> {
-        Box::pin(cloud::Session::finished(self, confirmed))
-    }
-    fn aborted(&mut self) {
-        cloud::Session::aborted(self);
     }
 }
 
@@ -96,13 +80,13 @@ pub(crate) struct Launch<M: Machine = Mac> {
     /// Zeroized on drop. Only the host and Steam Cloud receive them.
     credentials: Credentials,
     launch: Arc<crate::Launch>,
-    cloud: Option<Box<dyn SteamCloud>>,
     machine: PhantomData<M>,
 }
 
 impl<M: Machine> session::Launch for Launch<M> {
     type P = Steam;
     type Host = Runtime;
+    type Cloud = Box<dyn SteamCloud>;
 
     fn open(input: &mut dyn Read) -> Result<(Opening<Steam>, Self), Error> {
         let credentials = Credentials::read(&mut *input)?;
@@ -137,7 +121,6 @@ impl<M: Machine> session::Launch for Launch<M> {
             launch: Arc::new(crate::Launch::new(credentials.clone())),
             credentials,
             request,
-            cloud: None,
             machine: PhantomData,
         };
         Ok((opening, launch))
@@ -152,23 +135,19 @@ impl<M: Machine> session::Launch for Launch<M> {
         self.request.config.wine.clone()
     }
 
-    async fn prepare_cloud(
+    async fn cloud(
         &mut self,
         session: &Arc<Session<Steam>>,
-        alive: &SessionAlive<'_>,
-    ) -> Result<(), Error> {
+    ) -> Result<Option<Box<dyn SteamCloud>>, Error> {
         let Some(config) = self.request.cloud.clone() else {
-            return Ok(());
+            return Ok(None);
         };
-        // Kept even if preparation fails, so an abandoned launch still
-        // releases its Cloud work.
-        let cloud = self.cloud.insert(M::cloud(
+        Ok(Some(M::cloud(
             config,
             self.credentials.clone(),
             self.request.id.clone(),
             session.cloud().clone(),
-        )?);
-        cloud.prepare(alive).await
+        )?))
     }
 
     async fn target(
@@ -184,8 +163,9 @@ impl<M: Machine> session::Launch for Launch<M> {
         _: &Arc<Session<Steam>>,
         target: &Target,
         architecture: Option<Architecture>,
+        cloud: Option<&Box<dyn SteamCloud>>,
     ) -> Result<Prepared<Runtime>, Error> {
-        let storage = match &self.cloud {
+        let storage = match cloud {
             Some(cloud) => cloud.native_storage()?,
             None => None,
         };
@@ -223,13 +203,6 @@ impl<M: Machine> session::Launch for Launch<M> {
         })
     }
 
-    fn admitted(&mut self) -> Result<(), Error> {
-        match &mut self.cloud {
-            Some(cloud) => cloud.started(),
-            None => Ok(()),
-        }
-    }
-
     fn running(&self, host: &Arc<Runtime>, pid: u32) -> Box<dyn Fn(bool) + Send + Sync> {
         let _ = host.started(pid);
         let host = host.clone();
@@ -257,18 +230,6 @@ impl<M: Machine> session::Launch for Launch<M> {
 
     fn stopped(&self, host: &Runtime, exit: Option<i32>) {
         host.stopped(exit);
-    }
-
-    async fn finish(&mut self, _: &Arc<Session<Steam>>, confirmed: bool) {
-        if let Some(cloud) = &mut self.cloud {
-            cloud.finished(confirmed).await;
-        }
-    }
-
-    fn abort(&mut self, _: &Arc<Session<Steam>>) {
-        if let Some(cloud) = &mut self.cloud {
-            cloud.aborted();
-        }
     }
 
     fn terminal(record: &mut Snapshot) {

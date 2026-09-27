@@ -5,8 +5,7 @@ use super::*;
 use crate::supervisor::{
     Error as Core,
     architecture::Architecture,
-    client::SessionAlive,
-    session::{self as lifecycle, Opening, Operation, Prepared, Session},
+    session::{self as lifecycle, LaunchCloud, Opening, Prepared, Session},
     storage,
 };
 use epic_kit::{client::LaunchPlan, friends::Activity};
@@ -32,7 +31,7 @@ pub(crate) trait Services: Sized + Send + Sync + 'static {
         account_id: String,
         session_id: String,
         control: Arc<Control>,
-    ) -> Result<Box<dyn EpicCloud>>;
+    ) -> Result<Box<dyn LaunchCloud<Error>>>;
     fn rosetta(helper: &Path) -> std::result::Result<bool, Core>;
 }
 
@@ -70,7 +69,7 @@ impl Services for epic_kit::client::Client {
         account_id: String,
         session_id: String,
         control: Arc<Control>,
-    ) -> Result<Box<dyn EpicCloud>> {
+    ) -> Result<Box<dyn LaunchCloud<Error>>> {
         let sync = cloud_session::open(config, account_id, Arc::clone(self), control, session_id)?;
         Ok(Box::new(sync))
     }
@@ -79,35 +78,9 @@ impl Services for epic_kit::client::Client {
     }
 }
 
-/// EGS Cloud as a launch uses it.
-pub(crate) trait EpicCloud: Send {
-    fn prepare<'a>(&'a mut self, alive: &'a SessionAlive<'a>) -> Operation<'a, Result<()>>;
-    fn started(&mut self) -> Result<()>;
-    /// Settles the exit save; `confirmed` is false when exec was never
-    /// confirmed, and the save is then only captured and kept pending.
-    fn finished(&mut self, confirmed: bool) -> Operation<'_, ()>;
-    /// Releases a launch abandoned before spawn.
-    fn aborted(&mut self);
-}
-impl<R: cloud_session::CloudRemote> EpicCloud for cloud_session::Session<R> {
-    fn prepare<'a>(&'a mut self, alive: &'a SessionAlive<'a>) -> Operation<'a, Result<()>> {
-        Box::pin(cloud_session::Session::prepare(self, alive))
-    }
-    fn started(&mut self) -> Result<()> {
-        cloud_session::Session::started(self)
-    }
-    fn finished(&mut self, confirmed: bool) -> Operation<'_, ()> {
-        Box::pin(cloud_session::Session::finished(self, confirmed))
-    }
-    fn aborted(&mut self) {
-        cloud_session::Session::aborted(self);
-    }
-}
-
 pub(crate) struct Launch<S: Services = epic_kit::client::Client> {
     request: Request,
     api: Option<Arc<S>>,
-    cloud: Option<Box<dyn EpicCloud>>,
     activity: Option<Activity>,
     ownership: Option<tempfile::TempDir>,
 }
@@ -126,6 +99,7 @@ impl<S: Services> Launch<S> {
 impl<S: Services> lifecycle::Launch for Launch<S> {
     type P = Epic;
     type Host = Host;
+    type Cloud = Box<dyn LaunchCloud<Error>>;
     const BEGIN: bool = true;
 
     fn wine(&self) -> Option<crate::wine::Config> {
@@ -153,7 +127,6 @@ impl<S: Services> lifecycle::Launch for Launch<S> {
         let launch = Self {
             request,
             api: None,
-            cloud: None,
             activity: None,
             ownership: None,
         };
@@ -166,15 +139,12 @@ impl<S: Services> lifecycle::Launch for Launch<S> {
         Ok(())
     }
 
-    async fn prepare_cloud(
+    async fn cloud(
         &mut self,
         session: &Arc<Session<Epic>>,
-        alive: &SessionAlive<'_>,
-    ) -> Result<()> {
+    ) -> Result<Option<Box<dyn LaunchCloud<Error>>>> {
         let api = self.api()?.clone();
-        // Kept even if preparation fails, so an abandoned launch still
-        // releases its Cloud work.
-        let cloud = self.cloud.insert(
+        Ok(Some(
             api.cloud(
                 self.request.config.clone(),
                 self.request.account_id.clone(),
@@ -182,8 +152,7 @@ impl<S: Services> lifecycle::Launch for Launch<S> {
                 session.cloud().clone(),
             )
             .await?,
-        );
-        cloud.prepare(alive).await
+        ))
     }
 
     async fn target(
@@ -208,6 +177,7 @@ impl<S: Services> lifecycle::Launch for Launch<S> {
         _: &Arc<Session<Epic>>,
         target: &Target,
         _: Option<Architecture>,
+        _: Option<&Box<dyn LaunchCloud<Error>>>,
     ) -> Result<Prepared<Host>> {
         Ok(Prepared {
             host: Host {
@@ -217,13 +187,6 @@ impl<S: Services> lifecycle::Launch for Launch<S> {
             subcommand: "game-exec",
             environment: target.environment.clone(),
         })
-    }
-
-    fn admitted(&mut self) -> Result<()> {
-        match &mut self.cloud {
-            Some(cloud) => cloud.started(),
-            None => Ok(()),
-        }
     }
 
     fn running(&self, _: &Arc<Host>, _: u32) -> Box<dyn Fn(bool) + Send + Sync> {
@@ -239,18 +202,6 @@ impl<S: Services> lifecycle::Launch for Launch<S> {
     }
 
     fn stopped(&self, _: &Host, _: Option<i32>) {}
-
-    async fn finish(&mut self, _: &Arc<Session<Epic>>, confirmed: bool) {
-        if let Some(cloud) = &mut self.cloud {
-            cloud.finished(confirmed).await;
-        }
-    }
-
-    fn abort(&mut self, _: &Arc<Session<Epic>>) {
-        if let Some(cloud) = &mut self.cloud {
-            cloud.aborted();
-        }
-    }
 
     async fn close(&mut self) {
         if let Some(api) = &self.api {

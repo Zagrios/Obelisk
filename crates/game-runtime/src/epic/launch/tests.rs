@@ -7,6 +7,7 @@ use crate::supervisor::session::tests::{
     HELD, Harness, Script, begin_opens_the_start_gate_once_and_only_for_its_account,
     fixture_directory, hold, inspect, launch, lifecycle_suite, record, script, write_helper,
 };
+use crate::supervisor::{client::SessionAlive, session::Operation};
 use std::{collections::HashMap, fs};
 
 const ACCOUNT: &str = "0123456789abcdef0123456789abcdef";
@@ -140,7 +141,7 @@ impl Services for FakeEpic {
         _: String,
         _: String,
         control: Arc<Control>,
-    ) -> Result<Box<dyn EpicCloud>> {
+    ) -> Result<Box<dyn LaunchCloud<Error>>> {
         let (directory, script) = fixture_directory();
         Ok(Box::new(FakeCloud {
             directory,
@@ -158,7 +159,7 @@ struct FakeCloud {
     script: Script,
     control: Arc<Control>,
 }
-impl EpicCloud for FakeCloud {
+impl LaunchCloud<Error> for FakeCloud {
     fn prepare<'a>(&'a mut self, _: &'a SessionAlive<'a>) -> Operation<'a, Result<()>> {
         Box::pin(async move {
             record(&self.directory, "cloud.prepare");

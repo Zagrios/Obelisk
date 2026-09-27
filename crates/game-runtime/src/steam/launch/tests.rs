@@ -6,6 +6,7 @@ use crate::supervisor::session::tests::{
     Harness, Script, fixture_directory, hold, inspect, lifecycle_suite, record, target,
     write_helper,
 };
+use crate::supervisor::{client::SessionAlive, session::Operation};
 use std::fs;
 
 const ACCOUNT: u64 = 0x0110_0001_0000_002a;
@@ -159,6 +160,8 @@ impl SteamCloud for FakeCloud {
     fn native_storage(&self) -> Result<Option<NativeStorage>, Error> {
         Ok(None)
     }
+}
+impl LaunchCloud<Error> for FakeCloud {
     fn prepare<'a>(&'a mut self, _: &'a SessionAlive<'a>) -> Operation<'a, Result<(), Error>> {
         Box::pin(async move {
             record(&self.directory, "cloud.prepare");
