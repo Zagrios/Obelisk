@@ -215,6 +215,9 @@ pub trait GameSupervisor: Send + Sync {
     fn snapshot(&self, after: Option<u64>) -> Result<GameSnapshot, GameSessionError>;
     /// Cancels preparation. After spawn the game keeps running.
     fn cancel_preparation(&self);
+    /// Ends the game, as quitting SailOver does. Before spawn it cancels
+    /// preparation.
+    fn stop(&self) -> Result<(), GameSessionError>;
     /// Opens the start gate of a supervisor that waits for its UI.
     fn begin(&self) -> Result<(), GameSessionError>;
     fn choose(
@@ -436,6 +439,9 @@ impl<P: Bridged> Supervised<P> for Foreign {
     }
     fn cancel(&self) {
         self.0.cancel_preparation();
+    }
+    fn stop(&self) -> Result<(), String> {
+        Ok(self.0.stop()?)
     }
     fn begin(&self) -> Result<(), String> {
         Ok(self.0.begin()?)
@@ -717,6 +723,17 @@ impl StorefrontSessions {
         .await
     }
 
+    /// Ends the running game, as quitting SailOver does; its session still
+    /// settles its Cloud saves. A launch still preparing is cancelled.
+    pub async fn stop(&self) -> Result<(), GameSessionError> {
+        let sessions = self.sessions.clone();
+        blocking(self.sessions.failed(), move || match &*sessions {
+            Storefronts::Steam(sessions) => sessions.stop(),
+            Storefronts::Epic(sessions) => sessions.stop(),
+        })
+        .await
+    }
+
     /// The player declined to install Rosetta: the waiting launch stops.
     pub fn decline_rosetta(&self, session_id: String, account: GameAccount, decision_id: u64) {
         match &*self.sessions {
@@ -865,6 +882,9 @@ mod tests {
             })
         }
         fn cancel_preparation(&self) {}
+        fn stop(&self) -> Result<(), GameSessionError> {
+            Ok(())
+        }
         fn begin(&self) -> Result<(), GameSessionError> {
             Ok(())
         }

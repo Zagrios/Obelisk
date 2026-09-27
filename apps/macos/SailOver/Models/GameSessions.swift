@@ -247,6 +247,13 @@ final class GameSessions<Store: GameStorefront> {
         operation?.cancel()
     }
 
+    /// Ends the running game, as quitting SailOver does: it gets a few seconds
+    /// to quit, and its session still settles its Cloud saves.
+    func stop() async {
+        try? await core.stop()
+        apply(core.state())
+    }
+
     /// Account revocation. Admission checks it at once; the supervisor learns
     /// it as soon as it can be reached.
     func signedOut(account: Store.AccountID) {

@@ -957,6 +957,7 @@ private final class EpicDownloadGameSession: GameSupervisor, @unchecked Sendable
     init(state: EpicDownloadGameState) { self.state = state }
     func begin() throws { let state = state; try awaitBlocking { await state.begin() } }
     func cancelPreparation() { let state = state; _ = try? awaitBlocking { await state.cancelPreparation() } }
+    func stop() throws { let state = state; try awaitBlocking { await state.finish() } }
     func choose(account: GameAccount, decisionId: UInt64, choice: CloudChoice) throws {
         let state = state
         try awaitBlocking { await state.choose(choice) }

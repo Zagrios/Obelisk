@@ -417,6 +417,61 @@ fn wait(mut child: Child, timeout: Duration) -> Result<Option<i32>, Error> {
     }
 }
 
+/// Ends every process of the prefix: Wine asks them to quit, then kills
+/// those that remain, including the ones it started apart from the game.
+pub(crate) fn stop(config: &Config) {
+    let _ = wineserver(&config.runtime, &config.prefix, "-k");
+}
+
+/// Ends the Wine processes a SailOver that died left behind, and returns how
+/// many. macOS ends every process of a SailOver that dies, its sessions'
+/// supervisors and Steam hosts included, but not the Windows processes Wine
+/// starts apart: those froze without their session, and nothing else runs
+/// from `voile`.
+pub fn end_orphans(voile: &Path) -> usize {
+    let Ok(listing) = Command::new("/usr/sbin/lsof")
+        .args(["-n", "-P", "-d", "txt", "-Fpn"])
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+    else {
+        return 0;
+    };
+    let voile = voile.canonicalize().unwrap_or_else(|_| voile.to_owned());
+    let orphans = running_from(
+        &String::from_utf8_lossy(&listing.stdout),
+        &voile,
+        std::process::id(),
+    );
+    for pid in &orphans {
+        let _ = Command::new("/bin/kill")
+            .args(["-KILL", &pid.to_string()])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    orphans.len()
+}
+
+/// The processes of an `lsof -Fpn` listing that run files from `root`.
+fn running_from(listing: &str, root: &Path, own: u32) -> Vec<u32> {
+    let mut found = Vec::new();
+    let mut pid = None;
+    for line in listing.lines() {
+        if let Some(value) = line.strip_prefix('p') {
+            pid = value.parse::<u32>().ok().filter(|pid| *pid != own);
+        } else if let Some(path) = line.strip_prefix('n')
+            && let Some(current) = pid
+            && Path::new(path).starts_with(root)
+            && !found.contains(&current)
+        {
+            found.push(current);
+        }
+    }
+    found
+}
+
 /// Waits for, or stops, the Wine server of `prefix`. Neither starts a server,
 /// so no Wine setting is needed.
 fn wineserver(runtime: &Path, prefix: &Path, argument: &str) -> Result<(), Error> {

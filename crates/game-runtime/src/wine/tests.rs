@@ -413,3 +413,14 @@ fn an_uninstalled_windows_game_loses_its_prefix_but_never_what_a_link_points_to(
         Err(RemovalFailure::Unsafe(_))
     ));
 }
+
+#[test]
+fn only_processes_running_the_runtime_are_left_behind_wine_processes() {
+    let listing = "p10\nftxt\nn/usr/lib/dyld\np20\nftxt\nn/usr/lib/dyld\nftxt\nn/lib/Voile/current/bin/wine-preloader\nftxt\nn/lib/Voile/current/lib/wine/ntdll.so\np30\nftxt\nn/lib/Voile-other/bin/wine\np40\nftxt\nn/lib/Voile/v1/bin/wineserver\n";
+    assert_eq!(running_from(listing, Path::new("/lib/Voile"), 1), [20, 40]);
+    assert_eq!(
+        running_from(listing, Path::new("/lib/Voile"), 20),
+        [40],
+        "never SailOver itself"
+    );
+}

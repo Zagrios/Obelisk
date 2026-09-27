@@ -10063,6 +10063,91 @@
           }
         }
       }
+    },
+    "app.menu.open": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open SailOver"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvrir SailOver"
+          }
+        }
+      }
+    },
+    "app.menu.quit": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quit SailOver"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quitter SailOver"
+          }
+        }
+      }
+    },
+    "app.quit.running.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A game is running"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un jeu est en cours"
+          }
+        }
+      }
+    },
+    "app.quit.running.message": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quitting SailOver stops the game. Its Cloud saves are synced before SailOver quits."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quitter SailOver arrête le jeu. Ses sauvegardes Cloud sont synchronisées avant que SailOver ne se ferme."
+          }
+        }
+      }
+    },
+    "app.quit.stop": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop the Game and Quit"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arrêter le jeu et quitter"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

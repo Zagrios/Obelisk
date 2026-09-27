@@ -287,21 +287,28 @@ typedef void (*UniffiCallbackInterfaceGameSupervisorMethod2)(uint64_t, void* _No
 #endif
 #ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_GAME_SUPERVISOR_METHOD3
 #define UNIFFI_FFIDEF_CALLBACK_INTERFACE_GAME_SUPERVISOR_METHOD3
-typedef void (*UniffiCallbackInterfaceGameSupervisorMethod3)(uint64_t, RustBuffer, uint64_t, RustBuffer, void* _Nonnull, 
+typedef void (*UniffiCallbackInterfaceGameSupervisorMethod3)(uint64_t, void* _Nonnull, 
         RustCallStatus *_Nonnull uniffiCallStatus
     );
 
 #endif
 #ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_GAME_SUPERVISOR_METHOD4
 #define UNIFFI_FFIDEF_CALLBACK_INTERFACE_GAME_SUPERVISOR_METHOD4
-typedef void (*UniffiCallbackInterfaceGameSupervisorMethod4)(uint64_t, RustBuffer, uint64_t, void* _Nonnull, 
+typedef void (*UniffiCallbackInterfaceGameSupervisorMethod4)(uint64_t, RustBuffer, uint64_t, RustBuffer, void* _Nonnull, 
         RustCallStatus *_Nonnull uniffiCallStatus
     );
 
 #endif
 #ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_GAME_SUPERVISOR_METHOD5
 #define UNIFFI_FFIDEF_CALLBACK_INTERFACE_GAME_SUPERVISOR_METHOD5
-typedef void (*UniffiCallbackInterfaceGameSupervisorMethod5)(uint64_t, RustBuffer, void* _Nonnull, 
+typedef void (*UniffiCallbackInterfaceGameSupervisorMethod5)(uint64_t, RustBuffer, uint64_t, void* _Nonnull, 
+        RustCallStatus *_Nonnull uniffiCallStatus
+    );
+
+#endif
+#ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_GAME_SUPERVISOR_METHOD6
+#define UNIFFI_FFIDEF_CALLBACK_INTERFACE_GAME_SUPERVISOR_METHOD6
+typedef void (*UniffiCallbackInterfaceGameSupervisorMethod6)(uint64_t, RustBuffer, void* _Nonnull, 
         RustCallStatus *_Nonnull uniffiCallStatus
     );
 
@@ -431,10 +438,11 @@ typedef struct UniffiVTableCallbackInterfaceGameSupervisor {
     UniffiCallbackInterfaceClone _Nonnull uniffiClone;
     UniffiCallbackInterfaceGameSupervisorMethod0 _Nonnull snapshot;
     UniffiCallbackInterfaceGameSupervisorMethod1 _Nonnull cancelPreparation;
-    UniffiCallbackInterfaceGameSupervisorMethod2 _Nonnull begin;
-    UniffiCallbackInterfaceGameSupervisorMethod3 _Nonnull choose;
-    UniffiCallbackInterfaceGameSupervisorMethod4 _Nonnull resumeAfterRosetta;
-    UniffiCallbackInterfaceGameSupervisorMethod5 _Nonnull revoke;
+    UniffiCallbackInterfaceGameSupervisorMethod2 _Nonnull stop;
+    UniffiCallbackInterfaceGameSupervisorMethod3 _Nonnull begin;
+    UniffiCallbackInterfaceGameSupervisorMethod4 _Nonnull choose;
+    UniffiCallbackInterfaceGameSupervisorMethod5 _Nonnull resumeAfterRosetta;
+    UniffiCallbackInterfaceGameSupervisorMethod6 _Nonnull revoke;
 } UniffiVTableCallbackInterfaceGameSupervisor;
 
 #endif
@@ -750,6 +758,11 @@ RustBuffer uniffi_sailover_bridge_fn_method_gamesupervisor_snapshot(uint64_t ptr
 void uniffi_sailover_bridge_fn_method_gamesupervisor_cancel_preparation(uint64_t ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_GAMESUPERVISOR_STOP
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_GAMESUPERVISOR_STOP
+void uniffi_sailover_bridge_fn_method_gamesupervisor_stop(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_GAMESUPERVISOR_BEGIN
 #define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_GAMESUPERVISOR_BEGIN
 void uniffi_sailover_bridge_fn_method_gamesupervisor_begin(uint64_t ptr, RustCallStatus *_Nonnull out_status
@@ -823,6 +836,11 @@ void uniffi_sailover_bridge_fn_method_storefrontsessions_revoke(uint64_t ptr, Ru
 #ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_STOREFRONTSESSIONS_STATE
 #define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_STOREFRONTSESSIONS_STATE
 RustBuffer uniffi_sailover_bridge_fn_method_storefrontsessions_state(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_STOREFRONTSESSIONS_STOP
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_METHOD_STOREFRONTSESSIONS_STOP
+uint64_t uniffi_sailover_bridge_fn_method_storefrontsessions_stop(uint64_t ptr
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_CLONE_EPICACCOUNTINSTALLATIONS
@@ -1325,6 +1343,11 @@ RustBuffer uniffi_sailover_bridge_fn_func_epic_cloud_configuration(RustBuffer lo
 RustBuffer uniffi_sailover_bridge_fn_func_steam_cloud_maintenance_request(RustBuffer locations, uint32_t app_id, RustBuffer install, RustBuffer platform, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FUNC_END_ORPHANED_WINDOWS_GAMES
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FUNC_END_ORPHANED_WINDOWS_GAMES
+uint32_t uniffi_sailover_bridge_fn_func_end_orphaned_windows_games(RustBuffer locations, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FUNC_SAILOVER_LOCATIONS
 #define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_FN_FUNC_SAILOVER_LOCATIONS
 RustBuffer uniffi_sailover_bridge_fn_func_sailover_locations(RustBuffer library, RustBuffer bundle, RustBuffer home, RustCallStatus *_Nonnull out_status
@@ -1660,6 +1683,12 @@ uint16_t uniffi_sailover_bridge_checksum_func_steam_cloud_maintenance_request(vo
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_FUNC_END_ORPHANED_WINDOWS_GAMES
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_FUNC_END_ORPHANED_WINDOWS_GAMES
+uint16_t uniffi_sailover_bridge_checksum_func_end_orphaned_windows_games(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_FUNC_SAILOVER_LOCATIONS
 #define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_FUNC_SAILOVER_LOCATIONS
 uint16_t uniffi_sailover_bridge_checksum_func_sailover_locations(void
@@ -1870,6 +1899,12 @@ uint16_t uniffi_sailover_bridge_checksum_method_gamesupervisor_cancel_preparatio
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_GAMESUPERVISOR_STOP
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_GAMESUPERVISOR_STOP
+uint16_t uniffi_sailover_bridge_checksum_method_gamesupervisor_stop(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_GAMESUPERVISOR_BEGIN
 #define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_GAMESUPERVISOR_BEGIN
 uint16_t uniffi_sailover_bridge_checksum_method_gamesupervisor_begin(void
@@ -1933,6 +1968,12 @@ uint16_t uniffi_sailover_bridge_checksum_method_storefrontsessions_revoke(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_STOREFRONTSESSIONS_STATE
 #define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_STOREFRONTSESSIONS_STATE
 uint16_t uniffi_sailover_bridge_checksum_method_storefrontsessions_state(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_STOREFRONTSESSIONS_STOP
+#define UNIFFI_FFIDEF_UNIFFI_SAILOVER_BRIDGE_CHECKSUM_METHOD_STOREFRONTSESSIONS_STOP
+uint16_t uniffi_sailover_bridge_checksum_method_storefrontsessions_stop(void
     
 );
 #endif

@@ -260,6 +260,19 @@ impl<P: Provider> Client<P> {
         }
     }
 
+    /// Ends the game, which gets a few seconds to quit before it is killed;
+    /// its exit Cloud sync still runs. Before spawn it cancels preparation.
+    pub fn stop(&self) -> Result<(), P::Error> {
+        self.command(
+            None,
+            Command::<P>::Stop {
+                id: self.id.clone(),
+            },
+            false,
+        )?;
+        Ok(())
+    }
+
     /// Opens a supervisor's start gate. Begin is idempotent, so a lost request
     /// is retried while the supervisor lives, instead of silently expiring.
     pub fn begin(&self) -> Result<(), P::Error> {

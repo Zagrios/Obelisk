@@ -35,7 +35,7 @@ The moment a launch claims its game's Reservation, before any verification, Voil
 _Avoid_: launch start, pending launch
 
 **Game session**:
-One account-scoped launch of a game, holding a Reservation from admission until the game has really exited and its Cloud saves are settled. It outlives SailOver quitting.
+One account-scoped launch of a game, holding a Reservation from admission until the game has really exited and its Cloud saves are settled. SailOver keeps running in the background while it lasts; really quitting SailOver stops its game first, and if SailOver dies, its game stops with it.
 _Avoid_: launch, supervisor session
 
 **Cloud maintenance**:

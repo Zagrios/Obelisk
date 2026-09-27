@@ -128,6 +128,10 @@ impl<S: Services> lifecycle::Launch for Launch<S> {
     type Host = Host;
     const BEGIN: bool = true;
 
+    fn wine(&self) -> Option<crate::wine::Config> {
+        self.request.wine.clone()
+    }
+
     fn open(input: &mut dyn Read) -> Result<(Opening<Epic>, Self)> {
         let request: Request = storage::packet(input)?;
         request.config.validate(&request.account_id)?;

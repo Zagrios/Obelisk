@@ -49,6 +49,13 @@ pub fn sailover_locations(library: String, bundle: String, home: String) -> Sail
     }
 }
 
+/// Ends the Windows game processes a SailOver that died left frozen. Runs
+/// once at startup, before any launch.
+#[uniffi::export]
+pub fn end_orphaned_windows_games(locations: SailOverLocations) -> u32 {
+    game_runtime::wine::end_orphans(Path::new(&locations.voile)) as u32
+}
+
 impl From<&SailOverLocations> for game_runtime::Locations {
     fn from(locations: &SailOverLocations) -> Self {
         Self {

@@ -2915,6 +2915,12 @@ public protocol GameSupervisor: AnyObject, Sendable {
     func cancelPreparation() 
     
     /**
+     * Ends the game, as quitting SailOver does. Before spawn it cancels
+     * preparation.
+     */
+    func stop() throws 
+    
+    /**
      * Opens the start gate of a supervisor that waits for its UI.
      */
     func begin() throws 
@@ -3005,6 +3011,18 @@ open func snapshot(after: UInt64?)throws  -> GameSnapshot  {
 open func cancelPreparation()  {try! rustCall() {
         uniffiCallStatus in
     uniffi_sailover_bridge_fn_method_gamesupervisor_cancel_preparation(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * Ends the game, as quitting SailOver does. Before spawn it cancels
+     * preparation.
+     */
+open func stop()throws   {try rustCallWithError(FfiConverterTypeGameSessionError_lift) {
+        uniffiCallStatus in
+    uniffi_sailover_bridge_fn_method_gamesupervisor_stop(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 }
@@ -3127,6 +3145,29 @@ fileprivate struct UniffiCallbackInterfaceGameSupervisor {
                 callStatus: uniffiCallStatus,
                 makeCall: makeCall,
                 writeReturn: writeReturn
+            )
+        },
+        stop: { (
+            uniffiHandle: UInt64,
+            uniffiOutReturn: UnsafeMutableRawPointer,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> () in
+                guard let uniffiObj = try? FfiConverterTypeGameSupervisor.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return try uniffiObj.stop(
+                )
+            }
+
+            
+            let writeReturn = { () }
+            uniffiTraitInterfaceCallWithError(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn,
+                lowerError: FfiConverterTypeGameSessionError_lower
             )
         },
         begin: { (
@@ -5174,6 +5215,12 @@ public protocol StorefrontSessionsProtocol: AnyObject, Sendable {
     
     func state()  -> GameSessionsState
     
+    /**
+     * Ends the running game, as quitting SailOver does; its session still
+     * settles its Cloud saves. A launch still preparing is cancelled.
+     */
+    func stop() async throws 
+    
 }
 /**
  * One storefront's Game sessions, for the whole life of SailOver.
@@ -5360,6 +5407,26 @@ open func state() -> GameSessionsState  {
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
+}
+    
+    /**
+     * Ends the running game, as quitting SailOver does; its session still
+     * settles its Cloud saves. A launch still preparing is cancelled.
+     */
+open func stop()async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_sailover_bridge_fn_method_storefrontsessions_stop(
+                        self.uniffiCloneHandle()
+                )
+            },
+            pollFunc: ffi_sailover_bridge_rust_future_poll_void,
+            completeFunc: ffi_sailover_bridge_rust_future_complete_void,
+            freeFunc: ffi_sailover_bridge_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeGameSessionError_lift
+        )
 }
     
 
@@ -12434,6 +12501,18 @@ public func steamCloudMaintenanceRequest(locations: SailOverLocations, appId: UI
     )
 })
 }
+/**
+ * Ends the Windows game processes a SailOver that died left frozen. Runs
+ * once at startup, before any launch.
+ */
+public func endOrphanedWindowsGames(locations: SailOverLocations) -> UInt32  {
+    return try!  FfiConverterUInt32.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_sailover_bridge_fn_func_end_orphaned_windows_games(
+        FfiConverterTypeSailOverLocations_lower(locations),uniffiCallStatus
+    )
+})
+}
 public func sailoverLocations(library: String, bundle: String, home: String) -> SailOverLocations  {
     return try!  FfiConverterTypeSailOverLocations_lift(try! rustCall() {
         uniffiCallStatus in
@@ -12510,6 +12589,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sailover_bridge_checksum_func_steam_cloud_maintenance_request() != 48509) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sailover_bridge_checksum_func_end_orphaned_windows_games() != 22191) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sailover_bridge_checksum_func_sailover_locations() != 62631) {
@@ -12617,16 +12699,19 @@ private let initializationResult: InitializationResult = {
     if (uniffi_sailover_bridge_checksum_method_gamesupervisor_cancel_preparation() != 27630) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sailover_bridge_checksum_method_gamesupervisor_begin() != 1002) {
+    if (uniffi_sailover_bridge_checksum_method_gamesupervisor_stop() != 43676) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sailover_bridge_checksum_method_gamesupervisor_choose() != 62716) {
+    if (uniffi_sailover_bridge_checksum_method_gamesupervisor_begin() != 30449) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sailover_bridge_checksum_method_gamesupervisor_resume_after_rosetta() != 5891) {
+    if (uniffi_sailover_bridge_checksum_method_gamesupervisor_choose() != 53459) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sailover_bridge_checksum_method_gamesupervisor_revoke() != 57482) {
+    if (uniffi_sailover_bridge_checksum_method_gamesupervisor_resume_after_rosetta() != 33215) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sailover_bridge_checksum_method_gamesupervisor_revoke() != 52721) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sailover_bridge_checksum_method_storefrontsessions_admit() != 7411) {
@@ -12648,6 +12733,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sailover_bridge_checksum_method_storefrontsessions_state() != 3684) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sailover_bridge_checksum_method_storefrontsessions_stop() != 41062) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sailover_bridge_checksum_method_epicaccountinstallations_can_modify() != 17451) {

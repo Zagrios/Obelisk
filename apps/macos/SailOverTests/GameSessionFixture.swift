@@ -114,6 +114,8 @@ final class RecoveredGameFixture: GameSupervisor, @unchecked Sendable {
 
     func cancelPreparation() { locked { _cancellations += 1 } }
 
+    func stop() throws { finish() }
+
     func choose(account: GameAccount, decisionId: UInt64, choice: CloudChoice) throws {
         locked { _cloudChoices.append(.init(account: account, decisionID: decisionId, choice: choice)) }
     }

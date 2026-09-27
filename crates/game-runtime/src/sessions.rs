@@ -78,6 +78,9 @@ pub trait Supervised<P: Provider>: Send + Sync {
     fn snapshot(&self, after: Option<u64>) -> Result<Observation<P>, String>;
     /// Cancels preparation. After spawn the game keeps running.
     fn cancel(&self);
+    /// Ends the game, as quitting SailOver does; its exit Cloud sync still
+    /// runs. Before spawn it cancels preparation.
+    fn stop(&self) -> Result<(), String>;
     /// Opens the start gate of a supervisor that waits for its UI.
     fn begin(&self) -> Result<(), String>;
     fn choose(&self, account: &P::Account, decision_id: u64, choice: Choice) -> Result<(), String>;
@@ -94,6 +97,9 @@ impl<P: Provider> Supervised<P> for supervisor::Client<P> {
     }
     fn cancel(&self) {
         supervisor::Client::cancel(self);
+    }
+    fn stop(&self) -> Result<(), String> {
+        supervisor::Client::stop(self).map_err(|error| error.to_string())
     }
     fn begin(&self) -> Result<(), String> {
         supervisor::Client::begin(self).map_err(|error| error.to_string())
@@ -595,6 +601,25 @@ impl<P: Storefront> Sessions<P> {
             std::thread::spawn(move || {
                 let _ = shared.apply_revocation(&account, &client);
             });
+        }
+    }
+
+    /// Ends the running game, as quitting SailOver does: it gets a few
+    /// seconds to quit, and its session still settles its Cloud saves. A
+    /// launch still preparing is cancelled.
+    pub fn stop(&self) -> Result<(), Failure> {
+        let (client, operation) = {
+            let inner = self.shared.inner.lock().unwrap();
+            (inner.client.clone(), inner.operation.clone())
+        };
+        match client {
+            Some(client) => client.stop().map_err(Failure::Failed),
+            None => {
+                if let Some(operation) = operation {
+                    operation.cancel();
+                }
+                Ok(())
+            }
         }
     }
 

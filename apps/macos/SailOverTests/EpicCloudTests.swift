@@ -576,6 +576,7 @@ private final class EpicCloudGameFixture: GameSupervisor, @unchecked Sendable {
         return try body()
     }
     func cancelPreparation() { signals.cancel() }
+    func stop() throws { update(phase: .finished) }
     func begin() throws { locked { _beginnings += 1 } }
     func rejectRevocation() { locked { rejectsRevocation = true } }
     func revoke(account: GameAccount) throws {

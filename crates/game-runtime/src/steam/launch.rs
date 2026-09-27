@@ -148,6 +148,10 @@ impl<M: Machine> session::Launch for Launch<M> {
         Box::new(move || launch.cancel())
     }
 
+    fn wine(&self) -> Option<crate::wine::Config> {
+        self.request.config.wine.clone()
+    }
+
     async fn prepare_cloud(
         &mut self,
         session: &Arc<Session<Steam>>,

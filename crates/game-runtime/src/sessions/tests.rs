@@ -27,6 +27,7 @@ struct FakeState<P: Provider> {
     rosetta_unavailable: bool,
     begins: usize,
     cancellations: usize,
+    stops: usize,
     revocations: Vec<P::Account>,
     choices: Vec<(P::Account, u64, Choice)>,
     rosetta_resumes: Vec<(P::Account, u64)>,
@@ -64,6 +65,7 @@ impl<P: Provider> Fake<P> {
                 rosetta_unavailable: false,
                 begins: 0,
                 cancellations: 0,
+                stops: 0,
                 revocations: Vec::new(),
                 choices: Vec::new(),
                 rosetta_resumes: Vec::new(),
@@ -147,6 +149,10 @@ impl<P: Provider> Supervised<P> for Fake<P> {
     }
     fn cancel(&self) {
         self.state.lock().unwrap().cancellations += 1;
+    }
+    fn stop(&self) -> Result<(), String> {
+        self.state.lock().unwrap().stops += 1;
+        Ok(())
     }
     fn begin(&self) -> Result<(), String> {
         let mut state = self.state.lock().unwrap();
@@ -860,4 +866,24 @@ async fn the_start_gate_opens_only_after_the_step_before_it_and_never_once_cance
     assert_eq!(game.read(|state| state.begins), 0);
     game.fail(None, true);
     assert_eq!(launch.await.unwrap(), Err(Failure::Cancelled));
+}
+
+#[tokio::test]
+async fn stopping_asks_the_running_game_to_end_and_cancels_a_launch_still_preparing() {
+    let sessions = sessions();
+    settled(&sessions).await;
+    let game = steam(42, Phase::Running);
+    let launch = follow(&sessions, 42, game.clone());
+    eventually(|| running(&sessions)).await;
+    sessions.stop().unwrap();
+    assert_eq!(game.read(|state| state.stops), 1);
+    game.finish(false);
+    assert_eq!(launch.await.unwrap(), Ok(()));
+
+    let admission = sessions.admit(42, 42).unwrap();
+    let canceller = admission.canceller();
+    sessions.stop().unwrap();
+    assert!(canceller.cancelled());
+    drop(admission);
+    assert!(!sessions.state().busy());
 }

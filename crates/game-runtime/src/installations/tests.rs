@@ -238,6 +238,10 @@ impl Supervised<Steam> for Game {
         Ok(state.clone())
     }
     fn cancel(&self) {}
+    fn stop(&self) -> Result<(), String> {
+        self.end(None);
+        Ok(())
+    }
     fn begin(&self) -> Result<(), String> {
         Ok(())
     }

@@ -192,6 +192,11 @@ pub(crate) enum Command<P: Provider> {
     Cancel {
         id: String,
     },
+    /// Ends the game itself, as quitting SailOver does. Before spawn it
+    /// cancels preparation.
+    Stop {
+        id: String,
+    },
     CloudChoice {
         id: String,
         account_id: P::Account,

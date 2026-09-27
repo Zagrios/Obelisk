@@ -391,6 +391,10 @@ macro_rules! lifecycle_suite {
             lifecycle::cancelling_after_spawn_leaves_the_game_running::<$harness>()
         }
         #[test]
+        fn stopping_a_running_game_ends_it_and_still_finishes_the_session() {
+            lifecycle::stopping_a_running_game_ends_it_and_still_finishes_the_session::<$harness>()
+        }
+        #[test]
         fn revoking_before_admission_abandons_the_launch_without_presence() {
             lifecycle::revoking_before_admission_abandons_the_launch_without_presence::<$harness>()
         }
@@ -629,6 +633,19 @@ pub(crate) fn cancelling_after_spawn_leaves_the_game_running<H: Harness>() {
     let finished = run.until(Record::finished);
     assert_eq!(finished.phase, Phase::Finished);
     assert_eq!(finished.exit_code, Some(3));
+}
+
+pub(crate) fn stopping_a_running_game_ends_it_and_still_finishes_the_session<H: Harness>() {
+    let run = launch::<H>(script(HELD));
+    run.until(|r| r.phase == Phase::Running);
+    run.client.stop().unwrap();
+    let finished = run.until(Record::finished);
+    assert_eq!(
+        finished.phase,
+        Phase::Finished,
+        "a stopped game is no failure"
+    );
+    assert!(finished.game.is_none());
 }
 
 pub(crate) fn revoking_before_admission_abandons_the_launch_without_presence<H: Harness>() {

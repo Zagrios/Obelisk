@@ -4,6 +4,7 @@ import SwiftUI
 @main
 struct SailOverApp: App {
     @State private var model = AppModel()
+    @NSApplicationDelegateAdaptor(AppLifecycle.self) private var lifecycle
 
     var body: some Scene {
         Window(L10n.string("app.library"), id: "main") {
@@ -31,6 +32,11 @@ struct SailOverApp: App {
                     .keyboardShortcut("r")
                     .disabled(model.presentedFriends != nil)
             }
+        }
+        MenuBarExtra {
+            AppMenuBarMenu(lifecycle: lifecycle)
+        } label: {
+            AppMenuBarLabel(model: model, lifecycle: lifecycle)
         }
     }
 }

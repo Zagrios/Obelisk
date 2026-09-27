@@ -77,6 +77,7 @@
 		C236DCB48E897B39633A379F /* SteamKeychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B6AC4CB3BFF57CB7F1CB264 /* SteamKeychain.swift */; };
 		C4F163873B7BE3C8F7A17058 /* SteamLoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB89D17B436E02D04F112CB8 /* SteamLoginView.swift */; };
 		C7504A886073C29D3A36CD0B /* EpicCloudTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D016F1718C3D5CEF655AE72 /* EpicCloudTests.swift */; };
+		C76234A433170CB1F637016E /* AppLifecycle.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7DB91BE8A6491138DE63724 /* AppLifecycle.swift */; };
 		CA5456F1A639D653D8FC468B /* FriendsPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8908A781C2B5809AA92E54B /* FriendsPresentation.swift */; };
 		CA6A87AD4F282D37FED4FAC0 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4779CD405A6E10BF434CE531 /* KeychainStore.swift */; };
 		CA85213C34EB2C0E4964E4F5 /* SteamRosettaTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BA1420505D6532639C145F7 /* SteamRosettaTests.swift */; };
@@ -171,6 +172,7 @@
 		AC2AE57DF159D0C22525DAE4 /* EpicLoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EpicLoginView.swift; sourceTree = "<group>"; };
 		B049496BE9FBC00EF1441AD2 /* CloudMaintenance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudMaintenance.swift; sourceTree = "<group>"; };
 		B63E48720DB4A426CD686870 /* EpicAuthorizationCallback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EpicAuthorizationCallback.swift; sourceTree = "<group>"; };
+		B7DB91BE8A6491138DE63724 /* AppLifecycle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLifecycle.swift; sourceTree = "<group>"; };
 		B8A7BC1C7D20B93FDBB67A26 /* SteamSessionTestDefaults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SteamSessionTestDefaults.swift; sourceTree = "<group>"; };
 		B9F61B372A5241DF6C20E6BC /* L10n.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = L10n.swift; sourceTree = "<group>"; };
 		BB25827265A48676887A95CD /* EpicRememberedSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EpicRememberedSession.swift; sourceTree = "<group>"; };
@@ -395,6 +397,7 @@
 			isa = PBXGroup;
 			children = (
 				93FC7EB09E8E011F6325FC1B /* AppIdentity.swift */,
+				B7DB91BE8A6491138DE63724 /* AppLifecycle.swift */,
 				8C5D8BDE887CC329753F05DC /* AppModel.swift */,
 				B9F61B372A5241DF6C20E6BC /* L10n.swift */,
 				6A73583347DA85E2B68F599B /* SailOverApp.swift */,
@@ -579,6 +582,7 @@
 			files = (
 				94BB91EAE5BB661290164587 /* AppAppearance.swift in Sources */,
 				AE4945681F833E7E5A57287C /* AppIdentity.swift in Sources */,
+				C76234A433170CB1F637016E /* AppLifecycle.swift in Sources */,
 				5233196BBEA5DBF60C52421E /* AppModel.swift in Sources */,
 				81B5126F36E6148A0D660837 /* CachedArtwork.swift in Sources */,
 				93063E5910E012A36B82814F /* CloudIndicator.swift in Sources */,

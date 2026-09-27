@@ -37,6 +37,8 @@ const OBSERVER_DEADLINE: Duration = Duration::from_secs(120);
 pub(crate) const BEGIN_DEADLINE: Duration = Duration::from_secs(120);
 /// Concurrent control connections; more are dropped unanswered.
 const WORKERS: usize = 16;
+/// How long a game asked to stop gets to quit before it is killed.
+const STOP_GRACE: Duration = Duration::from_secs(5);
 
 /// What the client handed over, as the core needs it.
 pub(crate) struct Opening<P: Provider> {
@@ -77,6 +79,10 @@ pub(crate) trait Launch: Sized + 'static {
     /// native host, when the launch is cancelled or revoked before spawn.
     fn interrupt(&self) -> Box<dyn Fn() + Send + Sync> {
         Box::new(|| {})
+    }
+    /// How a Windows game runs, whose prefix stopping the game empties too.
+    fn wine(&self) -> Option<crate::wine::Config> {
+        None
     }
     async fn authenticate(
         &mut self,
@@ -198,6 +204,8 @@ impl Presence {
 struct State<P: Provider> {
     record: Record<P>,
     spawned: bool,
+    /// The spawned helper that becomes the game, until it is reaped.
+    game: Option<u32>,
     begun: bool,
     revoked: bool,
     /// A journal write failed before spawn: the launch fails closed.
@@ -218,8 +226,39 @@ pub(crate) struct Session<P: Provider> {
     /// The session's Cloud sync publishes into the record through it.
     cloud: Arc<crate::cloud::Control>,
     interrupt: OnceLock<Box<dyn Fn() + Send + Sync>>,
+    wine: OnceLock<Option<crate::wine::Config>>,
 }
 impl<P: Provider> Session<P> {
+    /// Ends the running game: it gets `STOP_GRACE` to quit before it is
+    /// killed. A Windows game's prefix is emptied, which also ends the
+    /// processes Wine started apart from it.
+    fn stop_game(&self) {
+        let Some(pid) = self.state.lock().unwrap().game else {
+            return;
+        };
+        let wine = self.wine.get().cloned().flatten();
+        let signal = |signal: &str| {
+            // The helper stays unreaped until the supervisor waits for it, so
+            // its pid cannot name another process meanwhile.
+            if self.state.lock().unwrap().game == Some(pid) {
+                let _ = std::process::Command::new("/bin/kill")
+                    .args([signal, &pid.to_string()])
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status();
+            }
+        };
+        signal("-TERM");
+        if let Some(wine) = &wine {
+            crate::wine::stop(wine);
+        }
+        let deadline = Instant::now() + STOP_GRACE;
+        while self.state.lock().unwrap().game == Some(pid) && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        signal("-KILL");
+    }
     pub(crate) fn record(&self) -> Record<P> {
         self.state.lock().unwrap().record.clone()
     }
@@ -352,6 +391,7 @@ pub(crate) fn serve<L: Launch>(
         state: Mutex::new(State {
             record,
             spawned: false,
+            game: None,
             begun: !L::BEGIN,
             revoked: false,
             unsaved: false,
@@ -377,8 +417,10 @@ pub(crate) fn serve<L: Launch>(
             }
         })),
         interrupt: OnceLock::new(),
+        wine: OnceLock::new(),
     });
     let _ = session.interrupt.set(launch.interrupt());
+    let _ = session.wine.set(launch.wine());
     let finished = Arc::new(AtomicBool::new(false));
     let listening = {
         let session = session.clone();
@@ -495,7 +537,11 @@ async fn run<L: Launch>(
             .kill_on_drop(false)
             .spawn()
             .map_err(|_| Error::StartFailed)?;
-        session.state.lock().unwrap().spawned = true;
+        {
+            let mut state = session.state.lock().unwrap();
+            state.spawned = true;
+            state.game = game.id();
+        }
         let admitted = (|| {
             // Read now: a game reaped during confirmation no longer has one.
             let pid = game.id().ok_or(Error::StartFailed)?;
@@ -527,6 +573,7 @@ async fn run<L: Launch>(
     // reaped, outside the admission lock.
     let reap = async |mut game: tokio::process::Child, error: Error| {
         let exit = wait_for_exit(&mut game).await;
+        session.state.lock().unwrap().game = None;
         launch.stopped(&host, Some(exit));
         session.state.lock().unwrap().spawned = false;
         let _ = session.update(|r| r.starting = None);
@@ -561,6 +608,7 @@ async fn run<L: Launch>(
     }
     let watching = launch.watch(&host, session);
     let exit = wait_for_exit(&mut game).await;
+    session.state.lock().unwrap().game = None;
     session.presence.stop();
     launch.stopped(&host, Some(exit));
     if let Some(watching) = watching {
@@ -620,7 +668,7 @@ fn listen<L: Launch>(
     }
 }
 
-fn respond<L: Launch>(mut stream: UnixStream, session: &Session<L::P>) -> Result<(), Error> {
+fn respond<L: Launch>(mut stream: UnixStream, session: &Arc<Session<L::P>>) -> Result<(), Error> {
     stream.set_read_timeout(Some(Duration::from_secs(2)))?;
     stream.set_write_timeout(Some(Duration::from_secs(2)))?;
     let command: Command<L::P> = storage::command(&stream)?;
@@ -663,6 +711,23 @@ fn respond<L: Launch>(mut stream: UnixStream, session: &Session<L::P>) -> Result
             let preparing = !state.spawned;
             drop(state);
             if preparing {
+                session.stop_preparation();
+                session.notify();
+            }
+        }
+        Command::Stop { id } => {
+            let _admission = session.admission.lock().unwrap();
+            let state = session.state.lock().unwrap();
+            if !same(&state, &id, None) {
+                return Err(Error::InvalidSession);
+            }
+            let spawned = state.spawned;
+            drop(state);
+            if spawned {
+                // The reply does not wait for the game to go.
+                let session = session.clone();
+                std::thread::spawn(move || session.stop_game());
+            } else {
                 session.stop_preparation();
                 session.notify();
             }
