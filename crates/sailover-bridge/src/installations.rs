@@ -1,8 +1,8 @@
 //! One account's installations across UniFFI, per storefront. Rust keeps the
 //! Installation receipts, runs the Transfers, launches, uninstalls and Cloud
 //! maintenance, and holds the account's Cloud question; Swift presents the
-//! state and forwards the player's actions. A storefront's content is a
-//! foreign trait too, so tests can stand in for its session.
+//! state and forwards the player's actions. Each storefront's part of them is
+//! game-runtime's; a foreign session a test stands in keeps its own here.
 use crate::{
     CloudChoice, CloudStatus, CloudSync, EpicCloudConfiguration, EpicCloudIndicator, EpicError,
     EpicInstallation, EpicSession, GameSessionError, GameSupervisor, GameTransfer,
@@ -395,8 +395,8 @@ fn remove_prefix(
     })
 }
 
-/// What Steam's content adapters share: the account, its locations and the
-/// installation's Cloud configuration.
+/// What the Steam session a test stands in needs locally: the account, its
+/// locations and the installation's Cloud configuration.
 struct SteamLocal {
     account: u64,
     locations: Locations,
@@ -436,21 +436,6 @@ impl SteamLocal {
     fn directory_name(receipt: &steam::Receipt) -> String {
         format!("steam-{}-{}", receipt.app_id, receipt.platform)
     }
-    /// What maintenance of `app_id` syncs: its installation, or, uninstalled,
-    /// its saved context.
-    fn maintenance(
-        &self,
-        app_id: u32,
-        receipt: Option<&steam::Receipt>,
-    ) -> steam::cloud::MaintenanceTarget {
-        match receipt {
-            Some(receipt) => steam::cloud::MaintenanceTarget::Installed(self.cloud(receipt)),
-            None => steam::cloud::MaintenanceTarget::Uninstalled {
-                root: self.locations.cloud_archive.clone(),
-                app_id,
-            },
-        }
-    }
     fn indicators(&self, games: &[u32]) -> Result<Vec<(u32, cloud_status::Indicator)>, Failure> {
         steam::cloud::indicators(&self.locations.cloud_archive, self.account, games)
             .map_err(|failure| Failure::Failed(failure.key().into()))
@@ -461,133 +446,6 @@ impl SteamLocal {
             receipt.platform == "windows",
             &receipt.directory,
         )
-    }
-}
-
-/// The signed-in Steam session.
-struct SteamSessionContent {
-    session: Arc<SteamSession>,
-    credentials: SteamCredentials,
-    local: SteamLocal,
-}
-
-impl Content<steam::Steam> for SteamSessionContent {
-    fn download<'a>(
-        &'a self,
-        request: &'a steam::Download,
-    ) -> BoxFuture<'a, Result<steam::Receipt, Failure>> {
-        Box::pin(async move {
-            let installed = self
-                .session
-                .download(
-                    request.app_id,
-                    request.platform.clone(),
-                    request.language.clone(),
-                    request.directory.to_string_lossy().into_owned(),
-                )
-                .await
-                .map_err(steam_failure)?;
-            Ok(steam_receipt(installed))
-        })
-    }
-    fn progress(&self) -> Option<TransferProgress> {
-        self.session.client.progress()
-    }
-    fn cancel(&self) {
-        self.session.client.cancel_download();
-    }
-    fn launch<'a>(
-        &'a self,
-        receipt: &'a steam::Receipt,
-        _: &'a steam::Download,
-        admission: Admission<steam::Steam>,
-    ) -> BoxFuture<'a, Result<(), Failure>> {
-        Box::pin(async move {
-            let plan = self
-                .session
-                .launch_plan(
-                    receipt.app_id,
-                    receipt.platform.clone(),
-                    receipt.directory.clone(),
-                )
-                .await
-                .map_err(steam_failure)?;
-            if admission.cancelled() {
-                return Err(Failure::Cancelled);
-            }
-            let handoff = steam::hand_off(
-                admission.canceller(),
-                self.local.locations.clone(),
-                game_runtime::protocol::Credentials {
-                    steam_id: self.credentials.steam_id,
-                    account_name: self.credentials.account_name.clone(),
-                    refresh_token: self.credentials.refresh_token.clone(),
-                },
-                plan.app_id,
-                plan.platform,
-                PathBuf::from(plan.install_directory),
-                plan.target.into(),
-            );
-            admission.launch(handoff).await
-        })
-    }
-    fn archive<'a>(
-        &'a self,
-        receipt: &'a steam::Receipt,
-        _: &'a steam::Download,
-    ) -> BoxFuture<'a, Result<(), Failure>> {
-        Box::pin(async move {
-            self.session
-                .archive_cloud(self.local.configuration(receipt))
-                .await
-                .map_err(steam_failure)
-        })
-    }
-    fn removed<'a>(
-        &'a self,
-        receipt: &'a steam::Receipt,
-        _: &'a steam::Download,
-    ) -> BoxFuture<'a, Result<(), Failure>> {
-        Box::pin(self.local.removed(receipt))
-    }
-    fn directory_name(&self, receipt: &steam::Receipt, _: &steam::Download) -> String {
-        SteamLocal::directory_name(receipt)
-    }
-    fn remove_prefix(&self, receipt: &steam::Receipt) -> Option<Result<(), String>> {
-        self.local.remove_prefix(receipt)
-    }
-    fn maintain<'a>(
-        &'a self,
-        game: &'a u32,
-        installed: Option<(&'a steam::Receipt, &'a steam::Download)>,
-        control: Arc<cloud::Control>,
-    ) -> BoxFuture<'a, Result<(), Failure>> {
-        Box::pin(async move {
-            let target = self
-                .local
-                .maintenance(*game, installed.map(|(receipt, _)| receipt));
-            let credentials = game_runtime::protocol::Credentials {
-                steam_id: self.credentials.steam_id,
-                account_name: self.credentials.account_name.clone(),
-                refresh_token: self.credentials.refresh_token.clone(),
-            };
-            let locations = self.local.locations.clone();
-            blocking(move || {
-                // Its idle guard keeps every launch of Steam out meanwhile.
-                let idle = steam::Client::idle_guard(&locations.steam_sessions, &locations.helper)
-                    .map_err(|error| Failure::Failed(error.to_string()))?;
-                steam::cloud::maintain(target, &credentials, control, &idle).map_err(|failure| {
-                    match failure {
-                        steam::cloud::Failure::Cancelled => Failure::Cancelled,
-                        failure => Failure::Failed(failure.key().into()),
-                    }
-                })
-            })
-            .await?
-        })
-    }
-    fn indicators(&self, games: &[u32]) -> Result<Vec<(u32, cloud_status::Indicator)>, Failure> {
-        self.local.indicators(games)
     }
 }
 
@@ -706,7 +564,7 @@ impl Content<steam::Steam> for ForeignSteamContent {
     }
 }
 
-/// What Epic's content adapters share.
+/// What the Epic session a test stands in needs locally.
 struct EpicLocal {
     account: String,
     language: String,
@@ -838,14 +696,6 @@ impl EpicLocal {
     }
 }
 
-/// How an Epic maintenance sync ended.
-fn epic_maintenance(result: Result<(), epic::Error>) -> Result<(), Failure> {
-    match result {
-        Err(epic::Error::Cancelled) => Err(Failure::Cancelled),
-        result => result.map_err(epic_failure),
-    }
-}
-
 fn epic_receipt(installed: EpicInstallation, request: &epic::Download) -> epic::Receipt {
     epic::Receipt {
         namespace: request.namespace.clone(),
@@ -855,138 +705,6 @@ fn epic_receipt(installed: EpicInstallation, request: &epic::Download) -> epic::
         platform: installed.platform,
         total_bytes: installed.total_bytes,
         needs_verification: Some(false),
-    }
-}
-
-/// Waits until the session's persistence saved its rotated credentials.
-struct Persisted(Arc<EpicSession>);
-impl EpicCredentialSave for Persisted {
-    fn save(&self) {
-        let client = self.0.client.clone();
-        self.0.persistence.wait(|| client.credentials_revision());
-    }
-}
-
-/// The signed-in Epic session.
-struct EpicSessionContent {
-    session: Arc<EpicSession>,
-    local: EpicLocal,
-}
-impl EpicSessionContent {
-    /// As every Epic account call: renewed and saved credentials first. A
-    /// cancellation meanwhile stops the call before it starts.
-    async fn prepare(&self) -> Result<(), Failure> {
-        self.local
-            .cancelled
-            .store(false, std::sync::atomic::Ordering::Release);
-        self.session.prepare().await.map_err(epic_failure)?;
-        self.local.save().await?;
-        self.local.proceed()
-    }
-}
-
-impl Content<epic::Epic> for EpicSessionContent {
-    fn download<'a>(
-        &'a self,
-        request: &'a epic::Download,
-    ) -> BoxFuture<'a, Result<epic::Receipt, Failure>> {
-        Box::pin(async move {
-            self.prepare().await?;
-            let installed = self
-                .session
-                .download(
-                    request.namespace.clone(),
-                    request.catalog_item_id.clone(),
-                    request.app_name.clone(),
-                    request.platform.clone(),
-                    request.directory.to_string_lossy().into_owned(),
-                )
-                .await;
-            self.local.save_later();
-            Ok(epic_receipt(installed.map_err(epic_failure)?, request))
-        })
-    }
-    fn progress(&self) -> Option<TransferProgress> {
-        self.session.client.progress()
-    }
-    fn cancel(&self) {
-        self.local
-            .cancelled
-            .store(true, std::sync::atomic::Ordering::Release);
-        self.session.client.cancel_download();
-    }
-    fn launch<'a>(
-        &'a self,
-        receipt: &'a epic::Receipt,
-        request: &'a epic::Download,
-        admission: Admission<epic::Epic>,
-    ) -> BoxFuture<'a, Result<(), Failure>> {
-        Box::pin(async move {
-            let handoff = crate::epic_cloud::hand_off(
-                self.session.client.clone(),
-                self.local.configuration(receipt, request),
-                self.local.locations.clone(),
-                admission.canceller(),
-            );
-            let outcome = admission
-                .launch_before(handoff, self.local.before_begin())
-                .await;
-            self.local.save_later();
-            outcome
-        })
-    }
-    fn archive<'a>(
-        &'a self,
-        receipt: &'a epic::Receipt,
-        request: &'a epic::Download,
-    ) -> BoxFuture<'a, Result<(), Failure>> {
-        Box::pin(async move {
-            self.prepare().await?;
-            let archived = epic::archive(
-                self.local.configuration(receipt, request),
-                &self.session.client,
-            )
-            .await;
-            self.local.save_later();
-            archived.map_err(epic_failure)
-        })
-    }
-    fn removed<'a>(
-        &'a self,
-        receipt: &'a epic::Receipt,
-        request: &'a epic::Download,
-    ) -> BoxFuture<'a, Result<(), Failure>> {
-        Box::pin(self.local.removed(receipt, request))
-    }
-    fn directory_name(&self, receipt: &epic::Receipt, request: &epic::Download) -> String {
-        EpicLocal::directory_name(receipt, request)
-    }
-    fn remove_prefix(&self, receipt: &epic::Receipt) -> Option<Result<(), String>> {
-        self.local.remove_prefix(receipt)
-    }
-    fn maintain<'a>(
-        &'a self,
-        game: &'a epic::Store,
-        installed: Option<(&'a epic::Receipt, &'a epic::Download)>,
-        control: Arc<cloud::Control>,
-    ) -> BoxFuture<'a, Result<(), Failure>> {
-        Box::pin(async move {
-            let config = self.local.maintenance(game, installed).await?;
-            let (sessions, helper) = (config.session_directory.clone(), config.helper.clone());
-            // Its idle guard keeps every launch of Epic out meanwhile.
-            let idle = blocking(move || epic::Client::idle_guard(&sessions, &helper))
-                .await?
-                .map_err(epic_failure)?;
-            epic_maintenance(
-                epic::maintain(config, self.session.client.clone(), control, &idle).await,
-            )
-        })
-    }
-    fn indicators(
-        &self,
-        games: &[epic::Store],
-    ) -> Result<Vec<(epic::Store, cloud_status::Indicator)>, Failure> {
-        self.local.indicators(games)
     }
 }
 
@@ -1180,14 +898,15 @@ impl SteamAccountInstallations {
     ) -> Result<Arc<Self>, GameSessionError> {
         let locations: Locations = (&locations).into();
         let account = credentials.steam_id;
-        let content = SteamSessionContent {
-            session,
-            credentials,
-            local: SteamLocal {
-                account,
-                locations: locations.clone(),
+        let content = steam::content::Content::new(
+            session.client.clone(),
+            game_runtime::protocol::Credentials {
+                steam_id: credentials.steam_id,
+                account_name: credentials.account_name,
+                refresh_token: credentials.refresh_token,
             },
-        };
+            locations.clone(),
+        );
         Ok(Arc::new(Self {
             installations: account_installations(
                 Arc::new(content),
@@ -1376,17 +1095,16 @@ impl EpicAccountInstallations {
         locations: SailOverLocations,
     ) -> Result<Arc<Self>, GameSessionError> {
         let locations: Locations = (&locations).into();
-        let credentials = Arc::new(Persisted(session.clone()));
-        let content = EpicSessionContent {
-            session,
-            local: EpicLocal {
-                account: account_id.clone(),
-                language,
-                locations: locations.clone(),
-                credentials,
-                cancelled: Default::default(),
-            },
-        };
+        // Every account call waits until the credentials it rotated are saved.
+        let (persistence, client) = (session.persistence.clone(), session.client.clone());
+        let saved = Arc::new(move || persistence.wait(|| client.credentials_revision()));
+        let content = epic::content::Content::new(
+            session.client.clone(),
+            saved,
+            account_id.clone(),
+            language,
+            locations.clone(),
+        );
         Ok(Arc::new(Self {
             installations: account_installations(
                 Arc::new(content),
@@ -1549,63 +1267,5 @@ fn epic_state(state: installations::State<epic::Epic>) -> EpicInstallationsState
             game: maintenance.game.into(),
             cloud: maintenance.cloud.into(),
         }),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    struct NothingToSave;
-    impl EpicCredentialSave for NothingToSave {
-        fn save(&self) {}
-    }
-
-    #[test]
-    fn a_windows_build_keeps_its_saves_in_its_wine_prefix_and_a_mac_build_has_none() {
-        let locations = Locations::new(
-            Path::new("/fixture"),
-            Path::new("/Applications/SailOver.app"),
-            Path::new("/Users/fixture"),
-        );
-        let local = EpicLocal {
-            account: "account".into(),
-            language: "fr".into(),
-            locations: locations.clone(),
-            credentials: Arc::new(NothingToSave),
-            cancelled: Default::default(),
-        };
-        let build = |platform: &str| {
-            let receipt = epic::Receipt {
-                namespace: "sandbox".into(),
-                app_name: "game".into(),
-                name: "Fixture".into(),
-                directory: format!("/fixture/Games/epic-hash-{platform}"),
-                platform: platform.into(),
-                total_bytes: 0,
-                needs_verification: None,
-            };
-            let request = epic::Download {
-                namespace: "sandbox".into(),
-                catalog_item_id: "catalog".into(),
-                app_name: "game".into(),
-                title: "Fixture".into(),
-                platform: platform.into(),
-                directory: "/fixture/Games".into(),
-            };
-            local.configuration(&receipt, &request)
-        };
-
-        let windows = build("Windows");
-        let mac = build("Mac");
-
-        assert_eq!(
-            windows.prefix,
-            Some(locations.wine_prefixes.join("epic-hash-Windows"))
-        );
-        assert_eq!(windows.catalog_item_id, "catalog");
-        assert_eq!(windows.language, "fr");
-        assert_eq!(windows.root, locations.cloud_archive);
-        assert_eq!(mac.prefix, None);
     }
 }

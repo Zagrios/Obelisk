@@ -50,7 +50,9 @@ pub trait Storefront: sessions::Storefront {
     fn transfer_name(request: &Self::Request) -> String;
 }
 
-/// One account's storefront session, as its installations use it.
+/// A storefront's part of one account's installations: where its games and
+/// their Cloud saves live, and what its session does for them. Steam's and
+/// Epic's are `steam::content` and `epic::content`.
 pub trait Content<S: Storefront>: Send + Sync {
     /// Runs one Transfer and returns the receipt of the completed installation.
     fn download<'a>(
@@ -352,6 +354,17 @@ impl<S: Storefront> Shared<S> {
         });
         outcome
     }
+}
+
+/// Blocking work off the async runtime; `failed` names a lost join.
+pub(crate) async fn blocking<T: Send + 'static>(
+    failed: impl Into<String>,
+    work: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, Failure> {
+    let failed = failed.into();
+    tokio::task::spawn_blocking(work)
+        .await
+        .map_err(|_| Failure::Failed(failed))
 }
 
 fn active(state: TransferState) -> bool {

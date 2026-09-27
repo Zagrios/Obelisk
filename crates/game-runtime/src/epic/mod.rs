@@ -1,6 +1,7 @@
 //! Epic game ownership and EGS Cloud orchestration. The UI only observes and
 //! answers revision-bound choices; a detached process owns the entire session.
 mod client;
+pub mod content;
 pub(crate) mod launch;
 mod session;
 mod windows;

@@ -11,6 +11,7 @@ use std::{
 };
 
 pub mod cloud;
+pub mod content;
 pub(crate) mod launch;
 mod windows;
 pub use launch::serve;

@@ -259,7 +259,8 @@ pub struct SteamLaunchPlan {
 }
 #[derive(uniffi::Object)]
 pub struct SteamSession {
-    pub(crate) client: client::Client,
+    /// Shared with the account's installations.
+    pub(crate) client: Arc<client::Client>,
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -279,12 +280,10 @@ impl SteamSession {
             return Err(auth::AuthError::Protocol.into());
         }
         Ok(Arc::new(Self {
-            client: client::Client::connect(
-                &token.account_name,
-                token.steam_id,
-                &token.refresh_token,
-            )
-            .await?,
+            client: Arc::new(
+                client::Client::connect(&token.account_name, token.steam_id, &token.refresh_token)
+                    .await?,
+            ),
         }))
     }
     pub async fn games(&self) -> Result<Vec<SteamGame>, SteamError> {

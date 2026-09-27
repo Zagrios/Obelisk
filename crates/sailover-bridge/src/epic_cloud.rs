@@ -1,8 +1,6 @@
 //! Presentation of the Rust-owned Epic supervisor and Cloud decisions.
 use crate::{EpicError, EpicSession};
 use game_runtime::epic;
-use game_runtime::sessions::{Canceller, Failure, Handoff, Supervised};
-use std::sync::Arc;
 
 impl From<epic::Error> for EpicError {
     fn from(error: epic::Error) -> Self {
@@ -61,76 +59,6 @@ impl From<epic::Configuration> for EpicCloudConfiguration {
         }
     }
 }
-/// Every Epic supervisor call parks on IPC, so it runs off the async runtime.
-/// A lost join is indistinguishable from a lost helper: both are `Session`.
-async fn blocking<T: Send + 'static>(
-    work: impl FnOnce() -> epic::Result<T> + Send + 'static,
-) -> Result<T, EpicError> {
-    tokio::task::spawn_blocking(work)
-        .await
-        .map_err(|_| epic::Error::Session)?
-        .map_err(Into::into)
-}
-
-/// Hands the build `configuration` names to its supervisor for `admission`,
-/// readying Voile and the prefix of a Windows build before any exchange code
-/// exists. A failure before the supervisor starts is definite.
-pub(crate) async fn hand_off(
-    client: Arc<epic_kit::client::Client>,
-    configuration: epic::Configuration,
-    locations: game_runtime::Locations,
-    admission: Canceller<epic::Epic>,
-) -> Result<Arc<dyn Supervised<epic::Epic>>, Handoff> {
-    let refused = |error: EpicError| Handoff::Refused(Failure::Failed(error.to_string()));
-    // A Windows build runs in Wine, readied before any exchange code exists.
-    let wine = match configuration.prefix.is_some() {
-        false => None,
-        true => {
-            admission
-                .install_runtime(&locations.voile)
-                .await
-                .map_err(Handoff::Refused)?;
-            let configuration = configuration.clone();
-            Some(
-                blocking(move || epic::prepare_windows(&configuration, &locations))
-                    .await
-                    .map_err(refused)?,
-            )
-        }
-    };
-    let account = client
-        .credentials()
-        .await
-        .map_err(|e| refused(e.into()))?
-        .account_id;
-    let exchange = client
-        .exchange_code()
-        .await
-        .map_err(|e| refused(e.into()))?;
-    if client
-        .credentials()
-        .await
-        .map_err(|e| refused(e.into()))?
-        .account_id
-        != account
-    {
-        return Err(refused(EpicError::Unauthorized));
-    }
-    if admission.cancelled() {
-        return Err(Handoff::Refused(Failure::Cancelled));
-    }
-    let cancel = sailover_core::transfer::CancelToken::new();
-    let token = cancel.clone();
-    admission.on_cancel(move || token.cancel());
-    let started = tokio::task::spawn_blocking(move || {
-        epic::start(configuration, account, exchange, wine, cancel)
-    })
-    .await
-    .map_err(|_| Handoff::Lost(epic::Error::Session.to_string()))?
-    .map_err(|error| Handoff::Lost(error.to_string()))?;
-    Ok(Arc::new(started) as Arc<dyn Supervised<epic::Epic>>)
-}
-
 #[uniffi::export(async_runtime = "tokio")]
 impl EpicSession {
     pub async fn archive_cloud(
