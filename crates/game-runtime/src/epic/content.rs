@@ -8,12 +8,12 @@ use crate::{
     cloud::Control,
     cloud_status,
     installations::{self, BoxFuture, blocking},
-    sessions::{Admission, BeforeBegin, Canceller, Failure, Handoff, Storefront as _, Supervised},
+    sessions::{self, Admission, BeforeBegin, Failure, Storefront as _, Supervised},
 };
 use epic_kit::client::Client as EpicClient;
 use sailover_core::{installation::TransferProgress, transfer::CancelToken};
 use std::{
-    path::Path,
+    path::{Path, PathBuf},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -253,16 +253,14 @@ impl<N: Network> installations::Content<Epic> for Content<N> {
         admission: Admission<Epic>,
     ) -> BoxFuture<'a, Result<(), Failure>> {
         Box::pin(async move {
-            let handoff = hand_off(
-                self.network.clone(),
-                self.configuration(receipt, request),
-                self.locations.clone(),
-                admission.canceller(),
-            );
-            // The exchange rotated the saved credentials, before the game starts.
-            let saved = self.saved.clone();
-            let before: BeforeBegin = Box::new(move || saved());
-            let outcome = admission.launch_before(handoff, before).await;
+            let outcome = admission
+                .hand_off(Handover {
+                    network: self.network.clone(),
+                    configuration: self.configuration(receipt, request),
+                    locations: self.locations.clone(),
+                    saved: self.saved.clone(),
+                })
+                .await;
             self.save_later();
             outcome
         })
@@ -355,53 +353,65 @@ impl<N: Network> installations::Content<Epic> for Content<N> {
     }
 }
 
-/// Hands the build `configuration` names to its supervisor for `admission`,
-/// readying Voile and the prefix of a Windows build before any exchange code
-/// exists. A failure before the supervisor starts is definite.
-async fn hand_off<N: Network>(
+/// Starting an installed Epic build: its Wine prefix readied, then an
+/// exchange code for its account, then its supervisor.
+struct Handover<N: Network> {
     network: Arc<N>,
     configuration: Configuration,
     locations: Locations,
-    admission: Canceller<Epic>,
-) -> Result<Arc<dyn Supervised<Epic>>, Handoff> {
-    // A Windows build runs in Wine, readied before any exchange code exists.
-    let wine = match configuration.prefix.is_some() {
-        false => None,
-        true => {
-            admission
-                .install_runtime(&locations.voile)
-                .await
-                .map_err(Handoff::Refused)?;
-            let configuration = configuration.clone();
-            Some(
-                blocking(Error::Session.to_string(), move || {
-                    super::prepare_windows(&configuration, &locations)
-                })
-                .await
-                .map_err(Handoff::Refused)?
-                .map_err(|error| Handoff::Refused(failed(error)))?,
-            )
-        }
-    };
-    let account = network.account_id().await.map_err(Handoff::Refused)?;
-    let exchange = network.exchange_code().await.map_err(Handoff::Refused)?;
-    // The code must belong to the account the game is launched for.
-    if network.account_id().await.map_err(Handoff::Refused)? != account {
-        return Err(Handoff::Refused(failed(epic_kit::EpicError::Unauthorized)));
+    saved: Arc<dyn Fn() + Send + Sync>,
+}
+
+impl<N: Network> sessions::Handover<Epic> for Handover<N> {
+    /// The account, its exchange code, and how a Windows build runs.
+    type Prepared = (String, String, Option<crate::wine::Config>);
+    fn voile(&self) -> Option<PathBuf> {
+        self.configuration
+            .prefix
+            .is_some()
+            .then(|| self.locations.voile.clone())
     }
-    if admission.cancelled() {
-        return Err(Handoff::Refused(Failure::Cancelled));
+    fn prepare(&self) -> BoxFuture<'_, Result<Self::Prepared, Failure>> {
+        Box::pin(async move {
+            // A Windows build runs in Wine, readied before any exchange code
+            // exists: a prerequisite may take minutes.
+            let wine = match self.configuration.prefix.is_some() {
+                false => None,
+                true => {
+                    let (configuration, locations) =
+                        (self.configuration.clone(), self.locations.clone());
+                    Some(
+                        blocking(Error::Session.to_string(), move || {
+                            super::prepare_windows(&configuration, &locations)
+                        })
+                        .await?
+                        .map_err(failed)?,
+                    )
+                }
+            };
+            let account = self.network.account_id().await?;
+            let exchange = self.network.exchange_code().await?;
+            // The code must belong to the account the game is launched for.
+            if self.network.account_id().await? != account {
+                return Err(failed(epic_kit::EpicError::Unauthorized));
+            }
+            Ok((account, exchange, wine))
+        })
     }
-    let cancel = CancelToken::new();
-    let token = cancel.clone();
-    admission.on_cancel(move || token.cancel());
-    let started = tokio::task::spawn_blocking(move || {
-        super::start(configuration, account, exchange, wine, cancel)
-    })
-    .await
-    .map_err(|_| Handoff::Lost(Error::Session.to_string()))?
-    .map_err(|error| Handoff::Lost(error.to_string()))?;
-    Ok(Arc::new(started) as Arc<dyn Supervised<Epic>>)
+    /// The exchange rotated the saved credentials, before the game starts.
+    fn before_begin(&self) -> BeforeBegin {
+        let saved = self.saved.clone();
+        Box::new(move || saved())
+    }
+    fn start(
+        self,
+        (account, exchange, wine): Self::Prepared,
+        cancel: CancelToken,
+    ) -> Result<Arc<dyn Supervised<Epic>>, String> {
+        super::start(self.configuration, account, exchange, wine, cancel)
+            .map(|client| Arc::new(client) as Arc<dyn Supervised<Epic>>)
+            .map_err(|error| error.to_string())
+    }
 }
 
 #[cfg(test)]

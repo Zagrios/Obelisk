@@ -178,18 +178,6 @@ impl Launch {
     pub fn cancel(&self) {
         self.cancelled.store(true, Ordering::Release);
     }
-    pub fn start_supervised(&self, mut request: steam::Request) -> Result<steam::Client, Error> {
-        self.check_cancelled()?;
-        let credentials = self
-            .credentials
-            .lock()
-            .map_err(|_| Error::InvalidSession)?
-            .take()
-            .ok_or(Error::InvalidSession)?;
-        request.id = uuid::Uuid::new_v4().to_string();
-        let helper = request.config.helpers.join(package::HOST);
-        steam::start(&helper, &credentials, request, &self.cancelled)
-    }
     /// Starts the native host. `storage` is the Steam Cloud cache the game's
     /// SDK reads, when Cloud runs for this launch.
     pub fn prepare(

@@ -16,6 +16,9 @@ zeroize = "1"
 serde_json = "1"
 game-runtime = { path = "../game-runtime" }
 
+[dev-dependencies]
+sailover-core = { path = "../sailover-core" }
+
 [lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
 

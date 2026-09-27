@@ -13,7 +13,6 @@ use serde::{Serialize, de::DeserializeOwned};
 use std::{
     fmt,
     path::{Path, PathBuf},
-    pin::Pin,
     sync::{Arc, Mutex, OnceLock},
     time::Duration,
 };
@@ -22,7 +21,7 @@ use tokio::sync::watch;
 /// How often a running Transfer's progress is read.
 const PROGRESS: Duration = Duration::from_millis(250);
 
-pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+pub use crate::sessions::BoxFuture;
 
 /// What a storefront adds to its installations.
 pub trait Storefront: sessions::Storefront {

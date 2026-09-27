@@ -377,9 +377,9 @@ dependencies = [
  "base64 0.23.1",
  "crc32fast",
  "flate2",
- "sailover-core",
  "futures-util",
  "reqwest",
+ "sailover-core",
  "serde",
  "serde_json",
  "sha1 0.11.0",
@@ -427,37 +427,6 @@ checksum = "6e634e2e0ebac1ee034020da1ca582e17ffe4e0f5e985823721e168928136dcb"
 dependencies = [
  "crc32fast",
  "miniz_oxide",
-]
-
-[[package]]
-name = "sailover-core"
-version = "0.1.0"
-dependencies = [
- "futures-util",
- "serde",
- "serde_json",
- "sha1 0.11.0",
- "tempfile",
- "thiserror",
- "tokio",
- "uuid",
-]
-
-[[package]]
-name = "sailover-steam-discovery-adapter"
-version = "0.1.0"
-dependencies = [
- "libc",
-]
-
-[[package]]
-name = "sailover-steam-native"
-version = "0.1.0"
-dependencies = [
- "game-runtime",
- "libc",
- "serde_json",
- "zeroize",
 ]
 
 [[package]]
@@ -542,8 +511,8 @@ dependencies = [
  "cloud-vault",
  "epic-kit",
  "flate2",
- "sailover-core",
  "reqwest",
+ "sailover-core",
  "serde",
  "serde_json",
  "sha2",
@@ -1522,6 +1491,38 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 
 [[package]]
+name = "sailover-core"
+version = "0.1.0"
+dependencies = [
+ "futures-util",
+ "serde",
+ "serde_json",
+ "sha1 0.11.0",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "sailover-steam-discovery-adapter"
+version = "0.1.0"
+dependencies = [
+ "libc",
+]
+
+[[package]]
+name = "sailover-steam-native"
+version = "0.1.0"
+dependencies = [
+ "game-runtime",
+ "libc",
+ "sailover-core",
+ "serde_json",
+ "zeroize",
+]
+
+[[package]]
 name = "same-file"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1758,13 +1759,13 @@ dependencies = [
  "cbc",
  "crc32fast",
  "flate2",
- "sailover-core",
  "futures-util",
  "lzma-rs",
  "prost",
  "reqwest",
  "rsa",
  "ruzstd",
+ "sailover-core",
  "serde",
  "serde_json",
  "sha1 0.11.0",

@@ -4,11 +4,9 @@ use crate::{
     protocol::Credentials,
     supervisor::{self, Record, Target},
 };
+use sailover_core::transfer::CancelToken;
 use serde::{Deserialize, Serialize};
-use std::{
-    path::{Path, PathBuf},
-    sync::atomic::{AtomicBool, Ordering},
-};
+use std::path::{Path, PathBuf};
 
 pub mod cloud;
 pub mod content;
@@ -121,50 +119,6 @@ pub fn prepare(
     })
 }
 
-/// Hands the Steam game `target` names inside `install` to its supervisor,
-/// once Voile is in place for a Windows game. A failure before the supervisor
-/// starts is definite; after, the supervisor may have accepted the game.
-pub async fn hand_off(
-    admission: crate::sessions::Canceller<Steam>,
-    locations: crate::Locations,
-    credentials: Credentials,
-    app_id: u32,
-    platform: String,
-    install: PathBuf,
-    target: sailover_core::launch::LaunchTarget,
-) -> Result<std::sync::Arc<dyn crate::sessions::Supervised<Steam>>, crate::sessions::Handoff> {
-    use crate::sessions::{Failure, Handoff};
-    let refused = |error: Error| {
-        Handoff::Refused(match error {
-            Error::Cancelled => Failure::Cancelled,
-            error => Failure::Failed(error.to_string()),
-        })
-    };
-    if platform == "windows" {
-        admission
-            .install_runtime(&locations.voile)
-            .await
-            .map_err(Handoff::Refused)?;
-    }
-    let launch = std::sync::Arc::new(crate::Launch::new(credentials));
-    let cancel = launch.clone();
-    admission.on_cancel(move || cancel.cancel());
-    let request = tokio::task::spawn_blocking(move || {
-        prepare(&locations, app_id, &platform, &install, &target)
-    })
-    .await
-    .map_err(|_| refused(Error::StartFailed))?
-    .map_err(refused)?;
-    if admission.cancelled() {
-        return Err(Handoff::Refused(Failure::Cancelled));
-    }
-    let client = tokio::task::spawn_blocking(move || launch.start_supervised(request))
-        .await
-        .map_err(|_| Handoff::Lost(Error::StartFailed.to_string()))?
-        .map_err(|error| Handoff::Lost(error.to_string()))?;
-    Ok(std::sync::Arc::new(client))
-}
-
 /// The Mac game `target` names inside `install`, and its Steam API library.
 fn native_target(
     install: &Path,
@@ -185,12 +139,15 @@ fn native_target(
     ))
 }
 
+/// Starts the supervisor of `request`'s game, as a new Game session;
+/// `cancelled` stops a start in progress.
 pub fn start(
     helper: &Path,
     credentials: &Credentials,
-    request: Request,
-    cancelled: &AtomicBool,
+    mut request: Request,
+    cancelled: &CancelToken,
 ) -> Result<Client, Error> {
+    request.id = uuid::Uuid::new_v4().to_string();
     start_command(
         helper,
         credentials,
@@ -205,7 +162,7 @@ pub(crate) fn start_command(
     helper: &Path,
     credentials: &Credentials,
     request: Request,
-    cancelled: &AtomicBool,
+    cancelled: &CancelToken,
     command: std::process::Command,
     probe: supervisor::client::Probe,
 ) -> Result<Client, Error> {
@@ -226,7 +183,7 @@ pub(crate) fn start_command(
             supervisor::storage::send(pipe, &request)
         },
         |ack| ack.account_id == account_id && ack.store.app_id == app_id,
-        || cancelled.load(Ordering::Acquire),
+        || cancelled.is_cancelled(),
     )?)
 }
 

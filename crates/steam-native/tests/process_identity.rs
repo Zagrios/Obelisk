@@ -25,11 +25,12 @@ fn identity_helper_flushes_its_bounded_response_before_immediate_exit() {
 #[test]
 fn native_supervisor_acknowledges_and_reports_preparation_failure_without_valve() {
     use game_runtime::{
-        Config, Launch,
+        Config,
         protocol::Credentials,
         steam::Request,
         supervisor::{Phase, Target},
     };
+    use sailover_core::transfer::CancelToken;
     use std::{
         path::PathBuf,
         time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -50,13 +51,15 @@ fn native_supervisor_acknowledges_and_reports_preparation_failure_without_valve(
         )));
     std::fs::create_dir(&root.0).unwrap();
     let helper = PathBuf::from(env!("CARGO_BIN_EXE_sailover-steam-host"));
-    let launch = Launch::new(Credentials {
+    let credentials = Credentials {
         steam_id: 123,
         account_name: "fixture".into(),
         refresh_token: "fixture-no-steam-account".into(),
-    });
-    let client = launch
-        .start_supervised(Request {
+    };
+    let client = game_runtime::steam::start(
+        &helper,
+        &credentials,
+        Request {
             cloud: None,
             id: String::new(),
             root: root.0.join("sessions"),
@@ -78,8 +81,10 @@ fn native_supervisor_acknowledges_and_reports_preparation_failure_without_valve(
                 environment: Default::default(),
                 log: None,
             },
-        })
-        .unwrap();
+        },
+        &CancelToken::new(),
+    )
+    .unwrap();
     let deadline = Instant::now() + Duration::from_secs(3);
     let mut after = None;
     loop {

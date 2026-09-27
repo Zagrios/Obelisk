@@ -8,10 +8,13 @@ use crate::{
     cloud_status,
     installations::{self, BoxFuture, blocking},
     protocol::Credentials,
-    sessions::{Admission, Failure, Storefront as _},
+    sessions::{self, Admission, Failure, Storefront as _, Supervised},
 };
-use sailover_core::{installation::TransferProgress, launch::LaunchTarget};
-use std::{path::Path, sync::Arc};
+use sailover_core::{installation::TransferProgress, launch::LaunchTarget, transfer::CancelToken};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 use steam_kit::cloud::{CloudListing, CloudMetadata};
 
 /// What an account's installations ask of Steam's network. Every call may
@@ -190,24 +193,21 @@ impl<N: Network> installations::Content<Steam> for Content<N> {
         admission: Admission<Steam>,
     ) -> BoxFuture<'a, Result<(), Failure>> {
         Box::pin(async move {
-            let install = Path::new(&receipt.directory);
+            let install = PathBuf::from(&receipt.directory);
             let target = self
                 .network
-                .launch_target(receipt.app_id, &receipt.platform, install)
+                .launch_target(receipt.app_id, &receipt.platform, &install)
                 .await?;
-            if admission.cancelled() {
-                return Err(Failure::Cancelled);
-            }
-            let handoff = super::hand_off(
-                admission.canceller(),
-                self.locations.clone(),
-                self.credentials.clone(),
-                receipt.app_id,
-                receipt.platform.clone(),
-                install.to_owned(),
-                target,
-            );
-            admission.launch(handoff).await
+            admission
+                .hand_off(Handover {
+                    locations: self.locations.clone(),
+                    credentials: self.credentials.clone(),
+                    app_id: receipt.app_id,
+                    platform: receipt.platform.clone(),
+                    install,
+                    target,
+                })
+                .await
         })
     }
     fn archive<'a>(
@@ -287,6 +287,52 @@ impl<N: Network> installations::Content<Steam> for Content<N> {
     }
     fn indicators(&self, games: &[u32]) -> Result<Vec<(u32, cloud_status::Indicator)>, Failure> {
         steam_cloud::indicators(&self.locations.cloud_archive, self.account(), games).map_err(key)
+    }
+}
+
+/// Starting an installed Steam game: its launch and Wine prefix readied,
+/// then its supervisor, which signs in with the account's credentials.
+struct Handover {
+    locations: Locations,
+    credentials: Credentials,
+    app_id: u32,
+    platform: String,
+    install: PathBuf,
+    target: LaunchTarget,
+}
+
+impl sessions::Handover<Steam> for Handover {
+    type Prepared = super::Request;
+    fn voile(&self) -> Option<PathBuf> {
+        (self.platform == "windows").then(|| self.locations.voile.clone())
+    }
+    fn prepare(&self) -> BoxFuture<'_, Result<super::Request, Failure>> {
+        let (locations, app_id) = (self.locations.clone(), self.app_id);
+        let (platform, install, target) = (
+            self.platform.clone(),
+            self.install.clone(),
+            self.target.clone(),
+        );
+        Box::pin(async move {
+            blocking(crate::Error::StartFailed.to_string(), move || {
+                super::prepare(&locations, app_id, &platform, &install, &target)
+            })
+            .await?
+            .map_err(|error| match error {
+                crate::Error::Cancelled => Failure::Cancelled,
+                error => Failure::Failed(error.to_string()),
+            })
+        })
+    }
+    fn start(
+        self,
+        request: super::Request,
+        cancel: CancelToken,
+    ) -> Result<Arc<dyn Supervised<Steam>>, String> {
+        let helper = request.config.helpers.join(crate::package::HOST);
+        super::start(&helper, &self.credentials, request, &cancel)
+            .map(|client| Arc::new(client) as Arc<dyn Supervised<Steam>>)
+            .map_err(|error| error.to_string())
     }
 }
 

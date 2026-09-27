@@ -887,3 +887,181 @@ async fn stopping_asks_the_running_game_to_end_and_cancels_a_launch_still_prepar
     drop(admission);
     assert!(!sessions.state().busy());
 }
+
+/// What a scripted start returns.
+type Started<P> = Result<Arc<dyn Supervised<P>>, String>;
+
+/// A storefront's handover the test scripts, which records its steps.
+struct Scripted<P: Provider> {
+    steps: Arc<Mutex<Vec<&'static str>>>,
+    /// Preparing waits until the test notifies it.
+    held: Option<Arc<tokio::sync::Notify>>,
+    prepared: Result<(), Failure>,
+    /// Starting waits for its cancellation instead of returning.
+    awaits_cancellation: bool,
+    started: Mutex<Option<Started<P>>>,
+}
+
+impl<P: Provider> Scripted<P> {
+    fn starting(supervisor: Started<P>) -> Self {
+        Self {
+            steps: Arc::default(),
+            held: None,
+            prepared: Ok(()),
+            awaits_cancellation: false,
+            started: Mutex::new(Some(supervisor)),
+        }
+    }
+    fn steps(&self) -> Arc<Mutex<Vec<&'static str>>> {
+        self.steps.clone()
+    }
+}
+
+impl<P: Storefront> Handover<P> for Scripted<P> {
+    type Prepared = ();
+    fn voile(&self) -> Option<std::path::PathBuf> {
+        None
+    }
+    fn prepare(&self) -> BoxFuture<'_, Result<(), Failure>> {
+        Box::pin(async move {
+            self.steps.lock().unwrap().push("prepare");
+            if let Some(held) = &self.held {
+                held.notified().await;
+            }
+            self.prepared.clone()
+        })
+    }
+    fn before_begin(&self) -> BeforeBegin {
+        let steps = self.steps.clone();
+        Box::new(move || steps.lock().unwrap().push("before begin"))
+    }
+    fn start(self, (): (), cancel: CancelToken) -> Result<Arc<dyn Supervised<P>>, String> {
+        self.steps.lock().unwrap().push("start");
+        if self.awaits_cancellation {
+            let deadline = Instant::now() + Duration::from_secs(3);
+            while !cancel.is_cancelled() && Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            if cancel.is_cancelled() {
+                self.steps.lock().unwrap().push("start cancelled");
+            }
+            return Err("backend.steam.runtime.cancelled".into());
+        }
+        self.started.lock().unwrap().take().unwrap()
+    }
+}
+
+#[tokio::test]
+async fn a_handover_prepares_starts_the_supervisor_and_opens_its_start_gate_after_the_step_before_it()
+ {
+    let sessions = Sessions::<Epic>::new(Box::new(|| Ok(None)));
+    eventually(|| !sessions.state().recovering).await;
+    let store = crate::epic::Store {
+        namespace: "ns".into(),
+        app_name: "app".into(),
+    };
+    let game = Fake::<Epic>::with("account".into(), store.clone(), Phase::Preparing);
+    let handover = Scripted::starting(Ok(game.clone() as Arc<dyn Supervised<Epic>>));
+    let steps = handover.steps();
+    let admission = sessions.admit(store, "account".into()).unwrap();
+
+    let launch = tokio::spawn(admission.hand_off(handover));
+    eventually(|| game.read(|state| state.begins) == 1).await;
+    assert_eq!(*steps.lock().unwrap(), ["prepare", "start", "before begin"]);
+    game.finish(false);
+
+    assert_eq!(launch.await.unwrap(), Ok(()));
+    assert!(sessions.state().active.is_none());
+}
+
+#[tokio::test]
+async fn a_failed_preparation_refuses_the_launch_and_gives_its_reservation_back_without_recovery() {
+    let recoveries = Arc::new(Mutex::new(0));
+    let counted = recoveries.clone();
+    let sessions = recovering(move || {
+        *counted.lock().unwrap() += 1;
+        Ok(None)
+    });
+    settled(&sessions).await;
+    let mut handover = Scripted::starting(Err("never started".into()));
+    handover.prepared = Err(Failure::Failed("backend.runtime.wineUnavailable".into()));
+    let steps = handover.steps();
+
+    let outcome = sessions.admit(42, 42).unwrap().hand_off(handover).await;
+
+    assert_eq!(
+        outcome,
+        Err(Failure::Failed("backend.runtime.wineUnavailable".into()))
+    );
+    assert_eq!(*steps.lock().unwrap(), ["prepare"]);
+    assert!(!sessions.state().busy());
+    assert_eq!(*recoveries.lock().unwrap(), 1, "only startup recovered");
+}
+
+#[tokio::test]
+async fn a_launch_cancelled_while_it_prepares_never_starts_its_supervisor() {
+    let sessions = sessions();
+    settled(&sessions).await;
+    let held = Arc::new(tokio::sync::Notify::new());
+    let mut handover = Scripted::starting(Err("never started".into()));
+    handover.held = Some(held.clone());
+    let steps = handover.steps();
+    let admission = sessions.admit(42, 42).unwrap();
+    let canceller = admission.canceller();
+
+    let launch = tokio::spawn(admission.hand_off(handover));
+    eventually(|| steps.lock().unwrap().contains(&"prepare")).await;
+    canceller.cancel();
+    held.notify_one();
+
+    assert_eq!(launch.await.unwrap(), Err(Failure::Cancelled));
+    assert_eq!(*steps.lock().unwrap(), ["prepare"]);
+    assert!(!sessions.state().busy());
+}
+
+#[tokio::test]
+async fn a_start_that_failed_may_have_reached_the_supervisor_so_recovery_settles_the_reservation() {
+    let recoveries = Arc::new(Mutex::new(0));
+    let counted = recoveries.clone();
+    let sessions = recovering(move || {
+        *counted.lock().unwrap() += 1;
+        Ok(None)
+    });
+    settled(&sessions).await;
+    let handover = Scripted::starting(Err("backend.steam.runtime.startFailed".into()));
+
+    let outcome = sessions.admit(42, 42).unwrap().hand_off(handover).await;
+
+    assert_eq!(
+        outcome,
+        Err(Failure::Failed("backend.steam.runtime.startFailed".into()))
+    );
+    assert_eq!(
+        *recoveries.lock().unwrap(),
+        2,
+        "recovery confirmed no game runs"
+    );
+    assert!(!sessions.state().busy());
+}
+
+#[tokio::test]
+async fn cancelling_a_launch_reaches_its_supervisor_while_it_starts() {
+    let sessions = sessions();
+    settled(&sessions).await;
+    let mut handover = Scripted::starting(Err("never returned".into()));
+    handover.awaits_cancellation = true;
+    let steps = handover.steps();
+    let admission = sessions.admit(42, 42).unwrap();
+    let canceller = admission.canceller();
+
+    let launch = tokio::spawn(admission.hand_off(handover));
+    eventually(|| steps.lock().unwrap().contains(&"start")).await;
+    canceller.cancel();
+
+    assert_eq!(launch.await.unwrap(), Err(Failure::Cancelled));
+    assert_eq!(
+        *steps.lock().unwrap(),
+        ["prepare", "start", "start cancelled"]
+    );
+    assert!(!sessions.state().busy());
+}

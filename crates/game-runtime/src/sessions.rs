@@ -7,6 +7,7 @@ use crate::{
     cloud::{Choice, Phase as CloudPhase, Status as CloudStatus},
     supervisor::{self, FailureReason, Phase, Provider, Record},
 };
+use sailover_core::transfer::CancelToken;
 use std::{
     fmt,
     sync::{
@@ -120,6 +121,33 @@ impl<P: Provider> Supervised<P> for supervisor::Client<P> {
 /// Runs once a new supervisor holds the game and before its start gate opens,
 /// such as saving the credentials its handoff rotated.
 pub type BeforeBegin = Box<dyn FnOnce() + Send>;
+
+pub type BoxFuture<'a, T> = std::pin::Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
+/// A storefront's part of handing an admitted game to a new supervisor.
+/// `Admission::hand_off` runs it in order: Voile when the game needs it,
+/// `prepare`, then `start`.
+pub trait Handover<P: Storefront>: Send + Sync + 'static {
+    /// What `prepare` readies for `start`.
+    type Prepared: Send + 'static;
+    /// Voile, which a Windows game needs in place before it is prepared.
+    fn voile(&self) -> Option<std::path::PathBuf>;
+    /// Readies the game, such as its Wine prefix, which may take minutes, and
+    /// then the short-lived credentials it starts with. A failure is definite.
+    fn prepare(&self) -> BoxFuture<'_, Result<Self::Prepared, Failure>>;
+    /// Runs once the new supervisor holds the game, before its start gate
+    /// opens.
+    fn before_begin(&self) -> BeforeBegin {
+        Box::new(|| {})
+    }
+    /// Starts the supervisor; `cancel` stops a start in progress. It blocks.
+    /// A failure leaves unknown whether the supervisor accepted the game.
+    fn start(
+        self,
+        prepared: Self::Prepared,
+        cancel: CancelToken,
+    ) -> Result<Arc<dyn Supervised<P>>, String>;
+}
 
 /// Finds the session a previous SailOver left running. `None` confirms that
 /// none remains.
@@ -804,6 +832,35 @@ impl<P: Storefront> Admission<P> {
     /// What cancels this launch once it is handed to `launch`.
     pub fn canceller(&self) -> Canceller<P> {
         self.canceller.clone()
+    }
+
+    /// Hands the admitted game to a new supervisor through `handover`, then
+    /// follows its session until it is finished. A failure or cancellation
+    /// before the supervisor starts refuses the launch and gives the
+    /// Reservation back; once it starts, only its session does.
+    pub async fn hand_off<H: Handover<P>>(self, handover: H) -> Result<(), Failure> {
+        let admission = self.canceller();
+        let before_begin = handover.before_begin();
+        let handoff = async move {
+            if let Some(voile) = handover.voile() {
+                admission
+                    .install_runtime(&voile)
+                    .await
+                    .map_err(Handoff::Refused)?;
+            }
+            let prepared = handover.prepare().await.map_err(Handoff::Refused)?;
+            if admission.cancelled() {
+                return Err(Handoff::Refused(Failure::Cancelled));
+            }
+            let cancel = CancelToken::new();
+            let token = cancel.clone();
+            admission.on_cancel(move || token.cancel());
+            tokio::task::spawn_blocking(move || handover.start(prepared, cancel))
+                .await
+                .map_err(|_| Handoff::Lost(P::SESSION_FAILED.to_owned()))?
+                .map_err(Handoff::Lost)
+        };
+        self.launch_before(handoff, before_begin).await
     }
 
     /// Hands the admitted game to its supervisor with `handoff`, then follows
