@@ -5,9 +5,8 @@
 //! names them: a Steam app id, or an Epic `namespace:app` pair; installations
 //! as their receipt's id.
 use crate::{
-    CloudChoice, CloudIndicator, CloudStatus, EpicSession, GameSessionError, GameTransfer,
-    SailOverLocations, SteamCredentials, SteamSession, StorefrontSessions,
-    game_session::Storefronts,
+    CloudChoice, CloudIndicator, EpicSession, GameSessionError, GameTransfer, SailOverLocations,
+    SteamCredentials, SteamSession, StorefrontSessions, game_session::Storefronts,
 };
 use game_runtime::{
     Locations, epic,
@@ -89,12 +88,50 @@ pub struct InstallationWarning {
     pub key: String,
 }
 
-/// Cloud maintenance of one game: its sync's progress and the Cloud question
-/// it waits on.
+/// Why a Cloud sync runs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum CloudSyncKind {
+    /// Before a launch's game starts.
+    Launch,
+    /// After its game exited.
+    Exit,
+    /// On the player's request.
+    Maintenance,
+}
+
+/// What a Cloud question asks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum CloudQuestionKind {
+    /// Which saves to keep.
+    Conflict,
+    /// Whether to retry, cancel or launch anyway after a launch check failed.
+    Failed,
+}
+
+/// The one Cloud question the account asks, until it has its answer.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
-pub struct CloudMaintenance {
+pub struct CloudQuestion {
+    pub decision_id: u64,
+    pub kind: CloudQuestionKind,
+    /// Localization key of what the sync reports.
+    pub error: Option<String>,
+    pub choices: Vec<CloudChoice>,
+}
+
+/// The account's Cloud sync running now, whichever asks.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct CloudSync {
     pub game: String,
-    pub cloud: CloudStatus,
+    pub kind: CloudSyncKind,
+    /// Binds a cancellation to the sync as it shows now.
+    pub decision_id: u64,
+    /// It compares or transfers saves now.
+    pub working: bool,
+    /// Its Game session's control connection was lost: nothing reaches it.
+    pub reconnecting: bool,
+    /// The player may cancel it: a launch check still in progress.
+    pub cancellable: bool,
+    pub question: Option<CloudQuestion>,
 }
 
 /// A game's Cloud indicator.
@@ -124,8 +161,8 @@ pub struct InstallationsState {
     pub resumable: Option<String>,
     pub report: Option<InstallationReport>,
     pub warning: Option<InstallationWarning>,
-    pub maintenance: Option<CloudMaintenance>,
     pub gate: InstallationGate,
+    pub cloud_sync: Option<CloudSync>,
 }
 
 /// How a storefront's games, receipts and offers cross UniFFI.
@@ -253,15 +290,32 @@ fn state<S: Named>(state: installations::State<S>) -> InstallationsState {
         warning: state
             .warning
             .map(|(id, key)| InstallationWarning { id, key }),
-        maintenance: state.maintenance.map(|maintenance| CloudMaintenance {
-            game: S::name(&maintenance.game),
-            cloud: maintenance.cloud.into(),
-        }),
         gate: InstallationGate {
             modify: opening::<S>(state.gate.modify),
             launch: state.gate.launch,
             maintain: opening::<S>(state.gate.maintain),
         },
+        cloud_sync: state.cloud_sync.map(|sync| CloudSync {
+            game: S::name(&sync.game),
+            kind: match sync.kind {
+                installations::SyncKind::Launch => CloudSyncKind::Launch,
+                installations::SyncKind::Exit => CloudSyncKind::Exit,
+                installations::SyncKind::Maintenance => CloudSyncKind::Maintenance,
+            },
+            decision_id: sync.decision_id,
+            working: sync.working,
+            reconnecting: sync.reconnecting,
+            cancellable: sync.cancellable,
+            question: sync.question.map(|question| CloudQuestion {
+                decision_id: question.decision_id,
+                kind: match question.kind {
+                    installations::QuestionKind::Conflict => CloudQuestionKind::Conflict,
+                    installations::QuestionKind::Failed => CloudQuestionKind::Failed,
+                },
+                error: question.error,
+                choices: question.choices.into_iter().map(Into::into).collect(),
+            }),
+        }),
     }
 }
 

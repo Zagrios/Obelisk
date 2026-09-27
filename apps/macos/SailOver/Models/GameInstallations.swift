@@ -103,8 +103,8 @@ struct InstallationsSnapshot<Store: InstallationStorefront>: Equatable {
     var resumable: Store.GameID?
     var report: InstallationReport?
     var warning: InstallationWarning?
-    var maintenance: GameCloudMaintenance<Store.GameID>?
     var gate: InstallationsGate<Store.GameID>
+    var cloudSync: GameCloudSync<Store.GameID>?
 }
 
 /// One account's installations of one storefront, in Rust. Each action
@@ -252,7 +252,7 @@ final class GameInstallations<Store: InstallationStorefront> {
         if uninstallGame != snapshot.uninstallGame { uninstallGame = snapshot.uninstallGame }
         if resumableGame != snapshot.resumable { resumableGame = snapshot.resumable }
         if gate != snapshot.gate { gate = snapshot.gate }
-        if cloud.maintenance != snapshot.maintenance { cloud.maintenance = snapshot.maintenance }
+        if cloud.sync != snapshot.cloudSync { cloud.sync = snapshot.cloudSync }
         if report != snapshot.report {
             report = snapshot.report
             if let report { port?.report(Self.failure(report)) }
@@ -466,7 +466,7 @@ final class NoInstallations<Store: InstallationStorefront>: InstallationsBackend
     private let empty = InstallationsSnapshot<Store>(
         revision: 1, receipts: [], transfer: nil, transferGame: nil, downloading: false, launching: false,
         verifyingBeforeLaunch: false, launchGame: nil, uninstalling: false, uninstallGame: nil, resumable: nil,
-        report: nil, warning: nil, maintenance: nil, gate: .closed
+        report: nil, warning: nil, gate: .closed, cloudSync: nil
     )
 
     func snapshot() -> InstallationsSnapshot<Store> { empty }
@@ -538,10 +538,14 @@ final class RustInstallations<Store: InstallationStorefront>: InstallationsBacke
             verifyingBeforeLaunch: state.verifyingBeforeLaunch, launchGame: state.launchGame.flatMap(Store.game),
             uninstalling: state.uninstalling, uninstallGame: state.uninstallGame.flatMap(Store.game),
             resumable: state.resumable.flatMap(Store.game), report: state.report, warning: state.warning,
-            maintenance: state.maintenance.flatMap { maintenance in
-                Store.game(maintenance.game).map { GameCloudMaintenance(game: $0, cloud: maintenance.cloud) }
-            },
-            gate: InstallationsGate(state.gate, game: Store.game)
+            gate: InstallationsGate(state.gate, game: Store.game),
+            cloudSync: state.cloudSync.flatMap { sync in
+                Store.game(sync.game).map {
+                    GameCloudSync(game: $0, kind: sync.kind, decisionId: sync.decisionId, working: sync.working,
+                                  reconnecting: sync.reconnecting, cancellable: sync.cancellable,
+                                  question: sync.question)
+                }
+            }
         )
     }
 }

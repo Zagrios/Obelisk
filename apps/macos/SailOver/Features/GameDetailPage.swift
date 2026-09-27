@@ -114,7 +114,7 @@ private struct GamePrimaryAction<Store: InstallationStorefront>: View {
             isAvailable: installations.primaryActionAvailable,
             action: installations.primaryAction,
             cancel: {
-                if cancelsSynchronization { installations.cloud.respond(.cancel) }
+                if cancelsSynchronization { installations.cloud.cancelSynchronization(for: game) }
                 else { installations.cancelDownload() }
             },
             isCancellable: cancelsSynchronization

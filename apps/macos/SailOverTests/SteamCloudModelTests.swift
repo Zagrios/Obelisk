@@ -6,24 +6,21 @@ final class SteamCloudModelTests: XCTestCase {
     private let accountID: UInt64 = 0x0110_0001_0000_002a
 
     @MainActor
-    func testCancelledLiveDecisionDoesNotHideSameDecisionInNextSession() async throws {
+    func testAnAnswerReachesRustAndTheQuestionFollowsWhatRustShows() async throws {
         let fixture = Fixture()
         let model = fixture.model
         fixture.connect()
-        fixture.sessions.fake.show(.steam(accountID: accountID, phase: .preparing,
-                                          cloud: .asking(.conflict, decision: 2)))
-        try await eventually { model.prompt?.cloud.decisionId == 2 }
-        XCTAssertTrue(model.promptPresented)
+        fixture.backend.publish { $0.cloudSync = .launch(42, question: .conflict(2)) }
+        try await eventually { model.promptPresented }
+        XCTAssertEqual(model.promptGame, 42)
 
         model.respond(.cancel)
         try await eventually { !model.promptBusy }
-        XCTAssertFalse(model.promptPresented)
         XCTAssertEqual(fixture.backend.actions, [.answer(42, decision: 2, .cancel)])
+        XCTAssertTrue(model.promptPresented, "Rust closes an answered question, not Swift")
 
-        fixture.sessions.fake.show(.steam(accountID: accountID, phase: .preparing,
-                                          cloud: .asking(.conflict, decision: 2)))
-        try await eventually { model.promptPresented }
-        XCTAssertEqual(model.prompt?.cloud.decisionId, 2, "Decision IDs restart in each supervisor session")
+        fixture.backend.publish { $0.cloudSync = .launch(42) }
+        try await eventually { !model.promptPresented }
         fixture.signOut()
     }
 
@@ -34,18 +31,34 @@ final class SteamCloudModelTests: XCTestCase {
         let answer = GameSessionGate<Void>()
         fixture.connect()
         fixture.backend.answering = { _, _, _ in try await answer.wait() }
-        fixture.sessions.fake.show(.steam(accountID: accountID, phase: .preparing,
-                                          cloud: .asking(.conflict, decision: 2)))
-        try await eventually { model.prompt?.cloud.decisionId == 2 }
+        fixture.backend.publish { $0.cloudSync = .launch(42, question: .conflict(2)) }
+        try await eventually { model.promptPresented }
 
         model.respond(.local)
         model.respond(.cancel)
+        XCTAssertTrue(model.promptWorking)
         await answer.resolve(())
         try await eventually { !model.promptBusy }
 
         XCTAssertEqual(fixture.backend.actions, [.answer(42, decision: 2, .local)])
-        XCTAssertTrue(model.promptPresented, "An ignored cancellation cannot dismiss the accepted choice")
         fixture.signOut()
+    }
+
+    @MainActor
+    func testALaunchCheckCanBeCancelledWhileItWorks() async throws {
+        let fixture = Fixture()
+        let model = fixture.model
+        fixture.connect()
+        fixture.backend.publish { $0.cloudSync = .launch(42, decision: 6, working: true, cancellable: true) }
+        try await eventually { model.isSynchronizing(for: 42) }
+        XCTAssertTrue(model.canCancelSynchronization(for: 42))
+        XCTAssertFalse(model.canCancelSynchronization(for: 570))
+        XCTAssertFalse(model.promptPresented)
+
+        model.cancelSynchronization(for: 42)
+
+        try await eventually { !model.promptBusy }
+        XCTAssertEqual(fixture.backend.actions, [.answer(42, decision: 6, .cancel)])
     }
 
     @MainActor
@@ -72,18 +85,15 @@ final class SteamCloudModelTests: XCTestCase {
         fixture.connect()
         let backend = fixture.backend
         backend.onCall = { call in
-            if case .maintain = call { backend.publish { $0.maintenance = .init(game: 42, cloud: .showing(.checking)) } }
+            if case .maintain = call { backend.publish { $0.cloudSync = .maintenance(42) } }
         }
 
         fixture.installations.syncCloud()
 
         XCTAssertTrue(model.isMaintaining, "Rust holds the Reservation from the call")
         XCTAssertEqual(backend.actions, [.maintain(42, installed: fixture.receipt)])
-        backend.publish { $0.maintenance?.cloud = .showing(.syncing) }
-        try await eventually { model.isSynchronizing(for: 42) }
-        backend.publish {
-            $0.maintenance?.cloud = .asking(.conflict, decision: 1, error: "backend.steam.cloud.conflict")
-        }
+        XCTAssertTrue(model.isSynchronizing(for: 42))
+        backend.publish { $0.cloudSync = .maintenance(42, question: .conflict(1, error: "backend.steam.cloud.conflict")) }
         try await eventually { model.promptPresented }
         XCTAssertEqual(model.promptGame, 42)
         XCTAssertEqual(model.promptMessage, "backend.steam.cloud.conflict")
@@ -92,7 +102,7 @@ final class SteamCloudModelTests: XCTestCase {
 
         try await eventually { backend.actions.last == .answer(42, decision: 1, .local) }
         backend.indicators = [(42, .neverSynced)]
-        backend.publish { $0.maintenance = nil }
+        backend.publish { $0.cloudSync = nil }
         try await eventually { !model.isMaintaining }
         XCTAssertFalse(model.promptPresented)
         XCTAssertFalse(model.failurePresented)
@@ -105,10 +115,10 @@ final class SteamCloudModelTests: XCTestCase {
         fixture.connect()
         let (model, backend) = (fixture.model, fixture.backend)
         fixture.installations.syncCloud()
-        backend.publish { $0.maintenance = .init(game: 42, cloud: .showing(.syncing)) }
+        backend.publish { $0.cloudSync = .maintenance(42) }
         try await eventually { model.isMaintaining }
 
-        backend.publish { $0.maintenance = nil }
+        backend.publish { $0.cloudSync = nil }
 
         try await eventually { !model.isMaintaining }
         XCTAssertFalse(model.failurePresented, "Only a launch check shows a banner")
@@ -119,21 +129,19 @@ final class SteamCloudModelTests: XCTestCase {
     }
 
     @MainActor
-    func testARejectedMaintenanceAnswerDoesNotOutliveItsAttempt() async throws {
+    func testARejectedAnswerShowsItsFailureUntilTheMaintenanceEnds() async throws {
         let fixture = Fixture()
         fixture.connect()
         let (model, backend) = (fixture.model, fixture.backend)
         fixture.installations.syncCloud()
-        backend.publish {
-            $0.maintenance = .init(game: 42, cloud: .asking(.conflict, decision: 1, error: "backend.steam.cloud.conflict"))
-        }
+        backend.publish { $0.cloudSync = .maintenance(42, question: .conflict(1, error: "backend.steam.cloud.conflict")) }
         try await eventually { model.promptPresented }
         backend.answering = { _, _, _ in throw SteamError.Failure(reason: "backend.steam.runtime.invalidSession") }
 
-        model.respond(.retry)
+        model.respond(.local)
 
         try await eventually { model.promptMessage == L10n.message("backend.steam.runtime.invalidSession") }
-        backend.publish { $0.maintenance = nil }
+        backend.publish { $0.cloudSync = nil }
         try await eventually { !model.isMaintaining }
         XCTAssertEqual(model.promptMessage, L10n.string("ui.cloud.working"), "A later question starts without the old error")
     }
@@ -144,7 +152,7 @@ final class SteamCloudModelTests: XCTestCase {
         fixture.connect()
         let (model, backend) = (fixture.model, fixture.backend)
         fixture.installations.syncCloud()
-        backend.publish { $0.maintenance = .init(game: 42, cloud: .asking(.conflict, decision: 1)) }
+        backend.publish { $0.cloudSync = .maintenance(42, question: .conflict(1)) }
         try await eventually { model.promptPresented }
 
         fixture.signOut()
@@ -155,33 +163,24 @@ final class SteamCloudModelTests: XCTestCase {
     }
 
     @MainActor
-    func testExitConflictIsPresentedLiveAndNeverReopensByItself() async throws {
+    func testALaunchCheckThatFailedAsksWhetherToLaunchAnyway() async throws {
         let fixture = Fixture()
-        let (sessions, model) = (fixture.sessions, fixture.model)
+        let model = fixture.model
         fixture.connect()
-        let running = GameSessionState.steam(accountID: accountID)
-        sessions.fake.show(running)
-        try await eventually { sessions.active?.running == true }
-        var finalizing = running
-        finalizing.phase = .finalizing
-        finalizing.cloud = .asking(.conflict, decision: 3, error: "backend.steam.cloud.conflict")
-        sessions.fake.show(finalizing)
-        try await eventually { model.promptPresented }
-        XCTAssertEqual(model.promptGame, 42)
-        XCTAssertFalse(model.promptWorking)
+        fixture.backend.publish {
+            $0.cloudSync = .launch(42, question: .failed(4, error: "backend.steam.cloud.network", launchAnyway: true))
+        }
+        try await eventually { model.failurePresented }
+        XCTAssertFalse(model.promptPresented, "A failed check is a banner, not a sheet")
+        XCTAssertTrue(model.canLaunchAnyway)
+        XCTAssertEqual(model.promptMessage, "backend.steam.cloud.network")
+        fixture.backend.publish { $0.cloudSync = .launch(42, question: .failed(4, launchAnyway: false)) }
+        try await eventually { !model.canLaunchAnyway }
 
-        model.respond(.local)
+        model.respond(.retry)
+
         try await eventually { !model.promptBusy }
-
-        XCTAssertEqual(fixture.backend.actions, [.answer(42, decision: 3, .local)])
-        finalizing.cloud = .showing(.pending, error: "backend.steam.cloud.conflict")
-        sessions.fake.show(finalizing)
-        sessions.fake.show(nil)
-        try await eventually { sessions.active == nil }
-        XCTAssertFalse(model.promptPresented, "An unanswered exit conflict waits for the next launch or maintenance")
-        fixture.connect()
-        XCTAssertFalse(model.promptPresented)
-        fixture.signOut()
+        XCTAssertEqual(fixture.backend.actions, [.answer(42, decision: 4, .retry)])
     }
 }
 

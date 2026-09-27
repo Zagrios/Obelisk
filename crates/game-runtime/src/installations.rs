@@ -159,6 +159,53 @@ pub struct Gate<G> {
     pub maintain: Opening<G>,
 }
 
+/// Why a Cloud sync runs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SyncKind {
+    /// Before a launch's game starts.
+    Launch,
+    /// After its game exited.
+    Exit,
+    /// On the player's request.
+    Maintenance,
+}
+
+/// What a Cloud question asks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum QuestionKind {
+    /// Which saves to keep.
+    Conflict,
+    /// Whether to retry, cancel or launch anyway after a launch check failed.
+    Failed,
+}
+
+/// The one Cloud question the account asks, until it has its answer.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Question {
+    pub decision_id: u64,
+    pub kind: QuestionKind,
+    /// Localization key of what the sync reports.
+    pub error: Option<String>,
+    pub choices: Vec<cloud::Choice>,
+}
+
+/// The account's Cloud sync running now, whichever asks: a launch's, an
+/// exit's or a maintenance's.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CloudSync<G> {
+    pub game: G,
+    pub kind: SyncKind,
+    /// Binds a cancellation to the sync as it shows now.
+    pub decision_id: u64,
+    /// It compares or transfers saves now.
+    pub working: bool,
+    /// Its Game session's control connection was lost: nothing reaches it.
+    pub reconnecting: bool,
+    /// The player may cancel it: a launch check still in progress.
+    pub cancellable: bool,
+    pub question: Option<Question>,
+}
+
 /// A failure the player sees, and what it is about.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Report {
@@ -195,6 +242,7 @@ pub struct State<S: Storefront> {
     pub warning: Option<(u64, String)>,
     pub maintenance: Option<Maintenance<S>>,
     pub gate: Gate<S::Game>,
+    pub cloud_sync: Option<CloudSync<S::Game>>,
 }
 
 struct Inner<S: Storefront> {
@@ -209,6 +257,9 @@ struct Inner<S: Storefront> {
     /// The running maintenance, which its number tells from a later one.
     maintenance: Option<(u64, Arc<cloud::Control>)>,
     maintenances: u64,
+    /// The last question answered, by the sync that asked it: it no longer
+    /// shows, until that sync asks another.
+    answered: Option<(String, u64)>,
 }
 
 struct Shared<S: Storefront> {
@@ -252,7 +303,9 @@ impl<S: Storefront> Shared<S> {
         let mut inner = self.inner.lock().unwrap();
         let before = inner.state.clone();
         let result = change(&mut inner);
-        inner.state.gate = gate(&inner, &self.sessions.state());
+        let sessions = self.sessions.state();
+        inner.state.gate = gate(&inner, &sessions);
+        inner.state.cloud_sync = cloud_sync(&inner, &sessions, &self.account);
         let mut after = inner.state.clone();
         after.revision = before.revision;
         if after != before {
@@ -467,6 +520,72 @@ fn gate<S: Storefront>(inner: &Inner<S>, sessions: &sessions::State<S>) -> Gate<
     }
 }
 
+/// The account's Cloud sync now: its maintenance's, else its Game session's
+/// before the game starts or after it exited. A revoked account, or another
+/// account's session, asks nothing.
+fn cloud_sync<S: Storefront>(
+    inner: &Inner<S>,
+    sessions: &sessions::State<S>,
+    account: &S::Account,
+) -> Option<CloudSync<S::Game>> {
+    let asks = |source: String, status: &cloud::Status, kind: QuestionKind| {
+        (!status.allowed_choices.is_empty()
+            && inner.answered.as_ref() != Some(&(source, status.decision_id)))
+        .then(|| Question {
+            decision_id: status.decision_id,
+            kind,
+            error: status.error.clone(),
+            choices: status.allowed_choices.clone(),
+        })
+    };
+    if let (Some(maintenance), Some((number, _))) = (&inner.state.maintenance, &inner.maintenance) {
+        let status = &maintenance.cloud;
+        let conflict = status.phase == cloud::Phase::Conflict;
+        return Some(CloudSync {
+            game: maintenance.game.clone(),
+            kind: SyncKind::Maintenance,
+            decision_id: status.decision_id,
+            working: !conflict,
+            reconnecting: false,
+            cancellable: false,
+            question: conflict
+                .then(|| asks(maintenance_source(*number), status, QuestionKind::Conflict))
+                .flatten(),
+        });
+    }
+    let active = sessions
+        .active
+        .as_ref()
+        .filter(|active| active.observed && &active.account == account)?;
+    let kind = match active.phase {
+        crate::supervisor::Phase::Preparing => SyncKind::Launch,
+        crate::supervisor::Phase::Finalizing => SyncKind::Exit,
+        _ => return None,
+    };
+    let status = &active.cloud;
+    let working = matches!(status.phase, cloud::Phase::Checking | cloud::Phase::Syncing);
+    let question = match status.phase {
+        _ if sessions.revoked.contains(account) => None,
+        cloud::Phase::Conflict => asks(active.id.clone(), status, QuestionKind::Conflict),
+        cloud::Phase::Failed => asks(active.id.clone(), status, QuestionKind::Failed),
+        _ => None,
+    };
+    Some(CloudSync {
+        game: active.game.clone(),
+        kind,
+        decision_id: status.decision_id,
+        working,
+        reconnecting: active.reconnecting,
+        cancellable: kind == SyncKind::Launch && working && !active.reconnecting,
+        question,
+    })
+}
+
+/// What tells a maintenance's questions from a later maintenance's.
+fn maintenance_source(number: u64) -> String {
+    format!("maintenance {number}")
+}
+
 impl<S: Storefront> Inner<S> {
     /// The receipt `id` names, of this account's installations.
     fn receipt(&self, id: &str) -> Option<S::Receipt> {
@@ -560,6 +679,7 @@ impl<S: Storefront> Installations<S> {
                     launch: false,
                     maintain: Opening::Closed,
                 },
+                cloud_sync: None,
             },
             signed_out: false,
             diagnostic: false,
@@ -568,6 +688,7 @@ impl<S: Storefront> Installations<S> {
             warnings: 0,
             maintenance: None,
             maintenances: 0,
+            answered: None,
         };
         match load(&receipts_file, |receipt: &S::Receipt| {
             S::receipt_directory(receipt)
@@ -588,6 +709,7 @@ impl<S: Storefront> Installations<S> {
         // The watcher follows the sessions from the state this gate shows.
         let seen = sessions.state();
         inner.state.gate = gate(&inner, &seen);
+        inner.state.cloud_sync = cloud_sync(&inner, &seen, &account);
         let (published, _) = watch::channel(inner.state.clone());
         let shared = Arc::new(Shared {
             inner: Mutex::new(inner),
@@ -947,7 +1069,8 @@ impl<S: Storefront> Installations<S> {
     }
 
     /// Answers the Cloud question `game` shows with `decision_id`: its
-    /// maintenance's, else its Game session's. Cancel stops either sync.
+    /// maintenance's, else its Game session's. Cancel stops either sync. An
+    /// answered question no longer shows.
     pub fn answer_cloud(
         &self,
         game: &S::Game,
@@ -955,29 +1078,51 @@ impl<S: Storefront> Installations<S> {
         choice: cloud::Choice,
     ) -> Result<(), Failure> {
         let refused = || Failure::Failed(S::INVALID_SESSION.to_owned());
-        let maintenance = {
+        let (maintenance, asked) = {
             let inner = self.shared.inner.lock().unwrap();
             if inner.signed_out {
                 return Err(refused());
             }
-            match (&inner.state.maintenance, &inner.maintenance) {
-                (Some(maintenance), Some((_, control))) if &maintenance.game == game => {
-                    Some(control.clone())
+            // Only a question the account shows closes with its answer.
+            let asked = inner.state.cloud_sync.as_ref().is_some_and(|sync| {
+                &sync.game == game
+                    && sync
+                        .question
+                        .as_ref()
+                        .is_some_and(|question| question.decision_id == decision_id)
+            });
+            let maintenance = match (&inner.state.maintenance, &inner.maintenance) {
+                (Some(maintenance), Some((number, control))) if &maintenance.game == game => {
+                    Some((*number, control.clone()))
                 }
                 _ => None,
+            };
+            (maintenance, asked)
+        };
+        let source = match maintenance {
+            Some((number, control)) => {
+                control.answer(decision_id, choice).map_err(|_| refused())?;
+                maintenance_source(number)
+            }
+            None => {
+                let active = self
+                    .shared
+                    .sessions
+                    .state()
+                    .active
+                    .filter(|active| &active.game == game && active.account == self.shared.account)
+                    .ok_or_else(refused)?;
+                self.shared
+                    .sessions
+                    .choose(&active.id, decision_id, choice)?;
+                active.id
             }
         };
-        if let Some(control) = maintenance {
-            return control.answer(decision_id, choice).map_err(|_| refused());
+        if asked {
+            self.shared
+                .update(|inner| inner.answered = Some((source, decision_id)));
         }
-        let active = self
-            .shared
-            .sessions
-            .state()
-            .active
-            .filter(|active| &active.game == game && active.account == self.shared.account)
-            .ok_or_else(refused)?;
-        self.shared.sessions.choose(&active.id, decision_id, choice)
+        Ok(())
     }
 
     /// The Cloud indicators of `games`, and of every other game of the

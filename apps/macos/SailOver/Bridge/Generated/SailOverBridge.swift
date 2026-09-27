@@ -2899,18 +2899,27 @@ public func FfiConverterTypeCloudIndicator_lower(_ value: CloudIndicator) -> Rus
 
 
 /**
- * Cloud maintenance of one game: its sync's progress and the Cloud question
- * it waits on.
+ * The one Cloud question the account asks, until it has its answer.
  */
-public struct CloudMaintenance: Equatable, Hashable {
-    public var game: String
-    public var cloud: CloudStatus
+public struct CloudQuestion: Equatable, Hashable {
+    public var decisionId: UInt64
+    public var kind: CloudQuestionKind
+    /**
+     * Localization key of what the sync reports.
+     */
+    public var error: String?
+    public var choices: [CloudChoice]
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(game: String, cloud: CloudStatus) {
-        self.game = game
-        self.cloud = cloud
+    public init(decisionId: UInt64, kind: CloudQuestionKind, 
+        /**
+         * Localization key of what the sync reports.
+         */error: String?, choices: [CloudChoice]) {
+        self.decisionId = decisionId
+        self.kind = kind
+        self.error = error
+        self.choices = choices
     }
 
     
@@ -2919,24 +2928,28 @@ public struct CloudMaintenance: Equatable, Hashable {
 }
 
 #if compiler(>=6)
-extension CloudMaintenance: Sendable {}
+extension CloudQuestion: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypeCloudMaintenance: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CloudMaintenance {
+public struct FfiConverterTypeCloudQuestion: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CloudQuestion {
         return
-            try CloudMaintenance(
-                game: FfiConverterString.read(from: &buf), 
-                cloud: FfiConverterTypeCloudStatus.read(from: &buf)
+            try CloudQuestion(
+                decisionId: FfiConverterUInt64.read(from: &buf), 
+                kind: FfiConverterTypeCloudQuestionKind.read(from: &buf), 
+                error: FfiConverterOptionString.read(from: &buf), 
+                choices: FfiConverterSequenceTypeCloudChoice.read(from: &buf)
         )
     }
 
-    public static func write(_ value: CloudMaintenance, into buf: inout [UInt8]) {
-        FfiConverterString.write(value.game, into: &buf)
-        FfiConverterTypeCloudStatus.write(value.cloud, into: &buf)
+    public static func write(_ value: CloudQuestion, into buf: inout [UInt8]) {
+        FfiConverterUInt64.write(value.decisionId, into: &buf)
+        FfiConverterTypeCloudQuestionKind.write(value.kind, into: &buf)
+        FfiConverterOptionString.write(value.error, into: &buf)
+        FfiConverterSequenceTypeCloudChoice.write(value.choices, into: &buf)
     }
 }
 
@@ -2944,15 +2957,15 @@ public struct FfiConverterTypeCloudMaintenance: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeCloudMaintenance_lift(_ buf: RustBuffer) throws -> CloudMaintenance {
-    return try FfiConverterTypeCloudMaintenance.lift(buf)
+public func FfiConverterTypeCloudQuestion_lift(_ buf: RustBuffer) throws -> CloudQuestion {
+    return try FfiConverterTypeCloudQuestion.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeCloudMaintenance_lower(_ value: CloudMaintenance) -> RustBuffer {
-    return FfiConverterTypeCloudMaintenance.lower(value)
+public func FfiConverterTypeCloudQuestion_lower(_ value: CloudQuestion) -> RustBuffer {
+    return FfiConverterTypeCloudQuestion.lower(value)
 }
 
 
@@ -3036,6 +3049,107 @@ public func FfiConverterTypeCloudStatus_lift(_ buf: RustBuffer) throws -> CloudS
 #endif
 public func FfiConverterTypeCloudStatus_lower(_ value: CloudStatus) -> RustBuffer {
     return FfiConverterTypeCloudStatus.lower(value)
+}
+
+
+/**
+ * The account's Cloud sync running now, whichever asks.
+ */
+public struct CloudSync: Equatable, Hashable {
+    public var game: String
+    public var kind: CloudSyncKind
+    /**
+     * Binds a cancellation to the sync as it shows now.
+     */
+    public var decisionId: UInt64
+    /**
+     * It compares or transfers saves now.
+     */
+    public var working: Bool
+    /**
+     * Its Game session's control connection was lost: nothing reaches it.
+     */
+    public var reconnecting: Bool
+    /**
+     * The player may cancel it: a launch check still in progress.
+     */
+    public var cancellable: Bool
+    public var question: CloudQuestion?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(game: String, kind: CloudSyncKind, 
+        /**
+         * Binds a cancellation to the sync as it shows now.
+         */decisionId: UInt64, 
+        /**
+         * It compares or transfers saves now.
+         */working: Bool, 
+        /**
+         * Its Game session's control connection was lost: nothing reaches it.
+         */reconnecting: Bool, 
+        /**
+         * The player may cancel it: a launch check still in progress.
+         */cancellable: Bool, question: CloudQuestion?) {
+        self.game = game
+        self.kind = kind
+        self.decisionId = decisionId
+        self.working = working
+        self.reconnecting = reconnecting
+        self.cancellable = cancellable
+        self.question = question
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CloudSync: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCloudSync: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CloudSync {
+        return
+            try CloudSync(
+                game: FfiConverterString.read(from: &buf), 
+                kind: FfiConverterTypeCloudSyncKind.read(from: &buf), 
+                decisionId: FfiConverterUInt64.read(from: &buf), 
+                working: FfiConverterBool.read(from: &buf), 
+                reconnecting: FfiConverterBool.read(from: &buf), 
+                cancellable: FfiConverterBool.read(from: &buf), 
+                question: FfiConverterOptionTypeCloudQuestion.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CloudSync, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.game, into: &buf)
+        FfiConverterTypeCloudSyncKind.write(value.kind, into: &buf)
+        FfiConverterUInt64.write(value.decisionId, into: &buf)
+        FfiConverterBool.write(value.working, into: &buf)
+        FfiConverterBool.write(value.reconnecting, into: &buf)
+        FfiConverterBool.write(value.cancellable, into: &buf)
+        FfiConverterOptionTypeCloudQuestion.write(value.question, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudSync_lift(_ buf: RustBuffer) throws -> CloudSync {
+    return try FfiConverterTypeCloudSync.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudSync_lower(_ value: CloudSync) -> RustBuffer {
+    return FfiConverterTypeCloudSync.lower(value)
 }
 
 
@@ -4169,8 +4283,8 @@ public struct InstallationsState: Equatable, Hashable {
     public var resumable: String?
     public var report: InstallationReport?
     public var warning: InstallationWarning?
-    public var maintenance: CloudMaintenance?
     public var gate: InstallationGate
+    public var cloudSync: CloudSync?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -4184,7 +4298,7 @@ public struct InstallationsState: Equatable, Hashable {
         /**
          * The game whose Transfer stopped before its receipt: the player can
          * resume it.
-         */resumable: String?, report: InstallationReport?, warning: InstallationWarning?, maintenance: CloudMaintenance?, gate: InstallationGate) {
+         */resumable: String?, report: InstallationReport?, warning: InstallationWarning?, gate: InstallationGate, cloudSync: CloudSync?) {
         self.revision = revision
         self.installations = installations
         self.transfer = transfer
@@ -4198,8 +4312,8 @@ public struct InstallationsState: Equatable, Hashable {
         self.resumable = resumable
         self.report = report
         self.warning = warning
-        self.maintenance = maintenance
         self.gate = gate
+        self.cloudSync = cloudSync
     }
 
     
@@ -4231,8 +4345,8 @@ public struct FfiConverterTypeInstallationsState: FfiConverterRustBuffer {
                 resumable: FfiConverterOptionString.read(from: &buf), 
                 report: FfiConverterOptionTypeInstallationReport.read(from: &buf), 
                 warning: FfiConverterOptionTypeInstallationWarning.read(from: &buf), 
-                maintenance: FfiConverterOptionTypeCloudMaintenance.read(from: &buf), 
-                gate: FfiConverterTypeInstallationGate.read(from: &buf)
+                gate: FfiConverterTypeInstallationGate.read(from: &buf), 
+                cloudSync: FfiConverterOptionTypeCloudSync.read(from: &buf)
         )
     }
 
@@ -4250,8 +4364,8 @@ public struct FfiConverterTypeInstallationsState: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.resumable, into: &buf)
         FfiConverterOptionTypeInstallationReport.write(value.report, into: &buf)
         FfiConverterOptionTypeInstallationWarning.write(value.warning, into: &buf)
-        FfiConverterOptionTypeCloudMaintenance.write(value.maintenance, into: &buf)
         FfiConverterTypeInstallationGate.write(value.gate, into: &buf)
+        FfiConverterOptionTypeCloudSync.write(value.cloudSync, into: &buf)
     }
 }
 
@@ -5479,6 +5593,81 @@ public func FfiConverterTypeCloudPhase_lower(_ value: CloudPhase) -> RustBuffer 
 
 
 
+/**
+ * What a Cloud question asks.
+ */
+
+public enum CloudQuestionKind: Equatable, Hashable {
+    
+    /**
+     * Which saves to keep.
+     */
+    case conflict
+    /**
+     * Whether to retry, cancel or launch anyway after a launch check failed.
+     */
+    case failed
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension CloudQuestionKind: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCloudQuestionKind: FfiConverterRustBuffer {
+    typealias SwiftType = CloudQuestionKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CloudQuestionKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .conflict
+        
+        case 2: return .failed
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CloudQuestionKind, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .conflict:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .failed:
+            writeInt(&buf, Int32(2))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudQuestionKind_lift(_ buf: RustBuffer) throws -> CloudQuestionKind {
+    return try FfiConverterTypeCloudQuestionKind.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudQuestionKind_lower(_ value: CloudQuestionKind) -> RustBuffer {
+    return FfiConverterTypeCloudQuestionKind.lower(value)
+}
+
+
+
 
 public enum CloudSavedState: Equatable, Hashable {
     
@@ -5590,6 +5779,91 @@ public func FfiConverterTypeCloudSavedState_lift(_ buf: RustBuffer) throws -> Cl
 #endif
 public func FfiConverterTypeCloudSavedState_lower(_ value: CloudSavedState) -> RustBuffer {
     return FfiConverterTypeCloudSavedState.lower(value)
+}
+
+
+
+/**
+ * Why a Cloud sync runs.
+ */
+
+public enum CloudSyncKind: Equatable, Hashable {
+    
+    /**
+     * Before a launch's game starts.
+     */
+    case launch
+    /**
+     * After its game exited.
+     */
+    case exit
+    /**
+     * On the player's request.
+     */
+    case maintenance
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension CloudSyncKind: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCloudSyncKind: FfiConverterRustBuffer {
+    typealias SwiftType = CloudSyncKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CloudSyncKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .launch
+        
+        case 2: return .exit
+        
+        case 3: return .maintenance
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CloudSyncKind, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .launch:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .exit:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .maintenance:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudSyncKind_lift(_ buf: RustBuffer) throws -> CloudSyncKind {
+    return try FfiConverterTypeCloudSyncKind.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudSyncKind_lower(_ value: CloudSyncKind) -> RustBuffer {
+    return FfiConverterTypeCloudSyncKind.lower(value)
 }
 
 
@@ -7464,8 +7738,8 @@ fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterOptionTypeCloudMaintenance: FfiConverterRustBuffer {
-    typealias SwiftType = CloudMaintenance?
+fileprivate struct FfiConverterOptionTypeCloudQuestion: FfiConverterRustBuffer {
+    typealias SwiftType = CloudQuestion?
 
     public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
         guard let value = value else {
@@ -7473,13 +7747,37 @@ fileprivate struct FfiConverterOptionTypeCloudMaintenance: FfiConverterRustBuffe
             return
         }
         writeInt(&buf, Int8(1))
-        FfiConverterTypeCloudMaintenance.write(value, into: &buf)
+        FfiConverterTypeCloudQuestion.write(value, into: &buf)
     }
 
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
-        case 1: return try FfiConverterTypeCloudMaintenance.read(from: &buf)
+        case 1: return try FfiConverterTypeCloudQuestion.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeCloudSync: FfiConverterRustBuffer {
+    typealias SwiftType = CloudSync?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeCloudSync.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeCloudSync.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }

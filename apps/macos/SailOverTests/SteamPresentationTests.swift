@@ -545,9 +545,8 @@ final class SteamPresentationTests: XCTestCase {
         let model = fixture.model
         model.installations.primaryAction()
         fixture.preparing()
-        var session = GameSessionState.steam(appID: 620, phase: .preparing,
-                                             cloud: CloudStatus(phase: .checking, decisionId: 17, error: nil, allowedChoices: []))
-        fixture.sessions.fake.show(session)
+        fixture.sessions.fake.show(.steam(appID: 620, phase: .preparing, cloud: .showing(.checking)))
+        fixture.sync(.launch(620, decision: 17, working: true, cancellable: true))
         try await eventually { model.cloud.canCancelSynchronization(for: 620) }
 
         XCTAssertTrue(model.installations.isSynchronizingSaves)
@@ -563,49 +562,38 @@ final class SteamPresentationTests: XCTestCase {
             try await render(model, to: output.appending(path: "steam-cloud-sync-button.png"))
         }
 
-        session.cloud = CloudStatus(phase: .failed, decisionId: 17, error: "backend.steam.cloud.network",
-                                    allowedChoices: [.retry, .cancel, .launchAnyway])
-        fixture.sessions.fake.show(session)
+        fixture.sync(.launch(620, question: .failed(17, error: "backend.steam.cloud.network", launchAnyway: true)))
         try await eventually { model.cloud.failurePresented }
         XCTAssertFalse(model.cloud.promptPresented)
         XCTAssertFalse(model.installations.isSynchronizingSaves)
         XCTAssertTrue(model.cloud.canLaunchAnyway)
         // Error text never grants permission; only the supervisor's choices do.
-        session.cloud.allowedChoices = [.retry, .cancel]
-        fixture.sessions.fake.show(session)
+        fixture.sync(.launch(620, question: .failed(17, error: "backend.steam.cloud.network")))
         try await eventually { !model.cloud.canLaunchAnyway }
-        session.cloud = CloudStatus(phase: .failed, decisionId: 17, error: "a.future.error.key",
-                                    allowedChoices: [.retry, .cancel, .launchAnyway])
-        fixture.sessions.fake.show(session)
-        try await eventually { model.cloud.canLaunchAnyway }
         model.cloud.respond(.retry)
         try await eventually { fixture.backend.actions.last == .answer(620, decision: 17, .retry) && !model.cloud.promptBusy }
 
-        session.cloud = CloudStatus(phase: .conflict, decisionId: 18, error: "backend.steam.cloud.conflict",
-                                    allowedChoices: [.local, .cloud, .cancel])
-        fixture.sessions.fake.show(session)
+        fixture.sync(.launch(620, question: .conflict(18, error: "backend.steam.cloud.conflict")))
         try await eventually { model.cloud.promptPresented }
         XCTAssertFalse(model.cloud.failurePresented)
         XCTAssertFalse(model.cloud.canLaunchAnyway)
         model.cloud.respond(.cloud)
         try await eventually { fixture.backend.actions.last == .answer(620, decision: 18, .cloud) && !model.cloud.promptBusy }
-        session.cloud = .showing(.checking)
-        fixture.sessions.fake.show(session)
+        fixture.sync(.launch(620, working: true, cancellable: true))
         try await eventually { model.installations.isSynchronizingSaves && !model.cloud.promptPresented }
 
-        session.phase = .running
-        session.cloud = .showing(.ready)
-        fixture.run(session)
+        fixture.sync(nil)
+        fixture.run(.steam(appID: 620))
         try await eventually { model.gameSessions.active?.running == true }
         XCTAssertFalse(model.installations.isSynchronizingSaves)
         XCTAssertEqual(model.installations.primaryActionTitle, L10n.string("model.game.running"))
-        session.phase = .finalizing
-        session.cloud = .showing(.syncing)
-        fixture.sessions.fake.show(session)
+        fixture.sessions.fake.show(.steam(appID: 620, phase: .finalizing, cloud: .showing(.syncing)))
+        fixture.sync(.exit(620, working: true))
         try await eventually { model.installations.isSynchronizingSaves }
         XCTAssertEqual(model.installations.primaryActionTitle, L10n.string("ui.cloud.sync_short"))
         XCTAssertFalse(model.cloud.promptPresented)
         XCTAssertFalse(model.cloud.canCancelSynchronization(for: 620))
+        fixture.sync(nil)
         fixture.run(nil)
         try await eventually { !model.gameSessions.isBusy }
         XCTAssertFalse(model.installations.isSynchronizingSaves)
@@ -667,23 +655,22 @@ final class SteamPresentationTests: XCTestCase {
         defer { fixture.cleanUp() }
         let model = fixture.model
         model.installations.primaryAction()
-        var session = GameSessionState.steam(appID: 620)
-        fixture.run(session)
+        fixture.run(.steam(appID: 620))
         try await eventually { model.gameSessions.active?.running == true }
-        session.phase = .finalizing
-        session.cloud = .asking(.conflict, decision: 4, error: "backend.steam.cloud.conflict")
-        fixture.sessions.fake.show(session)
-        try await eventually { model.gameSessions.active?.cloud.phase == .conflict }
-
-        XCTAssertTrue(model.cloud.promptPresented)
+        fixture.sessions.fake.show(.steam(appID: 620, phase: .finalizing,
+                                          cloud: .asking(.conflict, decision: 4, error: "backend.steam.cloud.conflict")))
+        fixture.sync(.exit(620, question: .conflict(4, error: "backend.steam.cloud.conflict")))
+        try await eventually { model.cloud.promptPresented }
         XCTAssertFalse(model.cloud.failurePresented)
+        XCTAssertNil(model.gameSessionMessage)
 
         model.cloud.respond(.cancel)
         try await eventually { !model.cloud.promptBusy }
-        XCTAssertFalse(model.cloud.promptPresented)
         XCTAssertEqual(fixture.backend.actions.last, .answer(620, decision: 4, .cancel))
-        session.cloud = .showing(.pending, error: "backend.steam.cloud.conflict")
-        fixture.sessions.fake.show(session)
+        // Rust closes the answered question.
+        fixture.sync(.exit(620))
+        try await eventually { !model.cloud.promptPresented }
+        fixture.sync(nil)
         fixture.run(nil)
         try await eventually { !model.gameSessions.isBusy }
         XCTAssertFalse(model.cloud.promptPresented, "A finished session never reopens the sheet by itself")
@@ -697,13 +684,13 @@ final class SteamPresentationTests: XCTestCase {
         let model = fixture.model
         model.installations.primaryAction()
         fixture.preparing()
-        fixture.sessions.fake.show(.steam(appID: 620, phase: .preparing,
-                                          cloud: .asking(.conflict, decision: 4, error: "backend.steam.cloud.conflict")))
+        fixture.sync(.launch(620, question: .conflict(4, error: "backend.steam.cloud.conflict")))
         try await eventually { model.cloud.promptPresented }
 
         model.cloud.respond(.cancel)
         try await eventually { fixture.backend.actions.last == .answer(620, decision: 4, .cancel) }
         // The launch ends as a cancellation, which Rust reports as no failure.
+        fixture.sync(nil)
         fixture.run(nil)
         try await eventually { !model.gameSessions.isBusy && !model.installations.isLaunching }
         XCTAssertNil(model.errorMessage)
@@ -719,7 +706,7 @@ final class SteamPresentationTests: XCTestCase {
         backend.onCall = { call in
             if case .maintain = call {
                 backend.publish {
-                    $0.maintenance = .init(game: 620, cloud: .showing(.syncing))
+                    $0.cloudSync = .maintenance(620)
                     $0.gate = .closed
                 }
             }
@@ -736,7 +723,7 @@ final class SteamPresentationTests: XCTestCase {
         XCTAssertFalse(model.installations.canSyncCloud)
         XCTAssertEqual(model.installations.cloudIndicator?.value, L10n.string("ui.cloud.indicator.syncing"))
         backend.publish {
-            $0.maintenance = nil
+            $0.cloudSync = nil
             $0.gate = .open
         }
         try await eventually { !model.cloud.isMaintaining }
@@ -761,10 +748,10 @@ final class SteamPresentationTests: XCTestCase {
         defer { fixture.cleanUp() }
         let (model, backend) = (fixture.model, fixture.backend)
         model.syncCloud()
-        backend.publish { $0.maintenance = .init(game: 620, cloud: .showing(.syncing)) }
+        backend.publish { $0.cloudSync = .maintenance(620) }
         try await eventually { model.cloud.isMaintaining }
 
-        backend.publish { $0.maintenance = nil }
+        backend.publish { $0.cloudSync = nil }
 
         try await eventually { !model.cloud.isMaintaining }
         XCTAssertFalse(model.cloud.failurePresented)
@@ -783,14 +770,14 @@ final class SteamPresentationTests: XCTestCase {
         XCTAssertNil(app.presentedPrompt)
 
         fixture.model.syncCloud()
-        fixture.backend.publish { $0.maintenance = .init(game: 620, cloud: .asking(.conflict, decision: 1)) }
+        fixture.backend.publish { $0.cloudSync = .maintenance(620, question: .conflict(1)) }
 
         try await eventually { app.presentedPrompt == .steamCloud }
         app.selection = .recent
         XCTAssertEqual(app.presentedPrompt, .steamCloud, "The question does not wait for the Steam tab")
         fixture.model.cloud.respond(.cancel)
         try await eventually { fixture.backend.actions.last == .answer(620, decision: 1, .cancel) }
-        fixture.backend.publish { $0.maintenance = nil }
+        fixture.backend.publish { $0.cloudSync = nil }
         try await eventually { app.presentedPrompt == nil }
     }
 
@@ -1244,6 +1231,11 @@ private struct LaunchFixture {
             $0.launchGame = 620
             $0.gate = .action(620)
         }
+    }
+
+    /// Rust shows `sync` as the account's Cloud sync.
+    func sync(_ sync: GameCloudSync<UInt32>?) {
+        backend.publish { $0.cloudSync = sync }
     }
 
     /// The launch's supervisor shows `session`, which holds its game; nil once

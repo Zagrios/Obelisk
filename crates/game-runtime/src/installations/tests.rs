@@ -263,6 +263,14 @@ impl Game {
             choices: Mutex::new(Vec::new()),
         })
     }
+    /// The session reaches `phase`, its sync showing `cloud`.
+    fn reach(&self, phase: Phase, cloud: cloud::Status) {
+        let mut state = self.state.lock().unwrap();
+        state.phase = phase;
+        state.cloud = cloud;
+        state.revision += 1;
+        self.changed.notify_all();
+    }
     /// The session's sync shows `cloud`.
     fn show(&self, cloud: cloud::Status) {
         let mut state = self.state.lock().unwrap();
@@ -970,4 +978,84 @@ async fn a_new_installation_goes_to_the_library_and_an_update_or_launch_stays_wh
         4,
         "the account has no such installation"
     );
+}
+
+#[tokio::test]
+async fn the_account_asks_one_cloud_question_whichever_sync_asks_it_until_it_is_answered() {
+    let fixture = Fixture::new(true).await;
+    let installations = &fixture.installations;
+
+    // Maintenance asks about its conflict.
+    installations.maintain_cloud(620, Some("620-macos"));
+    let sync = || installations.state().cloud_sync;
+    eventually(|| sync().is_some_and(|sync| sync.question.is_some())).await;
+    let maintenance = sync().unwrap();
+    assert_eq!(maintenance.kind, SyncKind::Maintenance);
+    assert_eq!(maintenance.game, 620);
+    assert!(!maintenance.working && !maintenance.cancellable);
+    let question = maintenance.question.unwrap();
+    assert_eq!(question.kind, QuestionKind::Conflict);
+    installations
+        .answer_cloud(&620, question.decision_id, cloud::Choice::Local)
+        .unwrap();
+    eventually(|| sync().is_none()).await;
+
+    // A launch's check can be cancelled while it works.
+    let game = Game::running();
+    fixture.fake.with(|script| {
+        script
+            .launches
+            .push_back(Ok(Some(game.clone() as Arc<dyn Supervised<Steam>>)))
+    });
+    installations.launch("620-macos", false);
+    let checking = cloud::Status {
+        phase: cloud::Phase::Checking,
+        decision_id: 6,
+        ..Default::default()
+    };
+    game.reach(Phase::Preparing, checking);
+    eventually(|| sync().is_some_and(|sync| sync.working)).await;
+    let launch = sync().unwrap();
+    assert_eq!(launch.kind, SyncKind::Launch);
+    assert!(launch.cancellable);
+    assert_eq!(launch.question, None, "a check asks nothing");
+
+    // The exit's conflict closes with its answer, until the sync asks again.
+    game.reach(Phase::Finalizing, conflict(7));
+    eventually(|| sync().is_some_and(|sync| sync.question.is_some())).await;
+    let exit = sync().unwrap();
+    assert_eq!(exit.kind, SyncKind::Exit);
+    assert!(!exit.cancellable);
+    installations
+        .answer_cloud(&620, 7, cloud::Choice::Cloud)
+        .unwrap();
+    assert_eq!(
+        sync().unwrap().question,
+        None,
+        "the supervisor still shows it"
+    );
+    assert_eq!(*game.choices.lock().unwrap(), [(7, cloud::Choice::Cloud)]);
+    game.show(conflict(8));
+    eventually(|| sync().is_some_and(|sync| sync.question.is_some())).await;
+
+    game.end(None);
+    eventually(|| sync().is_none()).await;
+
+    // A new session's decisions start again: its question shows.
+    let next = Game::running();
+    next.state.lock().unwrap().id = "next session".into();
+    fixture.fake.with(|script| {
+        script
+            .launches
+            .push_back(Ok(Some(next.clone() as Arc<dyn Supervised<Steam>>)))
+    });
+    installations.launch("620-macos", false);
+    next.reach(Phase::Finalizing, conflict(7));
+    eventually(|| sync().is_some_and(|sync| sync.question.is_some())).await;
+
+    // A revoked account asks nothing.
+    fixture.sessions.revoke(42);
+    eventually(|| sync().is_some_and(|sync| sync.question.is_none())).await;
+    next.end(None);
+    eventually(|| sync().is_none()).await;
 }

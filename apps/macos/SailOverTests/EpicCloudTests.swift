@@ -19,13 +19,15 @@ final class EpicCloudTests: XCTestCase {
                              description: "", imageUrl: nil, headerImageUrl: nil, developer: "", windows: false, macos: true)
         let account = EpicTestSession(credentials: credentials, games: [owned])
         let sessions = EpicGameSessions()
+        let backend = FakeInstallations<EpicGames>()
         let model = EpicModel(directory: directory, keychain: EpicMemoryStore(credentials), restore: { _ in account },
-                              gameSessions: sessions, installations: EpicModel.installations(FakeInstallations()))
+                              gameSessions: sessions, installations: EpicModel.installations(backend))
         await model.start()
         model.open(owned)
-        var session = GameSessionState.epic(account: "account", namespace: "sandbox", appName: "game",
+        let session = GameSessionState.epic(account: "account", namespace: "sandbox", appName: "game",
                                             phase: .preparing, cloud: .showing(.checking))
         sessions.fake.show(session)
+        backend.publish { $0.cloudSync = .launch("sandbox:game", working: true, cancellable: true) }
         try await eventually { model.installations.isSynchronizingSaves }
         XCTAssertEqual(model.installations.primaryActionTitle, L10n.string("ui.cloud.sync_short"))
         let view = EpicView(model: model)
@@ -38,14 +40,15 @@ final class EpicCloudTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(250))
         fixture.layout()
         try savePreview(fixture.host, to: output.appending(path: "epic-cloud-synchronization.png"))
-        session.cloud = .asking(.conflict, decision: 2, error: "backend.epic.cloud_conflict")
-        sessions.fake.show(session)
+        backend.publish {
+            $0.cloudSync = .launch("sandbox:game", question: .conflict(2, error: "backend.epic.cloud_conflict"))
+        }
         try await eventually { fixture.layout(); return model.cloud.promptPresented && fixture.sheetContent != nil }
         try await Task.sleep(for: .milliseconds(250))
         fixture.layout()
         let sheet = try XCTUnwrap(fixture.sheetContent)
         try savePreview(sheet, to: output.appending(path: "epic-cloud-conflict.png"))
-        sessions.fake.show(nil)
+        backend.publish { $0.cloudSync = nil }
         try await eventually { fixture.layout(); return fixture.sheetContent == nil }
     }
 
@@ -89,27 +92,22 @@ final class EpicCloudTests: XCTestCase {
         try await eventually { !sessions.isBusy }
     }
 
-    func testCloudPresentationFollowsCurrentAccountAndShowsOnlyConflictsAsSheets() async throws {
+    func testCloudPresentationShowsOnlyConflictsAsSheetsAndGoesWithItsAccount() async throws {
         let sessions = EpicGameSessions()
         let cloud = EpicCloudModel(sessions: sessions)
-        cloud.connect(account: "account", backend: FakeInstallations())
-        var session = GameSessionState.epic(account: "account", namespace: "sandbox", appName: "game",
-                                            phase: .preparing, cloud: .showing(.checking))
-        sessions.fake.show(session)
-        try await eventually { sessions.active?.cloud.phase == .checking }
+        let backend = FakeInstallations<EpicGames>()
+        cloud.connect(account: "account", backend: backend)
+        cloud.sync = .launch("sandbox:game", working: true, cancellable: true)
         XCTAssertTrue(cloud.isSynchronizing(for: "sandbox:game"))
         XCTAssertTrue(cloud.canCancelSynchronization(for: "sandbox:game"))
         XCTAssertFalse(cloud.promptPresented)
         XCTAssertFalse(cloud.failurePresented)
-        session.cloud = CloudStatus(phase: .failed, decisionId: 1, error: nil, allowedChoices: [.retry, .cancel, .launchAnyway])
-        sessions.fake.show(session)
-        try await eventually { cloud.failurePresented }
+        cloud.sync = .launch("sandbox:game", question: .failed(1, launchAnyway: true))
+        XCTAssertTrue(cloud.failurePresented)
         XCTAssertTrue(cloud.canLaunchAnyway)
         XCTAssertFalse(cloud.promptPresented)
-        session.phase = .finalizing
-        session.cloud = .asking(.conflict, decision: 2)
-        sessions.fake.show(session)
-        try await eventually { cloud.promptPresented }
+        cloud.sync = .exit("sandbox:game", question: .conflict(2))
+        XCTAssertTrue(cloud.promptPresented)
         XCTAssertFalse(cloud.failurePresented)
         XCTAssertFalse(cloud.canCancelSynchronization(for: "sandbox:game"))
         cloud.signedOut()
@@ -118,17 +116,6 @@ final class EpicCloudTests: XCTestCase {
         cloud.connect(account: "other-account", backend: FakeInstallations())
         XCTAssertFalse(cloud.promptPresented)
         XCTAssertFalse(cloud.isSynchronizing(for: "sandbox:game"))
-    }
-
-    func testUnsupportedCloudNeverClaimsSynchronization() async throws {
-        let sessions = EpicGameSessions()
-        let cloud = EpicCloudModel(sessions: sessions)
-        cloud.connect(account: "account", backend: FakeInstallations())
-        sessions.fake.show(.epic(account: "account", namespace: "sandbox", appName: "game",
-                                 cloud: .showing(.unsupported)))
-        try await eventually { sessions.active?.phase == .running }
-        XCTAssertFalse(cloud.isSynchronizing(for: "sandbox:game"))
-        XCTAssertTrue(sessions.protects("sandbox:game"))
     }
 
     func testEpicModelDisablesFileMutationsThroughRunningGameAndSignOut() async throws {
@@ -170,7 +157,7 @@ final class EpicCloudTests: XCTestCase {
         backend.onCall = { call in
             if case .maintain = call {
                 backend.publish {
-                    $0.maintenance = .init(game: "sandbox:game", cloud: .showing(.checking))
+                    $0.cloudSync = .maintenance("sandbox:game")
                     $0.gate = .closed
                 }
             }
@@ -187,14 +174,14 @@ final class EpicCloudTests: XCTestCase {
         XCTAssertTrue(model.cloud.isMaintaining, "Rust holds the Reservation from the call")
         XCTAssertFalse(model.installations.canModify(owned.libraryID))
         XCTAssertEqual(backend.actions, [.maintain("sandbox:game", installed: receipt)])
-        backend.publish { $0.maintenance?.cloud = .asking(.conflict, decision: 1) }
+        backend.publish { $0.cloudSync = .maintenance("sandbox:game", question: .conflict(1)) }
         try await eventually { model.cloud.promptPresented }
         XCTAssertEqual(model.cloud.promptGame, "sandbox:game")
         model.cloud.respond(.cloud)
         try await eventually { backend.actions.last == .answer("sandbox:game", decision: 1, .cloud) }
         backend.indicators = [("sandbox:game", .neverSynced)]
         backend.publish {
-            $0.maintenance = nil
+            $0.cloudSync = nil
             $0.gate = .open
         }
         try await eventually { !model.cloud.isMaintaining }
@@ -216,19 +203,19 @@ final class EpicCloudTests: XCTestCase {
         let owned = EpicGame(appName: "game", namespace: "sandbox", catalogItemId: "catalog", title: "Fixture",
                              description: "", imageUrl: nil, headerImageUrl: nil, developer: "", windows: false, macos: true)
         let sessions = EpicGameSessions()
+        let backend = FakeInstallations<EpicGames>()
         let epic = EpicModel(directory: directory, keychain: EpicMemoryStore(credentials),
                              restore: { _ in EpicTestSession(credentials: credentials, games: [owned]) },
-                             gameSessions: sessions, installations: EpicModel.installations(FakeInstallations()))
+                             gameSessions: sessions, installations: EpicModel.installations(backend))
         await epic.start()
         let app = AppModel(directory: directory, steam: SteamModel(directory: directory, gameSessions: SteamGameSessions()),
                            epic: epic)
         app.selection = .steam
 
-        sessions.fake.show(.epic(account: "account", namespace: "sandbox", appName: "game", phase: .finalizing,
-                                 cloud: .asking(.conflict, decision: 1)))
+        backend.publish { $0.cloudSync = .exit("sandbox:game", question: .conflict(1)) }
 
         try await eventually { app.presentedPrompt == .epicCloud }
-        sessions.fake.show(nil)
+        backend.publish { $0.cloudSync = nil }
         try await eventually { app.presentedPrompt == nil }
     }
 

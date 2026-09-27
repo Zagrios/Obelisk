@@ -32,7 +32,7 @@ final class FakeInstallations<Store: InstallationStorefront>: InstallationsBacke
         state = InstallationsSnapshot(
             revision: 1, receipts: receipts, transfer: nil, transferGame: nil, downloading: false, launching: false,
             verifyingBeforeLaunch: false, launchGame: nil, uninstalling: false, uninstallGame: nil,
-            resumable: nil, report: nil, warning: nil, maintenance: nil, gate: .open
+            resumable: nil, report: nil, warning: nil, gate: .open, cloudSync: nil
         )
     }
 
@@ -108,6 +108,37 @@ extension GameOffer {
     var steamApp: UInt32? {
         guard case let .steam(appId, _, _, _) = self else { return nil }
         return appId
+    }
+}
+
+/// Cloud syncs Rust publishes, as a test shows them.
+extension GameCloudSync {
+    static func launch(_ game: Game, decision: UInt64 = 1, working: Bool = false, cancellable: Bool = false,
+                       question: CloudQuestion? = nil) -> Self {
+        Self(game: game, kind: .launch, decisionId: question?.decisionId ?? decision, working: working,
+             reconnecting: false, cancellable: cancellable, question: question)
+    }
+
+    static func exit(_ game: Game, working: Bool = false, question: CloudQuestion? = nil) -> Self {
+        Self(game: game, kind: .exit, decisionId: question?.decisionId ?? 1, working: working, reconnecting: false,
+             cancellable: false, question: question)
+    }
+
+    /// Maintenance works until it asks.
+    static func maintenance(_ game: Game, question: CloudQuestion? = nil) -> Self {
+        Self(game: game, kind: .maintenance, decisionId: question?.decisionId ?? 1, working: question == nil,
+             reconnecting: false, cancellable: false, question: question)
+    }
+}
+
+extension CloudQuestion {
+    static func conflict(_ decision: UInt64, error: String? = nil) -> Self {
+        Self(decisionId: decision, kind: .conflict, error: error, choices: [.local, .cloud, .cancel])
+    }
+
+    static func failed(_ decision: UInt64, error: String? = nil, launchAnyway: Bool = false) -> Self {
+        Self(decisionId: decision, kind: .failed, error: error,
+             choices: launchAnyway ? [.retry, .cancel, .launchAnyway] : [.retry, .cancel])
     }
 }
 

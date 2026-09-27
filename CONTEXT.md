@@ -51,7 +51,7 @@ One comparison of an account's local saves for a game with its Cloud saves, befo
 _Avoid_: Cloud check, sync cycle
 
 **Cloud question**:
-A choice a Cloud sync asks the player: which saves to keep after a conflict, or whether to retry, cancel or launch anyway after a failed launch check. It takes one answer, and closes unanswered when the sync is cancelled, the account is revoked, or nobody answers in time. An account asks at most one at a time, whichever sync asks it.
+A choice a Cloud sync asks the player: which saves to keep after a conflict, or whether to retry, cancel or launch anyway after a failed launch check. It takes one answer and closes with it; it closes unanswered when the sync is cancelled, the account is revoked, or nobody answers in time. An account asks at most one at a time, whichever sync asks it.
 _Avoid_: prompt, Cloud decision
 
 **Account revocation**:
