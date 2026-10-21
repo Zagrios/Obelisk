@@ -6,6 +6,11 @@ struct ObeliskApp: App {
     @State private var model = AppModel()
     @NSApplicationDelegateAdaptor(AppLifecycle.self) private var lifecycle
 
+    init() {
+        // The test host starts no game, and its environment stays as it is.
+        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil { GameLocale.adopt() }
+    }
+
     var body: some Scene {
         Window(L10n.string("app.library"), id: "main") {
             RootView(model: model)

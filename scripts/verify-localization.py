@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check that every application translation key has complete en/fr resources."""
+"""Check that every application translation key has complete en/fr/it resources."""
 
 import json
 import re
@@ -38,8 +38,8 @@ def main():
     entries = catalog["strings"]
     for key, entry in entries.items():
         languages = entry["localizations"]
-        assert {"en", "fr"} <= languages.keys(), f"Missing language: {key}"
-        variants = [value for language in ("en", "fr") for value in formats(languages[language])]
+        assert {"en", "fr", "it"} <= languages.keys(), f"Missing language: {key}"
+        variants = [value for language in ("en", "fr", "it") for value in formats(languages[language])]
         assert all(signature(value) == signature(variants[0]) for value in variants), f"Placeholder mismatch: {key}"
 
     referenced = set()
@@ -56,7 +56,7 @@ def main():
         referenced.update(re.findall(r'"(backend\.[a-zA-Z0-9_.]+)"', path.read_text()))
     missing = referenced - entries.keys()
     assert not missing, f"Untranslated keys: {sorted(missing)}"
-    print(f"Localization verified: {len(entries)} keys, complete English/French text and matching placeholders.")
+    print(f"Localization verified: {len(entries)} keys, complete English/French/Italian text and matching placeholders.")
 
 
 if __name__ == "__main__":

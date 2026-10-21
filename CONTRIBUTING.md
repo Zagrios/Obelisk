@@ -54,7 +54,7 @@ By default, a build uses the same library as the installed app, in `~/Library/Ap
 ./scripts/test.sh
 ```
 
-This checks the English and French translations, runs `cargo fmt`, Clippy and the Rust tests, runs the Swift ↔ Rust integration tests in Xcode, and verifies the app's signature. Tests use temporary folders and never launch games.
+This checks the English, French and Italian translations, runs `cargo fmt`, Clippy and the Rust tests, runs the Swift ↔ Rust integration tests in Xcode, and verifies the app's signature. Tests use temporary folders and never launch games.
 
 ## Windows games in development
 
@@ -103,10 +103,10 @@ The Steam, Epic Games and GOG protocols are implemented in Rust, from a study of
 
 ## Interface text and translations
 
-The interface is in English and French. It follows the system language and falls back to English, unless the player picks a language in **Settings → Language**. That choice is saved as Obelisk's own `AppleLanguages`, as macOS's per-app language setting does, and applies when Obelisk restarts.
+The interface is in English, French and Italian. It follows the system language and falls back to English, unless the player picks a language in **Settings → Language**. That choice is saved as Obelisk's own `AppleLanguages`, as macOS's per-app language setting does, and applies when Obelisk restarts.
 
 - Every text shown to the player lives in `apps/macos/Obelisk/Resources/Localizable.xcstrings` and is read through the `L10n` helper.
-- Add the English and the French translation together.
+- Add the English, the French and the Italian translation together.
 - Text that has to stay in code, such as technical diagnostics, is in English.
 - `python3 scripts/verify-localization.py` checks the catalog and every key the code uses.
 - The language picker lists every translation the app bundle contains. Each one needs its flag in `Assets.xcassets`, as an image set named `Flag-<code>`, taken from the same [Free Flat Flags](https://github.com/Zagrios/bs-manager/blob/chore/ressources/Img/free_flat_flags_227.zip) set as the others. A language several countries speak shows two flags split across the diagonal, as English shows the United States' and the United Kingdom's: `AppLanguage.countries` names them.
