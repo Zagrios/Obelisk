@@ -257,6 +257,11 @@ impl Connector {
     }
 }
 
+/// A failed attempt for every attempt the session makes before it gives up.
+fn failures() -> impl Iterator<Item = Answer> {
+    (0..ATTEMPTS).map(|_| Answer::Fails)
+}
+
 /// A session opened through `connector`'s first answer. The attempts it
 /// records start afterwards.
 async fn open(connector: &Arc<Connector>) -> Arc<AccountSession<Connection>> {
@@ -278,7 +283,7 @@ async fn changed(session: &AccountSession<Connection>) -> State {
 /// Lets the session's tasks run until `done`, time passing as they all
 /// wait.
 async fn until(done: impl Fn() -> bool) {
-    let deadline = Instant::now() + Duration::from_secs(60);
+    let deadline = Instant::now() + Duration::from_secs(300);
     while !done() {
         assert!(Instant::now() < deadline, "it never happened");
         tokio::time::sleep(Duration::from_millis(10)).await;
@@ -413,26 +418,28 @@ async fn a_dropped_connection_is_replaced_and_the_session_reaches_steam_through_
 }
 
 #[tokio::test(start_paused = true)]
-async fn reconnecting_waits_one_two_then_four_seconds_and_gives_up_after_three_attempts() {
+async fn reconnecting_waits_longer_each_time_and_gives_up_after_about_a_minute() {
     let a = Connection::new();
-    let connector = Connector::new([
-        Answer::Connects(a.clone()),
-        Answer::Fails,
-        Answer::Fails,
-        Answer::Fails,
-        Answer::Connects(Connection::new()),
-    ]);
+    let connector = Connector::new(
+        [Answer::Connects(a.clone())]
+            .into_iter()
+            .chain(failures())
+            .chain([Answer::Connects(Connection::new())]),
+    );
     let session = open(&connector).await;
 
     let dropped = Instant::now();
     a.drops();
     until(|| state(&session).phase == Phase::Unreachable).await;
-    assert_eq!(connector.waits(dropped), [1, 3, 7].map(Duration::from_secs));
+    assert_eq!(
+        connector.waits(dropped),
+        [1, 3, 7, 15, 31, 61].map(Duration::from_secs)
+    );
 
-    tokio::time::sleep(Duration::from_secs(60)).await;
+    tokio::time::sleep(Duration::from_secs(600)).await;
     assert_eq!(
         connector.waits(dropped).len(),
-        3,
+        ATTEMPTS as usize,
         "only a retry tries again"
     );
     let unreachable = state(&session);
@@ -524,13 +531,12 @@ async fn a_retry_replaces_a_live_connection_and_starts_again_after_one_second() 
 #[tokio::test(start_paused = true)]
 async fn a_retry_starts_again_once_reconnecting_gave_up() {
     let (a, b) = (Connection::new(), Connection::new());
-    let connector = Connector::new([
-        Answer::Connects(a.clone()),
-        Answer::Fails,
-        Answer::Fails,
-        Answer::Fails,
-        Answer::Connects(b.clone()),
-    ]);
+    let connector = Connector::new(
+        [Answer::Connects(a.clone())]
+            .into_iter()
+            .chain(failures())
+            .chain([Answer::Connects(b.clone())]),
+    );
     let session = open(&connector).await;
     a.drops();
     until(|| state(&session).phase == Phase::Unreachable).await;
@@ -687,12 +693,7 @@ async fn a_transfer_waiting_for_the_reconnection_stops_when_cancelled() {
 #[tokio::test(start_paused = true)]
 async fn a_transfer_waiting_when_reconnecting_gives_up_fails_through_the_dropped_connection() {
     let a = Connection::new();
-    let connector = Connector::new([
-        Answer::Connects(a.clone()),
-        Answer::Fails,
-        Answer::Fails,
-        Answer::Fails,
-    ]);
+    let connector = Connector::new([Answer::Connects(a.clone())].into_iter().chain(failures()));
     let session = open(&connector).await;
     a.drops();
     changed(&session).await;
