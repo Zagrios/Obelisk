@@ -649,3 +649,25 @@ fn smoke() {
     );
     assert!(output.status.success(), "{:?}", output.status);
 }
+
+#[test]
+fn the_guest_runs_in_the_players_language_through_lc_all() {
+    let some = |name: &str| Some(name.to_owned());
+    assert_eq!(
+        user_locale(None, some("it_IT.UTF-8")).as_deref(),
+        Some("it_IT.UTF-8")
+    );
+    assert_eq!(
+        user_locale(some("fr_CA.UTF-8"), some("it_IT.UTF-8")).as_deref(),
+        Some("fr_CA.UTF-8"),
+        "LC_ALL comes first"
+    );
+    assert_eq!(
+        user_locale(some(""), some("de_DE@euro")).as_deref(),
+        Some("de_DE.UTF-8")
+    );
+    for none in ["C", "POSIX", "C.UTF-8", "", "x", "it IT", "../etc"] {
+        assert_eq!(user_locale(None, some(none)), None, "{none}");
+    }
+    assert_eq!(user_locale(None, None), None);
+}
