@@ -52,6 +52,12 @@ final class EpicIntegrationTests: XCTestCase {
         XCTAssertEqual(calls, 4)
     }
 
+    func testArtworkKeepsALargeLibrarysCoversOnDiskApartFromSharedCache() throws {
+        let cache = try XCTUnwrap(ArtworkCache.session.configuration.urlCache)
+        XCTAssertGreaterThanOrEqual(cache.diskCapacity, 512 * 1024 * 1024)
+        XCTAssertFalse(cache === URLCache.shared)
+    }
+
     @MainActor
     private func artworkBitmap() throws -> CGImage {
         let context = try XCTUnwrap(CGContext(

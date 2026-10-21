@@ -109,9 +109,23 @@ final class ArtworkCache {
         return await task.value
     }
 
+    /// Storefronts mark their artwork cacheable, but `URLSession.shared`
+    /// keeps 10 to 20 MB on disk, a few dozen covers: a large library
+    /// downloaded every cover again at each launch. Public artwork only, no
+    /// account data.
+    nonisolated static let session: URLSession = {
+        let configuration = URLSessionConfiguration.default
+        let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
+            .appending(path: Bundle.main.bundleIdentifier ?? "com.zagrios.obelisk", directoryHint: .isDirectory)
+            .appending(path: "Artwork", directoryHint: .isDirectory)
+        configuration.urlCache = URLCache(memoryCapacity: 16 * 1024 * 1024, diskCapacity: 512 * 1024 * 1024,
+                                          directory: directory)
+        return URLSession(configuration: configuration)
+    }()
+
     nonisolated static func download(_ request: Request) async -> CGImage? {
         do {
-            let (data, response) = try await URLSession.shared.data(for: URLRequest(url: request.url, timeoutInterval: 20))
+            let (data, response) = try await session.data(for: URLRequest(url: request.url, timeoutInterval: 20))
             guard let response = response as? HTTPURLResponse,
                   (200..<300).contains(response.statusCode), data.count <= 32 * 1024 * 1024
             else { return nil }
