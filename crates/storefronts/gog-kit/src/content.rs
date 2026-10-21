@@ -499,6 +499,9 @@ impl DiskInstall {
         for link in &installed.links {
             place_link(&root, &link.path, &link.target)?;
         }
+        // Every file is in place: one flush of the drive makes them all
+        // durable before the receipt says so.
+        install::make_durable(&root)?;
         // Partial copies stay only after a failure or a cancellation.
         fs::remove_dir_all(partial_root)?;
         Ok(reused_bytes)
@@ -602,13 +605,13 @@ impl DiskInstall {
                 .update(|status| status.completed_bytes += chunk.size);
         }
         self.cancel.check()?;
-        output.sync_all()?;
+        install::write_out(&output)?;
         drop(output);
         fs::rename(&next, &partial)?;
         apply_permissions(&partial, is_executable(&file.installed.file, &partial)?)?;
         self.cancel.check()?;
         fs::rename(&partial, target)?;
-        File::open(target.parent().ok_or(GogError::Protocol)?)?.sync_all()?;
+        install::write_out(&File::open(target.parent().ok_or(GogError::Protocol)?)?)?;
         Ok(reused_bytes)
     }
 }

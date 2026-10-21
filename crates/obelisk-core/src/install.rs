@@ -404,6 +404,31 @@ pub fn starts_as_program(path: &Path) -> io::Result<bool> {
     Ok(PROGRAMS.iter().any(|magic| header.starts_with(magic)))
 }
 
+/// Hands a written file's data, or a directory's entries, to its drive, as
+/// an installer does before a rename publishes the file. `File::sync_all` is
+/// F_FULLFSYNC on macOS, which also empties the drive's own cache: about
+/// 5 ms a file on an internal SSD, far more on an external disk, and minutes
+/// across a game of many files. This costs a fraction of that; the
+/// installation becomes durable once, as it completes, through
+/// [`make_durable`]. A file a power loss tore before then fails the
+/// verification that starts the next Transfer, which repairs it.
+pub fn write_out(file: &File) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        rustix::fs::fsync(file).map_err(io::Error::from)
+    }
+    #[cfg(not(unix))]
+    {
+        file.sync_all()
+    }
+}
+
+/// Asks the drive holding `directory` to empty its cache, so what
+/// [`write_out`] handed it, files and renames, survives a power loss.
+pub fn make_durable(directory: &Path) -> io::Result<()> {
+    File::open(directory)?.sync_all()
+}
+
 /// Installed files are user-readable; only manifest-declared executables get
 /// the execute bit. No other mode information crosses a storefront manifest.
 pub fn apply_permissions(path: &Path, executable: bool) -> io::Result<()> {
@@ -423,6 +448,18 @@ pub fn apply_permissions(path: &Path, executable: bool) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn written_files_and_their_directory_reach_the_drive() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("file");
+        fs::write(&path, b"content").unwrap();
+        write_out(&File::open(&path).unwrap()).unwrap();
+        write_out(&File::open(root.path()).unwrap()).unwrap();
+        make_durable(root.path()).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"content");
+        assert!(make_durable(&root.path().join("missing")).is_err());
+    }
 
     #[test]
     fn relative_paths_reject_escapes_and_reserved_names() {

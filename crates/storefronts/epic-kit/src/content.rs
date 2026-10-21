@@ -362,6 +362,9 @@ impl DiskInstall {
             self.prefetch_files(&verified.valid, &chunk_root)?;
         }
         self.cancel.check()?;
+        // Every file is in place: one flush of the drive makes them all
+        // durable before the receipt says so.
+        install::make_durable(&root)?;
         // Keep caches on failure/cancellation only, avoiding a second permanent copy of the game.
         fs::remove_dir_all(partial_root)?;
         Ok(reused_bytes)
@@ -541,13 +544,13 @@ impl DiskInstall {
         if hash.finalize()[..] != file.hash {
             return Err(EpicError::Integrity);
         }
-        partial.sync_all()?;
+        install::write_out(&partial)?;
         drop(partial);
         apply_permissions(&partial_path, is_executable(file, &partial_path)?)?;
         self.cancel.check()?;
         let target = checked_file_path(root, relative)?;
         fs::rename(&partial_path, &target)?;
-        File::open(target.parent().unwrap_or(root))?.sync_all()?;
+        install::write_out(&File::open(target.parent().unwrap_or(root))?)?;
         Ok(reused_bytes)
     }
 }

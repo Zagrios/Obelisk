@@ -804,8 +804,11 @@ impl DiskInstall {
             )?;
         }
         if let Some(directory) = pending_directory {
-            File::open(directory)?.sync_all()?;
+            install::write_out(&File::open(directory)?)?;
         }
+        // Every file is in place: one flush of the drive makes them all
+        // durable before the receipt says so.
+        install::make_durable(&root)?;
         Ok(reused_bytes)
     }
 
@@ -915,7 +918,7 @@ impl DiskInstall {
         // phase stays the network side's: chunks still arrive for other files.
         self.reporter
             .update(|status| status.current_file.clone_from(&file.name));
-        partial.sync_all()?;
+        install::write_out(&partial)?;
         drop(partial);
         if hashed != present.len() || hasher.finalize()[..] != file.sha {
             return Err(invalid("backend.steam.content.assembledHashMismatch"));
@@ -928,7 +931,7 @@ impl DiskInstall {
         if pending_directory.as_ref() != Some(&directory)
             && let Some(previous) = pending_directory.replace(directory)
         {
-            File::open(previous)?.sync_all()?;
+            install::write_out(&File::open(previous)?)?;
         }
         self.reporter.update(|status| status.completed_files += 1);
         Ok(reused_bytes)
