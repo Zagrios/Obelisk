@@ -291,16 +291,20 @@ async fn fetch(
     cancel: &CancelToken,
     reporter: &Reporter,
 ) -> ChunkResult {
+    // A server that stops sending fails the request, not a slow link: GOG's
+    // chunks reach 10 MiB, and a dozen share the bandwidth.
+    let request = http.get(url).timeout(transfer::CHUNK_DEADLINE).send();
     let response = cancel
-        .race(http.get(url).timeout(Duration::from_secs(60)).send())
+        .race(tokio::time::timeout(transfer::CHUNK_STALL, request))
         .await?
+        .map_err(|_| GogError::Network)?
         .map_err(|_| GogError::Network)?;
     if !response.status().is_success() {
         return Err(GogError::Http(response.status().as_u16()));
     }
     Ok(transfer::read_body(
         response.content_length(),
-        response.bytes_stream(),
+        transfer::unless_stalled(response.bytes_stream(), transfer::CHUNK_STALL),
         BodySize::Exactly(expected),
         cancel,
         |length| {

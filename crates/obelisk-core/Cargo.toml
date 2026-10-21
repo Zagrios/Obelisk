@@ -16,6 +16,9 @@ futures-util.workspace = true
 sha1.workspace = true
 md-5.workspace = true
 
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+
 [features]
 # A detached `transfer::Chunks`, for storefront tests that play the network side.
 testing = []

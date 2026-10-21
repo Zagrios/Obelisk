@@ -205,14 +205,16 @@ impl ContentClient {
     }
 
     async fn fetch(&self, url: &Url, cancel: &CancelToken, reporter: &Reporter) -> ChunkResult {
+        // A server that stops sending fails the request, not a slow link.
+        let request = self
+            .client
+            .get(url.clone())
+            .timeout(transfer::CHUNK_DEADLINE)
+            .send();
         let response = cancel
-            .race(
-                self.client
-                    .get(url.clone())
-                    .timeout(Duration::from_secs(45))
-                    .send(),
-            )
+            .race(tokio::time::timeout(transfer::CHUNK_STALL, request))
             .await?
+            .map_err(|_| EpicError::Network)?
             .map_err(|_| EpicError::Network)?;
         if !response.status().is_success() {
             return Err(EpicError::Http(response.status().as_u16()));
@@ -221,7 +223,7 @@ impl ContentClient {
         // estimate (see decode_chunk).
         Ok(transfer::read_body(
             response.content_length(),
-            response.bytes_stream(),
+            transfer::unless_stalled(response.bytes_stream(), transfer::CHUNK_STALL),
             BodySize::AtMost((MAX_CHUNK_BYTES + 98) as u64),
             cancel,
             |count| {

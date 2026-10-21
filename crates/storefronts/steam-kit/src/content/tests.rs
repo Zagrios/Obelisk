@@ -3,7 +3,7 @@ use std::{
     net::TcpListener,
     sync::{Arc, Mutex},
     thread,
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use aes::cipher::{BlockCipherEncrypt, BlockModeEncrypt, KeyInit, KeyIvInit, block_padding::Pkcs7};
