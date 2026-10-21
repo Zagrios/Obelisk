@@ -1062,6 +1062,7 @@ version = "0.1.0"
 dependencies = [
  "futures-util",
  "md-5",
+ "rustix",
  "serde",
  "serde_json",
  "sha1 0.11.0",
