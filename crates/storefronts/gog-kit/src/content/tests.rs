@@ -357,6 +357,14 @@ fn one_chunk_files() -> (Arc<Installed>, Decoded) {
     (Arc::new(installed), decoded)
 }
 
+/// The requests the disk side plans ahead of the one it writes, with one chunk
+/// per file.
+const WINDOW: usize = if FILE_PREFETCH < QUEUED_CHUNKS {
+    FILE_PREFETCH
+} else {
+    QUEUED_CHUNKS
+};
+
 /// How long a scripted install may wait on either side before the test fails.
 const WAIT: Duration = Duration::from_secs(5);
 
@@ -425,9 +433,9 @@ async fn a_failed_chunk_reports_its_own_error_not_protocol() {
     let root = folder.path().join("game");
     let mut network = ScriptedInstall::start(&root, &CancelToken::new(), |_| {});
 
-    let window = network.take(FILE_PREFETCH).await;
+    let window = network.take(WINDOW).await;
     assert!(
-        window.iter().map(|(index, _)| *index).eq(0..FILE_PREFETCH),
+        window.iter().map(|(index, _)| *index).eq(0..WINDOW),
         "the first files are planned in order"
     );
     // The network side stops here, as after a chunk that failed for good:
@@ -469,7 +477,7 @@ async fn a_cancelled_transfer_reports_cancelled_not_protocol() {
     };
     let mut network = ScriptedInstall::start(&root, &cancel, progress);
 
-    let window = network.take(FILE_PREFETCH).await;
+    let window = network.take(WINDOW).await;
     network
         .outcomes
         .send(Ok(window[0].1.clone()))

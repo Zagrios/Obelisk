@@ -36,13 +36,23 @@ use crate::{
     manifest::{Chunk, Installed, InstalledFile, galaxy_path, relative_target},
 };
 
-const CHUNK_CONCURRENCY: usize = 12;
-/// Files whose chunks are requested ahead of the one being written.
-const FILE_PREFETCH: usize = 8;
+/// Chunk requests in flight. Chunks reach 10 MiB and arrive in request
+/// order, so one slow chunk holds up the ones after it: more in flight keep
+/// the link busy meanwhile.
+const CHUNK_CONCURRENCY: usize = 16;
+/// Decoded chunks waiting for the disk worker, which writes them as they
+/// come: few are enough, and each may hold 10 MiB.
+const WRITE_QUEUE: usize = 4;
+/// Chunks requested ahead of the disk worker: enough that requests in
+/// flight never wait for it to plan files. Small files hold one chunk each,
+/// so a count of files planned ahead left only a few requests in flight.
+const QUEUED_CHUNKS: usize = 2 * CHUNK_CONCURRENCY;
+/// Files whose chunks are requested ahead of the one being written, at most.
+const FILE_PREFETCH: usize = 256;
 const PIPELINE: Pipeline = Pipeline {
     delivery: Delivery::InOrder,
     fetches: CHUNK_CONCURRENCY,
-    queue: CHUNK_CONCURRENCY,
+    queue: WRITE_QUEUE,
 };
 
 /// One CDN a product's chunks come from, as its secure link describes it.
@@ -533,6 +543,7 @@ impl DiskInstall {
         root: &Path,
     ) -> Result<(), GogError> {
         while self.planned.len() < FILE_PREFETCH
+            && self.requested() < QUEUED_CHUNKS
             && self.next_file < files.len()
             && !self.chunks.refused()
         {
@@ -577,6 +588,16 @@ impl DiskInstall {
             self.planned.push_back(PlannedFile { index, sources });
         }
         Ok(())
+    }
+
+    /// The chunks the planned files requested, none of which has arrived:
+    /// the file being written was planned too and left the plan already.
+    fn requested(&self) -> usize {
+        self.planned
+            .iter()
+            .flat_map(|plan| &plan.sources)
+            .filter(|source| matches!(source, Source::Download))
+            .count()
     }
 
     /// Writes the file's chunks in order into a fresh partial copy, checks
