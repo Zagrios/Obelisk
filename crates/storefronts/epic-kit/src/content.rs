@@ -150,55 +150,67 @@ impl ContentClient {
         reporter: &Reporter,
     ) -> ChunkResult {
         let mut failure = EpicError::Network;
-        for base_url in base_urls {
-            let mut url = base_url
-                .join(&chunk.relative_path(feature_level))
-                .map_err(|_| EpicError::Protocol)?;
-            // Signed manifest query parameters apply to the manifest only.
-            // Account authorization is never attached to CDN chunk requests.
-            url.set_query(None);
-            for attempt in 0..3 {
-                cancel.check()?;
-                reporter.update(|status| status.phase = DownloadPhase::Downloading);
-                match self.fetch(&url, cancel, reporter).await {
-                    Ok(bytes) => {
-                        let expected = chunk.clone();
-                        let received = cfg!(debug_assertions).then(|| bytes.clone());
-                        match cancel
-                            .spawn_blocking(move || decode_chunk(&bytes, &expected))
-                            .await
-                            .map_err(|_| EpicError::Protocol)?
-                        {
-                            Ok(bytes) => return Ok(bytes),
-                            Err(error) => {
-                                if let Some(received) = &received {
-                                    crate::details::diagnostic::write_chunk(
-                                        &url, &chunk, received, &error,
-                                    );
+        // Every mirror in turn; then, while the network or the servers fail,
+        // every mirror again after each of about a minute's waits.
+        for late in 0_usize.. {
+            for base_url in base_urls {
+                let mut url = base_url
+                    .join(&chunk.relative_path(feature_level))
+                    .map_err(|_| EpicError::Protocol)?;
+                // Signed manifest query parameters apply to the manifest only.
+                // Account authorization is never attached to CDN chunk requests.
+                url.set_query(None);
+                for attempt in 0..3 {
+                    cancel.check()?;
+                    reporter.update(|status| status.phase = DownloadPhase::Downloading);
+                    match self.fetch(&url, cancel, reporter).await {
+                        Ok(bytes) => {
+                            let expected = chunk.clone();
+                            let received = cfg!(debug_assertions).then(|| bytes.clone());
+                            match cancel
+                                .spawn_blocking(move || decode_chunk(&bytes, &expected))
+                                .await
+                                .map_err(|_| EpicError::Protocol)?
+                            {
+                                Ok(bytes) => return Ok(bytes),
+                                Err(error) => {
+                                    if let Some(received) = &received {
+                                        crate::details::diagnostic::write_chunk(
+                                            &url, &chunk, received, &error,
+                                        );
+                                    }
+                                    if matches!(error, EpicError::UnsupportedContent) {
+                                        return Err(error);
+                                    }
+                                    failure = error;
                                 }
-                                if matches!(error, EpicError::UnsupportedContent) {
-                                    return Err(error);
-                                }
-                                failure = error;
                             }
                         }
+                        Err(EpicError::Cancelled) => return Err(EpicError::Cancelled),
+                        Err(error @ EpicError::Http(401 | 403 | 404)) => {
+                            // A rejected or absent chunk is final for this mirror,
+                            // but another current delivery URL may still serve it.
+                            failure = error;
+                            break;
+                        }
+                        Err(error) => failure = error,
                     }
-                    Err(EpicError::Cancelled) => return Err(EpicError::Cancelled),
-                    Err(error @ EpicError::Http(401 | 403 | 404)) => {
-                        // A rejected or absent chunk is final for this mirror,
-                        // but another current delivery URL may still serve it.
-                        failure = error;
-                        break;
+                    if attempt < 2 {
+                        cancel
+                            .race(tokio::time::sleep(Duration::from_millis(
+                                250 * (attempt + 1),
+                            )))
+                            .await?;
                     }
-                    Err(error) => failure = error,
                 }
-                if attempt < 2 {
-                    cancel
-                        .race(tokio::time::sleep(Duration::from_millis(
-                            250 * (attempt + 1),
-                        )))
-                        .await?;
-                }
+            }
+            let outage = matches!(
+                failure,
+                EpicError::Network | EpicError::Http(429 | 500..=599)
+            );
+            match transfer::NETWORK_RETRY_WAITS.get(late) {
+                Some(wait) if outage => cancel.race(tokio::time::sleep(*wait)).await?,
+                _ => break,
             }
         }
         Err(failure)

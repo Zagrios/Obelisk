@@ -18,6 +18,8 @@ use futures_util::{StreamExt, stream::FuturesUnordered};
 use reqwest::Url;
 use tokio::sync::Notify;
 
+use obelisk_core::transfer::NETWORK_RETRY_WAITS;
+
 use super::{CancelToken, CdnAuthorization, ContentError, invalid};
 use crate::cm::ContentServer;
 
@@ -31,7 +33,8 @@ const SERVER_REST: Duration = Duration::from_secs(10);
 /// that keeps refusing is dropped.
 const SERVER_AUTHORIZATIONS: u8 = 3;
 /// Failed attempts after which a request fails its depot. Each waits twice as
-/// long as the one before, so a brief network loss is ridden out.
+/// long as the one before; then, while the failures are the network's or a
+/// server error, `NETWORK_RETRY_WAITS` follow.
 const REQUEST_ATTEMPTS: u32 = 5;
 const RETRY_DELAY: Duration = Duration::from_millis(250);
 /// Servers that must report a chunk missing before its depot fails.
@@ -247,7 +250,7 @@ impl<'a> Mirrors<'a> {
         F: Future<Output = Result<(T, u64), ContentError>>,
     {
         let mut tried = Vec::new();
-        let mut failures = 0;
+        let mut failures = 0_u32;
         let mut missing = 0;
         let mut last_error = None;
         let mut running = FuturesUnordered::new();
@@ -258,9 +261,11 @@ impl<'a> Mirrors<'a> {
         loop {
             if running.is_empty() {
                 if failures > 0 {
-                    cancel
-                        .race(tokio::time::sleep(RETRY_DELAY * 2_u32.pow(failures - 1)))
-                        .await?;
+                    let wait = match failures.checked_sub(REQUEST_ATTEMPTS) {
+                        Some(late) => NETWORK_RETRY_WAITS[late as usize],
+                        None => RETRY_DELAY * 2_u32.pow(failures - 1),
+                    };
+                    cancel.race(tokio::time::sleep(wait)).await?;
                 }
                 let lease = loop {
                     match self.lease(path, &tried, expected, cancel).await? {
@@ -300,7 +305,15 @@ impl<'a> Mirrors<'a> {
                             } else {
                                 failures += 1;
                             }
-                            if missing >= MISSING_REPORTS || failures >= REQUEST_ATTEMPTS {
+                            let outage = matches!(
+                                error,
+                                ContentError::Network | ContentError::Http(429 | 500..=599)
+                            );
+                            let late = failures.saturating_sub(REQUEST_ATTEMPTS) as usize;
+                            if missing >= MISSING_REPORTS
+                                || failures >= REQUEST_ATTEMPTS
+                                    && (!outage || late >= NETWORK_RETRY_WAITS.len())
+                            {
                                 return Err(error);
                             }
                             last_error = Some(error);

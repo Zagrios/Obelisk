@@ -3,7 +3,10 @@ mod body;
 mod engine;
 mod lifecycle;
 mod window;
-pub use body::{BodyError, BodySize, CHUNK_DEADLINE, CHUNK_STALL, read_body, unless_stalled};
+pub use body::{
+    BodyError, BodySize, CHUNK_DEADLINE, CHUNK_STALL, NETWORK_RETRY_WAITS, read_body,
+    unless_stalled,
+};
 pub use engine::{Chunks, Delivery, Interrupted, Pipeline, run_engine};
 pub use lifecycle::{TransferBusy, TransferContext, TransferStatus, Transfers};
 pub use window::Window;

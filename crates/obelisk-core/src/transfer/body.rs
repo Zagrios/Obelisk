@@ -15,6 +15,18 @@ pub const CHUNK_STALL: Duration = Duration::from_secs(30);
 /// How long a chunk request may take in all, so a server that trickles a
 /// few bytes before each stall still lets its request go elsewhere.
 pub const CHUNK_DEADLINE: Duration = Duration::from_secs(600);
+/// The waits before a chunk's further attempts, once its quick retries
+/// failed for want of the network or for a server error: about a minute in
+/// all, so a Wi-Fi that drops or a Mac that changes networks is ridden out
+/// instead of failing the Transfer.
+pub const NETWORK_RETRY_WAITS: [Duration; 6] = [
+    Duration::from_secs(1),
+    Duration::from_secs(2),
+    Duration::from_secs(4),
+    Duration::from_secs(8),
+    Duration::from_secs(15),
+    Duration::from_secs(30),
+];
 
 /// How long a response body may or must be.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

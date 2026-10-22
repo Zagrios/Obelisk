@@ -244,7 +244,7 @@ async fn fetch_chunk(
     let path = galaxy_path(&request.chunk.compressed_md5)?;
     let mut failure = GogError::Network;
     let mut stale = false;
-    for attempt in 0..4 {
+    for attempt in 0_usize.. {
         cancel.check()?;
         let endpoints = links.endpoints(&request.source, stale).await?;
         stale = false;
@@ -273,12 +273,20 @@ async fn fetch_chunk(
                 Err(error) => failure = error,
             }
         }
-        if attempt < 3 {
-            cancel
-                .race(tokio::time::sleep(Duration::from_millis(
-                    250 * (attempt + 1),
-                )))
-                .await?;
+        // Three quick retries, then, while the network or the server fails,
+        // about a minute more.
+        let wait = match attempt.checked_sub(3) {
+            None => Some(Duration::from_millis(250 * (attempt as u64 + 1))),
+            Some(late)
+                if matches!(failure, GogError::Network | GogError::Http(429 | 500..=599)) =>
+            {
+                transfer::NETWORK_RETRY_WAITS.get(late).copied()
+            }
+            Some(_) => None,
+        };
+        match wait {
+            Some(wait) => cancel.race(tokio::time::sleep(wait)).await?,
+            None => return Err(failure),
         }
     }
     Err(failure)
