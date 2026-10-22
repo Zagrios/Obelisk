@@ -293,7 +293,12 @@ async fn fetch(
 ) -> ChunkResult {
     // A server that stops sending fails the request, not a slow link: GOG's
     // chunks reach 10 MiB, and a dozen share the bandwidth.
-    let request = http.get(url).timeout(transfer::CHUNK_DEADLINE).send();
+    // Chunks are compressed already: never gzip them again.
+    let request = http
+        .get(url)
+        .header(reqwest::header::ACCEPT_ENCODING, "identity")
+        .timeout(transfer::CHUNK_DEADLINE)
+        .send();
     let response = cancel
         .race(tokio::time::timeout(transfer::CHUNK_STALL, request))
         .await?

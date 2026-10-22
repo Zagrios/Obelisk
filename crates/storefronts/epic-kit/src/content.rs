@@ -209,6 +209,8 @@ impl ContentClient {
         let request = self
             .client
             .get(url.clone())
+            // Chunks are compressed already: never gzip them again.
+            .header(reqwest::header::ACCEPT_ENCODING, "identity")
             .timeout(transfer::CHUNK_DEADLINE)
             .send();
         let response = cancel
