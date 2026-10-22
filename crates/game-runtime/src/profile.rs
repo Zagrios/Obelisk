@@ -282,6 +282,57 @@ pub(crate) fn of(game: Game<'_>, install: &Path) -> Profile {
         .unwrap_or_default()
 }
 
+/// A game that takes its language from its command line, not from the one
+/// Windows has: the flag, then the value it gives each language Obelisk knows
+/// it for. Another language leaves the game to choose.
+struct Speaks {
+    game: fn(Game<'_>) -> bool,
+    flag: &'static str,
+    values: &'static [(&'static str, &'static str)],
+}
+
+const SPEAKS: &[Speaks] = &[Speaks {
+    // Rocket League.
+    game: |game| matches!(game, Game::Epic { namespace, .. } if namespace == "9773aa1aa54f4f7b80e44bef04986cea"),
+    flag: "-language=",
+    values: &[("en", "INT"), ("fr", "FRA"), ("it", "ITA"), ("de", "DEU")],
+}];
+
+/// The language of a locale such as `it_IT.UTF-8`, as `it`: Obelisk's own
+/// process holds the player's, as its games do.
+fn language_of(lc_all: Option<String>, lang: Option<String>) -> Option<String> {
+    let name = lc_all.filter(|name| !name.is_empty()).or(lang)?;
+    let code = name.split(['_', '.', '@', '-']).next()?;
+    (code.len() == 2 && code.bytes().all(|byte| byte.is_ascii_lowercase())).then(|| code.to_owned())
+}
+
+/// What starts `game` in the player's language, when it reads that from its
+/// command line and the player did not put a language of their own in
+/// `chosen`, their arguments.
+pub(crate) fn language_arguments(game: Game<'_>, chosen: &[String]) -> Vec<String> {
+    let language = language_of(std::env::var("LC_ALL").ok(), std::env::var("LANG").ok());
+    language_arguments_in(game, chosen, language.as_deref())
+}
+
+fn language_arguments_in(game: Game<'_>, chosen: &[String], language: Option<&str>) -> Vec<String> {
+    let Some(language) = language else {
+        return Vec::new();
+    };
+    SPEAKS
+        .iter()
+        .filter(|speaks| (speaks.game)(game))
+        .filter(|speaks| {
+            !chosen
+                .iter()
+                .any(|argument| argument.starts_with(speaks.flag.trim_end_matches('=')))
+        })
+        .filter_map(|speaks| {
+            let value = speaks.values.iter().find(|(code, _)| *code == language)?.1;
+            Some(format!("{}{value}", speaks.flag))
+        })
+        .collect()
+}
+
 /// Every game the table launches read now names by a storefront's id, as
 /// its storefront names it.
 pub fn named() -> impl Iterator<Item = Game<'static>> {

@@ -273,6 +273,42 @@ fn a_game_is_found_by_its_storefront_s_id_first_then_by_a_file_of_its_installati
 }
 
 #[test]
+fn a_game_that_reads_its_language_from_its_command_line_gets_the_players() {
+    let rocket_league = Game::Epic {
+        namespace: "9773aa1aa54f4f7b80e44bef04986cea",
+        app_name: "Sugar",
+    };
+    let other = Game::Steam { app_id: 620 };
+    let none: &[String] = &[];
+    assert_eq!(
+        language_arguments_in(rocket_league, none, Some("it")),
+        ["-language=ITA"]
+    );
+    assert_eq!(
+        language_arguments_in(rocket_league, none, Some("en")),
+        ["-language=INT"]
+    );
+    // A language it has no value for, and a game without a flag, add nothing.
+    assert!(language_arguments_in(rocket_league, none, Some("ja")).is_empty());
+    assert!(language_arguments_in(rocket_league, none, None).is_empty());
+    assert!(language_arguments_in(other, none, Some("it")).is_empty());
+    // The player's own language wins.
+    assert!(
+        language_arguments_in(rocket_league, &["-language=FRA".to_owned()], Some("it")).is_empty()
+    );
+    assert_eq!(
+        language_of(None, Some("it_IT.UTF-8".into())).as_deref(),
+        Some("it")
+    );
+    assert_eq!(
+        language_of(Some("fr_CA".into()), Some("it_IT".into())).as_deref(),
+        Some("fr")
+    );
+    assert_eq!(language_of(None, Some("C".into())), None);
+    assert_eq!(language_of(None, None), None);
+}
+
+#[test]
 fn the_named_games_are_the_ones_the_table_names_by_a_storefront_s_id() {
     let named: Vec<_> = named().collect();
 
