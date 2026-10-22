@@ -353,6 +353,14 @@ async fn cancellation_keeps_existing_file_and_verified_chunks_for_resume() {
         .await;
     assert!(matches!(result, Err(EpicError::Cancelled)));
     assert_eq!(fs::read(&target).unwrap(), b"previous installed game");
+    let record = temporary
+        .path()
+        .join(PARTIAL_DIRECTORY)
+        .join("verified.json");
+    assert!(
+        !record.exists(),
+        "a Transfer stopped halfway records nothing"
+    );
     let first_path = format!(
         "/{}",
         manifest.chunks[&manifest.files[0].parts[0].guid].relative_path(18)
@@ -377,6 +385,7 @@ async fn cancellation_keeps_existing_file_and_verified_chunks_for_resume() {
         .unwrap();
     assert_eq!(fs::read(&target).unwrap(), expected);
     assert_eq!(resumed.reused_bytes, 5);
+    assert!(record.exists(), "a finished Transfer records its files");
     assert_eq!(
         server
             .paths()

@@ -301,7 +301,7 @@ pub struct Matched {
     pub parts: usize,
 }
 
-/// Reads a file through its digest in 64 KiB reads, reporting bytes read in
+/// Reads a file through its digest in 1 MiB reads, reporting bytes read in
 /// bounded batches without treating them as validated content. A missing file
 /// or a size mismatch simply does not match; cancellation is checked before
 /// every read.
@@ -323,7 +323,7 @@ pub(crate) fn verify_file_with_progress(
     }
 }
 
-/// Streams a file through SHA-1 in 64 KiB reads. A missing file or a size
+/// Streams a file through SHA-1 in 1 MiB reads. A missing file or a size
 /// mismatch is simply `false`; cancellation is checked between reads.
 pub fn verify_sha1_file(
     path: &Path,
@@ -353,7 +353,9 @@ fn verify_parts<'a, D: Digest>(
     if file.metadata()?.len() != size || parts_size != size {
         return Ok(Matched::default());
     }
-    let mut buffer = [0_u8; 64 * 1024];
+    // Larger reads keep an external disk streaming while several readers
+    // share it.
+    let mut buffer = vec![0_u8; 1024 * 1024];
     let mut pending = 0_u64;
     let mut matched = Matched {
         whole: true,

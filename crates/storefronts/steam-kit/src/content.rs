@@ -811,6 +811,9 @@ impl DiskInstall {
         // Every file is in place: one flush of the drive makes them all
         // durable before the receipt says so.
         install::make_durable(&root)?;
+        // Only now are they recorded whole, for the next Transfer to skip.
+        // The record only saves time: a failure to write it costs none.
+        let _ = obelisk_core::verification::record_verified(&root, &manifest.files);
         Ok(reused_bytes)
     }
 

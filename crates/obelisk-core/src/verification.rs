@@ -1,7 +1,7 @@
 //! Bounded full-file verification shared by storefront installers.
 //!
 //! One call confines every manifest name under the installation root, reads the
-//! file through its digest with at most four disk readers, serializes progress, and
+//! file through its digest with at most eight disk readers, serializes progress, and
 //! joins every reader before returning to the caller's repair loop. Storefronts
 //! describe their manifest entries and map one error; they do not repeat the
 //! path checks or the hashing.
@@ -14,12 +14,19 @@ use std::{
     thread,
 };
 
+mod known;
+
+pub use known::{forget_verified, record_verified};
+
 use crate::{
     install::{self, FileDigest, InstallError, Matched},
     transfer::{CancelToken, Cancelled, Reporter},
 };
 
-const MAX_WORKERS: usize = 4;
+/// Measured on an M1 Pro: eight readers verified 2.5 GB of an app folder at
+/// about 2.0 GB/s against 1.4–1.6 with four, and an external USB disk read
+/// faster with eight too, while a download wrote to it.
+const MAX_WORKERS: usize = 8;
 
 /// What the scheduler needs from one manifest entry: where it goes, how big it
 /// must be and what it must hash to. Directory entries remain in the result
@@ -80,7 +87,9 @@ pub fn worker_limit() -> usize {
 }
 
 /// Verify every file of the installation at `root` with the host's available
-/// parallelism, bounded to four disk readers. Every reader has stopped before
+/// parallelism, bounded to eight disk readers. A file the last finished
+/// Transfer recorded whole, whose disk still says the same of it, is not
+/// read again; see [`record_verified`]. Every reader has stopped before
 /// this returns, so the caller may begin repairing files immediately.
 ///
 /// Inspection bytes, verified whole files and the current name are published
@@ -100,7 +109,7 @@ where
 }
 
 /// An explicit reader limit supports single-reader benchmarks and deterministic
-/// overlap tests. Values are clamped to the production ceiling of four.
+/// overlap tests. Values are clamped to the production ceiling of eight.
 pub fn verify_with_workers<T>(
     root: &Path,
     files: &[T],
@@ -113,6 +122,7 @@ where
 {
     cancel.check()?;
     reporter.update(|status| status.verification_bytes = Some(0));
+    let known = known::Known::load(root);
     let verified = schedule(
         files,
         cancel,
@@ -130,14 +140,25 @@ where
                     status.current_file.replace_range(.., file.name());
                 });
             };
-            let matched = install::verify_file_with_progress(
-                path,
-                file.size(),
-                file.digest(),
-                cancel,
-                &mut report,
-            )?;
-            // Missing and wrong-size files are inspected without being read.
+            let matched = if known.holds(path, file) {
+                Matched {
+                    whole: true,
+                    parts: match file.digest() {
+                        FileDigest::Sha1(_) => 1,
+                        FileDigest::Md5Parts(parts) => parts.len(),
+                    },
+                }
+            } else {
+                install::verify_file_with_progress(
+                    path,
+                    file.size(),
+                    file.digest(),
+                    cancel,
+                    &mut report,
+                )?
+            };
+            // Missing and wrong-size files, and the files the record knows,
+            // are inspected without being read.
             // Their full size still belongs to this pass's progress denominator.
             let remaining = file.size().saturating_sub(inspected);
             if remaining != 0 {
@@ -530,10 +551,10 @@ mod tests {
     }
 
     #[test]
-    fn readers_overlap_up_to_the_four_reader_ceiling() {
+    fn readers_overlap_up_to_the_eight_reader_ceiling() {
         let root = tempfile::tempdir().unwrap();
         let count = worker_limit();
-        assert!((1..=4).contains(&count));
+        assert!((1..=MAX_WORKERS).contains(&count));
         let bytes = vec![7_u8; 64 * 1024];
         let files: Vec<_> = (0..count)
             .map(|index| {
@@ -694,5 +715,122 @@ mod tests {
             };
             assert!(matches!(narrowed, VerificationError::SchedulerFailed));
         }
+    }
+
+    /// Whether `verify_files` finds each of `files` whole under `root`.
+    fn whole(root: &Path, files: &[Entry]) -> Vec<bool> {
+        verify_files(root, files, &CancelToken::new(), &silent())
+            .unwrap()
+            .valid
+    }
+
+    /// Overwrites `path` in place, keeping its inode and its modification time.
+    fn tamper(path: &Path, bytes: &[u8]) {
+        let modified = fs::metadata(path).unwrap().modified().unwrap();
+        fs::write(path, bytes).unwrap();
+        fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(modified)
+            .unwrap();
+    }
+
+    #[test]
+    fn a_recorded_file_is_not_read_again_until_the_player_verifies() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("game.bin");
+        fs::write(&path, b"original").unwrap();
+        let files = [entry("game.bin", b"original")];
+        record_verified(root.path(), &files).unwrap();
+        // Only a disk that lies about its file, same inode, size and time,
+        // shows that the file was not read.
+        tamper(&path, b"tampered");
+        assert_eq!(whole(root.path(), &files), [true]);
+        forget_verified(root.path()).unwrap();
+        assert_eq!(whole(root.path(), &files), [false]);
+        forget_verified(root.path()).unwrap();
+    }
+
+    #[test]
+    fn a_file_whose_disk_says_otherwise_is_hashed_again() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("game.bin");
+        fs::write(&path, b"original").unwrap();
+        let files = [entry("game.bin", b"original")];
+
+        // Written again: another modification time.
+        record_verified(root.path(), &files).unwrap();
+        let modified = fs::metadata(&path).unwrap().modified().unwrap();
+        fs::write(&path, b"tampered").unwrap();
+        fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(modified + std::time::Duration::from_nanos(1))
+            .unwrap();
+        assert_eq!(whole(root.path(), &files), [false]);
+
+        // Replaced by a rename, as an installer does: another inode, even
+        // with the same size and time.
+        fs::write(&path, b"original").unwrap();
+        record_verified(root.path(), &files).unwrap();
+        let modified = fs::metadata(&path).unwrap().modified().unwrap();
+        let replacement = root.path().join("replacement");
+        fs::write(&replacement, b"tampered").unwrap();
+        fs::File::options()
+            .write(true)
+            .open(&replacement)
+            .unwrap()
+            .set_modified(modified)
+            .unwrap();
+        fs::rename(&replacement, &path).unwrap();
+        assert_eq!(whole(root.path(), &files), [false]);
+
+        // Another build's digest for the same file.
+        fs::write(&path, b"original").unwrap();
+        record_verified(root.path(), &files).unwrap();
+        tamper(&path, b"tampered");
+        assert_eq!(
+            whole(root.path(), &[entry("game.bin", b"tampered")]),
+            [true]
+        );
+        assert_eq!(
+            whole(root.path(), &[entry("game.bin", b"anothers")]),
+            [false]
+        );
+
+        // Gone.
+        fs::remove_file(&path).unwrap();
+        assert_eq!(whole(root.path(), &files), [false]);
+    }
+
+    #[test]
+    fn the_record_keeps_other_files_drops_vanished_ones_and_survives_damage() {
+        let root = tempfile::tempdir().unwrap();
+        for name in ["a", "b", "c"] {
+            fs::write(root.path().join(name), name).unwrap();
+        }
+        // Two depots of one installation, recorded one after the other.
+        record_verified(root.path(), &[entry("a", b"a"), entry("b", b"b")]).unwrap();
+        record_verified(root.path(), &[entry("c", b"c")]).unwrap();
+        fs::remove_file(root.path().join("b")).unwrap();
+        record_verified(root.path(), &[entry("c", b"c")]).unwrap();
+        let record = root
+            .path()
+            .join(install::PARTIAL_DIRECTORY)
+            .join("verified.json");
+        let text = fs::read_to_string(&record).unwrap();
+        assert!(text.contains("\"a\"") && text.contains("\"c\"") && !text.contains("\"b\""));
+        for name in ["a", "c"] {
+            tamper(&root.path().join(name), b"x");
+        }
+        assert_eq!(
+            whole(root.path(), &[entry("a", b"a"), entry("c", b"c")]),
+            [true, true]
+        );
+        // A damaged record is no record.
+        fs::write(&record, b"{not json").unwrap();
+        assert_eq!(whole(root.path(), &[entry("a", b"a")]), [false]);
     }
 }

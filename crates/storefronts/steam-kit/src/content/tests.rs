@@ -1069,7 +1069,8 @@ async fn cached_manifest_still_hashes_and_repairs_corrupt_or_missing_files() {
     let good_path = directory.path().join("good.bin");
     let original = fs::metadata(&good_path).unwrap();
     let bad_path = directory.path().join("bad.bin");
-    // Preserve size and mtime: an unchanged manifest must never skip the SHA-1 read.
+    // Preserve size and mtime: an unchanged manifest never skips the SHA-1
+    // read of a verification the player asked for.
     let bad_metadata = fs::metadata(&bad_path).unwrap();
     let mut corrupted = repair.to_vec();
     corrupted[0] ^= 1;
@@ -1081,6 +1082,9 @@ async fn cached_manifest_still_hashes_and_repairs_corrupt_or_missing_files() {
         .set_modified(bad_metadata.modified().unwrap())
         .unwrap();
     fs::remove_file(directory.path().join("missing.bin")).unwrap();
+    // The player's verification forgets what the last Transfer recorded:
+    // the file still says its size, time and inode, and is read anyway.
+    obelisk_core::verification::forget_verified(directory.path()).unwrap();
     let mut cached_plan = plan(directory.path());
     cached_plan.cached_manifest = client
         .cached_manifest(directory.path(), 42, 99, &KEY)
