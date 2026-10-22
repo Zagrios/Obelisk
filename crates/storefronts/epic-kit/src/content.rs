@@ -725,12 +725,14 @@ pub(crate) fn decode_chunk(bytes: &[u8], chunk: &Chunk) -> ChunkResult {
     } else {
         payload.to_vec()
     };
+    // The manifest's SHA-1 proves the window: its rolling hash, another
+    // pass over every byte, adds nothing to it, and only the header's copy
+    // is compared.
     let sha: [u8; 20] = Sha1::digest(&decoded).into();
     if decoded.len() != chunk.window_size as usize
         || sha != chunk.sha1
         || hash_type & 2 != 0 && bytes[41..61] != sha
         || hash_type & 1 != 0 && header_hash != chunk.hash
-        || rolling_hash(&decoded) != chunk.hash
     {
         return Err(EpicError::Integrity);
     }

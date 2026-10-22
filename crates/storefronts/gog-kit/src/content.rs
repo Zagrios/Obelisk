@@ -330,9 +330,11 @@ async fn fetch(
     .await?)
 }
 
-/// A chunk's zlib stream, checked before and after it inflates.
+/// A chunk's zlib stream, inflated within its size and checked by the MD5
+/// of what it holds. The MD5 of the stream itself, which names it on the
+/// CDN, would be another pass over every byte proving nothing more.
 pub(crate) fn decode_chunk(bytes: &[u8], chunk: &Chunk) -> ChunkResult {
-    if bytes.len() as u64 != chunk.compressed_size || !md5_is(bytes, &chunk.compressed_md5) {
+    if bytes.len() as u64 != chunk.compressed_size {
         return Err(GogError::Integrity);
     }
     let mut decoder = flate2::read::ZlibDecoder::new(bytes);

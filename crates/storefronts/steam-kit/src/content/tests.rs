@@ -200,7 +200,11 @@ fn decrypts_all_three_steam_chunk_compression_envelopes_and_rejects_corruption()
         assert!(decode_chunk(&mut encrypted.clone(), &wrong, &KEY).is_err());
         wrong = expected.clone();
         wrong.adler ^= 1;
-        assert!(decode_chunk(&mut encrypted.clone(), &wrong, &KEY).is_err());
+        assert_eq!(
+            decode_chunk(&mut encrypted.clone(), &wrong, &KEY).unwrap(),
+            bytes,
+            "the SHA-1 alone proves the chunk"
+        );
         assert!(decode_chunk(&mut encrypted.clone(), &expected, &[9; 32]).is_err());
     }
     // zlib's standard Adler value for this input would be 0x024d0127.

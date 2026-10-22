@@ -212,17 +212,17 @@ pub(super) fn decode_chunk(
     Ok(output)
 }
 
+/// The chunk's SHA-1, which names it, proves its bytes. Its Adler-32,
+/// another pass over every byte, adds nothing to it and is not checked.
 pub(super) fn verify_chunk(bytes: &[u8], expected: &Chunk) -> Result<(), ContentError> {
-    if bytes.len() != expected.original_size as usize
-        || steam_adler(bytes) != expected.adler
-        || Sha1::digest(bytes)[..] != expected.sha
-    {
+    if bytes.len() != expected.original_size as usize || Sha1::digest(bytes)[..] != expected.sha {
         return Err(invalid("backend.steam.format.invalidChunkChecksum"));
     }
     Ok(())
 }
 
 /// Steam uses Adler-32 with seed zero, unlike the usual zlib seed of one.
+#[cfg(test)]
 pub(super) fn steam_adler(bytes: &[u8]) -> u32 {
     let (mut a, mut b) = (0_u32, 0_u32);
     for block in bytes.chunks(5552) {
