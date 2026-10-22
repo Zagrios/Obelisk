@@ -187,7 +187,8 @@ async fn prefetch_window_is_bounded_and_closed_requests_preserve_the_ordered_err
         Reporter::new(DownloadProgress::default(), |_| {}),
     );
     let disk = tokio::task::spawn_blocking(move || disk(chunks));
-    for file in &manifest.files[..FILE_PREFETCH] {
+    // One chunk per file: the chunks requested ahead bound the window.
+    for file in &manifest.files[..FILE_PREFETCH.min(QUEUED_CHUNKS)] {
         let chunk = tokio::time::timeout(Duration::from_secs(2), requests.recv())
             .await
             .unwrap()

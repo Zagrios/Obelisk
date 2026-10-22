@@ -927,3 +927,22 @@ fn unflagged_programs_are_recognised_by_their_header() {
         assert!(is_executable(&file(4), &path).unwrap());
     }
 }
+
+#[test]
+fn recent_chunks_keep_the_newest_within_their_budget() {
+    let mut recent = RecentChunks::default();
+    let megabyte = 1024 * 1024;
+    for index in 0..80 {
+        recent.keep([index, 0, 0, 0], vec![index as u8; megabyte]);
+    }
+    assert!(recent.bytes <= RECENT_CHUNK_BYTES);
+    assert_eq!(recent.get(&[79, 0, 0, 0]), Some(&[79_u8; 1024 * 1024][..]));
+    assert!(recent.get(&[0, 0, 0, 0]).is_none(), "the oldest went first");
+    recent.keep([99, 0, 0, 0], vec![1; RECENT_CHUNK_BYTES * 2]);
+    assert_eq!(
+        recent.chunks.len(),
+        1,
+        "the newest stays, whatever its size"
+    );
+    assert!(recent.get(&[99, 0, 0, 0]).is_some());
+}
