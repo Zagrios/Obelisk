@@ -710,6 +710,13 @@ async fn run<L: Launch>(
             );
             service
         });
+    // The layout of the player's gamepads reaches the input service the
+    // Linux engine's launcher starts.
+    if wine.is_some() {
+        prepared
+            .environment
+            .extend(crate::input::layout().map(|(name, value)| (name.to_owned(), value)));
+    }
     // Metal reports the game's frames to its log, and shows them over the
     // game only to a player who asked in its launch settings.
     let shown = wine.is_some_and(|wine| wine.settings.performance_hud);
