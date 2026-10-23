@@ -119,6 +119,9 @@ fn environment_from(home: &Path, read: impl Fn(&str) -> Option<String>) -> HashM
             environment.insert(key.into(), value);
         }
     }
+    if let Some((name, mapping)) = crate::input::layout_of(read(crate::input::LAYOUT).as_deref()) {
+        environment.insert(name.into(), mapping);
+    }
     // Without any language, many games misread their own text files.
     if !["LANG", "LC_ALL", "LC_CTYPE"]
         .iter()

@@ -19,7 +19,7 @@ pub(crate) const SOCKET: &str = "WINE_OBELISK_INPUT_SOCKET";
 /// them. Anything else is the Xbox layout, which Windows games expect.
 pub const LAYOUT: &str = "OBELISK_CONTROLLER_LAYOUT";
 /// SDL reads the gamepad mappings the player adds from here.
-const MAPPING: &str = "SDL_GAMECONTROLLERCONFIG";
+pub(crate) const MAPPING: &str = "SDL_GAMECONTROLLERCONFIG";
 /// The service starts in a few milliseconds; a game never waits longer.
 const START_LIMIT: Duration = Duration::from_secs(2);
 /// It ends within milliseconds of SIGTERM; after this it is killed.
@@ -40,13 +40,10 @@ dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b5,leftshoulder:b9,leftstic
 leftx:a0,lefty:a1,rightshoulder:b10,rightstick:b8,righttrigger:a5,rightx:a2,righty:a3,start:b6,\
 misc1:b11,platform:macOS,";
 
-/// The mapping the player's layout asks of SDL, as SDL's environment
-/// variable and its value; none for the Xbox layout.
-pub(crate) fn layout() -> Option<(&'static str, String)> {
-    layout_of(std::env::var(LAYOUT).ok().as_deref())
-}
-
-fn layout_of(layout: Option<&str>) -> Option<(&'static str, String)> {
+/// The mapping the player's `layout` asks of SDL, as SDL's environment
+/// variable and its value; none for the Xbox layout. Obelisk adds it to the
+/// environment every game starts with, as a supervisor has none of its own.
+pub(crate) fn layout_of(layout: Option<&str>) -> Option<(&'static str, String)> {
     (layout == Some("nintendo")).then(|| {
         let mappings = NINTENDO_LAYOUT.map(|guid| format!("{guid},{NINTENDO_BUTTONS}"));
         (MAPPING, mappings.join("\n"))
@@ -60,9 +57,10 @@ pub(crate) struct Service {
 
 impl Service {
     /// Starts the gamepad service the engine of `config` has its supervisor
-    /// run, with the socket Wine must be given. Without one, or when it does
+    /// run, with the socket Wine must be given and `mapping`, the player's
+    /// gamepad layout. Without one, or when it does
     /// not start, the game runs without gamepads.
-    pub(crate) fn start(config: &Config) -> Option<(Self, PathBuf)> {
+    pub(crate) fn start(config: &Config, mapping: Option<&str>) -> Option<(Self, PathBuf)> {
         let program = config.input_service()?;
         if !program.is_file() {
             return None;
@@ -71,7 +69,7 @@ impl Service {
         let socket = directory.join("input.sock");
         let log = File::create(crate::diagnostics::input_log(&config.log)).ok()?;
         let mut command = Command::new(program);
-        command.envs(layout());
+        command.envs(mapping.map(|mapping| (MAPPING, mapping)));
         let child = command
             .arg("--dir")
             .arg(&directory)
