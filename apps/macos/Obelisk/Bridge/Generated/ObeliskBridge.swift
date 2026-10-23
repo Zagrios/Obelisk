@@ -764,7 +764,8 @@ public protocol AccountInstallationsProtocol: AnyObject, Sendable {
     
     /**
      * Verifies `installation`'s files and repairs or updates them in place;
-     * a Transfer of the game that stopped resumes instead.
+     * a Transfer of the game that stopped resumes instead. The player asked:
+     * every file is hashed again, whatever the last Transfer recorded.
      */
     func update(installation: String) 
     
@@ -1130,7 +1131,8 @@ open func uninstall(installation: String)  {try! rustCall() {
     
     /**
      * Verifies `installation`'s files and repairs or updates them in place;
-     * a Transfer of the game that stopped resumes instead.
+     * a Transfer of the game that stopped resumes instead. The player asked:
+     * every file is hashed again, whatever the last Transfer recorded.
      */
 open func update(installation: String)  {try! rustCall() {
         uniffiCallStatus in
@@ -16425,7 +16427,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_obelisk_bridge_checksum_method_accountinstallations_uninstall() != 45481) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_obelisk_bridge_checksum_method_accountinstallations_update() != 64898) {
+    if (uniffi_obelisk_bridge_checksum_method_accountinstallations_update() != 8984) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_method_librarycache_epic_library() != 25582) {
