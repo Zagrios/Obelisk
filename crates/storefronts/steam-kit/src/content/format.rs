@@ -221,21 +221,6 @@ pub(super) fn verify_chunk(bytes: &[u8], expected: &Chunk) -> Result<(), Content
     Ok(())
 }
 
-/// Steam uses Adler-32 with seed zero, unlike the usual zlib seed of one.
-#[cfg(test)]
-pub(super) fn steam_adler(bytes: &[u8]) -> u32 {
-    let (mut a, mut b) = (0_u32, 0_u32);
-    for block in bytes.chunks(5552) {
-        for &byte in block {
-            a += u32::from(byte);
-            b += a;
-        }
-        a %= 65521;
-        b %= 65521;
-    }
-    (b << 16) | a
-}
-
 /// A ZIP reader for the one-entry containers Steam serves. It deliberately rejects
 /// multi-volume, ZIP64, encrypted and unsupported compression variants.
 pub(super) fn unpack_zip(data: &[u8], limit: usize) -> Result<Vec<u8>, ContentError> {

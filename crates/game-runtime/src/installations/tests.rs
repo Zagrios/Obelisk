@@ -753,6 +753,30 @@ async fn a_transfer_marks_only_the_installation_it_goes_over_for_verification() 
 }
 
 #[tokio::test]
+async fn the_players_verification_forgets_what_its_installation_s_last_transfer_recorded() {
+    let fixture = Fixture::with_both_builds().await;
+    let record = |id: &str| {
+        let receipts = fixture.installations.state().receipts;
+        let receipt = receipts.iter().find(|receipt| receipt.id() == id).unwrap();
+        Path::new(&receipt.directory)
+            .join(obelisk_core::install::PARTIAL_DIRECTORY)
+            .join("verified.json")
+    };
+    for id in ["620-windows", "620-macos"] {
+        let record = record(id);
+        std::fs::create_dir_all(record.parent().unwrap()).unwrap();
+        std::fs::write(&record, b"{}").unwrap();
+    }
+    fixture.fake.hold();
+    fixture.installations.update("620-windows");
+    assert!(!record("620-windows").exists());
+    assert!(record("620-macos").exists());
+
+    fixture.fake.release();
+    idle(&fixture.installations).await;
+}
+
+#[tokio::test]
 async fn a_cancelled_transfer_ends_silently() {
     let fixture = Fixture::new(false).await;
     fixture.fake.hold();

@@ -106,21 +106,19 @@ pub async fn read_body<B: AsRef<[u8]>, X>(
     Ok(body)
 }
 
-/// `parts`, ended by an error once no part arrived for `stall`: a connection
+/// `parts`, with an error once no part arrived for `stall`: a connection
 /// that stopped delivering fails that soon, while a slow one keeps going
-/// however long its body takes. A stall's error is `None`, a transport
-/// error stays `Some`; nothing follows either.
+/// however long its body takes. A stall and a transport error are alike to
+/// [`read_body`], which stops at either.
 pub fn unless_stalled<B, X>(
     parts: impl Stream<Item = Result<B, X>>,
     stall: Duration,
-) -> impl Stream<Item = Result<B, Option<X>>> {
-    stream::unfold(Some(Box::pin(parts)), move |parts| async move {
-        let mut parts = parts?;
+) -> impl Stream<Item = Result<B, ()>> {
+    stream::unfold(Box::pin(parts), move |mut parts| async move {
         match tokio::time::timeout(stall, parts.next()).await {
-            Ok(Some(Ok(part))) => Some((Ok(part), Some(parts))),
-            Ok(Some(Err(error))) => Some((Err(Some(error)), None)),
+            Ok(Some(part)) => Some((part.map_err(drop), parts)),
             Ok(None) => None,
-            Err(_) => Some((Err(None), None)),
+            Err(_) => Some((Err(()), parts)),
         }
     })
 }
@@ -311,21 +309,5 @@ mod tests {
         .await;
         assert_eq!(body, Err(BodyError::Network));
         assert_eq!(started.elapsed(), CHUNK_STALL);
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn a_stall_and_a_transport_error_end_the_parts_and_stay_apart() {
-        let stalled: Vec<_> = unless_stalled(
-            stream::iter([Ok::<_, ()>(1)]).chain(stream::pending()),
-            CHUNK_STALL,
-        )
-        .collect()
-        .await;
-        assert_eq!(stalled, [Ok(1), Err(None)]);
-        let failed: Vec<_> =
-            unless_stalled(stream::iter([Ok(1), Err("reset"), Ok(2)]), CHUNK_STALL)
-                .collect()
-                .await;
-        assert_eq!(failed, [Ok(1), Err(Some("reset"))]);
     }
 }

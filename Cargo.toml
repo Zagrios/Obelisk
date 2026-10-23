@@ -81,12 +81,8 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.ruzstd]
 opt-level = 3
-# zlib's Adler-32 under miniz_oxide, Steam's AES-CBC, and the TLS that every
-# CDN byte crosses: unoptimized, a Debug download spent most of its CPU here.
-[profile.dev.package.simd-adler32]
-opt-level = 3
-[profile.dev.package.adler2]
-opt-level = 3
+# Steam's AES-CBC and the TLS that every CDN byte crosses: unoptimized, a
+# Debug download spent most of its CPU here.
 [profile.dev.package.cbc]
 opt-level = 3
 [profile.dev.package.rustls]

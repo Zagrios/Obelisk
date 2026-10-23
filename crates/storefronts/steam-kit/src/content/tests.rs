@@ -9,7 +9,7 @@ use std::{
 use aes::cipher::{BlockCipherEncrypt, BlockModeEncrypt, KeyInit, KeyIvInit, block_padding::Pkcs7};
 use prost::Message;
 
-use super::format::{Chunk, steam_adler};
+use super::format::Chunk;
 use super::*;
 
 mod mirrors;
@@ -105,7 +105,8 @@ fn vzstd(bytes: &[u8]) -> Vec<u8> {
 fn chunk(bytes: &[u8], offset: u64, compressed_size: usize) -> Chunk {
     Chunk {
         sha: Sha1::digest(bytes).to_vec(),
-        adler: steam_adler(bytes),
+        // Never checked: the SHA-1 proves the chunk.
+        adler: 0,
         offset,
         original_size: bytes.len() as u32,
         compressed_size: compressed_size as u32,
@@ -207,8 +208,6 @@ fn decrypts_all_three_steam_chunk_compression_envelopes_and_rejects_corruption()
         );
         assert!(decode_chunk(&mut encrypted.clone(), &expected, &[9; 32]).is_err());
     }
-    // zlib's standard Adler value for this input would be 0x024d0127.
-    assert_eq!(steam_adler(b"abc"), 0x024a0126);
 }
 
 #[test]

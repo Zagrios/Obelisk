@@ -310,7 +310,7 @@ async fn fetch(
     reporter: &Reporter,
 ) -> ChunkResult {
     // A server that stops sending fails the request, not a slow link: GOG's
-    // chunks reach 10 MiB, and a dozen share the bandwidth.
+    // chunks reach 10 MiB, and many share the bandwidth.
     // Chunks are compressed already: never gzip them again.
     let request = http
         .get(url)
@@ -524,12 +524,9 @@ impl DiskInstall {
         for link in &installed.links {
             place_link(&root, &link.path, &link.target)?;
         }
-        // Every file is in place: one flush of the drive makes them all
-        // durable before the receipt says so.
-        install::make_durable(&root)?;
-        // Only now are they recorded whole, for the next Transfer to skip.
-        // The record only saves time: a failure to write it costs none.
-        let _ = obelisk_core::verification::record_verified(&root, &checked);
+        // Every file is in place: durable before the receipt says so, and
+        // recorded whole for the next Transfer to skip.
+        verification::complete(&root, &checked)?;
         // Partial copies stay only after a failure or a cancellation.
         fs::remove_dir_all(partial_root)?;
         Ok(reused_bytes)

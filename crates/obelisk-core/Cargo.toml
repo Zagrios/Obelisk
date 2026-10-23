@@ -15,8 +15,6 @@ tokio.workspace = true
 futures-util.workspace = true
 sha1.workspace = true
 md-5.workspace = true
-
-[target.'cfg(unix)'.dependencies]
 # A plain fsync: std's `sync_all` is F_FULLFSYNC on macOS.
 rustix = { version = "1", features = ["fs"] }
 

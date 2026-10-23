@@ -25,18 +25,17 @@ use steam_kit::{
 };
 use tokio::{sync::watch, task::AbortHandle};
 
-/// How many times the session connects again once its connection dropped,
-/// after waiting 1, 2, 4, 8, 16, then 30 seconds: about a minute, so the
-/// network a Mac finds again after it wakes, or a Wi-Fi that drops for a
-/// while, finds the session still trying.
-const ATTEMPTS: u32 = 6;
-/// The longest wait between two attempts.
-const LONGEST_WAIT: Duration = Duration::from_secs(30);
-
-/// The wait before the attempt numbered `attempt`, from 0.
-fn wait_before(attempt: u32) -> Duration {
-    Duration::from_secs(1 << attempt.min(16)).min(LONGEST_WAIT)
-}
+/// The waits before each attempt to connect again once the connection
+/// dropped: about a minute, so the network a Mac finds again after it wakes,
+/// or a Wi-Fi that drops for a while, finds the session still trying.
+const WAITS: [Duration; 6] = [
+    Duration::from_secs(1),
+    Duration::from_secs(2),
+    Duration::from_secs(4),
+    Duration::from_secs(8),
+    Duration::from_secs(16),
+    Duration::from_secs(30),
+];
 
 /// One CM connection of the session, which ends for good once it drops.
 /// Steam's client in production; tests stand in for it.
@@ -311,12 +310,12 @@ impl<T: Transport> AccountSession<T> {
         }
     }
 
-    /// Connects again, up to `ATTEMPTS` times after growing waits, and makes the
-    /// new connection the one of the moment. None when the cycle ends
-    /// without one.
+    /// Connects again, once after each of `WAITS`, and makes the new
+    /// connection the one of the moment. None when the cycle ends without
+    /// one.
     async fn connect_again(session: &Weak<Self>, cycle: u64) -> Option<Following<T>> {
-        for attempt in 0..ATTEMPTS {
-            tokio::time::sleep(wait_before(attempt)).await;
+        for wait in WAITS {
+            tokio::time::sleep(wait).await;
             let connecting = (session.upgrade()?.connect)();
             match connecting.await {
                 Ok(transport) => {

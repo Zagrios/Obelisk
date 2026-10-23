@@ -259,7 +259,7 @@ impl Connector {
 
 /// A failed attempt for every attempt the session makes before it gives up.
 fn failures() -> impl Iterator<Item = Answer> {
-    (0..ATTEMPTS).map(|_| Answer::Fails)
+    WAITS.iter().map(|_| Answer::Fails)
 }
 
 /// A session opened through `connector`'s first answer. The attempts it
@@ -439,7 +439,7 @@ async fn reconnecting_waits_longer_each_time_and_gives_up_after_about_a_minute()
     tokio::time::sleep(Duration::from_secs(600)).await;
     assert_eq!(
         connector.waits(dropped).len(),
-        ATTEMPTS as usize,
+        WAITS.len(),
         "only a retry tries again"
     );
     let unreachable = state(&session);

@@ -1495,18 +1495,21 @@ impl<S: Storefront> Installations<S> {
     }
 
     /// Verifies the files of the installation `receipt` names, and repairs or
-    /// updates them in place with the build it records. A Transfer of the
-    /// game that stopped before its receipt resumes instead.
+    /// updates them in place with the build it records. The player asked:
+    /// every file is hashed again, whatever the last Transfer recorded. A
+    /// Transfer of the game that stopped before its receipt resumes instead.
     pub fn update(&self, receipt: &str) {
-        let transfer = {
+        let found = {
             let inner = self.shared.inner.lock().unwrap();
             inner.receipt(receipt).map(|receipt| {
-                inner
+                let transfer = inner
                     .resumable(&receipt.game())
-                    .unwrap_or_else(|| receipt.transfer())
+                    .unwrap_or_else(|| receipt.transfer());
+                (PathBuf::from(receipt.directory), transfer)
             })
         };
-        if let Some(transfer) = transfer {
+        if let Some((directory, transfer)) = found {
+            let _ = obelisk_core::verification::forget_verified(&directory);
             self.download(transfer);
         }
     }

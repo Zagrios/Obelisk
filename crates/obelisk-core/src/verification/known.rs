@@ -10,7 +10,7 @@
 //! not, are hashed again. The player's own verification forgets the record
 //! first and hashes everything.
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
 };
@@ -82,18 +82,23 @@ impl Known {
 /// only once every file is in place and durable: a file recorded is never
 /// hashed again until its disk says something else. A file that is not a
 /// regular file of its manifest size is left out.
-pub fn record_verified<T: VerificationFile>(root: &Path, files: &[T]) -> Result<(), InstallError> {
+pub(super) fn record_verified<T: VerificationFile>(
+    root: &Path,
+    files: &[T],
+) -> Result<(), InstallError> {
     let mut known = Known::load(root).files;
     // Files no longer there are dropped, so the record never outgrows the
-    // installation across updates.
+    // installation across updates; `files` are looked at below.
+    let files: Vec<&T> = files.iter().filter(|file| !file.is_directory()).collect();
+    let named: HashSet<&str> = files.iter().map(|file| file.name()).collect();
     known.retain(|name, _| {
-        safe_relative_path(name)
-            .and_then(|relative| checked_file_path(root, &relative))
-            .is_ok_and(|path| path.is_file())
+        named.contains(name.as_str())
+            || safe_relative_path(name)
+                .and_then(|relative| checked_file_path(root, &relative))
+                .is_ok_and(|path| path.is_file())
     });
-    for file in files.iter().filter(|file| !file.is_directory()) {
-        let path = checked_file_path(root, &safe_relative_path(file.name())?)?;
-        match seen(&path, file) {
+    for file in files {
+        match seen(&super::confined_path(root, file)?, file) {
             Some(now) => known.insert(file.name().to_owned(), now),
             None => known.remove(file.name()),
         };

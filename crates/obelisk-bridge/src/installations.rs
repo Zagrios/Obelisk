@@ -633,17 +633,7 @@ impl AccountInstallations {
     /// a Transfer of the game that stopped resumes instead. The player asked:
     /// every file is hashed again, whatever the last Transfer recorded.
     pub fn update(&self, installation: String) {
-        each!(self, installations => {
-            if let Some(receipt) = installations
-                .state()
-                .receipts
-                .iter()
-                .find(|receipt| receipt.id() == installation)
-            {
-                let _ = obelisk_core::verification::forget_verified(std::path::Path::new(&receipt.directory));
-            }
-            installations.update(&installation)
-        })
+        each!(self, installations => installations.update(&installation))
     }
 
     /// Asks the storefront which installations have a newer build, unless it

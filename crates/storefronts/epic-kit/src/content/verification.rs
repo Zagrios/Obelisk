@@ -10,7 +10,7 @@ use obelisk_core::{
 
 use crate::{EpicError, content_manifest::ManifestFile};
 
-pub(super) use obelisk_core::verification::verify_files;
+pub(super) use obelisk_core::verification::{complete, verify_files};
 
 impl VerificationFile for ManifestFile {
     fn name(&self) -> &str {

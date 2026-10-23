@@ -412,22 +412,15 @@ pub fn starts_as_program(path: &Path) -> io::Result<bool> {
 /// 5 ms a file on an internal SSD, far more on an external disk, and minutes
 /// across a game of many files. This costs a fraction of that; the
 /// installation becomes durable once, as it completes, through
-/// [`make_durable`]. A file a power loss tore before then fails the
-/// verification that starts the next Transfer, which repairs it.
+/// [`crate::verification::complete`]. A file a power loss tore before then
+/// fails the verification that starts the next Transfer, which repairs it.
 pub fn write_out(file: &File) -> io::Result<()> {
-    #[cfg(unix)]
-    {
-        rustix::fs::fsync(file).map_err(io::Error::from)
-    }
-    #[cfg(not(unix))]
-    {
-        file.sync_all()
-    }
+    Ok(rustix::fs::fsync(file)?)
 }
 
 /// Asks the drive holding `directory` to empty its cache, so what
 /// [`write_out`] handed it, files and renames, survives a power loss.
-pub fn make_durable(directory: &Path) -> io::Result<()> {
+pub(crate) fn make_durable(directory: &Path) -> io::Result<()> {
     File::open(directory)?.sync_all()
 }
 

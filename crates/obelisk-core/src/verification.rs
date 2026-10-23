@@ -16,7 +16,8 @@ use std::{
 
 mod known;
 
-pub use known::{forget_verified, record_verified};
+pub use known::forget_verified;
+use known::record_verified;
 
 use crate::{
     install::{self, FileDigest, InstallError, Matched},
@@ -194,6 +195,16 @@ where
     // Do not let the initial scan's numerator leak into that phase.
     reporter.update(|status| status.verification_bytes = None);
     Ok(verified)
+}
+
+/// Makes the installation at `root`, every file of it in place, durable with
+/// one flush of its drive, then records `files` whole for the next Transfer
+/// to skip; see [`record_verified`]. The record only saves time: a failure to
+/// write it costs none.
+pub fn complete<T: VerificationFile>(root: &Path, files: &[T]) -> std::io::Result<()> {
+    install::make_durable(root)?;
+    let _ = record_verified(root, files);
+    Ok(())
 }
 
 /// Resolved before a file is reported, so an unsafe name never reaches a reader.

@@ -293,7 +293,7 @@ struct PlannedFile {
     reused: HashSet<ChunkGuid>,
     // A previous file owns these queued chunks: they must have arrived when
     // this file is reached. Their cached copy is checked if it is read.
-    verify_after_delivery: HashSet<ChunkGuid>,
+    delivered_earlier: HashSet<ChunkGuid>,
 }
 
 #[derive(Default)]
@@ -415,25 +415,27 @@ impl DiskInstall {
                     .get_mut(&part.guid)
                     .ok_or(EpicError::Protocol)?;
                 *remaining -= 1;
-                if *remaining == 0 {
+                // A chunk held in memory only has no cached copy.
+                if *remaining == 0
+                    && !matches!(
+                        self.prefetch.chunks.remove(&part.guid),
+                        Some(ChunkState::Held)
+                    )
+                {
                     let chunk = manifest.chunks.get(&part.guid).ok_or(EpicError::Protocol)?;
-                    let path = checked_file_path(&chunk_root, Path::new(&chunk_key(chunk)))?;
-                    if !matches!(self.prefetch.chunks.get(&part.guid), Some(ChunkState::Held)) {
-                        fs::remove_file(path)?;
-                    }
-                    self.prefetch.chunks.remove(&part.guid);
+                    fs::remove_file(checked_file_path(
+                        &chunk_root,
+                        Path::new(&chunk_key(chunk)),
+                    )?)?;
                 }
             }
             self.reporter.update(|status| status.completed_files += 1);
             self.prefetch_files(&verified.valid, &chunk_root)?;
         }
         self.cancel.check()?;
-        // Every file is in place: one flush of the drive makes them all
-        // durable before the receipt says so.
-        install::make_durable(&root)?;
-        // Only now are they recorded whole, for the next Transfer to skip.
-        // The record only saves time: a failure to write it costs none.
-        let _ = obelisk_core::verification::record_verified(&root, &manifest.files);
+        // Every file is in place: durable before the receipt says so, and
+        // recorded whole for the next Transfer to skip.
+        verification::complete(&root, &manifest.files)?;
         // Keep caches on failure/cancellation only, avoiding a second permanent copy of the game.
         fs::remove_dir_all(partial_root)?;
         Ok(reused_bytes)
@@ -457,7 +459,7 @@ impl DiskInstall {
             let mut plan = PlannedFile {
                 index,
                 reused: HashSet::new(),
-                verify_after_delivery: HashSet::new(),
+                delivered_earlier: HashSet::new(),
             };
             let mut seen = HashSet::new();
             for part in &self.manifest.files[index].parts {
@@ -468,7 +470,7 @@ impl DiskInstall {
                 match self.prefetch.chunks.get(&part.guid) {
                     Some(ChunkState::Pending) => {
                         plan.reused.insert(part.guid);
-                        plan.verify_after_delivery.insert(part.guid);
+                        plan.delivered_earlier.insert(part.guid);
                         continue;
                     }
                     // Verified on disk earlier in this run and not yet evicted;
@@ -536,18 +538,14 @@ impl DiskInstall {
         let assembled = self.assemble_file(file, plan, partial_root, chunk_root, root, relative);
         if assembled.is_err() {
             for part in &file.parts {
-                if !matches!(self.prefetch.chunks.get(&part.guid), Some(ChunkState::Held)) {
-                    continue;
-                }
-                let (Some(chunk), Some(bytes)) = (
+                // Best effort: the failure that ended the file is the one
+                // reported. A chunk written is no longer held, so a chunk of
+                // several parts is written once.
+                if let (Some(ChunkState::Held), Some(chunk), Some(bytes)) = (
+                    self.prefetch.chunks.get(&part.guid),
                     self.manifest.chunks.get(&part.guid),
                     self.prefetch.recent.get(&part.guid),
-                ) else {
-                    continue;
-                };
-                // Best effort: the failure that ended the file is the one
-                // reported.
-                if let Ok(path) = checked_file_path(chunk_root, Path::new(&chunk_key(chunk)))
+                ) && let Ok(path) = checked_file_path(chunk_root, Path::new(&chunk_key(chunk)))
                     && fs::write(path, bytes).is_ok()
                 {
                     self.prefetch
@@ -574,11 +572,12 @@ impl DiskInstall {
         relative: &Path,
     ) -> Result<u64, EpicError> {
         let manifest = Arc::clone(&self.manifest);
-        for guid in &plan.verify_after_delivery {
-            self.cancel.check()?;
-            match self.prefetch.chunks.get(guid) {
-                Some(ChunkState::Stored { .. }) => (),
-                _ => return Err(EpicError::Protocol),
+        for guid in &plan.delivered_earlier {
+            if !matches!(
+                self.prefetch.chunks.get(guid),
+                Some(ChunkState::Stored { .. })
+            ) {
+                return Err(EpicError::Protocol);
             }
         }
         let mut delivered = HashSet::new();
@@ -594,8 +593,8 @@ impl DiskInstall {
         let mut buffer = [0_u8; 64 * 1024];
         // The chunks of a file whose windows fit in memory together, and
         // that no other file needs, stay in memory only: writing them to the
-        // chunk cache too doubled the disk's work, and a cancellation costs
-        // at most these chunks again.
+        // chunk cache too doubled the disk's work. A file left unfinished
+        // writes them there then; see `assemble`.
         let mut uses: HashMap<ChunkGuid, usize> = HashMap::new();
         for part in &file.parts {
             *uses.entry(part.guid).or_insert(0) += 1;
@@ -815,8 +814,8 @@ pub(crate) fn decode_chunk(bytes: &[u8], chunk: &Chunk) -> ChunkResult {
     let compressed_size = u32_at(12)? as usize;
     // The manifest's chunk file size is only an estimate: older manifests
     // list sizes for an older header, such as Unrailed's, 4 bytes short of
-    // the version 3 header the CDN serves. The decoded window's SHA-1 and
-    // rolling hash, both from the manifest, prove the chunk.
+    // the version 3 header the CDN serves. The decoded window's SHA-1, from
+    // the manifest, proves the chunk.
     if header_size != expected_header || bytes.len() != header_size + compressed_size {
         return Err(EpicError::Protocol);
     }
