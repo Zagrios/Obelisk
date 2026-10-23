@@ -33,7 +33,8 @@ pub struct Settings {
     /// The program its profile starts instead of its publisher's, relative
     /// to the installation.
     pub executable: Option<String>,
-    /// What its profile adds to the storefront's arguments.
+    /// What its profile adds to the storefront's arguments; a launch adds
+    /// the player's language there for a game that reads it from them.
     pub profile_arguments: Vec<String>,
     /// What its player adds after those, split as typed. The game's log
     /// shows only these.

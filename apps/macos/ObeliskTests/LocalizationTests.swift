@@ -34,6 +34,7 @@ final class LocalizationTests: XCTestCase {
         XCTAssertEqual(GameLocale.variable(preferredLanguages: ["it"]), "it_IT.UTF-8", "the language Obelisk was given")
         XCTAssertEqual(GameLocale.variable(preferredLanguages: ["en"]), "en_US.UTF-8")
         XCTAssertEqual(GameLocale.variable(preferredLanguages: ["zh-Hans-CN"]), "zh_CN.UTF-8")
+        XCTAssertEqual(GameLocale.variable(preferredLanguages: ["zh-Hant"]), "zh_TW.UTF-8")
         XCTAssertEqual(GameLocale.variable(preferredLanguages: ["xx"], region: "BE"), "xx_BE.UTF-8")
         XCTAssertNil(GameLocale.variable(preferredLanguages: []))
         XCTAssertNil(GameLocale.variable(preferredLanguages: [""]))

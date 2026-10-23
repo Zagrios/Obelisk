@@ -278,34 +278,28 @@ fn a_game_that_reads_its_language_from_its_command_line_gets_the_players() {
         namespace: "9773aa1aa54f4f7b80e44bef04986cea",
         app_name: "Sugar",
     };
+    let on_steam = Game::Steam { app_id: 252950 };
     let other = Game::Steam { app_id: 620 };
     let none: &[String] = &[];
     assert_eq!(
-        language_arguments_in(rocket_league, none, Some("it")),
-        ["-language=ITA"]
+        language_argument(rocket_league, none, "it_IT").as_deref(),
+        Some("-language=ITA")
     );
     assert_eq!(
-        language_arguments_in(rocket_league, none, Some("en")),
-        ["-language=INT"]
+        language_argument(on_steam, none, "en_GB").as_deref(),
+        Some("-language=INT")
     );
     // A language it has no value for, and a game without a flag, add nothing.
-    assert!(language_arguments_in(rocket_league, none, Some("ja")).is_empty());
-    assert!(language_arguments_in(rocket_league, none, None).is_empty());
-    assert!(language_arguments_in(other, none, Some("it")).is_empty());
-    // The player's own language wins.
-    assert!(
-        language_arguments_in(rocket_league, &["-language=FRA".to_owned()], Some("it")).is_empty()
-    );
-    assert_eq!(
-        language_of(None, Some("it_IT.UTF-8".into())).as_deref(),
-        Some("it")
-    );
-    assert_eq!(
-        language_of(Some("fr_CA".into()), Some("it_IT".into())).as_deref(),
-        Some("fr")
-    );
-    assert_eq!(language_of(None, Some("C".into())), None);
-    assert_eq!(language_of(None, None), None);
+    assert_eq!(language_argument(rocket_league, none, "ja_JP"), None);
+    assert_eq!(language_argument(other, none, "it_IT"), None);
+    // The player's own language wins, whatever its case.
+    for chosen in ["-language=FRA", "-LANGUAGE=FRA"] {
+        assert_eq!(
+            language_argument(rocket_league, &[chosen.to_owned()], "it_IT"),
+            None,
+            "{chosen}"
+        );
+    }
 }
 
 #[test]

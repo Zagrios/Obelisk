@@ -8,6 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG = ROOT / "apps/macos/Obelisk/Resources/Localizable.xcstrings"
+LANGUAGES = ("en", "fr", "it")
 PLACEHOLDER = re.compile(r"%(?:(\d+)\$)?([-+0 #]*\d*(?:\.\d+)?(?:ll|l)?[@diufgs])")
 UI_LITERAL = re.compile(
     r'\b(?:Text|Button|Label|Window|Toggle|Picker|TextField|SecureField|ProgressView|'
@@ -38,8 +39,8 @@ def main():
     entries = catalog["strings"]
     for key, entry in entries.items():
         languages = entry["localizations"]
-        assert {"en", "fr", "it"} <= languages.keys(), f"Missing language: {key}"
-        variants = [value for language in ("en", "fr", "it") for value in formats(languages[language])]
+        assert set(LANGUAGES) <= languages.keys(), f"Missing language: {key}"
+        variants = [value for language in LANGUAGES for value in formats(languages[language])]
         assert all(signature(value) == signature(variants[0]) for value in variants), f"Placeholder mismatch: {key}"
 
     referenced = set()

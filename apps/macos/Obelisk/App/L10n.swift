@@ -34,31 +34,23 @@ enum L10n {
 /// player's language: Obelisk gives every game its own, the Mac's or the one
 /// the player chose for Obelisk, as a `LANG` such as `it_IT.UTF-8`.
 enum GameLocale {
-    /// The region a language alone is spoken in most, for a language the Mac
-    /// names without one.
-    private static let regions = [
-        "en": "US", "fr": "FR", "it": "IT", "de": "DE", "es": "ES", "pt": "BR", "nl": "NL", "pl": "PL",
-        "ru": "RU", "ja": "JP", "ko": "KR", "zh": "CN", "tr": "TR", "sv": "SE", "cs": "CZ",
-    ]
-
     /// The `LANG` of the first of `preferredLanguages`, such as `it_IT.UTF-8`
-    /// for `it-IT`; nil when it names no language.
+    /// for `it-IT`. A language named without a region takes the one it is
+    /// spoken in most, as `it` does Italy, else `region`; nil when it names
+    /// no language.
     static func variable(preferredLanguages: [String], region: String? = Locale.current.region?.identifier) -> String? {
         guard let first = preferredLanguages.first else { return nil }
-        let locale = Locale(identifier: first)
-        guard let language = locale.language.languageCode?.identifier, !language.isEmpty, language != "und"
+        let language = Locale.Language(identifier: first)
+        guard let code = language.languageCode?.identifier, code != "und",
+              let place = Locale.Language(identifier: language.maximalIdentifier).region?.identifier ?? region
         else { return nil }
-        let place = locale.region?.identifier ?? regions[language] ?? region ?? language.uppercased()
-        return "\(language)_\(place).UTF-8"
+        return "\(code)_\(place).UTF-8"
     }
 
-    /// Gives the games Obelisk starts the player's language, unless the
-    /// environment already names one.
+    /// Gives the games Obelisk starts the player's language, unless Obelisk
+    /// was given a `LANG`, as from Terminal or Xcode.
     static func adopt(preferredLanguages: [String] = Locale.preferredLanguages) {
-        let named = ProcessInfo.processInfo.environment
-        guard named["LANG"] == nil, named["LC_ALL"] == nil,
-              let variable = variable(preferredLanguages: preferredLanguages) else { return }
-        setenv("LANG", variable, 0)
+        if let variable = variable(preferredLanguages: preferredLanguages) { setenv("LANG", variable, 0) }
     }
 }
 

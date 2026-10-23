@@ -325,26 +325,14 @@ fn installed(config: &Config) -> bool {
     config.runtime.join("engine/fexdarwin-run").is_file()
 }
 
-/// The locale a game runs in, such as `it_IT.UTF-8`: the player's language,
-/// which Obelisk gave its own process. Wine takes its Windows locale from the
+/// What every Wine command of the engine runs with in the guest, then the
+/// variables the game's profile adds. Wine takes its Windows locale from the
 /// guest's `LC_ALL`, and only from it: not from `LANG`, nor from the
 /// `WINEUSERLOCALE` its own sources name. The guest holds no locale but
 /// `C.utf8`, which Wine does not need.
-fn user_locale(lc_all: Option<String>, lang: Option<String>) -> Option<String> {
-    let name = lc_all.filter(|name| !name.is_empty()).or(lang)?;
-    let locale = name.split(['.', '@']).next()?;
-    let valid = locale.len() >= 2
-        && locale.len() <= 16
-        && locale
-            .bytes()
-            .all(|byte| byte.is_ascii_alphabetic() || byte == b'_');
-    (valid && !matches!(locale, "C" | "POSIX")).then(|| format!("{locale}.UTF-8"))
-}
-
-/// What every Wine command of the engine runs with in the guest, then the
-/// variables the game's profile adds.
 fn guest_environment(config: &Config) -> Vec<(String, String)> {
-    let locale = user_locale(std::env::var("LC_ALL").ok(), std::env::var("LANG").ok());
+    let locale = crate::native::player_locale()
+        .map(|locale| ("LC_ALL".to_owned(), format!("{locale}.UTF-8")));
     let own = [
         ("HOME", HOME.into()),
         ("USER", "user".into()),
@@ -364,7 +352,7 @@ fn guest_environment(config: &Config) -> Vec<(String, String)> {
     ];
     own.into_iter()
         .map(|(name, value)| (name.to_owned(), value))
-        .chain(locale.map(|locale| ("LC_ALL".to_owned(), locale)))
+        .chain(locale)
         .chain(config.settings.variables.clone())
         .collect()
 }

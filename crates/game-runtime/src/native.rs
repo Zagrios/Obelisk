@@ -129,5 +129,24 @@ fn environment_from(home: &Path, read: impl Fn(&str) -> Option<String>) -> HashM
     environment
 }
 
+/// The player's locale, such as `it_IT`: Obelisk's `LC_ALL`, else its
+/// `LANG`, which Obelisk sets to the player's language as it starts. None
+/// for C, POSIX or a name that is no locale.
+pub(crate) fn player_locale() -> Option<String> {
+    locale_from(|key| std::env::var(key).ok())
+}
+
+fn locale_from(read: impl Fn(&str) -> Option<String>) -> Option<String> {
+    let name = read("LC_ALL")
+        .filter(|name| !name.is_empty())
+        .or_else(|| read("LANG"))?;
+    let locale = name.split(['.', '@']).next()?;
+    let valid = (2..=16).contains(&locale.len())
+        && locale
+            .bytes()
+            .all(|byte| byte.is_ascii_alphabetic() || byte == b'_');
+    (valid && !matches!(locale, "C" | "POSIX")).then(|| locale.to_owned())
+}
+
 #[cfg(test)]
 mod tests;

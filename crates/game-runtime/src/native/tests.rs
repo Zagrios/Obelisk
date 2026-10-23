@@ -149,3 +149,25 @@ fn a_game_without_any_language_gets_utf8_english() {
     );
     assert!(!environment.contains_key("USER"));
 }
+
+#[test]
+fn the_players_locale_is_obelisk_s_lc_all_then_its_lang() {
+    let locale = |lc_all: &str, lang: &str| {
+        locale_from(|key| match key {
+            "LC_ALL" => Some(lc_all.to_owned()),
+            "LANG" => Some(lang.to_owned()),
+            _ => None,
+        })
+    };
+    assert_eq!(locale("", "it_IT.UTF-8").as_deref(), Some("it_IT"));
+    assert_eq!(
+        locale("fr_CA.UTF-8", "it_IT.UTF-8").as_deref(),
+        Some("fr_CA"),
+        "LC_ALL comes first"
+    );
+    assert_eq!(locale("", "de_DE@euro").as_deref(), Some("de_DE"));
+    for none in ["C", "POSIX", "C.UTF-8", "", "x", "it IT", "../etc"] {
+        assert_eq!(locale("", none), None, "{none}");
+    }
+    assert_eq!(locale_from(|_| None), None);
+}
