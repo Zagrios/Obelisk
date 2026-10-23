@@ -96,7 +96,8 @@ pub(crate) struct Launch<M: Machine = Mac> {
 
 impl<M: Machine> session::Launch for Launch<M> {
     type P = Steam;
-    type Host = Runtime;
+    /// None when Valve's Windows Steam starts the game, which needs no host.
+    type Host = Option<Runtime>;
     type Cloud = Box<dyn SteamCloud>;
 
     fn open(input: &mut dyn Read) -> Result<(Opening<Steam>, Self), Error> {
@@ -168,7 +169,17 @@ impl<M: Machine> session::Launch for Launch<M> {
         target: &Target,
         architecture: Option<Architecture>,
         cloud: Option<&Box<dyn SteamCloud>>,
-    ) -> Result<Prepared<Runtime>, Error> {
+    ) -> Result<Prepared<Option<Runtime>>, Error> {
+        // Valve's Windows Steam signs in and stands beside the game itself;
+        // its launcher starts in Rosetta's Wine, as a GOG game's Wine does.
+        if super::windows_steam(self.request.config.wine.as_ref()) {
+            return Ok(Prepared {
+                host: None,
+                helper: self.request.config.helpers.join(package::HOST),
+                subcommand: "game-exec",
+                environment: target.environment.clone(),
+            });
+        }
         let storage = match cloud {
             Some(cloud) => cloud.native_storage()?,
             None => None,
@@ -196,22 +207,32 @@ impl<M: Machine> session::Launch for Launch<M> {
             &runtime.prepared.directory,
         );
         Ok(Prepared {
-            host: runtime,
+            host: Some(runtime),
             helper,
             subcommand,
             environment,
         })
     }
 
-    fn running(&self, host: &Arc<Runtime>, pid: u32) -> Box<dyn Fn(bool) + Send + Sync> {
-        let _ = host.started(pid);
+    fn running(&self, host: &Arc<Option<Runtime>>, pid: u32) -> Box<dyn Fn(bool) + Send + Sync> {
+        if let Some(runtime) = host.as_ref() {
+            let _ = runtime.started(pid);
+        }
         let host = host.clone();
-        Box::new(move |active| M::publish(&host, active))
+        Box::new(move |active| {
+            if let Some(runtime) = host.as_ref() {
+                M::publish(runtime, active);
+            }
+        })
     }
 
-    fn control(&self, host: &Arc<Runtime>) -> Option<session::Control<Steam>> {
+    fn control(&self, host: &Arc<Option<Runtime>>) -> Option<session::Control<Steam>> {
+        host.as_ref().as_ref()?;
         let host = host.clone();
         Some(Box::new(move |control| {
+            let Some(host) = host.as_ref() else {
+                return Err(Core::Unavailable);
+            };
             match control {
                 Control::Overlay {
                     active,
@@ -231,11 +252,15 @@ impl<M: Machine> session::Launch for Launch<M> {
 
     fn watch(
         &self,
-        host: &Arc<Runtime>,
+        host: &Arc<Option<Runtime>>,
         session: &Arc<Session<Steam>>,
     ) -> Option<std::thread::JoinHandle<()>> {
+        host.as_ref().as_ref()?;
         let (host, session) = (host.clone(), session.clone());
         Some(std::thread::spawn(move || {
+            let Some(host) = host.as_ref() else {
+                return;
+            };
             let mut previous = HostUpdate::new(HostState::Online);
             loop {
                 let next = host.next_update(&previous);
@@ -248,8 +273,10 @@ impl<M: Machine> session::Launch for Launch<M> {
         }))
     }
 
-    fn stopped(&self, host: &Runtime, exit: Option<i32>) {
-        host.stopped(exit);
+    fn stopped(&self, host: &Option<Runtime>, exit: Option<i32>) {
+        if let Some(host) = host {
+            host.stopped(exit);
+        }
     }
 
     fn terminal(record: &mut Snapshot) {

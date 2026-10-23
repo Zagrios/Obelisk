@@ -201,7 +201,7 @@ struct SteamLoginView: View {
     }
 }
 
-private struct SteamQRCode: View {
+struct SteamQRCode: View {
     let value: String
     // Context creation is expensive; one shared instance serves every render.
     private static let context = CIContext()

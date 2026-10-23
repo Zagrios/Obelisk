@@ -42,7 +42,8 @@ On the macOS engine, the variables Obelisk sets and the Wine features they need:
 - `GST_PLUGIN_SYSTEM_PATH`, `GST_REGISTRY`
 - `WINEMSYNC`, `WINE_LARGE_ADDRESS_AWARE`, `ROSETTA_ADVERTISE_AVX`, `DOTNET_EnableWriteXorExecute`
 - `WINE_OBELISK_INPUT_SOCKET`, which Voile's Obelisk input bus reads
-- the DLL overrides Obelisk sets: `mscoree`, `mshtml`, `winemenubuilder.exe`
+- `PROTON_DISABLE_LSTEAMCLIENT`, which keeps Wine's loader from handing steamclient's exports to lsteamclient, in the prefix where Valve's Windows Steam starts a game
+- the DLL overrides Obelisk sets: `mscoree`, `mshtml`, `winemenubuilder.exe`, and `gameoverlayrenderer`, `gameoverlayrenderer64` where Valve's Windows Steam starts a game, with `steam.exe` disabled for that prefix's `wineboot`
 
 In the Linux engine's guest:
 

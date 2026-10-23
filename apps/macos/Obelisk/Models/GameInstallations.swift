@@ -108,6 +108,13 @@ struct InstallationPort<Store: InstallationStorefront> {
     var uninstalled: @MainActor (Store.GameID) -> Void = { _ in }
 }
 
+/// The sign-in to Valve's Windows Steam that Play asked for, and the
+/// installation it launches once signed in.
+struct WindowsSteamSignIn<GameID: Hashable & Sendable> {
+    let receipt: InstallationReceipt<GameID>
+    let model: WindowsSteamSignInModel
+}
+
 /// Everything one account's installations present, as Rust keeps them.
 struct InstallationsSnapshot<Store: InstallationStorefront>: Equatable {
     var revision: UInt64
@@ -180,6 +187,20 @@ protocol InstallationsBackend<Store>: AnyObject {
     /// installation, and returns them as its next launch applies them.
     func setLaunchSettings(_ receipt: InstallationReceipt<Store.GameID>, choices: LaunchChoices) async throws
         -> LaunchSettings?
+    /// The account Valve's Windows Steam signs in to by itself to start
+    /// `receipt`'s Steam game; nil while it would ask.
+    func windowsSteamAccount(_ receipt: InstallationReceipt<Store.GameID>) async -> String?
+    /// Signs Valve's Windows Steam, which starts `receipt`'s Steam game, in to
+    /// the account of `credentials`, a sign-in made for it alone.
+    func signInWindowsSteam(_ receipt: InstallationReceipt<Store.GameID>, credentials: SteamCredentials) async throws
+}
+
+/// Only Steam games start through Valve's Windows Steam.
+extension InstallationsBackend {
+    func windowsSteamAccount(_ receipt: InstallationReceipt<Store.GameID>) async -> String? { nil }
+    func signInWindowsSteam(_ receipt: InstallationReceipt<Store.GameID>, credentials: SteamCredentials) async throws {
+        throw Store.failure(Store.invalidSession)
+    }
 }
 
 /// One storefront's installed games and the actions on them, as Rust keeps
@@ -209,6 +230,12 @@ final class GameInstallations<Store: InstallationStorefront> {
     /// The game whose Transfer stopped before its receipt: the player can
     /// resume it.
     private(set) var resumableGame: Store.GameID?
+    /// The Windows installations whose Valve's Windows Steam, which starts
+    /// their game, keeps no login, by receipt id: Play signs it in first.
+    private(set) var windowsSteamSignedOut: Set<String> = []
+    private var windowsSteamCheck = 0
+    /// The sign-in Play asked for before launching an installation.
+    private(set) var windowsSteamSignIn: WindowsSteamSignIn<Store.GameID>?
     /// The new installations whose Transfer has not succeeded yet: their files
     /// wait in their folder, even after Obelisk quits, until the player
     /// resumes or deletes them.
@@ -321,7 +348,10 @@ final class GameInstallations<Store: InstallationStorefront> {
         guard snapshot.revision > revision else { return }
         revision = snapshot.revision
         // Repeated snapshots do not invalidate unchanged presentation.
-        if receipts != snapshot.receipts { receipts = snapshot.receipts }
+        if receipts != snapshot.receipts {
+            receipts = snapshot.receipts
+            checkWindowsSteam()
+        }
         if transfer != snapshot.transfer { transfer = snapshot.transfer }
         if transferGame != snapshot.transferGame { transferGame = snapshot.transferGame }
         if isDownloading != snapshot.downloading { isDownloading = snapshot.downloading }
@@ -498,9 +528,43 @@ final class GameInstallations<Store: InstallationStorefront> {
     }
 
     /// Launches an installation, from its game's page or from the library.
+    /// One whose Windows Steam keeps no login signs it in first.
     func launch(_ receipt: Receipt) {
         guard account != nil, canLaunch(receipt.gameID), receipts.contains(receipt) else { return }
+        if windowsSteamSignedOut.contains(receipt.id), let backend {
+            windowsSteamSignIn = WindowsSteamSignIn(receipt: receipt, model: WindowsSteamSignInModel { credentials in
+                try await backend.signInWindowsSteam(receipt, credentials: credentials)
+            })
+            return
+        }
         act { $0.launch(receipt) }
+    }
+
+    /// Play's sign-in ended; once signed in, its installation launches.
+    func finishWindowsSteamSignIn(signedIn: Bool) {
+        guard let signIn = windowsSteamSignIn else { return }
+        windowsSteamSignIn = nil
+        guard signedIn else { return }
+        windowsSteamSignedOut.remove(signIn.receipt.id)
+        launch(signIn.receipt)
+    }
+
+    /// Reads again which Windows installations start through a Windows Steam
+    /// that keeps no login. Until it knows, Play launches, and the launch
+    /// says to sign in.
+    func checkWindowsSteam() {
+        guard Store.self == SteamGames.self, let backend else { return }
+        windowsSteamCheck += 1
+        let check = windowsSteamCheck
+        let windows = receipts.filter { $0.platform == .windows }
+        Task { [weak self] in
+            var signedOut = Set<String>()
+            for receipt in windows where (try? await backend.launchSettings(receipt))?.steamClient == .windows {
+                if await backend.windowsSteamAccount(receipt) == nil { signedOut.insert(receipt.id) }
+            }
+            guard let self, check == windowsSteamCheck else { return }
+            windowsSteamSignedOut = signedOut
+        }
     }
 
     /// Whether `game` may be installed: no build of it is installed and no
@@ -563,11 +627,27 @@ final class GameInstallations<Store: InstallationStorefront> {
     /// its next launch.
     func setLaunchSettings(_ receipt: Receipt, choices: LaunchChoices) async throws -> LaunchSettings? {
         guard let backend, receipts.contains(receipt) else { return nil }
+        defer { checkWindowsSteam() }
         return try await backend.setLaunchSettings(receipt, choices: choices)
     }
 }
 
 extension GameInstallations where Store == SteamGames {
+    /// The account Valve's Windows Steam signs in to by itself to start an
+    /// installed game; nil while it would ask.
+    func windowsSteamAccount(_ receipt: Receipt) async -> String? {
+        guard let backend, receipts.contains(receipt) else { return nil }
+        return await backend.windowsSteamAccount(receipt)
+    }
+
+    /// Signs Valve's Windows Steam, which starts an installed game, in to the
+    /// account of `credentials`.
+    func signInWindowsSteam(_ receipt: Receipt, credentials: SteamCredentials) async throws {
+        guard let backend, receipts.contains(receipt) else { throw SteamGames.failure(SteamGames.invalidSession) }
+        defer { checkWindowsSteam() }
+        try await backend.signInWindowsSteam(receipt, credentials: credentials)
+    }
+
     /// Launches a Steam installation as `launch` does, its game joining
     /// `invite`, a friend's lobby or `connect` string.
     func join(_ receipt: Receipt, invite: SteamGameInvite) {
@@ -692,6 +772,13 @@ final class RustInstallations<Store: InstallationStorefront>: InstallationsBacke
     func setLaunchSettings(_ receipt: InstallationReceipt<Store.GameID>, choices: LaunchChoices) async throws
         -> LaunchSettings? {
         do { return try await core.setLaunchSettings(installation: receipt.id, choices: choices) }
+        catch { throw GameSessions<Store>.translated(error) }
+    }
+    func windowsSteamAccount(_ receipt: InstallationReceipt<Store.GameID>) async -> String? {
+        await core.windowsSteamAccount(installation: receipt.id)
+    }
+    func signInWindowsSteam(_ receipt: InstallationReceipt<Store.GameID>, credentials: SteamCredentials) async throws {
+        do { try await core.signInWindowsSteam(installation: receipt.id, credentials: credentials) }
         catch { throw GameSessions<Store>.translated(error) }
     }
 

@@ -33,6 +33,11 @@ final class FakeInstallations<Store: InstallationStorefront>: InstallationsBacke
     private(set) var indicatorRequests = 0
     /// Runs as each action reaches Rust, before the call returns.
     var onCall: (Call) -> Void = { _ in }
+    /// The Steam client every Windows installation starts through; nil for
+    /// no launch settings.
+    var steamClient: LaunchSteamClient?
+    /// The account Windows Steam signs in to by itself; nil while it would ask.
+    var windowsSteamAccountName: String?
 
     init(receipts: [InstallationReceipt<Store.GameID>] = []) {
         state = InstallationsSnapshot(
@@ -89,7 +94,16 @@ final class FakeInstallations<Store: InstallationStorefront>: InstallationsBacke
         indicatorRequests += 1
         return indicators
     }
-    func launchSettings(_ receipt: InstallationReceipt<Store.GameID>) async throws -> LaunchSettings? { nil }
+    func launchSettings(_ receipt: InstallationReceipt<Store.GameID>) async throws -> LaunchSettings? {
+        steamClient.map {
+            LaunchSettings(engine: .rosetta, graphics: .d3dMetal, rayTracing: false, performanceHud: false,
+                           steamClient: $0, choices: LaunchChoices(), defaultEngine: .rosetta,
+                           defaultSteamClient: $0, engines: [])
+        }
+    }
+    func windowsSteamAccount(_ receipt: InstallationReceipt<Store.GameID>) async -> String? {
+        windowsSteamAccountName
+    }
     func setLaunchSettings(_ receipt: InstallationReceipt<Store.GameID>, choices: LaunchChoices) async throws
         -> LaunchSettings? { nil }
 

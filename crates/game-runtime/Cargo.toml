@@ -21,6 +21,9 @@ zip = { version = "=8.2.0", default-features = false, features = ["deflate-flate
 # standalone steam-native workspace, where no other crate unifies it in.
 flate2.workspace = true
 reqwest.workspace = true
+# Steam's DevTools, which hand Windows Steam the login token Obelisk signed in.
+tokio-tungstenite = { version = "0.28", default-features = false, features = ["connect"] }
+futures-util.workspace = true
 tokio = { workspace = true, features = ["process", "io-util", "signal"] }
 steam-kit.workspace = true
 cloud-vault.workspace = true

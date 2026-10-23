@@ -28,6 +28,37 @@ final class GameActionTests: XCTestCase {
         XCTAssertEqual(fixture.backend.actions.last, .cancel(620))
     }
 
+    func testPlaySignsWindowsSteamInFirstWhenItKeepsNoLoginThenLaunches() async throws {
+        let fixture = InstallationsFixture(installed: false)
+        let installations = fixture.connect(platform: .windows)
+        let tf2 = InstallationReceipt.steam(appId: 440, name: "Team Fortress 2",
+                                            directory: "/fixture/Games/Steam/steam-440-windows", platform: .windows)
+        fixture.backend.steamClient = .windows
+        fixture.backend.publish { $0.receipts = [tf2] }
+        try await eventually { installations.windowsSteamSignedOut.contains(tf2.id) }
+
+        installations.launch(tf2)
+        XCTAssertEqual(installations.windowsSteamSignIn?.receipt, tf2)
+        XCTAssertEqual(fixture.backend.actions, [], "Its Windows Steam would wait for a sign-in no one sees")
+
+        // Closed before signing in: nothing launches.
+        installations.finishWindowsSteamSignIn(signedIn: false)
+        XCTAssertNil(installations.windowsSteamSignIn)
+        XCTAssertEqual(fixture.backend.actions, [])
+
+        installations.launch(tf2)
+        installations.finishWindowsSteamSignIn(signedIn: true)
+        XCTAssertNil(installations.windowsSteamSignIn)
+        XCTAssertEqual(fixture.backend.actions, [.launch(tf2)])
+
+        // Obelisk's own Steam client needs no sign-in of its own.
+        installations.checkWindowsSteam()
+        try await eventually { installations.windowsSteamSignedOut.contains(tf2.id) }
+        fixture.backend.steamClient = .obelisk
+        installations.checkWindowsSteam()
+        try await eventually { installations.windowsSteamSignedOut.isEmpty }
+    }
+
     func testEveryPlaceNamesTheRuntimeALaunchWaitsForAndItsProgress() async throws {
         let fixture = InstallationsFixture()
         let installations = fixture.connect()

@@ -5,6 +5,7 @@
 //! adapter.
 use crate::{
     Error,
+    launch_settings::SteamClient,
     supervisor::{Target, architecture::Architecture},
 };
 use obelisk_core::{Platform, launch::LaunchTarget};
@@ -106,6 +107,16 @@ impl Default for GraphicsOptions {
 pub fn prefix(prefixes: &Path, install: &Path) -> Result<PathBuf, Error> {
     let name = install.file_name().ok_or(Error::NotExecutable)?;
     Ok(prefixes.join(name))
+}
+
+/// The prefix where Valve's Windows Steam starts the game of the installation
+/// whose Rosetta prefix is `rosetta`, beside it: Windows Steam installs
+/// itself where Obelisk's prefix keeps the steamclient lsteamclient stands
+/// in for, so the two never share one.
+fn windows_steam_prefix(rosetta: &Path) -> Result<PathBuf, Error> {
+    let mut name = rosetta.file_name().ok_or(Error::NotExecutable)?.to_owned();
+    name.push("-steam");
+    Ok(rosetta.with_file_name(name))
 }
 
 impl Config {
@@ -432,6 +443,68 @@ pub(crate) fn target<S: Storefront>(
     )
 }
 
+/// The game `target` names, or the program its launch settings start instead,
+/// which another program in the prefix starts: `launcher`, a bash script
+/// named `name` that lasts as long as the game, runs with Rosetta's Wine,
+/// `before`, the program's file name, then `after`. Quitting still asks the
+/// game's program to close. Rosetta's Wine only.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn launcher_target(
+    config: &Config,
+    game: &Game<'_>,
+    target: &LaunchTarget,
+    launcher: &str,
+    name: &str,
+    before: Vec<String>,
+    after: Vec<String>,
+    environment: HashMap<String, String>,
+) -> Result<Target, Error> {
+    if config.settings.engine != Engine::Rosetta {
+        return Err(Error::NotExecutable);
+    }
+    let program = program(game.install, &config.settings.started(game.install, target))?;
+    let file_name = program
+        .file_name()
+        .ok_or(Error::NotExecutable)?
+        .to_string_lossy()
+        .into_owned();
+    let mut arguments = vec![
+        "-c".to_owned(),
+        launcher.to_owned(),
+        name.to_owned(),
+        rosetta::wine(config).to_string_lossy().into_owned(),
+    ];
+    arguments.extend(before);
+    arguments.push(file_name);
+    arguments.extend(after);
+    let mut environment = environment;
+    environment.extend(rosetta::environment(config));
+    Ok(Target {
+        executable: "/bin/bash".into(),
+        arguments,
+        working_directory: game.install.to_owned(),
+        environment,
+        log: Some(config.log.clone()),
+        installation: Some(game.install.to_owned()),
+        program: Some(program),
+    })
+}
+
+/// Rosetta's Wine, as every command of config's prefix runs it, under the
+/// Mac `home`; the caller adds the program and its arguments. Rosetta's Wine
+/// only.
+pub(crate) fn command(config: &Config, home: &Path) -> Result<Command, Error> {
+    if config.settings.engine != Engine::Rosetta {
+        return Err(Error::NotExecutable);
+    }
+    let mut command = Command::new(rosetta::wine(config));
+    command
+        .env_clear()
+        .envs(crate::native::environment(home))
+        .envs(rosetta::environment(config));
+    Ok(command)
+}
+
 /// A file the game reads, in a private folder that lives as long as the
 /// returned TempDir, and its Windows path. Rosetta's Wine reads it on the
 /// Mac's disk, through its Z: drive; the engine's guest, which cannot see
@@ -500,7 +573,10 @@ impl Installation {
         }
         let settings = crate::launch_settings::of(&locations.library, game, install).settings;
         let rosetta = prefix(&locations.wine_prefixes, install)?;
-        let prefix = settings.engine.adapter().prefix(&rosetta)?;
+        let prefix = match settings.steam_client {
+            SteamClient::Windows => windows_steam_prefix(&rosetta)?,
+            SteamClient::Obelisk => settings.engine.adapter().prefix(&rosetta)?,
+        };
         Ok(Some(Self {
             install: install.to_owned(),
             prefix,
@@ -512,6 +588,11 @@ impl Installation {
     /// The Windows machine the installation runs in.
     pub fn prefix(&self) -> &Path {
         &self.prefix
+    }
+
+    /// Which Steam client its game starts through, if a Steam game.
+    pub(crate) fn steam_client(&self) -> SteamClient {
+        self.settings.steam_client
     }
 
     /// Readies the prefix, with `storefront`'s additions, to start `target`
@@ -527,6 +608,19 @@ impl Installation {
         let config = self.runtime(locations)?;
         let target = self.settings.started(&self.install, target);
         prepare(&config, locations, &self.install, &target, storefront)?;
+        Ok(config)
+    }
+
+    /// Readies the prefix, with `storefront`'s additions, for what runs there
+    /// besides the game, such as the storefront's own client, and returns how
+    /// its programs run.
+    pub(crate) fn ready_prefix<S: Storefront>(
+        &self,
+        locations: &crate::Locations,
+        storefront: &S,
+    ) -> Result<Config, Error> {
+        let config = self.runtime(locations)?;
+        config.adapter().ready(&config, locations, storefront)?;
         Ok(config)
     }
 
@@ -570,6 +664,10 @@ impl Installation {
             let adapter = engine.adapter();
             adapter.remove(locations, &adapter.prefix(&rosetta).map_err(unsafe_prefix)?)?;
         }
+        let windows_steam = windows_steam_prefix(&rosetta).map_err(unsafe_prefix)?;
+        Engine::Rosetta
+            .adapter()
+            .remove(locations, &windows_steam)?;
         crate::launch_settings::remove(&locations.library, &self.install)?;
         Ok(())
     }

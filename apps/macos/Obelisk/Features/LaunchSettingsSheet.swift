@@ -9,12 +9,23 @@ final class LaunchSettingsModel: Identifiable {
     private(set) var error: String?
     @ObservationIgnored private let load: () async throws -> LaunchSettings?
     @ObservationIgnored private let save: (LaunchChoices) async throws -> LaunchSettings?
+    /// A Steam game's Windows Steam, which may start it instead of Obelisk's
+    /// Steam client; nil for another storefront's game.
+    let windowsSteam: WindowsSteamAccess?
+    /// The account Windows Steam signs in to by itself; nil while it would ask.
+    private(set) var windowsSteamAccount: String?
+    private(set) var isCheckingWindowsSteam = false
 
-    init(load: @escaping () async throws -> LaunchSettings?,
+    init(windowsSteam: WindowsSteamAccess? = nil,
+         load: @escaping () async throws -> LaunchSettings?,
          save: @escaping (LaunchChoices) async throws -> LaunchSettings?) {
+        self.windowsSteam = windowsSteam
         self.load = load
         self.save = save
     }
+
+    /// A Steam game, which may start through Valve's Windows Steam.
+    var offersSteamClient: Bool { windowsSteam != nil }
 
     func appear() async {
         isLoading = true
@@ -25,6 +36,16 @@ final class LaunchSettingsModel: Identifiable {
             self.error = error.localizedDescription
         }
         isLoading = false
+        await checkWindowsSteam()
+    }
+
+    /// Reads again which account Windows Steam signs in to, when it starts
+    /// the game.
+    func checkWindowsSteam() async {
+        guard let windowsSteam, settings?.steamClient == .windows else { return }
+        isCheckingWindowsSteam = true
+        windowsSteamAccount = await windowsSteam.account()
+        isCheckingWindowsSteam = false
     }
 
     /// Changes one of the player's choices and keeps them: Rust drops those
@@ -55,6 +76,7 @@ final class LaunchSettingsModel: Identifiable {
         } catch {
             self.error = error.localizedDescription
         }
+        await checkWindowsSteam()
     }
 
     var isCustomized: Bool { settings.map { $0.choices != LaunchChoices() } ?? false }
@@ -71,6 +93,136 @@ final class LaunchSettingsModel: Identifiable {
     }
 }
 
+/// Valve's Windows Steam of one installed Steam game: the account it signs in
+/// to by itself, and how to sign it in to one.
+struct WindowsSteamAccess {
+    let account: () async -> String?
+    let signIn: (SteamCredentials) async throws -> Void
+}
+
+/// Signs Valve's Windows Steam in for one game: a Steam sign-in of its own,
+/// by QR code, apart from Obelisk's session, whose login Obelisk hands to
+/// Windows Steam.
+@MainActor @Observable
+final class WindowsSteamSignInModel: Identifiable {
+    enum Phase: Equatable {
+        case starting
+        case scanning(url: String, confirming: Bool)
+        case signingIn
+        case failed(String)
+        case done
+    }
+
+    private(set) var phase = Phase.starting
+    @ObservationIgnored private let signIn: (SteamCredentials) async throws -> Void
+    @ObservationIgnored private let begin: () async throws -> any SteamLoginProtocol
+    @ObservationIgnored private var task: Task<Void, Never>?
+
+    init(signIn: @escaping (SteamCredentials) async throws -> Void,
+         begin: @escaping () async throws -> any SteamLoginProtocol = { try await SteamLogin.beginQr() }) {
+        self.signIn = signIn
+        self.begin = begin
+    }
+
+    /// Shows a new code, then waits for the Steam Mobile App to approve it.
+    func start() {
+        task?.cancel()
+        phase = .starting
+        task = Task { [weak self] in await self?.run() }
+    }
+
+    func cancel() {
+        task?.cancel()
+    }
+
+    private func run() async {
+        do {
+            let login = try await begin()
+            while !Task.isCancelled {
+                let challenge = await login.challenge()
+                guard let url = challenge.qrUrl else { throw CancellationError() }
+                phase = .scanning(url: url, confirming: challenge.remoteInteraction)
+                if let credentials = try await login.poll() {
+                    phase = .signingIn
+                    try await signIn(credentials)
+                    phase = .done
+                    return
+                }
+                try await Task.sleep(for: .milliseconds(Int(max(challenge.pollIntervalMs, 1000))))
+            }
+        } catch is CancellationError {
+        } catch {
+            phase = .failed(error.localizedDescription)
+        }
+    }
+}
+
+/// The sheet that signs Valve's Windows Steam in for one game.
+struct WindowsSteamSignInSheet: View {
+    let model: WindowsSteamSignInModel
+    let gameName: String
+    let finished: () -> Void
+    /// The player closed it before signing in.
+    var closed: () -> Void = {}
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            SheetHeader(title: L10n.string("ui.launch_settings.windows_steam_sign_in_title"), subtitle: gameName,
+                        symbol: "shield.lefthalf.filled", colors: TileColors.blue, close: { closed(); dismiss() },
+                        closeIdentifier: "windows-steam-sign-in-close")
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .padding(24)
+        .frame(width: 440, height: 520)
+        .tint(ObeliskStyle.accent)
+        .task { model.start() }
+        .onDisappear { model.cancel() }
+        .onChange(of: model.phase) { _, phase in
+            if phase == .done {
+                finished()
+                dismiss()
+            }
+        }
+        .accessibilityIdentifier("windows-steam-sign-in-sheet")
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch model.phase {
+        case .starting, .done:
+            ProgressView()
+        case let .scanning(url, confirming):
+            VStack(spacing: 16) {
+                SteamQRCode(value: url)
+                    .frame(width: 220, height: 220)
+                Text(L10n.string(confirming ? "ui.steam.qr_confirm" : "ui.steam.qr_instructions"))
+                    .font(.system(size: 13, weight: .medium))
+                Text(L10n.string("ui.launch_settings.windows_steam_sign_in_detail"))
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        case .signingIn:
+            VStack(spacing: 12) {
+                ProgressView()
+                Text(L10n.string("ui.launch_settings.windows_steam_signing_in"))
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        case let .failed(message):
+            SheetFailure(message: message) {
+                GlassCapsuleButton(title: L10n.string("ui.steam.qr_refresh"), systemImage: "arrow.clockwise",
+                                   identifier: "windows-steam-sign-in-retry", action: model.start)
+            }
+        }
+    }
+}
+
 /// The sheet behind a Windows game's Launch Settings: the arguments added to
 /// its command line, its engine, then the CPU translator that engine has,
 /// then the graphics backend and its options, each as the chosen engine
@@ -78,6 +230,7 @@ final class LaunchSettingsModel: Identifiable {
 struct LaunchSettingsSheet: View {
     let model: LaunchSettingsModel
     let gameName: String
+    @State private var windowsSteamSignIn: WindowsSteamSignInModel?
     /// The arguments as the player types them, kept once the field is done.
     @State private var arguments = ""
     @FocusState private var editsArguments: Bool
@@ -106,6 +259,11 @@ struct LaunchSettingsSheet: View {
             if !editing { model.setArguments(arguments) }
         }
         .onDisappear { model.setArguments(arguments) }
+        .sheet(item: $windowsSteamSignIn) { signIn in
+            WindowsSteamSignInSheet(model: signIn, gameName: gameName) {
+                Task { await model.checkWindowsSteam() }
+            }
+        }
         .accessibilityIdentifier("launch-settings-sheet")
     }
 
@@ -126,7 +284,17 @@ struct LaunchSettingsSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     ObeliskCard { argumentsRow }
-                    ObeliskCard { engineRow(settings) }
+                    ObeliskCard {
+                        engineRow(settings)
+                        if model.offersSteamClient && settings.engine == .rosetta {
+                            ObeliskCardDivider()
+                            steamClientRow(settings)
+                            if settings.steamClient == .windows {
+                                ObeliskCardDivider()
+                                windowsSteamAccountRow
+                            }
+                        }
+                    }
                     SheetSection(title: L10n.string("ui.launch_settings.cpu")) {
                         ObeliskCard { translatorRow }
                     }
@@ -195,6 +363,51 @@ struct LaunchSettingsSheet: View {
                         .tag(offer.engine)
                 }
             }
+        }
+    }
+
+    /// Valve's Windows Steam starts a Windows Steam game in Wine, where
+    /// Rosetta's Wine runs it: VAC-secured servers accept it then.
+    private func steamClientRow(_ settings: LaunchSettings) -> some View {
+        ObeliskRow(title: L10n.string("ui.launch_settings.steam_client")) {
+            SymbolTile(name: "shield.lefthalf.filled", colors: TileColors.blue)
+        } detail: {
+            Text(Self.detail(of: settings.steamClient))
+        } accessory: {
+            GlassMenuPicker(title: L10n.string("ui.launch_settings.steam_client"),
+                            value: marked(Self.name(of: settings.steamClient), isDefault: settings.steamClient == settings.defaultSteamClient),
+                            selection: Binding(get: { settings.steamClient },
+                                               set: { client in model.choose { $0.steamClient = client } }),
+                            identifier: "launch-settings-steam-client") {
+                ForEach([LaunchSteamClient.obelisk, .windows], id: \.self) { client in
+                    Text(marked(Self.name(of: client), isDefault: client == settings.defaultSteamClient)).tag(client)
+                }
+            }
+        }
+    }
+
+    /// Who Windows Steam signs in to by itself, and the way to sign it in:
+    /// its own window cannot show in Wine.
+    private var windowsSteamAccountRow: some View {
+        ObeliskRow(title: L10n.string("ui.launch_settings.windows_steam_account")) {
+            SymbolTile(name: "person.crop.circle.fill", colors: TileColors.blue)
+        } detail: {
+            if model.isCheckingWindowsSteam {
+                Text(L10n.string("ui.launch_settings.windows_steam_checking"))
+            } else if let account = model.windowsSteamAccount {
+                Text(L10n.string("ui.launch_settings.windows_steam_signed_in", account))
+            } else {
+                Text(L10n.string("ui.launch_settings.windows_steam_signed_out"))
+            }
+        } accessory: {
+            GlassCapsuleButton(title: L10n.string(model.windowsSteamAccount == nil
+                                                    ? "ui.launch_settings.windows_steam_sign_in"
+                                                    : "ui.launch_settings.windows_steam_sign_in_again"),
+                               identifier: "launch-settings-windows-steam-sign-in") {
+                guard let windowsSteam = model.windowsSteam else { return }
+                windowsSteamSignIn = WindowsSteamSignInModel(signIn: windowsSteam.signIn)
+            }
+            .disabled(model.isCheckingWindowsSteam)
         }
     }
 
@@ -290,6 +503,20 @@ struct LaunchSettingsSheet: View {
 
     private func marked(_ name: String, isDefault: Bool) -> String {
         isDefault ? L10n.string("ui.launch_settings.default", name) : name
+    }
+
+    static func name(of client: LaunchSteamClient) -> String {
+        switch client {
+        case .obelisk: L10n.string("ui.launch_settings.steam_client.obelisk")
+        case .windows: L10n.string("ui.launch_settings.steam_client.windows")
+        }
+    }
+
+    static func detail(of client: LaunchSteamClient) -> String {
+        switch client {
+        case .obelisk: L10n.string("ui.launch_settings.steam_client.obelisk_detail")
+        case .windows: L10n.string("ui.launch_settings.steam_client.windows_detail")
+        }
     }
 
     static func name(of engine: LaunchEngine) -> String {

@@ -140,6 +140,12 @@ pub enum Error {
     ApiMissing,
     #[error("backend.runtime.wineUnavailable")]
     WineUnavailable,
+    /// Valve's Windows Steam starts the game, and is signed in to no account.
+    #[error("backend.steam.windowsSteam.signInRequired")]
+    WindowsSteamSignedOut,
+    /// Valve's Windows Steam did not take the account's login.
+    #[error("backend.steam.windowsSteam.signInFailed")]
+    WindowsSteamSignIn,
 }
 impl From<std::io::Error> for Error {
     fn from(_: std::io::Error) -> Self {

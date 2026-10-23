@@ -135,6 +135,7 @@ struct GameDetailPage<Model: LibraryStorefront, HeroArtwork: View, Cover: View, 
                             directory: receipt.directory,
                             launchSettings: receipt.platform == .mac ? nil : {
                                 launchSettings = LaunchSettingsModel(
+                                    windowsSteam: Self.windowsSteam(installations, receipt),
                                     load: { [installations] in try await installations.launchSettings(receipt) },
                                     save: { [installations] in
                                         try await installations.setLaunchSettings(receipt, choices: $0)
@@ -237,6 +238,16 @@ struct GameDetailPage<Model: LibraryStorefront, HeroArtwork: View, Cover: View, 
         .padding(.top, 34)
         .padding(.bottom, 40)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Valve's Windows Steam of a Steam game's installation; nil for another
+    /// storefront's game.
+    private static func windowsSteam(_ installations: GameInstallations<Model.Store>,
+                                     _ receipt: InstallationReceipt<Model.Store.GameID>) -> WindowsSteamAccess? {
+        guard let steam = installations as? GameInstallations<SteamGames>,
+              let receipt = receipt as? InstallationReceipt<SteamGames.GameID> else { return nil }
+        return WindowsSteamAccess(account: { await steam.windowsSteamAccount(receipt) },
+                                  signIn: { try await steam.signInWindowsSteam(receipt, credentials: $0) })
     }
 }
 

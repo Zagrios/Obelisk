@@ -753,6 +753,13 @@ public protocol AccountInstallationsProtocol: AnyObject, Sendable {
     func setLaunchSettings(installation: String, choices: LaunchChoices) async throws  -> LaunchSettings?
     
     /**
+     * Signs Valve's Windows Steam, which starts the Steam game of
+     * `installation`, in to the account of `credentials`: a sign-in Obelisk
+     * made for Windows Steam alone, apart from its own session.
+     */
+    func signInWindowsSteam(installation: String, credentials: SteamCredentials) async throws 
+    
+    /**
      * Stops the account's Transfer, Cloud maintenance and launch still
      * preparing.
      */
@@ -767,6 +774,13 @@ public protocol AccountInstallationsProtocol: AnyObject, Sendable {
      * a Transfer of the game that stopped resumes instead.
      */
     func update(installation: String) 
+    
+    /**
+     * The account Valve's Windows Steam signs in to by itself to start the
+     * Steam game of `installation`, when its Launch settings start it so;
+     * `None` while Windows Steam would ask, or for another storefront's game.
+     */
+    func windowsSteamAccount(installation: String) async  -> String?
     
 }
 /**
@@ -1099,6 +1113,27 @@ open func setLaunchSettings(installation: String, choices: LaunchChoices)async t
 }
     
     /**
+     * Signs Valve's Windows Steam, which starts the Steam game of
+     * `installation`, in to the account of `credentials`: a sign-in Obelisk
+     * made for Windows Steam alone, apart from its own session.
+     */
+open func signInWindowsSteam(installation: String, credentials: SteamCredentials)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_obelisk_bridge_fn_method_accountinstallations_sign_in_windows_steam(
+                        self.uniffiCloneHandle(),FfiConverterString.lower(installation),FfiConverterTypeSteamCredentials_lower(credentials)
+                )
+            },
+            pollFunc: ffi_obelisk_bridge_rust_future_poll_void,
+            completeFunc: ffi_obelisk_bridge_rust_future_complete_void,
+            freeFunc: ffi_obelisk_bridge_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeGameSessionError_lift
+        )
+}
+    
+    /**
      * Stops the account's Transfer, Cloud maintenance and launch still
      * preparing.
      */
@@ -1139,6 +1174,28 @@ open func update(installation: String)  {try! rustCall() {
         FfiConverterString.lower(installation),uniffiCallStatus
     )
 }
+}
+    
+    /**
+     * The account Valve's Windows Steam signs in to by itself to start the
+     * Steam game of `installation`, when its Launch settings start it so;
+     * `None` while Windows Steam would ask, or for another storefront's game.
+     */
+open func windowsSteamAccount(installation: String)async  -> String?  {
+    return
+        try!  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_obelisk_bridge_fn_method_accountinstallations_windows_steam_account(
+                        self.uniffiCloneHandle(),FfiConverterString.lower(installation)
+                )
+            },
+            pollFunc: ffi_obelisk_bridge_rust_future_poll_rust_buffer,
+            completeFunc: ffi_obelisk_bridge_rust_future_complete_rust_buffer,
+            freeFunc: ffi_obelisk_bridge_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterOptionString.lift,
+            errorHandler: nil
+            
+        )
 }
     
 
@@ -7907,18 +7964,20 @@ public struct LaunchChoices: Equatable, Hashable {
     public var graphics: LaunchGraphics?
     public var rayTracing: Bool?
     public var performanceHud: Bool
+    public var steamClient: LaunchSteamClient?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
     public init(
         /**
          * What the player adds to the game's command line, as typed.
-         */arguments: String? = nil, engine: LaunchEngine? = nil, graphics: LaunchGraphics? = nil, rayTracing: Bool? = nil, performanceHud: Bool = false) {
+         */arguments: String? = nil, engine: LaunchEngine? = nil, graphics: LaunchGraphics? = nil, rayTracing: Bool? = nil, performanceHud: Bool = false, steamClient: LaunchSteamClient? = nil) {
         self.arguments = arguments
         self.engine = engine
         self.graphics = graphics
         self.rayTracing = rayTracing
         self.performanceHud = performanceHud
+        self.steamClient = steamClient
     }
 
     
@@ -7941,7 +8000,8 @@ public struct FfiConverterTypeLaunchChoices: FfiConverterRustBuffer {
                 engine: FfiConverterOptionTypeLaunchEngine.read(from: &buf), 
                 graphics: FfiConverterOptionTypeLaunchGraphics.read(from: &buf), 
                 rayTracing: FfiConverterOptionBool.read(from: &buf), 
-                performanceHud: FfiConverterBool.read(from: &buf)
+                performanceHud: FfiConverterBool.read(from: &buf), 
+                steamClient: FfiConverterOptionTypeLaunchSteamClient.read(from: &buf)
         )
     }
 
@@ -7951,6 +8011,7 @@ public struct FfiConverterTypeLaunchChoices: FfiConverterRustBuffer {
         FfiConverterOptionTypeLaunchGraphics.write(value.graphics, into: &buf)
         FfiConverterOptionBool.write(value.rayTracing, into: &buf)
         FfiConverterBool.write(value.performanceHud, into: &buf)
+        FfiConverterOptionTypeLaunchSteamClient.write(value.steamClient, into: &buf)
     }
 }
 
@@ -8114,6 +8175,10 @@ public struct LaunchSettings: Equatable, Hashable {
      */
     public var performanceHud: Bool
     /**
+     * Which Steam client a Steam game starts through.
+     */
+    public var steamClient: LaunchSteamClient
+    /**
      * What the player changed from what Obelisk knows of the game.
      */
     public var choices: LaunchChoices
@@ -8121,6 +8186,11 @@ public struct LaunchSettings: Equatable, Hashable {
      * The engine the game runs on without choices.
      */
     public var defaultEngine: LaunchEngine
+    /**
+     * The Steam client a Steam game starts through on Rosetta's Wine
+     * without choices.
+     */
+    public var defaultSteamClient: LaunchSteamClient
     /**
      * Every engine, with what it offers and how the game runs there
      * without choices.
@@ -8137,11 +8207,18 @@ public struct LaunchSettings: Equatable, Hashable {
          * Metal's Performance HUD shows over the game, whatever renders it.
          */performanceHud: Bool, 
         /**
+         * Which Steam client a Steam game starts through.
+         */steamClient: LaunchSteamClient, 
+        /**
          * What the player changed from what Obelisk knows of the game.
          */choices: LaunchChoices, 
         /**
          * The engine the game runs on without choices.
          */defaultEngine: LaunchEngine, 
+        /**
+         * The Steam client a Steam game starts through on Rosetta's Wine
+         * without choices.
+         */defaultSteamClient: LaunchSteamClient, 
         /**
          * Every engine, with what it offers and how the game runs there
          * without choices.
@@ -8150,8 +8227,10 @@ public struct LaunchSettings: Equatable, Hashable {
         self.graphics = graphics
         self.rayTracing = rayTracing
         self.performanceHud = performanceHud
+        self.steamClient = steamClient
         self.choices = choices
         self.defaultEngine = defaultEngine
+        self.defaultSteamClient = defaultSteamClient
         self.engines = engines
     }
 
@@ -8175,8 +8254,10 @@ public struct FfiConverterTypeLaunchSettings: FfiConverterRustBuffer {
                 graphics: FfiConverterTypeLaunchGraphics.read(from: &buf), 
                 rayTracing: FfiConverterBool.read(from: &buf), 
                 performanceHud: FfiConverterBool.read(from: &buf), 
+                steamClient: FfiConverterTypeLaunchSteamClient.read(from: &buf), 
                 choices: FfiConverterTypeLaunchChoices.read(from: &buf), 
                 defaultEngine: FfiConverterTypeLaunchEngine.read(from: &buf), 
+                defaultSteamClient: FfiConverterTypeLaunchSteamClient.read(from: &buf), 
                 engines: FfiConverterSequenceTypeLaunchEngineOffer.read(from: &buf)
         )
     }
@@ -8186,8 +8267,10 @@ public struct FfiConverterTypeLaunchSettings: FfiConverterRustBuffer {
         FfiConverterTypeLaunchGraphics.write(value.graphics, into: &buf)
         FfiConverterBool.write(value.rayTracing, into: &buf)
         FfiConverterBool.write(value.performanceHud, into: &buf)
+        FfiConverterTypeLaunchSteamClient.write(value.steamClient, into: &buf)
         FfiConverterTypeLaunchChoices.write(value.choices, into: &buf)
         FfiConverterTypeLaunchEngine.write(value.defaultEngine, into: &buf)
+        FfiConverterTypeLaunchSteamClient.write(value.defaultSteamClient, into: &buf)
         FfiConverterSequenceTypeLaunchEngineOffer.write(value.engines, into: &buf)
     }
 }
@@ -12818,6 +12901,83 @@ public func FfiConverterTypeLaunchGraphicsOption_lower(_ value: LaunchGraphicsOp
 
 
 /**
+ * Which Steam client a Windows Steam game starts through, on Rosetta's
+ * Wine.
+ */
+
+public enum LaunchSteamClient: Equatable, Hashable {
+    
+    /**
+     * Obelisk's own, through its Steam host.
+     */
+    case obelisk
+    /**
+     * Valve's Windows Steam, in a prefix of its own: VAC-secured servers
+     * accept a Windows game it starts.
+     */
+    case windows
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension LaunchSteamClient: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeLaunchSteamClient: FfiConverterRustBuffer {
+    typealias SwiftType = LaunchSteamClient
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LaunchSteamClient {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .obelisk
+        
+        case 2: return .windows
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: LaunchSteamClient, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .obelisk:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .windows:
+            writeInt(&buf, Int32(2))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLaunchSteamClient_lift(_ buf: RustBuffer) throws -> LaunchSteamClient {
+    return try FfiConverterTypeLaunchSteamClient.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLaunchSteamClient_lower(_ value: LaunchSteamClient) -> RustBuffer {
+    return FfiConverterTypeLaunchSteamClient.lower(value)
+}
+
+
+
+/**
  * What translates a game's x86 code on one engine.
  */
 
@@ -14955,6 +15115,30 @@ fileprivate struct FfiConverterOptionTypeLaunchGraphics: FfiConverterRustBuffer 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeLaunchSteamClient: FfiConverterRustBuffer {
+    typealias SwiftType = LaunchSteamClient?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeLaunchSteamClient.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeLaunchSteamClient.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeSteamHostState: FfiConverterRustBuffer {
     typealias SwiftType = SteamHostState?
 
@@ -16416,6 +16600,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_obelisk_bridge_checksum_method_accountinstallations_set_launch_settings() != 55881) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_obelisk_bridge_checksum_method_accountinstallations_sign_in_windows_steam() != 25220) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_obelisk_bridge_checksum_method_accountinstallations_signed_out() != 26245) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -16426,6 +16613,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_method_accountinstallations_update() != 64898) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_method_accountinstallations_windows_steam_account() != 61988) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_method_librarycache_epic_library() != 25582) {

@@ -205,6 +205,40 @@
         }
       }
     },
+    "backend.steam.windowsSteam.signInRequired": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam for Windows isn't signed in. Sign in to it in this game's Launch Settings."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam pour Windows n’est pas connecté. Connectez-le dans les réglages de lancement de ce jeu."
+          }
+        }
+      }
+    },
+    "backend.steam.windowsSteam.signInFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam for Windows didn't take the sign-in. Try again."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam pour Windows n’a pas accepté la connexion. Réessayez."
+          }
+        }
+      }
+    },
     "backend.steam.runtime.authenticationFailed": {
       "extractionState": "manual",
       "localizations": {
@@ -14491,6 +14525,244 @@
           "stringUnit": {
             "state": "translated",
             "value": "Le panneau de Metal affiche les images par seconde et la durée de chaque image par-dessus le jeu, quel que soit le moteur GPU."
+          }
+        }
+      }
+    },
+    "ui.launch_settings.steam_client": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam Client"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Client Steam"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.steam_client.obelisk": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obelisk"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obelisk"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.steam_client.windows": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam for Windows"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam pour Windows"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.steam_client.obelisk_detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obelisk's own Steam connection starts the game."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La connexion Steam d’Obelisk lance le jeu."
+          }
+        }
+      }
+    },
+    "ui.launch_settings.steam_client.windows_detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Valve's Steam for Windows starts the game in Wine, as servers secured by VAC require. Sign in to it once."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam pour Windows de Valve lance le jeu dans Wine, comme l’exigent les serveurs protégés par VAC. Connectez-vous-y une fois."
+          }
+        }
+      }
+    },
+    "ui.launch_settings.windows_steam_account": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam for Windows Account"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compte de Steam pour Windows"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.windows_steam_checking": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vérification…"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.windows_steam_signed_in": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Signed in as %@."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecté en tant que %@."
+          }
+        }
+      }
+    },
+    "ui.launch_settings.windows_steam_signed_out": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not signed in. Steam for Windows needs its own sign-in before the game starts."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Non connecté. Steam pour Windows a besoin de sa propre connexion avant que le jeu ne démarre."
+          }
+        }
+      }
+    },
+    "ui.launch_settings.windows_steam_sign_in": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign In…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se connecter…"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.windows_steam_sign_in_again": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Change Account…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changer de compte…"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.windows_steam_sign_in_title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign In to Steam for Windows"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se connecter à Steam pour Windows"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.windows_steam_sign_in_detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam for Windows gets its own sign-in, apart from Obelisk's. Its window cannot show in Wine, so Obelisk signs it in for you."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam pour Windows a sa propre connexion, distincte de celle d’Obelisk. Sa fenêtre ne peut pas s’afficher dans Wine : Obelisk le connecte pour vous."
+          }
+        }
+      }
+    },
+    "ui.launch_settings.windows_steam_signing_in": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Signing in Steam for Windows… The first time, Steam updates itself first, which can take a few minutes."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connexion de Steam pour Windows… La première fois, Steam se met d’abord à jour, ce qui peut prendre quelques minutes."
           }
         }
       }
