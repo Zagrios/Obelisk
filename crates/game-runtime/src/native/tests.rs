@@ -171,3 +171,14 @@ fn the_players_locale_is_obelisk_s_lc_all_then_its_lang() {
     }
     assert_eq!(locale_from(|_| None), None);
 }
+
+#[test]
+fn a_game_gets_the_gamepad_mapping_of_the_layout_its_player_chose() {
+    let chosen = |layout: &'static str| {
+        environment_from(Path::new("/Users/player"), move |key| {
+            (key == "OBELISK_CONTROLLER_LAYOUT").then(|| layout.to_owned())
+        })
+    };
+    assert!(chosen("nintendo").contains_key("SDL_GAMECONTROLLERCONFIG"));
+    assert!(!chosen("xbox").contains_key("SDL_GAMECONTROLLERCONFIG"));
+}
