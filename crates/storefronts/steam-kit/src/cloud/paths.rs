@@ -130,6 +130,7 @@ fn platforms(save: &CloudMetadata) -> Result<u32, CloudError> {
             return Err(CloudError::Invalid("duplicate Auto-Cloud platform"));
         }
         mask |= match value.text() {
+            Some("all") => u32::MAX,
             Some("Windows") => 1,
             Some("MacOS") => 2,
             Some("Linux") => 4,
@@ -617,6 +618,79 @@ fn wildcard(pattern: &str, name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn quake_all_platform_rules_discover_windows_files() {
+        // Public app 2310 UFS metadata, using synthetic paths and files only.
+        let metadata = object(vec![(
+            "savefiles",
+            object(vec![
+                (
+                    "1",
+                    object(vec![
+                        ("path", value("Id1")),
+                        ("pattern", value("*.sav")),
+                        ("platforms", object(vec![("1", value("all"))])),
+                        ("root", value("gameinstall")),
+                    ]),
+                ),
+                (
+                    "2",
+                    object(vec![
+                        ("path", value("Id1")),
+                        ("pattern", value("config.cfg")),
+                        ("platforms", object(vec![("1", value("all"))])),
+                        ("root", value("gameinstall")),
+                    ]),
+                ),
+                (
+                    "3",
+                    object(vec![
+                        ("path", value("Nightdive Studios/Quake")),
+                        ("pattern", value("*.sav")),
+                        ("recursive", value("1")),
+                        ("root", value("WinSavedGames")),
+                    ]),
+                ),
+            ]),
+        )]);
+        let temp = tempfile::tempdir().unwrap();
+        let base = temp.path().canonicalize().unwrap();
+        let install = base.join("game");
+        let profile = base.join("profile");
+        fs::create_dir_all(install.join("Id1")).unwrap();
+        fs::create_dir_all(profile.join("Saved Games/Nightdive Studios/Quake/nested")).unwrap();
+        fs::write(install.join("Id1/config.cfg"), b"synthetic").unwrap();
+        fs::write(install.join("Id1/test.sav"), b"synthetic").unwrap();
+        fs::write(
+            profile.join("Saved Games/Nightdive Studios/Quake/nested/test.sav"),
+            b"synthetic",
+        )
+        .unwrap();
+        let resolver = AutoCloudPaths::new(
+            &metadata,
+            0x011000010000002a,
+            &CloudPlatform::Windows { profile },
+            &install,
+        )
+        .unwrap();
+        let files = resolver.local_files(&[]).unwrap();
+        assert_eq!(files.len(), 3);
+        assert!(
+            files
+                .iter()
+                .any(|f| f.name == "%GameInstall%Id1/config.cfg" && f.platforms == u32::MAX)
+        );
+        assert!(
+            files
+                .iter()
+                .any(|f| f.name == "%GameInstall%Id1/test.sav" && f.platforms == u32::MAX)
+        );
+        assert!(
+            files
+                .iter()
+                .any(|f| f.name == "%WinSavedGames%Nightdive Studios/Quake/nested/test.sav")
+        );
+    }
     #[test]
     fn authenticated_publisher_fixtures_map_mac_paths() {
         for (json, remote, local) in [

@@ -370,6 +370,81 @@ fn roaming_rule() -> CloudMetadata {
 }
 
 #[tokio::test]
+async fn quake_all_platform_rules_sync_synthetic_windows_progress() {
+    fn value(text: &str) -> CloudMetadata {
+        CloudMetadata::Value(text.into())
+    }
+    fn object(entries: Vec<(&str, CloudMetadata)>) -> CloudMetadata {
+        CloudMetadata::Object(entries.into_iter().map(|(k, v)| (k.into(), v)).collect())
+    }
+    let metadata = object(vec![(
+        "savefiles",
+        object(vec![
+            (
+                "1",
+                object(vec![
+                    ("path", value("Id1")),
+                    ("pattern", value("*.sav")),
+                    ("platforms", object(vec![("1", value("all"))])),
+                    ("root", value("gameinstall")),
+                ]),
+            ),
+            (
+                "2",
+                object(vec![
+                    ("path", value("Id1")),
+                    ("pattern", value("config.cfg")),
+                    ("platforms", object(vec![("1", value("all"))])),
+                    ("root", value("gameinstall")),
+                ]),
+            ),
+            (
+                "3",
+                object(vec![
+                    ("path", value("Nightdive Studios/Quake")),
+                    ("pattern", value("*.sav")),
+                    ("recursive", value("1")),
+                    ("root", value("WinSavedGames")),
+                ]),
+            ),
+        ]),
+    )]);
+    let mut game = SteamGame::game();
+    let prefix = game.config.root.join("fixture-prefix");
+    game.run_in(&prefix);
+    game.cloud.set_metadata(Some(metadata));
+    let local = game.config.install.join("Id1/test.sav");
+    fs::create_dir_all(local.parent().unwrap()).unwrap();
+    fs::write(&local, b"synthetic initial progress").unwrap();
+    let remote = "%GameInstall%Id1/test.sav";
+    game.cloud
+        .publish_for(remote, b"synthetic initial progress", u32::MAX);
+    let mut sync = game.open();
+    tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        sync.prepare(&no_other_session),
+    )
+    .await
+    .expect("Quake rules should not block on an unsupported-rule question")
+    .unwrap();
+    assert_eq!(game.control.status().phase, Phase::Ready);
+    assert_eq!(game.cloud.uploads(), 0);
+    sync.started().unwrap();
+    fs::write(&local, b"synthetic new progress").unwrap();
+    fs::write(
+        game.config.install.join("Id1/new.sav"),
+        b"synthetic new file",
+    )
+    .unwrap();
+    sync.finished(true).await;
+    assert_eq!(game.control.status().phase, Phase::Synced);
+    assert_eq!(game.cloud.file(remote).unwrap(), b"synthetic new progress");
+    let new_remote = "%GameInstall%Id1/new.sav";
+    assert_eq!(game.cloud.file(new_remote).unwrap(), b"synthetic new file");
+    assert_eq!(game.cloud.file_platforms(new_remote), Some(u32::MAX));
+}
+
+#[tokio::test]
 async fn a_mac_build_whose_rules_are_all_for_windows_starts_without_cloud() {
     let game = SteamGame::game();
     game.cloud.set_metadata(Some(roaming_rule()));

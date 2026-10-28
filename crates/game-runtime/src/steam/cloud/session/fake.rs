@@ -98,6 +98,15 @@ impl FakeSteamCloud {
         state.files.get(name).map(|(bytes, _)| bytes.clone())
     }
 
+    pub(crate) fn file_platforms(&self, name: &str) -> Option<u32> {
+        self.state
+            .lock()
+            .unwrap()
+            .files
+            .get(name)
+            .map(|(_, mask)| *mask)
+    }
+
     pub(crate) fn uploads(&self) -> usize {
         self.state.lock().unwrap().uploads
     }
