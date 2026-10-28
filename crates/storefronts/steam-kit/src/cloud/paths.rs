@@ -12,6 +12,7 @@ pub struct AutoCloudPaths {
     rules: Vec<Rule>,
     foreign: Vec<(String, String, bool)>,
     mask: u32,
+    windows: bool,
 }
 
 /// The build of a game that runs, and where its Auto-Cloud roots live.
@@ -111,6 +112,7 @@ struct Rule {
     root: String,
     source: String,
     destination: PathBuf,
+    alias_base: Option<PathBuf>,
     recursive: bool,
     pattern: String,
     platforms: u32,
@@ -373,10 +375,15 @@ impl AutoCloudPaths {
             // It is relative to the new root, never an absolute filesystem path.
             let source = publisher_path(source_path, steam_id)?;
             let local = publisher_path(&local_path, steam_id)?;
+            let base = platform.root(local_root, install)?;
+            let alias_base = (canonical_root(source_root) == canonical_root(local_root)
+                && source == local)
+                .then(|| base.clone());
             rules.push(Rule {
                 root: canonical_root(source_root).to_owned(),
                 source,
-                destination: platform.root(local_root, install)?.join(local),
+                destination: base.join(local),
+                alias_base,
                 recursive,
                 pattern: pattern.to_owned(),
                 platforms,
@@ -393,6 +400,7 @@ impl AutoCloudPaths {
             rules,
             foreign,
             mask,
+            windows: matches!(platform, CloudPlatform::Windows { .. }),
         })
     }
 
@@ -428,7 +436,46 @@ impl AutoCloudPaths {
     fn path_for_name(&self, name: &str) -> Result<Option<PathBuf>, CloudError> {
         let mut selected = None;
         for rule in &self.rules {
-            let Some(suffix) = rule_suffix(name, &rule.root, &rule.source, rule.recursive)? else {
+            let suffix = if let Some(suffix) =
+                rule_suffix(name, &rule.root, &rule.source, rule.recursive)?
+            {
+                suffix
+            } else if self.windows {
+                let Some(after_root) = name.strip_prefix(&format!("%{}%", rule.root)) else {
+                    continue;
+                };
+                let path = after_root.strip_prefix('/').unwrap_or(after_root);
+                let Some(prefix) = path.get(..rule.source.len()) else {
+                    continue;
+                };
+                if rule.source.is_empty() || !prefix.eq_ignore_ascii_case(&rule.source) {
+                    continue;
+                }
+                let Some(suffix) = path
+                    .get(rule.source.len()..)
+                    .and_then(|s| s.strip_prefix('/'))
+                else {
+                    continue;
+                };
+                let suffix = relative(suffix, false)?;
+                if !rule.recursive && suffix.contains('/') {
+                    continue;
+                }
+                let base = rule
+                    .alias_base
+                    .as_ref()
+                    .ok_or(CloudError::Invalid("unproven Auto-Cloud directory alias"))?;
+                let alias = base.join(prefix);
+                if !plain_path(&alias)? || !plain_path(&rule.destination)? {
+                    return Err(CloudError::Invalid("unproven Auto-Cloud directory alias"));
+                }
+                let a = fs::metadata(&alias).map_err(|_| CloudError::Storage)?;
+                let b = fs::metadata(&rule.destination).map_err(|_| CloudError::Storage)?;
+                if !a.is_dir() || !b.is_dir() || a.dev() != b.dev() || a.ino() != b.ino() {
+                    return Err(CloudError::Invalid("ambiguous Auto-Cloud directory alias"));
+                }
+                suffix
+            } else {
                 continue;
             };
             let destination = rule.destination.join(suffix);
@@ -618,6 +665,55 @@ fn wildcard(pattern: &str, name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn historical_windows_rule_directory_case_requires_a_proven_filesystem_alias() {
+        let base = std::env::var_os("OBELISK_CASE_TEST_DIR");
+        let tmp = match base {
+            Some(base) => tempfile::tempdir_in(base).unwrap(),
+            None => tempfile::tempdir().unwrap(),
+        };
+        let root = tmp.path().canonicalize().unwrap();
+        fs::create_dir(root.join("Id1")).unwrap();
+        fs::write(root.join("Id1/config.cfg"), b"fixture").unwrap();
+        let metadata = object(vec![(
+            "savefiles",
+            object(vec![(
+                "1",
+                object(vec![
+                    ("path", value("Id1")),
+                    ("pattern", value("config.cfg")),
+                    ("root", value("gameinstall")),
+                ]),
+            )]),
+        )]);
+        let resolver = AutoCloudPaths::new(
+            &metadata,
+            0x011000010000002a,
+            &CloudPlatform::Windows {
+                profile: root.clone(),
+            },
+            &root,
+        )
+        .unwrap();
+        let historical = file("%GameInstall%id1/config.cfg");
+        if root.join("id1").exists() {
+            assert_eq!(
+                resolver.existing_file(&historical).unwrap(),
+                Some(root.join("Id1/config.cfg"))
+            );
+            let selected = resolver.local_files(&[historical.clone()]).unwrap();
+            assert_eq!(selected.len(), 1);
+            assert_eq!(selected[0].name, historical.name);
+            assert!(
+                resolver
+                    .local_files(&[historical, file("%GameInstall%Id1/config.cfg")])
+                    .is_err()
+            );
+        } else {
+            assert!(resolver.existing_file(&historical).is_err());
+            assert_eq!(fs::read(root.join("Id1/config.cfg")).unwrap(), b"fixture");
+        }
+    }
     #[test]
     fn quake_all_platform_rules_discover_windows_files() {
         // Public app 2310 UFS metadata, using synthetic paths and files only.

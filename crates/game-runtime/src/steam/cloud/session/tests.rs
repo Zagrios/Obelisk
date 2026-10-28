@@ -419,6 +419,11 @@ async fn quake_all_platform_rules_sync_synthetic_windows_progress() {
     let remote = "%GameInstall%Id1/test.sav";
     game.cloud
         .publish_for(remote, b"synthetic initial progress", u32::MAX);
+    let config = game.config.install.join("Id1/config.cfg");
+    fs::write(&config, b"synthetic initial config").unwrap();
+    let historical_config = "%GameInstall%id1/config.cfg";
+    game.cloud
+        .publish_for(historical_config, b"synthetic initial config", u32::MAX);
     let mut sync = game.open();
     tokio::time::timeout(
         std::time::Duration::from_secs(10),
@@ -431,6 +436,7 @@ async fn quake_all_platform_rules_sync_synthetic_windows_progress() {
     assert_eq!(game.cloud.uploads(), 0);
     sync.started().unwrap();
     fs::write(&local, b"synthetic new progress").unwrap();
+    fs::write(&config, b"synthetic new config").unwrap();
     fs::write(
         game.config.install.join("Id1/new.sav"),
         b"synthetic new file",
@@ -439,6 +445,11 @@ async fn quake_all_platform_rules_sync_synthetic_windows_progress() {
     sync.finished(true).await;
     assert_eq!(game.control.status().phase, Phase::Synced);
     assert_eq!(game.cloud.file(remote).unwrap(), b"synthetic new progress");
+    assert_eq!(
+        game.cloud.file(historical_config).unwrap(),
+        b"synthetic new config"
+    );
+    assert!(game.cloud.file("%GameInstall%Id1/config.cfg").is_none());
     let new_remote = "%GameInstall%Id1/new.sav";
     assert_eq!(game.cloud.file(new_remote).unwrap(), b"synthetic new file");
     assert_eq!(game.cloud.file_platforms(new_remote), Some(u32::MAX));
