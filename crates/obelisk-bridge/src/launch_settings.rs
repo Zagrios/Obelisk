@@ -3,7 +3,8 @@
 //! Engine, CPU and GPU choices each engine allows without asking again.
 use game_runtime::{
     launch_settings::{
-        self, Choices, ENGINES, EngineOffer, GraphicsOffer, GraphicsOption, Translator, View,
+        self, Choices, ENGINES, EngineOffer, GraphicsOffer, GraphicsOption, SteamClient,
+        Translator, View,
     },
     wine::{Engine, Graphics},
 };
@@ -18,10 +19,15 @@ pub struct LaunchSettings {
     pub ray_tracing: bool,
     /// Metal's Performance HUD shows over the game, whatever renders it.
     pub performance_hud: bool,
+    /// Which Steam client a Steam game starts through.
+    pub steam_client: LaunchSteamClient,
     /// What the player changed from what Obelisk knows of the game.
     pub choices: LaunchChoices,
     /// The engine the game runs on without choices.
     pub default_engine: LaunchEngine,
+    /// The Steam client a Steam game starts through on Rosetta's Wine
+    /// without choices.
+    pub default_steam_client: LaunchSteamClient,
     /// Every engine, with what it offers and how the game runs there
     /// without choices.
     pub engines: Vec<LaunchEngineOffer>,
@@ -41,6 +47,19 @@ pub struct LaunchChoices {
     pub ray_tracing: Option<bool>,
     #[uniffi(default = false)]
     pub performance_hud: bool,
+    #[uniffi(default = None)]
+    pub steam_client: Option<LaunchSteamClient>,
+}
+
+/// Which Steam client a Windows Steam game starts through, on Rosetta's
+/// Wine.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum LaunchSteamClient {
+    /// Obelisk's own, through its Steam host.
+    Obelisk,
+    /// Valve's Windows Steam, in a prefix of its own: VAC-secured servers
+    /// accept a Windows game it starts.
+    Windows,
 }
 
 /// What runs a Windows game's Wine.
@@ -95,8 +114,10 @@ impl From<View> for LaunchSettings {
             graphics: view.settings.graphics.into(),
             ray_tracing: view.settings.options.ray_tracing,
             performance_hud: view.settings.performance_hud,
+            steam_client: view.settings.steam_client.into(),
             choices: view.choices.into(),
             default_engine: view.default_engine.into(),
+            default_steam_client: view.default_steam_client.into(),
             engines: ENGINES
                 .iter()
                 .zip(view.default_graphics)
@@ -139,6 +160,7 @@ impl From<Choices> for LaunchChoices {
             graphics: choices.graphics.map(Into::into),
             ray_tracing: choices.ray_tracing,
             performance_hud: choices.performance_hud,
+            steam_client: choices.steam_client.map(Into::into),
         }
     }
 }
@@ -151,6 +173,7 @@ impl From<LaunchChoices> for launch_settings::Choices {
             graphics: choices.graphics.map(Into::into),
             ray_tracing: choices.ray_tracing,
             performance_hud: choices.performance_hud,
+            steam_client: choices.steam_client.map(Into::into),
         }
     }
 }
@@ -169,6 +192,24 @@ impl From<LaunchEngine> for Engine {
         match engine {
             LaunchEngine::Rosetta => Self::Rosetta,
             LaunchEngine::Linux => Self::Linux,
+        }
+    }
+}
+
+impl From<SteamClient> for LaunchSteamClient {
+    fn from(client: SteamClient) -> Self {
+        match client {
+            SteamClient::Obelisk => Self::Obelisk,
+            SteamClient::Windows => Self::Windows,
+        }
+    }
+}
+
+impl From<LaunchSteamClient> for SteamClient {
+    fn from(client: LaunchSteamClient) -> Self {
+        match client {
+            LaunchSteamClient::Obelisk => Self::Obelisk,
+            LaunchSteamClient::Windows => Self::Windows,
         }
     }
 }
@@ -211,6 +252,7 @@ mod tests {
         assert_eq!(settings.graphics, LaunchGraphics::D3dMetal);
         assert!(settings.ray_tracing);
         assert!(!settings.performance_hud);
+        assert_eq!(settings.steam_client, LaunchSteamClient::Obelisk);
         assert_eq!(settings.choices, LaunchChoices::default());
         let engines: Vec<_> = settings
             .engines
@@ -236,5 +278,18 @@ mod tests {
             settings.engines[0].graphics[0].options,
             [LaunchGraphicsOption::RayTracing]
         );
+    }
+
+    #[test]
+    fn a_choice_of_windows_steam_crosses_both_ways() {
+        let choices = LaunchChoices {
+            steam_client: Some(LaunchSteamClient::Windows),
+            ..LaunchChoices::default()
+        };
+
+        let kept = Choices::from(choices.clone());
+
+        assert_eq!(kept.steam_client, Some(SteamClient::Windows));
+        assert_eq!(LaunchChoices::from(kept), choices);
     }
 }

@@ -39,36 +39,7 @@ impl wine::Storefront for Prefix<'_> {
     /// runs before a game first starts. A script that cannot be read is left
     /// out.
     fn prerequisites(&self) -> Result<Vec<wine::Prerequisite>, Error> {
-        let read = |relative: &Path| {
-            obelisk_core::install::read_cached_file(self.install, relative, MAX_SCRIPT_BYTES)
-                .map_err(|_| Error::Storage)
-        };
-        let Some(list) = read(Path::new(steam_kit::install_script::LIST))? else {
-            return Ok(Vec::new());
-        };
-        let windows_install = wine::windows_path(self.install);
-        let mut prerequisites = Vec::new();
-        for script in String::from_utf8_lossy(&list).lines() {
-            let Ok(Some(bytes)) = read(Path::new(script)) else {
-                continue;
-            };
-            let Ok(steps) =
-                steam_kit::install_script::steps(&bytes, self.install, &windows_install)
-            else {
-                continue;
-            };
-            prerequisites.extend(steps.into_iter().map(|step| {
-                wine::Prerequisite {
-                    id: step.id,
-                    programs: step
-                        .programs
-                        .into_iter()
-                        .map(|program| (program.path, program.arguments))
-                        .collect(),
-                }
-            }));
-        }
-        Ok(prerequisites)
+        install_scripts(self.install)
     }
 
     /// Places Valve's steamclient libraries where the prefix's registry
@@ -85,6 +56,40 @@ impl wine::Storefront for Prefix<'_> {
         }
         Ok(())
     }
+}
+
+/// The steps of the install scripts the installation in `install` lists,
+/// which Steam runs before a game first starts. A script that cannot be read
+/// is left out.
+pub(super) fn install_scripts(install: &Path) -> Result<Vec<wine::Prerequisite>, Error> {
+    let read = |relative: &Path| {
+        obelisk_core::install::read_cached_file(install, relative, MAX_SCRIPT_BYTES)
+            .map_err(|_| Error::Storage)
+    };
+    let Some(list) = read(Path::new(steam_kit::install_script::LIST))? else {
+        return Ok(Vec::new());
+    };
+    let windows_install = wine::windows_path(install);
+    let mut prerequisites = Vec::new();
+    for script in String::from_utf8_lossy(&list).lines() {
+        let Ok(Some(bytes)) = read(Path::new(script)) else {
+            continue;
+        };
+        let Ok(steps) = steam_kit::install_script::steps(&bytes, install, &windows_install) else {
+            continue;
+        };
+        prerequisites.extend(steps.into_iter().map(|step| {
+            wine::Prerequisite {
+                id: step.id,
+                programs: step
+                    .programs
+                    .into_iter()
+                    .map(|program| (program.path, program.arguments))
+                    .collect(),
+            }
+        }));
+    }
+    Ok(prerequisites)
 }
 
 /// Whether the files at `a` and `b` hold the same bytes. Reading stops at

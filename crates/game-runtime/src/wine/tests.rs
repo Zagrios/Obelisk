@@ -1207,6 +1207,7 @@ fn a_configuration_reaches_its_game_session_whole() {
             variables: BTreeMap::from([("SteamDeck".to_owned(), "1".to_owned())]),
             dll_overrides: BTreeMap::from([("xaudio2_7".to_owned(), "n,b".to_owned())]),
             performance_hud: true,
+            steam_client: SteamClient::Windows,
         },
     };
 
@@ -1508,4 +1509,103 @@ fn a_program_that_imports_direct3d_12_without_11_renders_through_d3dmetal_where_
         Graphics::D3DMetal
     );
     assert_eq!(Graphics::default_for(Engine::Linux, None), Graphics::Dxmt);
+}
+
+/// Launch settings that start `install`'s Steam game through Valve's Windows
+/// Steam, on the engine its profile names.
+fn choose_windows_steam(
+    locations: &crate::Locations,
+    game: crate::profile::Game<'_>,
+    install: &Path,
+) {
+    let choices = crate::launch_settings::Choices {
+        steam_client: Some(SteamClient::Windows),
+        ..Default::default()
+    };
+    crate::launch_settings::choose(&locations.library, game, install, None, choices).unwrap();
+}
+
+#[test]
+fn windows_steam_runs_a_game_in_a_prefix_of_its_own_beside_its_rosetta_prefix() {
+    let (_directory, root) = installation();
+    let library = root.join("library");
+    let locations = locations(&root);
+    engine_runtime(&locations);
+    let install = library.join("Games/Steam/steam-42-windows");
+    choose_windows_steam(&locations, OTHER, &install);
+
+    let windows = windows_of(&locations, OTHER, &install);
+
+    assert_eq!(windows.steam_client(), SteamClient::Windows);
+    assert_eq!(
+        windows.prefix(),
+        library.join("Prefixes/steam-42-windows-steam")
+    );
+    // Only Rosetta's Wine runs Windows Steam: a game on the Linux engine keeps
+    // Obelisk's Steam client and the engine's prefix.
+    let elden_ring = library.join("Games/Steam/steam-1245620-windows");
+    choose_windows_steam(&locations, ELDEN_RING, &elden_ring);
+    let linux = windows_of(&locations, ELDEN_RING, &elden_ring);
+    assert_eq!(linux.steam_client(), SteamClient::Obelisk);
+    assert_eq!(
+        linux.prefix(),
+        library.join("Prefixes/steam-1245620-windows-linux/prefix")
+    );
+}
+
+#[test]
+fn uninstalling_removes_the_windows_steam_prefix_too() {
+    let (_directory, root) = installation();
+    let locations = locations(&root);
+    let install = root.join("library/Games/Steam/steam-42-windows");
+    let rosetta = windows_of(&locations, OTHER, &install);
+    fs::create_dir_all(rosetta.prefix().join("drive_c")).unwrap();
+    choose_windows_steam(&locations, OTHER, &install);
+    let steam = windows_of(&locations, OTHER, &install);
+    fs::create_dir_all(steam.prefix().join("drive_c/Program Files (x86)/Steam")).unwrap();
+
+    remove(&locations, &install).unwrap().unwrap();
+
+    assert!(!rosetta.prefix().exists());
+    assert!(!steam.prefix().exists());
+}
+
+#[test]
+fn windows_steam_keeps_its_own_steamclient_and_no_overlay_in_every_wine_command() {
+    let (_directory, root) = installation();
+    let mut config = config(&root);
+    let obelisk = environment(&config);
+    assert!(!obelisk.contains_key("PROTON_DISABLE_LSTEAMCLIENT"));
+    assert!(!obelisk["WINEDLLOVERRIDES"].contains("gameoverlayrenderer"));
+
+    config.settings.steam_client = SteamClient::Windows;
+    let windows = environment(&config);
+
+    assert_eq!(windows["PROTON_DISABLE_LSTEAMCLIENT"], "1");
+    assert!(
+        windows["WINEDLLOVERRIDES"].contains("gameoverlayrenderer,gameoverlayrenderer64="),
+        "{}",
+        windows["WINEDLLOVERRIDES"]
+    );
+}
+
+#[test]
+fn wineboot_never_starts_the_windows_steam_that_asks_to_start_at_login() {
+    let (_directory, root) = installation();
+    let config = recording_runtime(&root);
+    fs::write(
+        config.runtime.join("bin/wine"),
+        "#!/bin/sh\nprintf '%s %s\\n' \"$*\" \"$WINEDLLOVERRIDES\" >> \"$WINEPREFIX/../calls\"\n",
+    )
+    .unwrap();
+    let mut windows_steam = config.clone();
+    windows_steam.settings.steam_client = SteamClient::Windows;
+
+    prepare_plain(&windows_steam, &root);
+
+    let calls = calls(&root);
+    assert!(calls[0].starts_with("wineboot --init "), "{calls:?}");
+    assert!(calls[0].ends_with(";steam.exe=d"), "{calls:?}");
+    // Its game starts with Steam, which no override disables there.
+    assert!(!environment(&windows_steam)["WINEDLLOVERRIDES"].contains("steam.exe"));
 }

@@ -1508,7 +1508,7 @@ impl<S: Storefront> Installations<S> {
 
     /// The Windows installation `receipt` names; `None` for a Mac build or an
     /// installation the account no longer has.
-    fn windows_receipt(&self, receipt: &str) -> Option<Receipt<S>> {
+    pub fn windows_receipt(&self, receipt: &str) -> Option<Receipt<S>> {
         let receipt = self.shared.inner.lock().unwrap().receipt(receipt)?;
         (receipt.platform == Platform::Windows).then_some(receipt)
     }

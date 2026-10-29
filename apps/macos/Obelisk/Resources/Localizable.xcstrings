@@ -277,6 +277,52 @@
         }
       }
     },
+    "backend.steam.windowsSteam.signInRequired": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam for Windows isn't signed in. Sign in to it in this game's Launch Settings."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam pour Windows n’est pas connecté. Connectez-le dans les réglages de lancement de ce jeu."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam per Windows non ha effettuato l'accesso. Accedi dalle Impostazioni di avvio di questo gioco."
+          }
+        }
+      }
+    },
+    "backend.steam.windowsSteam.signInFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam for Windows didn't take the sign-in. Try again."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam pour Windows n’a pas accepté la connexion. Réessayez."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam per Windows non ha accettato l'accesso. Riprova."
+          }
+        }
+      }
+    },
     "backend.steam.runtime.authenticationFailed": {
       "extractionState": "manual",
       "localizations": {
@@ -19645,6 +19691,328 @@
           "stringUnit": {
             "state": "translated",
             "value": "L'HUD di Metal mostra sul gioco il frame rate e il tempo di ogni fotogramma, qualunque sia il backend che lo disegna."
+          }
+        }
+      }
+    },
+    "ui.launch_settings.steam_client": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam Client"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Client Steam"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Client Steam"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.steam_client.obelisk": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obelisk"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obelisk"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obelisk"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.steam_client.windows": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam for Windows"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam pour Windows"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam per Windows"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.steam_client.obelisk_detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obelisk's own Steam connection starts the game."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La connexion Steam d’Obelisk lance le jeu."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Il gioco si avvia con la connessione Steam di Obelisk."
+          }
+        }
+      }
+    },
+    "ui.launch_settings.steam_client.windows_detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Valve's Steam for Windows starts the game in Wine, as servers secured by VAC require. Sign in to it once."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam pour Windows de Valve lance le jeu dans Wine, comme l’exigent les serveurs protégés par VAC. Connectez-vous-y une fois."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam per Windows di Valve avvia il gioco in Wine, come richiedono i server protetti da VAC. Accedi una volta."
+          }
+        }
+      }
+    },
+    "ui.launch_settings.windows_steam_account": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam for Windows Account"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compte de Steam pour Windows"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Account di Steam per Windows"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.windows_steam_checking": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vérification…"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verifica in corso…"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.windows_steam_signed_in": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Signed in as %@."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecté en tant que %@."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accesso effettuato come %@."
+          }
+        }
+      }
+    },
+    "ui.launch_settings.windows_steam_signed_out": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not signed in. Steam for Windows needs its own sign-in before the game starts."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Non connecté. Steam pour Windows a besoin de sa propre connexion avant que le jeu ne démarre."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accesso non effettuato. Steam per Windows richiede un accesso proprio prima che il gioco si avvii."
+          }
+        }
+      }
+    },
+    "ui.launch_settings.windows_steam_sign_in": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign In…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se connecter…"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accedi…"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.windows_steam_sign_in_again": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Change Account…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changer de compte…"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cambia account…"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.windows_steam_sign_in_title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign In to Steam for Windows"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se connecter à Steam pour Windows"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accedi a Steam per Windows"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.windows_steam_sign_in_detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam for Windows gets its own sign-in, apart from Obelisk's. Its window cannot show in Wine, so Obelisk signs it in for you."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam pour Windows a sa propre connexion, distincte de celle d’Obelisk. Sa fenêtre ne peut pas s’afficher dans Wine : Obelisk le connecte pour vous."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam per Windows ha un accesso proprio, separato da quello di Obelisk. La sua finestra non può essere mostrata in Wine, quindi Obelisk effettua l'accesso per te."
+          }
+        }
+      }
+    },
+    "ui.launch_settings.windows_steam_signing_in": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Signing in Steam for Windows… The first time, Steam updates itself first, which can take a few minutes."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connexion de Steam pour Windows… La première fois, Steam se met d’abord à jour, ce qui peut prendre quelques minutes."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accesso a Steam per Windows in corso… La prima volta Steam si aggiorna, il che può richiedere alcuni minuti."
           }
         }
       }

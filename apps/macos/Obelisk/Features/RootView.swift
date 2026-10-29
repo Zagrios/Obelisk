@@ -81,6 +81,12 @@ struct RootView: View {
             RosettaPromptView(model: model.steam.rosetta)
         case .steamCloud:
             CloudQuestionSheet(model: model.steam)
+        case .steamWindowsSignIn:
+            if let signIn = model.steam.installations.windowsSteamSignIn {
+                WindowsSteamSignInSheet(model: signIn.model, gameName: signIn.receipt.name,
+                                        finished: { model.steam.installations.finishWindowsSteamSignIn(signedIn: true) },
+                                        closed: { model.steam.installations.finishWindowsSteamSignIn(signedIn: false) })
+            }
         case .epicRosetta:
             RosettaPromptView(model: model.epic.rosetta, storefront: "epic")
         case .epicVoile:

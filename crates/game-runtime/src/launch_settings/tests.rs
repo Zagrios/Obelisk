@@ -22,6 +22,8 @@ const FALL_GUYS: Game<'static> = Game::Epic {
 /// Rocket League's Steam build, which reads its language from its command
 /// line as its Epic one does.
 const ROCKET_LEAGUE_ON_STEAM: Game<'static> = Game::Steam { app_id: 252950 };
+/// A game whose profile starts it through Valve's Windows Steam.
+const TEAM_FORTRESS_2: Game<'static> = Game::Steam { app_id: 440 };
 
 /// An installation that holds no file of the table.
 fn nowhere() -> &'static Path {
@@ -104,6 +106,7 @@ fn every_kind_of_choices() -> [Choices; 5] {
             graphics: Some(Graphics::D3DMetal),
             ray_tracing: Some(true),
             performance_hud: false,
+            steam_client: Some(SteamClient::Obelisk),
         },
         Choices {
             arguments: Some("-dx11 \"+exec autoexec.cfg\"".into()),
@@ -586,4 +589,70 @@ fn a_chosen_engine_needs_no_profile() {
     };
     choose(&library, OTHER, &install, None, rosetta).unwrap();
     assert_eq!(engine(&library, OTHER, &install), Engine::Rosetta);
+}
+
+#[test]
+fn windows_steam_is_kept_on_rosetta_s_wine_and_dropped_elsewhere() {
+    let windows = Choices {
+        steam_client: Some(SteamClient::Windows),
+        ..Choices::default()
+    };
+    let view = chosen(OTHER, windows.clone());
+    assert_eq!(view.settings.steam_client, SteamClient::Windows);
+    assert_eq!(view.choices.steam_client, Some(SteamClient::Windows));
+
+    // The Linux engine runs no Windows Steam: the choice goes with the move.
+    let view = chosen(ELDEN_RING, windows);
+    assert_eq!(view.settings.steam_client, SteamClient::Obelisk);
+    assert_eq!(view.choices, Choices::default());
+
+    // Obelisk's own client is the default, which keeps no file.
+    let obelisk = Choices {
+        steam_client: Some(SteamClient::Obelisk),
+        ..Choices::default()
+    };
+    assert_eq!(chosen(OTHER, obelisk).choices, Choices::default());
+}
+
+#[test]
+fn a_profile_s_steam_client_is_the_default_on_rosetta_s_wine() {
+    let view = chosen(TEAM_FORTRESS_2, Choices::default());
+    assert_eq!(view.settings.steam_client, SteamClient::Windows);
+    assert_eq!(view.default_steam_client, SteamClient::Windows);
+    assert_eq!(
+        chosen(OTHER, Choices::default()).default_steam_client,
+        SteamClient::Obelisk
+    );
+
+    // Windows Steam is the profile's, which keeps no file; Obelisk's is kept.
+    let windows = Choices {
+        steam_client: Some(SteamClient::Windows),
+        ..Choices::default()
+    };
+    assert_eq!(chosen(TEAM_FORTRESS_2, windows).choices, Choices::default());
+    let obelisk = Choices {
+        steam_client: Some(SteamClient::Obelisk),
+        ..Choices::default()
+    };
+    let view = chosen(TEAM_FORTRESS_2, obelisk.clone());
+    assert_eq!(view.settings.steam_client, SteamClient::Obelisk);
+    assert_eq!(view.choices, obelisk);
+
+    // On the Linux engine Obelisk's runs it, and back on Rosetta's Wine the
+    // profile's does again.
+    let linux = Choices {
+        engine: Some(Engine::Linux),
+        ..Choices::default()
+    };
+    let view = chosen(TEAM_FORTRESS_2, linux.clone());
+    assert_eq!(view.settings.steam_client, SteamClient::Obelisk);
+    assert_eq!(view.choices, linux);
+    let rosetta = Choices {
+        engine: Some(Engine::Rosetta),
+        ..Choices::default()
+    };
+    assert_eq!(
+        chosen(TEAM_FORTRESS_2, rosetta).settings.steam_client,
+        SteamClient::Windows
+    );
 }

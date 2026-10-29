@@ -50,6 +50,24 @@ pub struct Settings {
     pub dll_overrides: BTreeMap<String, String>,
     /// Metal's Performance HUD shows over the game.
     pub performance_hud: bool,
+    /// Which Steam client a Steam game starts through; Obelisk's own on any
+    /// engine but Rosetta's Wine.
+    #[serde(default)]
+    pub steam_client: SteamClient,
+}
+
+/// Which Steam client a Windows Steam game starts through.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SteamClient {
+    /// Obelisk's: the game's steamclient reaches Obelisk's Steam host
+    /// through lsteamclient, behind Proton's steam.exe.
+    #[default]
+    Obelisk,
+    /// Valve's Windows Steam, installed in a prefix of its own and signed in
+    /// there, which starts the game itself: the one client Valve's servers
+    /// trust with a Windows game's module signatures, which a VAC-secured
+    /// server asks for.
+    Windows,
 }
 
 /// How a game no profile names runs without choices: in Rosetta's Wine,
@@ -181,6 +199,9 @@ pub struct Choices {
     /// Metal's Performance HUD shows over the game, whatever renders it.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub performance_hud: bool,
+    /// The Steam client a Steam game starts through, on Rosetta's Wine.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub steam_client: Option<SteamClient>,
 }
 
 /// What translates a game's x86 code on one engine.
@@ -285,6 +306,10 @@ impl Choices {
             variables: profile.variables.clone(),
             dll_overrides: profile.dll_overrides.clone(),
             performance_hud: self.performance_hud,
+            steam_client: match engine {
+                Engine::Rosetta => self.steam_client.unwrap_or(profile.steam_client),
+                Engine::Linux => SteamClient::Obelisk,
+            },
         }
     }
 
@@ -306,6 +331,8 @@ impl Choices {
             ray_tracing: (applied.options.ray_tracing != options.ray_tracing)
                 .then_some(applied.options.ray_tracing),
             performance_hud: self.performance_hud,
+            steam_client: (applied.steam_client != default_steam_client(profile, applied.engine))
+                .then_some(applied.steam_client),
         }
     }
 
@@ -322,6 +349,16 @@ fn default_graphics(profile: &Profile, engine: Engine) -> Graphics {
         profile.graphics
     } else {
         Graphics::default_on(engine)
+    }
+}
+
+/// The Steam client `profile`'s game starts through on `engine` without
+/// choices: what its profile says on Rosetta's Wine, where Valve's Windows
+/// Steam runs, else Obelisk's.
+fn default_steam_client(profile: &Profile, engine: Engine) -> SteamClient {
+    match engine {
+        Engine::Rosetta => profile.steam_client,
+        Engine::Linux => SteamClient::Obelisk,
     }
 }
 
@@ -394,6 +431,9 @@ pub struct View {
     /// whatever the player chose: its launch waits for one when an older one
     /// is in place.
     pub minimum_voile: Option<&'static str>,
+    /// The Steam client a Steam game starts through on Rosetta's Wine
+    /// without choices.
+    pub default_steam_client: SteamClient,
 }
 
 impl View {
@@ -415,6 +455,7 @@ impl View {
             default_engine: profile.engine,
             default_graphics: ENGINES.map(|offer| default_graphics(profile, offer.engine)),
             minimum_voile: profile.minimum_voile,
+            default_steam_client: default_steam_client(profile, Engine::Rosetta),
         }
     }
 }

@@ -354,7 +354,9 @@ final class DeveloperModals {
         let graphics = choices.graphics.flatMap { chosen in offer.graphics.contains { $0.graphics == chosen } ? chosen : nil }
             ?? offer.defaultGraphics
         return LaunchSettings(engine: engine, graphics: graphics, rayTracing: choices.rayTracing ?? false,
-                              performanceHud: choices.performanceHud, choices: choices, defaultEngine: .rosetta,
+                              performanceHud: choices.performanceHud,
+                              steamClient: engine == .rosetta ? choices.steamClient ?? .obelisk : .obelisk,
+                              choices: choices, defaultEngine: .rosetta, defaultSteamClient: .obelisk,
                               engines: engines)
     }
 

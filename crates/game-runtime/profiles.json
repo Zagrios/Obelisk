@@ -75,13 +75,14 @@
     },
     {
       "name": "Team Fortress 2",
-      "note": "Picks DirectX level 80 on the GPU Rosetta's Wine reports, where its 64-bit build crashes as each map loads its lightmaps: they overwrite an object of shaderapidx9.dll. Level 95 keeps it on its Direct3D 9 path, which loads maps.",
+      "note": "Picks DirectX level 80 on the GPU Rosetta's Wine reports, where its 64-bit build crashes as each map loads its lightmaps: they overwrite an object of shaderapidx9.dll. Level 95 keeps it on its Direct3D 9 path, which loads maps. Starts through Valve's Windows Steam, whose answer to the game's module signature check lets it join VAC-secured servers.",
       "steam": 440,
       "path": "tf_win64.exe",
       "arguments": [
         "-dxlevel",
         "95"
-      ]
+      ],
+      "steam_client": "Windows"
     },
     {
       "name": "Genshin Impact",

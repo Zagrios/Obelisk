@@ -514,6 +514,8 @@ macro_rules! each {
 #[derive(uniffi::Object)]
 pub struct AccountInstallations {
     account: Account,
+    /// Obelisk's folders, where Steam's Windows client lives too.
+    locations: Locations,
 }
 
 #[uniffi::export(async_runtime = "tokio")]
@@ -546,6 +548,7 @@ impl AccountInstallations {
         let installations = account(content, sessions.clone(), steam_id, receipts, &locations);
         Ok(Arc::new(Self {
             account: Account::Steam(installations),
+            locations,
         }))
     }
 
@@ -576,6 +579,7 @@ impl AccountInstallations {
         let installations = account(content, sessions.clone(), account_id, receipts, &locations);
         Ok(Arc::new(Self {
             account: Account::Epic(installations),
+            locations,
         }))
     }
 
@@ -605,6 +609,7 @@ impl AccountInstallations {
         let installations = account(content, sessions.clone(), user_id, receipts, &locations);
         Ok(Arc::new(Self {
             account: Account::Gog(installations),
+            locations,
         }))
     }
 
@@ -701,6 +706,51 @@ impl AccountInstallations {
         each!(self, installations => {
             set_launch_settings(installations.clone(), installation, choices).await
         })
+    }
+
+    /// The account Valve's Windows Steam signs in to by itself to start the
+    /// Steam game of `installation`, when its Launch settings start it so;
+    /// `None` while Windows Steam would ask, or for another storefront's game.
+    pub async fn windows_steam_account(&self, installation: String) -> Option<String> {
+        let Account::Steam(installations) = &self.account else {
+            return None;
+        };
+        let (installations, locations) = (installations.clone(), self.locations.clone());
+        blocking(FAILED, move || {
+            let Some(receipt) = installations.windows_receipt(&installation) else {
+                return Ok(None);
+            };
+            Ok(steam::windows_steam_account(&locations, &receipt).unwrap_or(None))
+        })
+        .await
+        .ok()
+        .flatten()
+    }
+
+    /// Signs Valve's Windows Steam, which starts the Steam game of
+    /// `installation`, in to the account of `credentials`: a sign-in Obelisk
+    /// made for Windows Steam alone, apart from its own session.
+    pub async fn sign_in_windows_steam(
+        &self,
+        installation: String,
+        credentials: SteamCredentials,
+    ) -> Result<(), GameSessionError> {
+        let Account::Steam(installations) = &self.account else {
+            return Err(GameSessionError::new(
+                game_runtime::steam::Error::WindowsSteamSignIn,
+            ));
+        };
+        let receipt = installations
+            .windows_receipt(&installation)
+            .ok_or_else(|| GameSessionError::new(game_runtime::steam::Error::WindowsSteamSignIn))?;
+        steam::sign_in_windows_steam(
+            self.locations.clone(),
+            receipt,
+            credentials.account_name,
+            credentials.refresh_token,
+        )
+        .await
+        .map_err(GameSessionError::new)
     }
 
     /// Stops the account's Transfer, Cloud maintenance and launch still

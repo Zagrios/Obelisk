@@ -3,6 +3,7 @@
 use super::{Adapter, Additions, Config, Facts, Furnisher, Game, Graphics, Prerequisite, Programs};
 use crate::{
     launch::Error,
+    launch_settings::SteamClient,
     supervisor::{Target, architecture::Architecture},
 };
 use obelisk_core::launch::LaunchTarget;
@@ -64,6 +65,7 @@ static FACTS: Facts = Facts {
             "CX_ACTIVE_GRAPHICS_BACKEND",
             "D3DM_SUPPORT_DXR",
             "CX_HIDE_BUILTIN_VERSION_RESOURCES",
+            "PROTON_DISABLE_LSTEAMCLIENT",
             // The Game session adds these to the game's own.
             crate::input::SOCKET,
             crate::metal_hud::ENABLED,
@@ -71,7 +73,14 @@ static FACTS: Facts = Facts {
             crate::metal_hud::OPACITY,
             crate::metal_hud::DISABLE_MENU_BAR,
         ],
-        dlls: &["mscoree", "mshtml", "winemenubuilder.exe"],
+        dlls: &[
+            "mscoree",
+            "mshtml",
+            "winemenubuilder.exe",
+            "gameoverlayrenderer",
+            "gameoverlayrenderer64",
+            "steam.exe",
+        ],
     },
     programs: Programs::All,
 };
@@ -208,7 +217,7 @@ impl Adapter for RosettaWine {
     }
 }
 
-fn wine(config: &Config) -> PathBuf {
+pub(super) fn wine(config: &Config) -> PathBuf {
     config.runtime.join("bin/wine")
 }
 
@@ -286,10 +295,16 @@ fn overrides(config: &Config) -> String {
     } else {
         "mscoree,mshtml=;winemenubuilder.exe=d"
     };
-    config.with_profile_overrides(own)
+    // Valve's overlay forces the game's Direct3D device to reset as it hooks
+    // it, and TF2's 64-bit build crashes on that reset under Wine.
+    let own = match config.settings.steam_client {
+        SteamClient::Windows => format!("{own};gameoverlayrenderer,gameoverlayrenderer64="),
+        SteamClient::Obelisk => own.to_owned(),
+    };
+    config.with_profile_overrides(&own)
 }
 
-fn environment(config: &Config) -> HashMap<String, String> {
+pub(super) fn environment(config: &Config) -> HashMap<String, String> {
     let mut environment = HashMap::from([
         (
             "WINEPREFIX".to_owned(),
@@ -353,6 +368,11 @@ fn environment(config: &Config) -> HashMap<String, String> {
     if config.settings.graphics == Graphics::D3DMetal && !config.settings.options.ray_tracing {
         environment.insert("D3DM_SUPPORT_DXR".into(), "0".into());
     }
+    // Wine's loader hands steamclient's exports to lsteamclient unless told
+    // not to: Valve's Windows Steam then runs its own.
+    if config.settings.steam_client == SteamClient::Windows {
+        environment.insert("PROTON_DISABLE_LSTEAMCLIENT".into(), "1".into());
+    }
     // The profile's variables come last, so that they may replace Obelisk's
     // own for their game.
     environment.extend(config.settings.variables.clone());
@@ -414,6 +434,12 @@ fn wineboot(config: &Config, home: &Path, argument: &str) -> Result<(), Error> {
     let mut environment = environment(config);
     if let Some(folders) = search_path(&backends(config)) {
         environment.insert("WINEDLLPATH_PREPEND".into(), folders);
+    }
+    // Windows Steam asks to start at login, and wineboot runs what does: the
+    // server below would then wait on a Steam that never ends.
+    if config.settings.steam_client == SteamClient::Windows {
+        let overrides = format!("{};steam.exe=d", overrides(config));
+        environment.insert("WINEDLLOVERRIDES".into(), overrides);
     }
     let status = Command::new(wine(config))
         .args(["wineboot", argument])

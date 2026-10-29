@@ -2,7 +2,8 @@
 //! storefront: the engine that runs one, the graphics backend its Direct3D
 //! goes through there, the program started instead of its publisher's, what
 //! that program needs besides (arguments, environment variables and DLL
-//! overrides), and the oldest Voile release it runs in. The table is
+//! overrides), the Steam client a Steam game starts through on Rosetta's
+//! Wine, and the oldest Voile release it runs in. The table is
 //! `profiles.json`. Obelisk is built with it, and a release build reads it
 //! again from Obelisk's `main` as Obelisk starts and as a Windows game
 //! launches, keeping the last one beside its library; a development build
@@ -15,6 +16,7 @@
 //! The player's launch settings apply over it.
 use crate::{
     easy_anti_cheat::{self, EasyAntiCheat},
+    launch_settings::SteamClient,
     pe::Program,
     remote::Table,
     wine::{Engine, Graphics, GraphicsOptions},
@@ -92,6 +94,8 @@ pub(crate) struct Profile {
     /// waits for the newest when an older one is in place, and runs in the
     /// newest installed otherwise, as every game does.
     pub minimum_voile: Option<&'static str>,
+    /// The Steam client a Steam game starts through on Rosetta's Wine.
+    pub steam_client: SteamClient,
 }
 
 static NONE: BTreeMap<String, String> = BTreeMap::new();
@@ -108,6 +112,7 @@ impl Default for Profile {
             variables: &NONE,
             dll_overrides: &NONE,
             minimum_voile: None,
+            steam_client: SteamClient::Obelisk,
         }
     }
 }
@@ -135,6 +140,7 @@ struct Known {
     #[serde(default)]
     dll_overrides: BTreeMap<String, String>,
     minimum_voile: Option<String>,
+    steam_client: Option<SteamClient>,
 }
 
 /// An Epic game as a table names it: its namespace and app name.
@@ -229,6 +235,7 @@ impl Known {
             variables: &self.variables,
             dll_overrides: &self.dll_overrides,
             minimum_voile: self.minimum_voile.as_deref(),
+            steam_client: self.steam_client.unwrap_or_default(),
         }
     }
 
