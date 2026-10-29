@@ -1,0 +1,217 @@
+{
+  "Object": [
+    [
+      "maxnumfiles",
+      {
+        "Value": "250"
+      }
+    ],
+    [
+      "quota",
+      {
+        "Value": "1000000000"
+      }
+    ],
+    [
+      "rootoverrides",
+      {
+        "Object": [
+          [
+            "0",
+            {
+              "Object": [
+                [
+                  "os",
+                  {
+                    "Value": "macos"
+                  }
+                ],
+                [
+                  "oscompare",
+                  {
+                    "Value": "="
+                  }
+                ],
+                [
+                  "root",
+                  {
+                    "Value": "WinMyDocuments"
+                  }
+                ],
+                [
+                  "useinstead",
+                  {
+                    "Value": "gameinstall"
+                  }
+                ]
+              ]
+            }
+          ],
+          [
+            "1",
+            {
+              "Object": [
+                [
+                  "os",
+                  {
+                    "Value": "linux"
+                  }
+                ],
+                [
+                  "oscompare",
+                  {
+                    "Value": "="
+                  }
+                ],
+                [
+                  "root",
+                  {
+                    "Value": "WinMyDocuments"
+                  }
+                ],
+                [
+                  "useinstead",
+                  {
+                    "Value": "gameinstall"
+                  }
+                ]
+              ]
+            }
+          ]
+        ]
+      }
+    ],
+    [
+      "savefiles",
+      {
+        "Object": [
+          [
+            "0",
+            {
+              "Object": [
+                [
+                  "path",
+                  {
+                    "Value": "my games/runic games/torchlight 2/save/{64BitSteamID}/"
+                  }
+                ],
+                [
+                  "pattern",
+                  {
+                    "Value": "*.svb"
+                  }
+                ],
+                [
+                  "root",
+                  {
+                    "Value": "WinMyDocuments"
+                  }
+                ]
+              ]
+            }
+          ],
+          [
+            "1",
+            {
+              "Object": [
+                [
+                  "path",
+                  {
+                    "Value": "my games/runic games/torchlight 2/save/{64BitSteamID}/"
+                  }
+                ],
+                [
+                  "pattern",
+                  {
+                    "Value": "*.bin"
+                  }
+                ],
+                [
+                  "root",
+                  {
+                    "Value": "WinMyDocuments"
+                  }
+                ]
+              ]
+            }
+          ],
+          [
+            "2",
+            {
+              "Object": [
+                [
+                  "path",
+                  {
+                    "Value": "my games/runic games/torchlight 2/save/{64BitSteamID}/"
+                  }
+                ],
+                [
+                  "pattern",
+                  {
+                    "Value": "*.txt"
+                  }
+                ],
+                [
+                  "root",
+                  {
+                    "Value": "WinMyDocuments"
+                  }
+                ]
+              ]
+            }
+          ],
+          [
+            "3",
+            {
+              "Object": [
+                [
+                  "path",
+                  {
+                    "Value": "my games/runic games/torchlight 2/save/{64BitSteamID}/"
+                  }
+                ],
+                [
+                  "pattern",
+                  {
+                    "Value": "*.dat"
+                  }
+                ],
+                [
+                  "root",
+                  {
+                    "Value": "WinMyDocuments"
+                  }
+                ]
+              ]
+            }
+          ],
+          [
+            "4",
+            {
+              "Object": [
+                [
+                  "path",
+                  {
+                    "Value": "my games/runic games/torchlight 2/modsave/{64BitSteamID}/"
+                  }
+                ],
+                [
+                  "pattern",
+                  {
+                    "Value": "*.svb"
+                  }
+                ],
+                [
+                  "root",
+                  {
+                    "Value": "WinMyDocuments"
+                  }
+                ]
+              ]
+            }
+          ]
+        ]
+      }
+    ]
+  ]
+}

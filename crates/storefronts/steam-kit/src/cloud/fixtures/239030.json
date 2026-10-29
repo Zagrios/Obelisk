@@ -1,0 +1,125 @@
+{
+  "Object": [
+    [
+      "maxnumfiles",
+      {
+        "Value": "1000"
+      }
+    ],
+    [
+      "quota",
+      {
+        "Value": "10000000"
+      }
+    ],
+    [
+      "rootoverrides",
+      {
+        "Object": [
+          [
+            "1",
+            {
+              "Object": [
+                [
+                  "os",
+                  {
+                    "Value": "macos"
+                  }
+                ],
+                [
+                  "oscompare",
+                  {
+                    "Value": "="
+                  }
+                ],
+                [
+                  "pathtransforms",
+                  {
+                    "Object": [
+                      [
+                        "1",
+                        {
+                          "Object": [
+                            [
+                              "find",
+                              {
+                                "Value": "3909/PapersPlease"
+                              }
+                            ],
+                            [
+                              "replace",
+                              {
+                                "Value": "PapersPlease"
+                              }
+                            ]
+                          ]
+                        }
+                      ]
+                    ]
+                  }
+                ],
+                [
+                  "root",
+                  {
+                    "Value": "WinAppDataRoaming"
+                  }
+                ],
+                [
+                  "useinstead",
+                  {
+                    "Value": "MacAppSupport"
+                  }
+                ]
+              ]
+            }
+          ]
+        ]
+      }
+    ],
+    [
+      "savefiles",
+      {
+        "Object": [
+          [
+            "0",
+            {
+              "Object": [
+                [
+                  "path",
+                  {
+                    "Value": "3909/PapersPlease"
+                  }
+                ],
+                [
+                  "pattern",
+                  {
+                    "Value": "*.sav"
+                  }
+                ],
+                [
+                  "platforms",
+                  {
+                    "Object": [
+                      [
+                        "1",
+                        {
+                          "Value": "Windows"
+                        }
+                      ]
+                    ]
+                  }
+                ],
+                [
+                  "root",
+                  {
+                    "Value": "WinAppDataRoaming"
+                  }
+                ]
+              ]
+            }
+          ]
+        ]
+      }
+    ]
+  ]
+}

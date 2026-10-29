@@ -201,10 +201,19 @@ pub(super) fn relative(value: &str, allow_empty: bool) -> Result<String, CloudEr
     Ok(value)
 }
 
+// Publishers vary the case of a placeholder, as {Steam3AccountId}.
 fn substitute(value: &str, steam_id: u64) -> String {
+    let mut value = value.to_owned();
+    for (placeholder, id) in [
+        ("{64bitsteamid}", steam_id.to_string()),
+        ("{steam3accountid}", (steam_id as u32).to_string()),
+    ] {
+        // ASCII lowercasing keeps byte offsets.
+        while let Some(start) = value.to_ascii_lowercase().find(placeholder) {
+            value.replace_range(start..start + placeholder.len(), &id);
+        }
+    }
     value
-        .replace("{64BitSteamID}", &steam_id.to_string())
-        .replace("{Steam3AccountID}", &(steam_id as u32).to_string())
 }
 
 impl AutoCloudPaths {
@@ -299,8 +308,15 @@ impl AutoCloudPaths {
                 if text(override_, "root")? != source_root {
                     continue;
                 }
+                // Publishers vary the case of the OS, as "macos".
                 let applies = match (text(override_, "os")?, text(override_, "oscompare")?) {
-                    (os @ ("MacOS" | "Windows" | "Linux"), "=") => os == platform.os(),
+                    (os, "=")
+                        if ["MacOS", "Windows", "Linux"]
+                            .iter()
+                            .any(|name| os.eq_ignore_ascii_case(name)) =>
+                    {
+                        os.eq_ignore_ascii_case(platform.os())
+                    }
                     _ => return Err(CloudError::Invalid("unsupported Auto-Cloud OS comparison")),
                 };
                 if !applies {
@@ -694,6 +710,74 @@ mod tests {
                 Some(PathBuf::from(destination))
             );
         }
+    }
+
+    #[test]
+    fn lowercase_override_os_names_select_their_platform() {
+        let profile = Path::new("/Prefix/drive_c/users/crossover");
+        let windows = CloudPlatform::Windows {
+            profile: profile.into(),
+        };
+        // Papers, Please moves its Windows saves for "macos" only.
+        let metadata = serde_json::from_str(include_str!("fixtures/239030.json")).unwrap();
+        let resolver = AutoCloudPaths::new(
+            &metadata,
+            0x011000010000002a,
+            &windows,
+            Path::new("/Games/fixture"),
+        )
+        .unwrap();
+        assert_eq!(
+            resolver
+                .destination("%WinAppDataRoaming%3909/PapersPlease/slot.sav", 1)
+                .unwrap(),
+            Some(profile.join("AppData/Roaming/3909/PapersPlease/slot.sav"))
+        );
+        // Torchlight II keeps its Mac saves in the installation.
+        let metadata = serde_json::from_str(include_str!("fixtures/200710.json")).unwrap();
+        let resolver = AutoCloudPaths::mac(
+            &metadata,
+            0x011000010000002a,
+            Path::new("/Users/fixture"),
+            Path::new("/Games/fixture"),
+        )
+        .unwrap();
+        assert_eq!(
+            resolver
+                .destination(
+                    "%WinMyDocuments%my games/runic games/torchlight 2/save/76561197960265770/slot.svb",
+                    u32::MAX
+                )
+                .unwrap(),
+            Some(PathBuf::from(
+                "/Games/fixture/my games/runic games/torchlight 2/save/76561197960265770/slot.svb"
+            ))
+        );
+    }
+
+    #[test]
+    fn steam_id_placeholders_match_in_any_case() {
+        // The Last of Us Part I writes {Steam3AccountId}.
+        let metadata = serde_json::from_str(include_str!("fixtures/1888930.json")).unwrap();
+        let profile = Path::new("/Prefix/drive_c/users/crossover");
+        let resolver = AutoCloudPaths::new(
+            &metadata,
+            0x011000010000002a,
+            &CloudPlatform::Windows {
+                profile: profile.into(),
+            },
+            Path::new("/Games/fixture"),
+        )
+        .unwrap();
+        assert_eq!(
+            resolver
+                .destination(
+                    "%WinSavedGames%The Last of Us Part I/users/42/savedata/slot",
+                    1
+                )
+                .unwrap(),
+            Some(profile.join("Saved Games/The Last of Us Part I/users/42/savedata/slot"))
+        );
     }
 
     #[test]
