@@ -12,7 +12,6 @@ pub struct AutoCloudPaths {
     rules: Vec<Rule>,
     foreign: Vec<(String, String, bool)>,
     mask: u32,
-    windows: bool,
 }
 
 /// The build of a game that runs, and where its Auto-Cloud roots live.
@@ -92,30 +91,83 @@ fn rule_suffix(
     source: &str,
     recursive: bool,
 ) -> Result<Option<String>, CloudError> {
+    Ok(rule_tail(name, root, source, recursive, false)?.map(|(_, suffix)| suffix))
+}
+
+/// Splits `name` under a rule into the rule's directory as `name` spells it and
+/// the path below. With `any_case`, `name` may spell the directory in another
+/// ASCII case.
+fn rule_tail<'a>(
+    name: &'a str,
+    root: &str,
+    source: &str,
+    recursive: bool,
+    any_case: bool,
+) -> Result<Option<(&'a str, String)>, CloudError> {
     let Some(after_root) = name.strip_prefix(&format!("%{root}%")) else {
         return Ok(None);
     };
     let path = after_root.strip_prefix('/').unwrap_or(after_root);
-    let suffix = if source.is_empty() {
-        path
+    let (spelled, rest) = if source.is_empty() {
+        ("", path)
     } else {
-        let Some(suffix) = path.strip_prefix(&format!("{source}/")) else {
+        let Some((spelled, rest)) = path.split_at_checked(source.len()) else {
             return Ok(None);
         };
-        suffix
+        let same = if any_case {
+            spelled.eq_ignore_ascii_case(source)
+        } else {
+            spelled == source
+        };
+        let Some(rest) = rest.strip_prefix('/') else {
+            return Ok(None);
+        };
+        if !same {
+            return Ok(None);
+        }
+        (spelled, rest)
     };
-    let suffix = relative(suffix, false)?;
-    Ok((recursive || !suffix.contains('/')).then_some(suffix))
+    let suffix = relative(rest, false)?;
+    Ok((recursive || !suffix.contains('/')).then_some((spelled, suffix)))
 }
 
 struct Rule {
     root: String,
     source: String,
     destination: PathBuf,
+    /// The root `destination` is under, kept only where a name may spell the
+    /// rule's directory in another case: see `case_alias_suffix`.
     alias_base: Option<PathBuf>,
     recursive: bool,
     pattern: String,
     platforms: u32,
+}
+
+impl Rule {
+    /// What `name` adds to this rule's directory when it spells that directory
+    /// in another case, as a server's older files can. The two spellings are
+    /// one directory only if the filesystem shows it; anything else is an
+    /// error, never a guess.
+    fn case_alias_suffix(&self, name: &str) -> Result<Option<String>, CloudError> {
+        let Some(base) = &self.alias_base else {
+            return Ok(None);
+        };
+        let Some((spelled, suffix)) =
+            rule_tail(name, &self.root, &self.source, self.recursive, true)?
+        else {
+            return Ok(None);
+        };
+        let alias_path = base.join(spelled);
+        if !plain_path(&alias_path)? || !plain_path(&self.destination)? {
+            return Err(CloudError::Invalid("unproven Auto-Cloud directory alias"));
+        }
+        let alias = fs::metadata(&alias_path).map_err(|_| CloudError::Storage)?;
+        let rule = fs::metadata(&self.destination).map_err(|_| CloudError::Storage)?;
+        if !rule.is_dir() || (alias.dev(), alias.ino()) != (rule.dev(), rule.ino()) {
+            return Err(CloudError::Invalid("ambiguous Auto-Cloud directory alias"));
+        }
+        Ok(Some(suffix))
+    }
 }
 
 fn platforms(save: &CloudMetadata) -> Result<u32, CloudError> {
@@ -376,8 +428,10 @@ impl AutoCloudPaths {
             let source = publisher_path(source_path, steam_id)?;
             let local = publisher_path(&local_path, steam_id)?;
             let base = platform.root(local_root, install)?;
-            let alias_base = (canonical_root(source_root) == canonical_root(local_root)
-                && source == local)
+            // A server's older names can spell the directory of a rule in
+            // another case. Only a Windows build whose rule no override moved
+            // reads them as that directory, once the filesystem proves it.
+            let alias_base = (!matched && matches!(platform, CloudPlatform::Windows { .. }))
                 .then(|| base.clone());
             rules.push(Rule {
                 root: canonical_root(source_root).to_owned(),
@@ -400,7 +454,6 @@ impl AutoCloudPaths {
             rules,
             foreign,
             mask,
-            windows: matches!(platform, CloudPlatform::Windows { .. }),
         })
     }
 
@@ -425,69 +478,42 @@ impl AutoCloudPaths {
         }
         // Older files may carry an all-platform mask even though the current
         // publisher rule explicitly confines their namespace to another OS.
-        for (root, source, recursive) in &self.foreign {
-            if rule_suffix(name, root, source, *recursive)?.is_some() {
-                return Ok(None);
-            }
+        if self.is_foreign(name)? {
+            return Ok(None);
         }
         Err(CloudError::Invalid("unmapped Auto-Cloud file"))
     }
 
-    fn path_for_name(&self, name: &str) -> Result<Option<PathBuf>, CloudError> {
-        let mut selected = None;
-        for rule in &self.rules {
-            let suffix = if let Some(suffix) =
-                rule_suffix(name, &rule.root, &rule.source, rule.recursive)?
-            {
-                suffix
-            } else if self.windows {
-                let Some(after_root) = name.strip_prefix(&format!("%{}%", rule.root)) else {
-                    continue;
-                };
-                let path = after_root.strip_prefix('/').unwrap_or(after_root);
-                let Some(prefix) = path.get(..rule.source.len()) else {
-                    continue;
-                };
-                if rule.source.is_empty() || !prefix.eq_ignore_ascii_case(&rule.source) {
-                    continue;
-                }
-                let Some(suffix) = path
-                    .get(rule.source.len()..)
-                    .and_then(|s| s.strip_prefix('/'))
-                else {
-                    continue;
-                };
-                let suffix = relative(suffix, false)?;
-                if !rule.recursive && suffix.contains('/') {
-                    continue;
-                }
-                let base = rule
-                    .alias_base
-                    .as_ref()
-                    .ok_or(CloudError::Invalid("unproven Auto-Cloud directory alias"))?;
-                let alias = base.join(prefix);
-                if !plain_path(&alias)? || !plain_path(&rule.destination)? {
-                    return Err(CloudError::Invalid("unproven Auto-Cloud directory alias"));
-                }
-                let a = fs::metadata(&alias).map_err(|_| CloudError::Storage)?;
-                let b = fs::metadata(&rule.destination).map_err(|_| CloudError::Storage)?;
-                if !a.is_dir() || !b.is_dir() || a.dev() != b.dev() || a.ino() != b.ino() {
-                    return Err(CloudError::Invalid("ambiguous Auto-Cloud directory alias"));
-                }
-                suffix
-            } else {
-                continue;
-            };
-            let destination = rule.destination.join(suffix);
-            if selected
-                .as_ref()
-                .is_some_and(|previous| previous != &destination)
-            {
-                return Err(CloudError::Invalid("ambiguous Auto-Cloud destination"));
+    /// Whether a rule for another platform spells `name`.
+    fn is_foreign(&self, name: &str) -> Result<bool, CloudError> {
+        for (root, source, recursive) in &self.foreign {
+            if rule_suffix(name, root, source, *recursive)?.is_some() {
+                return Ok(true);
             }
-            selected = Some(destination);
         }
-        Ok(selected)
+        Ok(false)
+    }
+
+    fn path_for_name(&self, name: &str) -> Result<Option<PathBuf>, CloudError> {
+        let mut found = BTreeSet::new();
+        for rule in &self.rules {
+            if let Some(suffix) = rule_suffix(name, &rule.root, &rule.source, rule.recursive)? {
+                found.insert(rule.destination.join(suffix));
+            }
+        }
+        // A name that a rule spells exactly, or that another platform's rule
+        // does, is never read as a case alias.
+        if found.is_empty() && !self.is_foreign(name)? {
+            for rule in &self.rules {
+                if let Some(suffix) = rule.case_alias_suffix(name)? {
+                    found.insert(rule.destination.join(suffix));
+                }
+            }
+        }
+        if found.len() > 1 {
+            return Err(CloudError::Invalid("ambiguous Auto-Cloud destination"));
+        }
+        Ok(found.pop_first())
     }
 
     /// Includes known files even after deletion or a publisher wildcard change.
@@ -665,54 +691,140 @@ fn wildcard(pattern: &str, name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn historical_windows_rule_directory_case_requires_a_proven_filesystem_alias() {
-        let base = std::env::var_os("OBELISK_CASE_TEST_DIR");
-        let tmp = match base {
-            Some(base) => tempfile::tempdir_in(base).unwrap(),
-            None => tempfile::tempdir().unwrap(),
+    // Game-install rules of one Windows build: (path, pattern, platform).
+    fn windows_install_rules(rules: &[(&str, &str, &str)], install: &Path) -> AutoCloudPaths {
+        let entries = rules
+            .iter()
+            .enumerate()
+            .map(|(index, (path, pattern, platform))| {
+                let rule = object(vec![
+                    ("path", value(path)),
+                    ("pattern", value(pattern)),
+                    ("platforms", object(vec![("1", value(platform))])),
+                    ("root", value("gameinstall")),
+                ]);
+                (index.to_string(), rule)
+            })
+            .collect::<Vec<_>>();
+        let metadata = object(vec![("savefiles", CloudMetadata::Object(entries))]);
+        let platform = CloudPlatform::Windows {
+            profile: install.to_owned(),
         };
+        AutoCloudPaths::new(&metadata, 0x011000010000002a, &platform, install).unwrap()
+    }
+    #[test]
+    fn a_case_alias_is_read_as_the_rules_directory_when_the_filesystem_shows_one_directory() {
+        let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().canonicalize().unwrap();
         fs::create_dir(root.join("Id1")).unwrap();
         fs::write(root.join("Id1/config.cfg"), b"fixture").unwrap();
-        let metadata = object(vec![(
-            "savefiles",
-            object(vec![(
-                "1",
-                object(vec![
-                    ("path", value("Id1")),
-                    ("pattern", value("config.cfg")),
-                    ("root", value("gameinstall")),
-                ]),
-            )]),
-        )]);
-        let resolver = AutoCloudPaths::new(
-            &metadata,
-            0x011000010000002a,
-            &CloudPlatform::Windows {
-                profile: root.clone(),
-            },
-            &root,
-        )
-        .unwrap();
-        let historical = file("%GameInstall%id1/config.cfg");
-        if root.join("id1").exists() {
-            assert_eq!(
-                resolver.existing_file(&historical).unwrap(),
-                Some(root.join("Id1/config.cfg"))
-            );
-            let selected = resolver.local_files(&[historical.clone()]).unwrap();
-            assert_eq!(selected.len(), 1);
-            assert_eq!(selected[0].name, historical.name);
-            assert!(
-                resolver
-                    .local_files(&[historical, file("%GameInstall%Id1/config.cfg")])
-                    .is_err()
-            );
-        } else {
-            assert!(resolver.existing_file(&historical).is_err());
-            assert_eq!(fs::read(root.join("Id1/config.cfg")).unwrap(), b"fixture");
+        // Only a case-insensitive volume, macOS's default, reaches `Id1` as `id1`.
+        if !root.join("id1").is_dir() {
+            return;
         }
+        let resolver = windows_install_rules(&[("Id1", "config.cfg", "all")], &root);
+        let historical = file("%GameInstall%id1/config.cfg");
+        assert_eq!(
+            resolver.existing_file(&historical).unwrap(),
+            Some(root.join("Id1/config.cfg"))
+        );
+        let selected = resolver
+            .local_files(std::slice::from_ref(&historical))
+            .unwrap();
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].name, historical.name);
+        assert!(
+            resolver
+                .local_files(&[historical, file("%GameInstall%Id1/config.cfg")])
+                .is_err()
+        );
+    }
+    #[test]
+    fn a_case_alias_of_a_directory_that_is_not_there_is_refused() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().canonicalize().unwrap();
+        let resolver = windows_install_rules(&[("Id1", "config.cfg", "all")], &root);
+        assert!(
+            resolver
+                .existing_file(&file("%GameInstall%id1/config.cfg"))
+                .is_err()
+        );
+    }
+    #[test]
+    fn a_case_alias_is_only_read_for_a_windows_rule_no_override_moved() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().canonicalize().unwrap();
+        fs::create_dir(root.join("Id1")).unwrap();
+        let rules = object(vec![(
+            "0",
+            object(vec![
+                ("path", value("Id1")),
+                ("pattern", value("*.sav")),
+                ("root", value("gameinstall")),
+            ]),
+        )]);
+        let unmoved = object(vec![("savefiles", rules.clone())]);
+        let moved = object(vec![
+            ("savefiles", rules),
+            (
+                "rootoverrides",
+                object(vec![(
+                    "0",
+                    object(vec![
+                        ("root", value("gameinstall")),
+                        ("os", value("Windows")),
+                        ("oscompare", value("=")),
+                        ("useinstead", value("gameinstall")),
+                    ]),
+                )]),
+            ),
+        ]);
+        let windows = CloudPlatform::Windows {
+            profile: root.clone(),
+        };
+        let mac = AutoCloudPaths::mac(&unmoved, 0x011000010000002a, &root, &root).unwrap();
+        let overridden = AutoCloudPaths::new(&moved, 0x011000010000002a, &windows, &root).unwrap();
+        let historical = file("%GameInstall%id1/a.sav");
+        assert!(mac.existing_file(&historical).is_err());
+        assert!(overridden.existing_file(&historical).is_err());
+    }
+    #[test]
+    fn rules_that_differ_only_by_case_keep_the_names_each_spells() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().canonicalize().unwrap();
+        fs::create_dir(root.join("Id1")).unwrap();
+        let resolver = windows_install_rules(
+            &[("Id1", "*.sav", "Windows"), ("id1", "*.cfg", "Windows")],
+            &root,
+        );
+        assert_eq!(
+            resolver
+                .existing_file(&file("%GameInstall%Id1/a.sav"))
+                .unwrap(),
+            Some(root.join("Id1/a.sav"))
+        );
+        assert_eq!(
+            resolver
+                .existing_file(&file("%GameInstall%id1/config.cfg"))
+                .unwrap(),
+            Some(root.join("id1/config.cfg"))
+        );
+    }
+    #[test]
+    fn a_name_in_another_platforms_namespace_is_not_read_as_a_case_alias() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().canonicalize().unwrap();
+        fs::create_dir(root.join("Saves")).unwrap();
+        let resolver = windows_install_rules(
+            &[("Saves", "*.sav", "Windows"), ("saves", "*.sav", "Linux")],
+            &root,
+        );
+        assert_eq!(
+            resolver
+                .existing_file(&file("%GameInstall%saves/a.sav"))
+                .unwrap(),
+            None
+        );
     }
     #[test]
     fn quake_all_platform_rules_discover_windows_files() {
@@ -770,22 +882,17 @@ mod tests {
         )
         .unwrap();
         let files = resolver.local_files(&[]).unwrap();
-        assert_eq!(files.len(), 3);
-        assert!(
-            files
-                .iter()
-                .any(|f| f.name == "%GameInstall%Id1/config.cfg" && f.platforms == u32::MAX)
+        let mut names = files.iter().map(|f| f.name.as_str()).collect::<Vec<_>>();
+        names.sort();
+        assert_eq!(
+            names,
+            [
+                "%GameInstall%Id1/config.cfg",
+                "%GameInstall%Id1/test.sav",
+                "%WinSavedGames%Nightdive Studios/Quake/nested/test.sav",
+            ]
         );
-        assert!(
-            files
-                .iter()
-                .any(|f| f.name == "%GameInstall%Id1/test.sav" && f.platforms == u32::MAX)
-        );
-        assert!(
-            files
-                .iter()
-                .any(|f| f.name == "%WinSavedGames%Nightdive Studios/Quake/nested/test.sav")
-        );
+        assert!(files.iter().all(|f| f.platforms == u32::MAX));
     }
     #[test]
     fn authenticated_publisher_fixtures_map_mac_paths() {
