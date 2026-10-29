@@ -85,6 +85,13 @@ fn canonical_root(name: &str) -> &str {
     }
 }
 
+// Publishers vary the case of an override's OS, as "macos".
+fn canonical_os(name: &str) -> Option<&'static str> {
+    ["MacOS", "Windows", "Linux"]
+        .into_iter()
+        .find(|os| name.eq_ignore_ascii_case(os))
+}
+
 fn rule_suffix(
     name: &str,
     root: &str,
@@ -308,15 +315,11 @@ impl AutoCloudPaths {
                 if text(override_, "root")? != source_root {
                     continue;
                 }
-                // Publishers vary the case of the OS, as "macos".
-                let applies = match (text(override_, "os")?, text(override_, "oscompare")?) {
-                    (os, "=")
-                        if ["MacOS", "Windows", "Linux"]
-                            .iter()
-                            .any(|name| os.eq_ignore_ascii_case(name)) =>
-                    {
-                        os.eq_ignore_ascii_case(platform.os())
-                    }
+                let applies = match (
+                    canonical_os(text(override_, "os")?),
+                    text(override_, "oscompare")?,
+                ) {
+                    (Some(os), "=") => os == platform.os(),
                     _ => return Err(CloudError::Invalid("unsupported Auto-Cloud OS comparison")),
                 };
                 if !applies {
@@ -684,6 +687,38 @@ mod tests {
     }
 
     #[test]
+    fn authenticated_publisher_fixtures_map_windows_paths() {
+        for (json, remote, local) in [
+            (
+                include_str!("fixtures/239030.json"),
+                "%WinAppDataRoaming%3909/PapersPlease/slot.sav",
+                "AppData/Roaming/3909/PapersPlease/slot.sav",
+            ),
+            (
+                include_str!("fixtures/1888930.json"),
+                "%WinSavedGames%The Last of Us Part I/users/42/savedata/slot",
+                "Saved Games/The Last of Us Part I/users/42/savedata/slot",
+            ),
+        ] {
+            let metadata = serde_json::from_str(json).unwrap();
+            let profile = Path::new("/Prefix/drive_c/users/crossover");
+            let resolver = AutoCloudPaths::new(
+                &metadata,
+                0x011000010000002a,
+                &CloudPlatform::Windows {
+                    profile: profile.into(),
+                },
+                Path::new("/Games/fixture"),
+            )
+            .unwrap();
+            assert_eq!(
+                resolver.destination(remote, 1).unwrap(),
+                Some(profile.join(local))
+            );
+        }
+    }
+
+    #[test]
     fn lowercase_gameinstall_uses_canonical_remote_root_and_addpath() {
         for (json, remote, destination) in [
             (
@@ -695,6 +730,11 @@ mod tests {
                 include_str!("fixtures/1585220.json"),
                 "%GameInstall%save.json",
                 "/Games/fixture/save.json",
+            ),
+            (
+                include_str!("fixtures/200710.json"),
+                "%WinMyDocuments%my games/runic games/torchlight 2/save/76561197960265770/slot.svb",
+                "/Games/fixture/my games/runic games/torchlight 2/save/76561197960265770/slot.svb",
             ),
         ] {
             let metadata = serde_json::from_str(json).unwrap();
@@ -710,74 +750,6 @@ mod tests {
                 Some(PathBuf::from(destination))
             );
         }
-    }
-
-    #[test]
-    fn lowercase_override_os_names_select_their_platform() {
-        let profile = Path::new("/Prefix/drive_c/users/crossover");
-        let windows = CloudPlatform::Windows {
-            profile: profile.into(),
-        };
-        // Papers, Please moves its Windows saves for "macos" only.
-        let metadata = serde_json::from_str(include_str!("fixtures/239030.json")).unwrap();
-        let resolver = AutoCloudPaths::new(
-            &metadata,
-            0x011000010000002a,
-            &windows,
-            Path::new("/Games/fixture"),
-        )
-        .unwrap();
-        assert_eq!(
-            resolver
-                .destination("%WinAppDataRoaming%3909/PapersPlease/slot.sav", 1)
-                .unwrap(),
-            Some(profile.join("AppData/Roaming/3909/PapersPlease/slot.sav"))
-        );
-        // Torchlight II keeps its Mac saves in the installation.
-        let metadata = serde_json::from_str(include_str!("fixtures/200710.json")).unwrap();
-        let resolver = AutoCloudPaths::mac(
-            &metadata,
-            0x011000010000002a,
-            Path::new("/Users/fixture"),
-            Path::new("/Games/fixture"),
-        )
-        .unwrap();
-        assert_eq!(
-            resolver
-                .destination(
-                    "%WinMyDocuments%my games/runic games/torchlight 2/save/76561197960265770/slot.svb",
-                    u32::MAX
-                )
-                .unwrap(),
-            Some(PathBuf::from(
-                "/Games/fixture/my games/runic games/torchlight 2/save/76561197960265770/slot.svb"
-            ))
-        );
-    }
-
-    #[test]
-    fn steam_id_placeholders_match_in_any_case() {
-        // The Last of Us Part I writes {Steam3AccountId}.
-        let metadata = serde_json::from_str(include_str!("fixtures/1888930.json")).unwrap();
-        let profile = Path::new("/Prefix/drive_c/users/crossover");
-        let resolver = AutoCloudPaths::new(
-            &metadata,
-            0x011000010000002a,
-            &CloudPlatform::Windows {
-                profile: profile.into(),
-            },
-            Path::new("/Games/fixture"),
-        )
-        .unwrap();
-        assert_eq!(
-            resolver
-                .destination(
-                    "%WinSavedGames%The Last of Us Part I/users/42/savedata/slot",
-                    1
-                )
-                .unwrap(),
-            Some(profile.join("Saved Games/The Last of Us Part I/users/42/savedata/slot"))
-        );
     }
 
     #[test]
