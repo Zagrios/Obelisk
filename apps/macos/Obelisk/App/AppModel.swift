@@ -72,6 +72,25 @@ final class AppModel {
         }
     }
     static let sharePerformanceKey = "obelisk.games.sharePerformance"
+    /// Whether a Switch Pro Controller's buttons act as printed on it: A, B,
+    /// X and Y swapped for the Windows games that see every gamepad as an Xbox
+    /// one. It reaches the games Obelisk starts next.
+    var usesNintendoControllerLayout: Bool {
+        didSet {
+            defaults.set(usesNintendoControllerLayout, forKey: Self.controllerLayoutKey)
+            Self.applyControllerLayout(usesNintendoControllerLayout)
+        }
+    }
+    static let controllerLayoutKey = "obelisk.games.nintendoControllerLayout"
+    /// Tells the game runtime, through the environment the games Obelisk
+    /// starts inherit, which layout the player chose.
+    static func applyControllerLayout(_ nintendo: Bool) {
+        if nintendo {
+            setenv("OBELISK_CONTROLLER_LAYOUT", "nintendo", 1)
+        } else {
+            unsetenv("OBELISK_CONTROLLER_LAYOUT")
+        }
+    }
     @ObservationIgnored let performance: PerformanceReports
     /// How each game runs on this Mac's chip, as other players measured it.
     let estimates: PerformanceEstimates
@@ -98,6 +117,12 @@ final class AppModel {
         updatesGamesAutomatically = defaults.object(forKey: Self.automaticUpdatesKey) as? Bool ?? true
         let sharesGamePerformance = defaults.object(forKey: Self.sharePerformanceKey) as? Bool ?? true
         self.sharesGamePerformance = sharesGamePerformance
+        let nintendoLayout = defaults.bool(forKey: Self.controllerLayoutKey)
+        usesNintendoControllerLayout = nintendoLayout
+        // A test host's model leaves the process's environment alone.
+        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
+            Self.applyControllerLayout(nintendoLayout)
+        }
         // Every storefront's library shares one cache, as every cache of the
         // directory does, `LaunchHistory.live`'s included.
         libraryCache = LibraryCache(directory: directory.path)

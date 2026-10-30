@@ -1,6 +1,52 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "ui.settings.controller_layout": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nintendo button layout"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disposition des boutons Nintendo"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Layout pulsanti Nintendo"
+          }
+        }
+      }
+    },
+    "ui.settings.controller_layout_description": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swaps A with B and X with Y on a Switch Pro Controller, so the buttons act as printed on it. Windows games see every gamepad as an Xbox one, where A is the bottom button. Applies to the next game you start."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Échange A avec B et X avec Y sur une manette Switch Pro, pour que les boutons agissent comme indiqué dessus. Les jeux Windows voient toute manette comme une manette Xbox, dont le A est le bouton du bas. S'applique au prochain jeu que vous lancez."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scambia A con B e X con Y su un controller Switch Pro, così i pulsanti fanno ciò che c'è scritto sopra. I giochi Windows vedono ogni controller come uno Xbox, dove A è il pulsante in basso. Vale dal prossimo gioco che avvii."
+          }
+        }
+      }
+    },
     "backend.steam.chat.emptyMessage": {
       "extractionState": "manual",
       "localizations": {

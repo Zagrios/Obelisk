@@ -702,7 +702,10 @@ async fn run<L: Launch>(
     // service while it runs.
     let input = wine
         .as_ref()
-        .and_then(crate::input::Service::start)
+        .and_then(|wine| {
+            let mapping = target.environment.get(crate::input::MAPPING);
+            crate::input::Service::start(wine, mapping.map(String::as_str))
+        })
         .map(|(service, socket)| {
             prepared.environment.insert(
                 crate::input::SOCKET.to_owned(),
