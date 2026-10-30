@@ -17,6 +17,12 @@ struct FriendsModal: NSViewRepresentable {
 
     func updateNSView(_ container: FriendsModalContainer, context: Context) {
         container.dismiss = dismiss
+        if let requested = chat?.requestedFriend,
+           let friend = state.friends.first(where: { $0.steamID == requested }) {
+            container.focus.target = .composer
+            container.focus.conversation = friend.id
+            Task { @MainActor in chat?.requestedFriend = nil }
+        }
         container.host.rootView = AnyView(FriendsPanel(state: state, avatars: avatars, chat: chat, focus: container.focus,
                                                       dismiss: dismiss, retry: retry, signIn: signIn)
             .environment(\.self, context.environment)

@@ -19,6 +19,16 @@ protocol SteamInviteNotifying: AnyObject {
     func withdraw(_ invites: [SteamReceivedInvite])
     /// Receives the player's answers.
     var answer: (@MainActor (SteamInviteAnswer, SteamReceivedInvite) -> Void)? { get set }
+    func notifyMessage(friend: UInt64, name: String)
+    var openMessage: (@MainActor (UInt64) -> Void)? { get set }
+}
+
+extension SteamInviteNotifying {
+    func notifyMessage(friend: UInt64, name: String) {}
+    var openMessage: (@MainActor (UInt64) -> Void)? {
+        get { nil }
+        set {}
+    }
 }
 
 /// macOS notifications with Join and Dismiss buttons. macOS asks the player
@@ -30,6 +40,20 @@ final class SteamInviteNotifier: NSObject, SteamInviteNotifying, UNUserNotificat
     private nonisolated static let dismiss = "dismiss"
 
     var answer: (@MainActor (SteamInviteAnswer, SteamReceivedInvite) -> Void)?
+    var openMessage: (@MainActor (UInt64) -> Void)?
+
+    func notifyMessage(friend: UInt64, name: String) {
+        let content = UNMutableNotificationContent()
+        content.title = name
+        content.body = L10n.string("ui.chat.newMessage")
+        content.sound = .default
+        content.userInfo = ["messageFriend": String(friend)]
+        let center = center
+        Task {
+            guard (try? await center.requestAuthorization(options: [.alert, .sound])) == true else { return }
+            try? await center.add(UNNotificationRequest(identifier: "steam.message.\(friend)", content: content, trigger: nil))
+        }
+    }
     private let center = UNUserNotificationCenter.current()
 
     override init() {
@@ -73,6 +97,11 @@ final class SteamInviteNotifier: NSObject, SteamInviteNotifying, UNUserNotificat
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         let content = response.notification.request.content
+        if let value = content.userInfo["messageFriend"] as? String, let friend = UInt64(value) {
+            guard response.actionIdentifier == UNNotificationDefaultActionIdentifier else { return }
+            await MainActor.run { self.openMessage?(friend) }
+            return
+        }
         guard content.categoryIdentifier == Self.category, let invite = Self.invite(from: content.userInfo) else { return }
         let answer: SteamInviteAnswer
         switch response.actionIdentifier {

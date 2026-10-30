@@ -648,6 +648,10 @@ impl CdnFixture {
 /// unreachable.
 fn serving(fixtures: &[(&str, &CdnFixture)]) -> ContentClient {
     ContentClient {
+        limiter: Arc::new(RateLimiter {
+            bytes_per_second: None,
+            next: tokio::sync::Mutex::new(Instant::now()),
+        }),
         client: Client::new(),
         test_endpoints: fixtures
             .iter()

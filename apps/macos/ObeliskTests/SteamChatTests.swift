@@ -8,6 +8,75 @@ final class SteamChatIntegrationTests: XCTestCase {
     private let friend = ChatBridgeTestSession.friendID
 
     @MainActor
+    func testWorkspaceSelectionLeavesTheFriendsListInPlace() async throws {
+        let session = ChatBridgeTestSession()
+        let model = friendsTestModel(connect: { _ in session })
+        await model.start()
+        defer { model.signOut() }
+        try await eventually { model.friends?.connection == .connected }
+        let state = try XCTUnwrap(model.friends)
+        let friend = try XCTUnwrap(state.friends.first)
+        let focus = FriendsPanelFocus()
+        var selected: FriendIdentity?
+        let panel = FriendsPanel(state: state, avatars: FriendsAvatarCache(), chat: model.chat,
+            closable: false, openConversation: { selected = $0 }, focus: focus,
+            dismiss: {}, retry: {}, signIn: {})
+        let window = ChatTestWindow(contentRect: NSRect(x: -20000, y: -20000, width: 400, height: 550),
+            styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = NSHostingView(rootView: panel)
+        window.orderFrontRegardless()
+        defer { window.close() }
+        try await eventually { focus.activate != nil }
+        XCTAssertTrue(focus.activate?(.friend(friend.id)) ?? false)
+        XCTAssertEqual(selected, friend.id)
+        XCTAssertNil(focus.conversation, "The friends window must not navigate before opening Chat")
+    }
+
+    @MainActor
+    func testRecentConversationMetadataAndPreviewLoadWithoutReadingMessages() async throws {
+        let session = ChatBridgeTestSession()
+        session.sessions = [SteamChatSession(friendSteamId: friend, lastMessage: 50,
+            lastView: 40, unreadMessageCount: 3)]
+        session.history = { _, _ in
+            SteamChatHistory(messages: [SteamChatHistoryMessage(fromMe: false, timestamp: 50,
+                ordinal: 1, message: "[b]hello[/b]\nthere")], moreAvailable: false)
+        }
+        let model = friendsTestModel(connect: { _ in session })
+        model.chat.applicationActivityChanged(false)
+        await model.start()
+        defer { model.signOut() }
+        try await eventually { model.chat.preview(for: self.friend) == "hello there" }
+        XCTAssertEqual(model.chat.lastActivity(for: friend), 50)
+        XCTAssertEqual(model.chat.unread[friend], 3)
+        XCTAssertNil(model.chat.visibleFriend)
+        XCTAssertTrue(session.acks.isEmpty)
+        session.chat.incomingMessage(friendSteamId: friend, message: "newest", timestamp: 100,
+            ordinal: 0, fromMe: false)
+        try await eventually { model.chat.preview(for: self.friend) == "newest" }
+        XCTAssertEqual(model.chat.lastActivity(for: friend), 100)
+    }
+
+    @MainActor
+    func testNonactivatingOverlayClearsUnreadAndClosingRestoresUnreadCounting() async throws {
+        let session = ChatBridgeTestSession()
+        let model = friendsTestModel(connect: { _ in session })
+        await model.start()
+        defer { model.signOut() }
+        let chat = model.chat
+        chat.applicationActivityChanged(false)
+        session.chat.incomingMessage(friendSteamId: friend, message: "hello", timestamp: 100, ordinal: 0, fromMe: false)
+        try await eventually { chat.unread[self.friend] == 1 }
+        chat.show(friend)
+        chat.isOverlayPresented = true
+        try await eventually { session.acks.last?.timestamp == 100 }
+        XCTAssertNil(chat.unread[friend])
+        chat.isOverlayPresented = false
+        session.chat.incomingMessage(friendSteamId: friend, message: "again", timestamp: 110, ordinal: 0, fromMe: false)
+        try await eventually { chat.unread[self.friend] == 1 }
+    }
+
+    @MainActor
     func testIncomingMessagesCountAsUnreadUntilReadInActiveApp() async throws {
         let session = ChatBridgeTestSession()
         let model = friendsTestModel(connect: { _ in session })

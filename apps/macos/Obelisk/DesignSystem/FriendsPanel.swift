@@ -14,6 +14,8 @@ struct FriendsPanel: View {
     var closable = true
     /// Shown above the friends, such as the invitations into the overlay's game.
     var accessory: AnyView?
+    /// A workspace opens chats beside this list instead of pushing over it.
+    var openConversation: ((FriendIdentity) -> Void)?
     let focus: FriendsPanelFocus
     let dismiss: @MainActor () -> Void
     let retry: @MainActor () -> Void
@@ -23,7 +25,7 @@ struct FriendsPanel: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var conversation: (friend: FriendPresentation, steamID: UInt64, chat: SteamChatModel)? {
-        guard let chat, let identity = focus.conversation,
+        guard openConversation == nil, let chat, let identity = focus.conversation,
               let friend = state.friends.first(where: { $0.id == identity }), let steamID = friend.steamID else { return nil }
         return (friend, steamID, chat)
     }
@@ -36,7 +38,8 @@ struct FriendsPanel: View {
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             } else {
                 FriendsList(state: state, avatars: avatars, chat: chat, picker: picker, closable: closable,
-                            accessory: accessory, focus: focus, dismiss: dismiss, retry: retry, signIn: signIn)
+                            accessory: accessory, openConversation: openConversation,
+                            focus: focus, dismiss: dismiss, retry: retry, signIn: signIn)
                     .transition(.move(edge: .leading).combined(with: .opacity))
             }
         }
@@ -74,6 +77,7 @@ private struct FriendsList: View {
     let picker: SteamInviteOffer?
     let closable: Bool
     let accessory: AnyView?
+    let openConversation: ((FriendIdentity) -> Void)?
     let focus: FriendsPanelFocus
     let dismiss: @MainActor () -> Void
     let retry: @MainActor () -> Void
@@ -83,7 +87,11 @@ private struct FriendsList: View {
     @FocusState private var focusedControl: FriendsPanelFocus.Control?
 
     var body: some View {
-        let sections = state.sections(matching: search)
+        let recentIDs = Set(recent.map(\.id))
+        let remaining = FriendsPresentationState(store: state.store, account: state.account,
+            friends: state.friends.filter { !recentIDs.contains($0.id) }, connection: state.connection,
+            lastKnownOnlineCount: state.lastKnownOnlineCount)
+        let sections = remaining.sections(matching: search)
         let rowControls = rowControls(sections)
         VStack(spacing: 0) {
             header
@@ -118,6 +126,10 @@ private struct FriendsList: View {
                     if let accessory, picker == nil {
                         accessory.padding(.bottom, 10)
                     }
+                    if !recent.isEmpty {
+                        sectionHeading(L10n.string("ui.chat.recent"))
+                        rows(recent)
+                    }
                     if state.friends.isEmpty {
                         if state.connection == .loading {
                             ProgressView(L10n.string("ui.friends.loading"))
@@ -127,7 +139,7 @@ private struct FriendsList: View {
                         } else {
                             emptyMessage("ui.friends.unavailable", symbol: "wifi.exclamationmark")
                         }
-                    } else if sections.isEmpty {
+                    } else if sections.isEmpty && recent.isEmpty {
                         emptyMessage("ui.friends.noResults", symbol: "magnifyingglass")
                     } else {
                         if !sections.hasOnline && !sections.isSearching && state.connection == .connected {
@@ -225,6 +237,7 @@ private struct FriendsList: View {
             }
         }
         .padding(22).padding(.bottom, 2)
+        .modifier(OverlayDraggableHeader())
     }
 
     private var searchField: some View {
@@ -265,6 +278,7 @@ private struct FriendsList: View {
     private func open(_ friend: FriendPresentation) { open(friend.id) }
 
     private func open(_ identity: FriendIdentity) {
+        if let openConversation { openConversation(identity); return }
         focus.target = .composer
         focus.conversation = identity
     }
@@ -303,7 +317,20 @@ private struct FriendsList: View {
 
     /// Rows that open a conversation take part in Tab, in their visual order.
     private func rowControls(_ sections: FriendsSections) -> [FriendsPanelFocus.Control] {
-        onlineRowControls(sections) + offlineRowControls(sections)
+        recent.map { .friend($0.id) } + onlineRowControls(sections) + offlineRowControls(sections)
+    }
+
+    private var recent: [FriendPresentation] {
+        guard let chat, picker == nil else { return [] }
+        return state.friends.filter {
+            guard let id = $0.steamID else { return false }
+            return chat.conversations[id]?.latestTimestamp != nil
+                && (search.isEmpty || $0.displayName.localizedStandardContains(search))
+        }.sorted {
+            let left = chat.conversations[$0.steamID ?? 0]?.latestTimestamp ?? 0
+            let right = chat.conversations[$1.steamID ?? 0]?.latestTimestamp ?? 0
+            return left == right ? $0.id.friendID < $1.id.friendID : left > right
+        }
     }
 
     private func onlineRowControls(_ sections: FriendsSections) -> [FriendsPanelFocus.Control] {
@@ -318,6 +345,7 @@ private struct FriendsList: View {
         focus.activate = activate
         focus.controls = (closable ? [.close] : []) + [.search] + (search.isEmpty ? [] : [.clear])
             + (state.connection != .connected && state.connection != .loading ? [.reconnect] : [])
+            + recent.map { .friend($0.id) }
             + onlineRowControls(sections)
             + (!sections.offline.isEmpty && !sections.isSearching ? [.offline] : [])
             + offlineRowControls(sections)
@@ -721,6 +749,9 @@ final class FriendsPanelFocus {
     /// Tab, Return and Escape in the panel's window; true when handled.
     /// Escape leaves the conversation, otherwise it dismisses.
     func handle(_ event: NSEvent, dismiss: @MainActor () -> Void) -> Bool {
+        // App switching and other system shortcuts must bypass chat's Tab
+        // navigation, even while the overlay owns keyboard focus.
+        guard event.modifierFlags.intersection([.command, .option, .control]).isEmpty else { return false }
         // Input methods own Return and Escape while they compose text.
         let editor = event.window?.firstResponder as? NSTextView
         if editor?.hasMarkedText() == true { return false }

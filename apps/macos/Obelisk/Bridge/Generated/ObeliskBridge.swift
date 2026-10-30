@@ -15983,6 +15983,16 @@ public func withoutMetalHudFrames(text: String) -> String  {
     )
 })
 }
+/**
+ * Sets the speed used by the next Steam content download. Zero is unlimited.
+ */
+public func setSteamDownloadLimitMbps(value: UInt64)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_obelisk_bridge_fn_func_set_steam_download_limit_mbps(
+        FfiConverterUInt64.lower(value),uniffiCallStatus
+    )
+}
+}
 public func epicAuthorizationCode(input: String)throws  -> String  {
     return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeEpicError_lift) {
         uniffiCallStatus in
@@ -16162,6 +16172,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_func_without_metal_hud_frames() != 20665) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_func_set_steam_download_limit_mbps() != 5030) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_func_epic_authorization_code() != 42633) {

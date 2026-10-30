@@ -93,6 +93,8 @@ final class AppModel {
             ? .live : .inert) {
         libraryDirectory = directory.path
         self.defaults = defaults
+        let steamLimit = max(0, defaults.integer(forKey: "steamDownloadLimitMbps"))
+        setSteamDownloadLimitMbps(value: UInt64(min(1000, steamLimit)))
         appearance = AppAppearance(rawValue: defaults.string(forKey: "appearance") ?? "system") ?? .system
         language = AppLanguage(defaults: defaults, domain: defaultsDomain)
         updatesGamesAutomatically = defaults.object(forKey: Self.automaticUpdatesKey) as? Bool ?? true

@@ -83,7 +83,16 @@ final class SteamModel {
     let invitations: SteamReceivedInvitations
     /// Tells of an invitation while no running game shows the overlay.
     @ObservationIgnored var notifier: (any SteamInviteNotifying)? {
-        didSet { notifier?.answer = { [weak self] answer, invite in self?.answerNotice(answer, invite) } }
+        didSet {
+            notifier?.answer = { [weak self] answer, invite in self?.answerNotice(answer, invite) }
+            notifier?.openMessage = { [weak self] friend in
+                guard let self else { return }
+                if self.overlay?.present(.user(steamId: friend), userInitiated: true) == true { return }
+                self.chat.requestedFriend = friend
+                self.overlay?.showLibrary()
+                self.openFriends()
+            }
+        }
     }
     /// The in-game purchase the running game waits on.
     let purchase: SteamPurchaseAuthorization
@@ -169,6 +178,12 @@ final class SteamModel {
         installations.selection = { [weak self] in self?.installationSelection }
         self.chat.gameName = { [weak self] in self?.gameName(appId: $0) }
         self.chat.invitations = invitations
+        self.chat.onIncomingMessage = { [weak self] friend in
+            guard let self else { return }
+            if self.overlay?.announceMessage(friend) == true { return }
+            let name = self.friends?.friend(friend)?.displayName ?? L10n.string("ui.overlay.invites.someone")
+            self.notifier?.notifyMessage(friend: friend, name: name)
+        }
         invitations.friendMayPlay = { [weak self] in self?.friendMayPlay($0, $1) ?? true }
         invitations.onReceived = { [weak self] in self?.announce($0) }
         invitations.onGone = { [weak self] in self?.notifier?.withdraw($0) }

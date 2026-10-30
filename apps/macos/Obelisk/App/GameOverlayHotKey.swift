@@ -15,6 +15,17 @@ protocol OverlayHotKey: AnyObject {
 /// consumes never reaches the game.
 @MainActor
 final class CarbonOverlayHotKey: OverlayHotKey {
+    private let keyCode: UInt32
+    private let modifiers: UInt32
+    private static var nextIdentifier: UInt32 = 0
+    private let identifier: EventHotKeyID
+
+    init(keyCode: UInt32 = UInt32(kVK_Tab), modifiers: UInt32 = UInt32(shiftKey)) {
+        self.keyCode = keyCode
+        self.modifiers = modifiers
+        Self.nextIdentifier += 1
+        identifier = EventHotKeyID(signature: 0x4F42_4C4B, id: Self.nextIdentifier)
+    }
     private var hotKey: EventHotKeyRef?
     private var handler: EventHandlerRef?
     private var action: (@MainActor () -> Void)?
@@ -26,17 +37,24 @@ final class CarbonOverlayHotKey: OverlayHotKey {
         self.action = action
         if handler == nil {
             var pressed = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-            InstallEventHandler(GetEventDispatcherTarget(), { _, _, context in
+            InstallEventHandler(GetEventDispatcherTarget(), { _, event, context in
                 guard let context else { return OSStatus(eventNotHandledErr) }
                 let hotKey = Unmanaged<CarbonOverlayHotKey>.fromOpaque(context).takeUnretainedValue()
                 // Carbon delivers hot keys on the main thread.
-                MainActor.assumeIsolated { hotKey.action?() }
-                return noErr
+                return MainActor.assumeIsolated {
+                    var pressed = EventHotKeyID()
+                    guard GetEventParameter(event, EventParamName(kEventParamDirectObject),
+                        EventParamType(typeEventHotKeyID), nil, MemoryLayout<EventHotKeyID>.size,
+                        nil, &pressed) == noErr,
+                        pressed.signature == hotKey.identifier.signature,
+                        pressed.id == hotKey.identifier.id else { return OSStatus(eventNotHandledErr) }
+                    hotKey.action?()
+                    return noErr
+                }
             }, 1, &pressed, Unmanaged.passUnretained(self).toOpaque(), &handler)
         }
         // "OBLK"
-        let identifier = EventHotKeyID(signature: 0x4F42_4C4B, id: 1)
-        RegisterEventHotKey(UInt32(kVK_Tab), UInt32(shiftKey), identifier, GetEventDispatcherTarget(), 0, &hotKey)
+        RegisterEventHotKey(keyCode, modifiers, identifier, GetEventDispatcherTarget(), 0, &hotKey)
     }
 
     func unregister() {

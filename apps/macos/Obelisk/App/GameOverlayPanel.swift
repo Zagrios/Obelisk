@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import SwiftUI
 import WebKit
 
@@ -12,32 +13,62 @@ protocol OverlayPresenter: AnyObject {
 }
 
 /// The overlay's panel, above a game's fullscreen window and in every Space.
-/// Obelisk activates as it opens, as Command-Tab would: Wine then releases
-/// the pointer it confines, and shows it.
+/// Takes keyboard focus without activating Obelisk: games that minimize when
+/// their application deactivates must retain their foreground application.
 @MainActor
 final class GameOverlayPanelPresenter: OverlayPresenter {
     private var panel: GameOverlayPanel?
+    private let emergencyKey = CarbonOverlayHotKey(keyCode: UInt32(kVK_Escape), modifiers: UInt32(cmdKey | shiftKey))
 
     func show(_ overlay: GameOverlayController, over game: OverlayApplication?) {
         let panel = self.panel ?? GameOverlayPanel(overlay: overlay)
         self.panel = panel
+        emergencyKey.register { [weak self, weak overlay] in
+            self?.hide(returningTo: nil)
+            overlay?.hide()
+        }
         if let screen = Self.screen(showing: game?.pid) ?? NSScreen.main {
             panel.setFrame(screen.frame, display: true)
         }
-        // Key before activation, so the activation keeps it key. A game's own
-        // request comes with no input to Obelisk, and macOS refuses the
-        // cooperative activation then: Wine would keep the pointer confined.
         panel.orderFrontRegardless()
         panel.makeKey()
-        NSApp.activate(ignoringOtherApps: true)
+        Self.restoreToolWindows(to: panel)
     }
 
     func hide(returningTo application: OverlayApplication?) {
+        emergencyKey.unregister()
+        Self.hideToolWindows()
+        for child in panel?.childWindows ?? [] { child.orderOut(nil) }
         panel?.orderOut(nil)
         guard let application, let running = NSRunningApplication(processIdentifier: application.pid),
               !running.isTerminated else { return }
         NSApp.yieldActivation(to: running)
         running.activate(from: .current, options: [])
+    }
+
+    /// Tool windows may have lost their parent relationship during native
+    /// window tracking. Dismiss by identity as well as by child ownership.
+    static func hideToolWindows() {
+        for window in NSApp.windows where isToolWindow(window) { window.orderOut(nil) }
+    }
+
+    /// Ordering a child panel out can remove its native parent relationship.
+    /// The workspace still owns it, so recover every live tool on reopen.
+    static func restoreToolWindows(to parent: NSWindow) {
+        for window in NSApp.windows where isToolWindow(window) {
+            if window.parent !== parent {
+                window.parent?.removeChildWindow(window)
+                parent.addChildWindow(window, ordered: .above)
+            }
+            window.orderFrontRegardless()
+            if let tool = window as? NativeOverlayTool.ToolPanel, let header = tool.dragRegion {
+                window.invalidateCursorRects(for: header)
+            }
+        }
+    }
+
+    static func isToolWindow(_ window: NSWindow) -> Bool {
+        window.identifier?.rawValue.hasPrefix("game-overlay-tool.") == true
     }
 
     /// The screen holding the largest window of `pid`. Quartz tells every
@@ -62,10 +93,11 @@ final class GameOverlayPanel: NSPanel {
     private var keyMonitor: Any?
 
     init(overlay: GameOverlayController) {
-        super.init(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: false)
+        super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         level = .gameOverlay
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         hidesOnDeactivate = false
+        becomesKeyOnlyIfNeeded = false
         isReleasedWhenClosed = false
         isOpaque = false
         backgroundColor = .clear
@@ -81,7 +113,22 @@ final class GameOverlayPanel: NSPanel {
             .tint(ObeliskStyle.accent))
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self, weak overlay] event in
             let consumed = MainActor.assumeIsolated {
-                guard let self, let overlay, event.window === self else { return false }
+                guard let self, let overlay, let window = event.window,
+                      window === self || GameOverlayPanelPresenter.isToolWindow(window) else { return false }
+                if GameOverlayPanelPresenter.isToolWindow(window) {
+                    // Every tool has a direct exit, including browser fields
+                    // and chat editors, independently of SwiftUI focus state.
+                    if event.keyCode == 53 {
+                        overlay.hide()
+                        return true
+                    }
+                    if event.keyCode == 48 && event.modifierFlags.contains(.shift)
+                        && event.modifierFlags.intersection([.command, .option, .control]).isEmpty {
+                        overlay.hide()
+                        return true
+                    }
+                    return false
+                }
                 return Self.handle(event, overlay: overlay)
             }
             return consumed ? nil : event

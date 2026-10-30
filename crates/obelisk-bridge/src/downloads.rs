@@ -6,6 +6,12 @@ use game_runtime::queue::{self, DownloadQueue};
 
 use crate::SessionStorefront;
 
+/// Sets the speed used by the next Steam content download. Zero is unlimited.
+#[uniffi::export]
+pub fn set_steam_download_limit_mbps(value: u64) {
+    steam_kit::content::set_download_limit_mbps(value);
+}
+
 /// The queue every account's installations share.
 pub(crate) fn queue() -> &'static Arc<DownloadQueue> {
     static QUEUE: OnceLock<Arc<DownloadQueue>> = OnceLock::new();

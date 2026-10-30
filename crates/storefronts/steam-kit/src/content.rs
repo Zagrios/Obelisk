@@ -17,9 +17,10 @@ use std::{
     io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     sync::Arc,
+    time::{Duration, Instant},
 };
 
-use futures_util::future::BoxFuture;
+use futures_util::{StreamExt, future::BoxFuture};
 use obelisk_core::{
     install::{
         self, InstallError, PARTIAL_DIRECTORY, apply_permissions, checked_file_path,
@@ -36,6 +37,7 @@ use sha1::{Digest, Sha1};
 #[cfg(test)]
 use std::sync::atomic::{AtomicBool, Ordering};
 use thiserror::Error;
+use tokio::sync::Mutex;
 
 use crate::cm::ContentServer;
 use format::{Chunk, Manifest, ManifestFile, decode_chunk, parse_manifest, unpack_zip};
@@ -61,11 +63,89 @@ const WRITE_QUEUE: usize = 16;
 /// requests queue without opening partial files for the whole depot.
 const PREPARED_FILES: usize = 32;
 /// Chunks reach the writer as they arrive: it places each one itself.
-const PIPELINE: Pipeline = Pipeline {
-    delivery: Delivery::AsFetched,
-    fetches: CHUNK_REQUESTS,
-    queue: WRITE_QUEUE,
-};
+fn pipeline() -> Pipeline {
+    Pipeline {
+        delivery: Delivery::AsFetched,
+        fetches: CHUNK_REQUESTS,
+        queue: WRITE_QUEUE,
+    }
+}
+
+/// One download's aggregate network pace. Every concurrent chunk reserves its
+/// bytes on the same timeline, so the limit applies to their total rather than
+/// to each connection separately. `None` leaves the stream untouched.
+struct RateLimiter {
+    bytes_per_second: Option<u64>,
+    next: Mutex<Instant>,
+}
+
+impl RateLimiter {
+    fn from_environment() -> Self {
+        let megabits = STEAM_LIMIT.load(std::sync::atomic::Ordering::Relaxed);
+        Self {
+            bytes_per_second: (megabits > 0).then_some(megabits.saturating_mul(125_000)),
+            next: Mutex::new(Instant::now()),
+        }
+    }
+
+    async fn acquire(&self, bytes: usize) {
+        let Some(rate) = self.bytes_per_second else {
+            return;
+        };
+        let duration = Duration::from_secs_f64(bytes as f64 / rate as f64);
+        let wait_until = {
+            let mut next = self.next.lock().await;
+            let now = Instant::now();
+            if *next < now {
+                *next = now;
+            }
+            *next += duration;
+            *next
+        };
+        tokio::time::sleep_until(wait_until.into()).await;
+    }
+}
+
+static STEAM_LIMIT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Maximum aggregate Steam content speed in decimal Mbps; zero is unlimited.
+/// A content client snapshots this value when a download starts.
+pub fn set_download_limit_mbps(value: u64) {
+    STEAM_LIMIT.store(value.min(1000), std::sync::atomic::Ordering::Relaxed);
+}
+
+#[cfg(test)]
+mod rate_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn concurrent_requests_share_one_budget() {
+        let limiter = RateLimiter {
+            bytes_per_second: Some(10_000),
+            next: Mutex::new(Instant::now()),
+        };
+        let start = Instant::now();
+        tokio::join!(
+            limiter.acquire(1000),
+            limiter.acquire(1000),
+            limiter.acquire(1000)
+        );
+        assert!(start.elapsed() >= Duration::from_millis(190));
+    }
+
+    #[tokio::test]
+    async fn unlimited_does_not_reserve_or_wait() {
+        let next = Instant::now() + Duration::from_secs(60);
+        let limiter = RateLimiter {
+            bytes_per_second: None,
+            next: Mutex::new(next),
+        };
+        tokio::time::timeout(Duration::from_millis(100), limiter.acquire(usize::MAX))
+            .await
+            .unwrap();
+        assert_eq!(*limiter.next.lock().await, next);
+    }
+}
 
 /// No Debug implementation: depot keys are credentials.
 pub struct DepotDownload<'a> {
@@ -174,6 +254,7 @@ impl From<InstallError> for ContentError {
 #[derive(Clone)]
 pub struct ContentClient {
     client: Client,
+    limiter: Arc<RateLimiter>,
     /// Local servers standing in for CDN hosts; any other host is unreachable.
     #[cfg(test)]
     test_endpoints: HashMap<String, Url>,
@@ -183,6 +264,7 @@ impl ContentClient {
     pub fn new(client: Client) -> Self {
         Self {
             client,
+            limiter: Arc::new(RateLimiter::from_environment()),
             #[cfg(test)]
             test_endpoints: HashMap::new(),
         }
@@ -215,7 +297,7 @@ impl ContentClient {
         let path = manifest_path(source.depot_id, source.manifest_id, source.request_code);
         let (zipped, _) = mirrors
             .fetch(&path, None, 0, cancel, |url| {
-                self.fetch(url, MAX_MANIFEST_BYTES, cancel, |_| {})
+                self.fetch(url, MAX_MANIFEST_BYTES, cancel, None, |_| {})
             })
             .await?;
         let key = source.depot_key;
@@ -255,7 +337,7 @@ impl ContentClient {
         );
         let (zipped, _) = mirrors
             .fetch(&path, None, 0, &cancel, |url| {
-                self.fetch(url, MAX_MANIFEST_BYTES, &cancel, |_| {})
+                self.fetch(url, MAX_MANIFEST_BYTES, &cancel, None, |_| {})
             })
             .await?;
         let bytes = unpack_zip(&zipped, MAX_MANIFEST_BYTES)?;
@@ -281,7 +363,7 @@ impl ContentClient {
             let path = format!("depot/{}/chunk/{}", plan.depot_id, hex(&chunk.sha));
             let (mut encrypted, _) = mirrors
                 .fetch(&path, None, 0, &cancel, |url| {
-                    self.fetch(url, MAX_CHUNK_BYTES, &cancel, |_| {})
+                    self.fetch(url, MAX_CHUNK_BYTES, &cancel, None, |_| {})
                 })
                 .await?;
             let plaintext = decode_chunk(&mut encrypted, chunk, &plan.depot_key)?;
@@ -339,7 +421,7 @@ impl ContentClient {
             let ticket = mirrors.ticket();
             let (zipped, _) = mirrors
                 .fetch(&manifest_path, Some(&ticket), 0, cancel, |url| {
-                    self.fetch(url, MAX_MANIFEST_BYTES, cancel, |received| {
+                    self.fetch(url, MAX_MANIFEST_BYTES, cancel, None, |received| {
                         reporter.update(|status| status.network_bytes += received);
                     })
                 })
@@ -402,7 +484,7 @@ impl ContentClient {
             Arc::clone(&reporter),
         );
         let reused_bytes =
-            transfer::run_engine(PIPELINE, cancel, disk, |(place, chunk): ChunkRequest| {
+            transfer::run_engine(pipeline(), cancel, disk, |(place, chunk): ChunkRequest| {
                 // Requests are created in manifest order and taken up in that order.
                 let ticket = mirrors.ticket();
                 let fetched = self.fetch_chunk(&mirrors, ticket, plan, chunk, cancel, &reporter);
@@ -431,6 +513,7 @@ impl ContentClient {
         let path = format!("depot/{}/chunk/{}", plan.depot_id, hex(&chunk.sha));
         let key = plan.depot_key;
         let chunk = &chunk;
+        let limiter = self.limiter.as_ref();
         reporter.update(|status| status.phase = DownloadPhase::Downloading);
         let (bytes, received) = mirrors
             .fetch(
@@ -440,7 +523,7 @@ impl ContentClient {
                 cancel,
                 |url| async move {
                     let (mut encrypted, received) = self
-                        .fetch(url, MAX_CHUNK_BYTES, cancel, |received| {
+                        .fetch(url, MAX_CHUNK_BYTES, cancel, Some(limiter), |received| {
                             reporter.update(|status| status.network_bytes += received);
                         })
                         .await?;
@@ -465,6 +548,7 @@ impl ContentClient {
         url: Url,
         limit: usize,
         cancel: &CancelToken,
+        limiter: Option<&RateLimiter>,
         on_bytes: impl FnMut(u64),
     ) -> Result<(Vec<u8>, u64), ContentError> {
         #[cfg(test)]
@@ -487,7 +571,13 @@ impl ContentClient {
             .get(url)
             // Chunks are compressed already: never gzip them again.
             .header(reqwest::header::ACCEPT_ENCODING, "identity")
-            .timeout(transfer::CHUNK_DEADLINE)
+            .timeout(
+                if limiter.is_some_and(|limit| limit.bytes_per_second.is_some()) {
+                    Duration::from_secs(7 * 24 * 60 * 60)
+                } else {
+                    transfer::CHUNK_DEADLINE
+                },
+            )
             .send();
         let response = cancel
             .race(tokio::time::timeout(transfer::CHUNK_STALL, request))
@@ -497,9 +587,18 @@ impl ContentClient {
         if !response.status().is_success() {
             return Err(ContentError::Http(response.status().as_u16()));
         }
+        let advertised = response.content_length();
+        let parts = transfer::unless_stalled(response.bytes_stream(), transfer::CHUNK_STALL).then(
+            |part| async {
+                if let (Ok(bytes), Some(limiter)) = (&part, limiter) {
+                    limiter.acquire(bytes.len()).await;
+                }
+                part
+            },
+        );
         let bytes = transfer::read_body(
-            response.content_length(),
-            transfer::unless_stalled(response.bytes_stream(), transfer::CHUNK_STALL),
+            advertised,
+            parts,
             BodySize::AtMost(limit as u64),
             cancel,
             on_bytes,
@@ -566,7 +665,7 @@ impl DepotFiles<'_> {
                     |url| async move {
                         let (mut encrypted, received) = self
                             .content
-                            .fetch(url, MAX_CHUNK_BYTES, cancel, |_| {})
+                            .fetch(url, MAX_CHUNK_BYTES, cancel, None, |_| {})
                             .await?;
                         let expected = chunk.clone();
                         let decoded = cancel

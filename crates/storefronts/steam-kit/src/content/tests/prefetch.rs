@@ -73,7 +73,7 @@ async fn fetches_a_future_file_before_the_first_finishes_and_refills_the_window(
     let observed = AtomicBool::new(false);
     let fetched = Mutex::new(Vec::new());
     let installed =
-        transfer::run_engine(PIPELINE, &cancel, disk, |(place, chunk): ChunkRequest| {
+        transfer::run_engine(pipeline(), &cancel, disk, |(place, chunk): ChunkRequest| {
             let first = &first;
             let second = &second;
             let payloads = &payloads;

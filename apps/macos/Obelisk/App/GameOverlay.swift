@@ -146,6 +146,7 @@ final class GameOverlayController {
     /// The game's application last in front, whose screen the overlay covers.
     @ObservationIgnored private var gameApplication: OverlayApplication?
     @ObservationIgnored private var gameIsFrontmost = false
+    @ObservationIgnored private var suspendedForAppSwitch = false
     /// What was in front when the overlay opened, in front again once it closes.
     @ObservationIgnored private var returnTo: OverlayApplication?
     @ObservationIgnored private var activations: NSObjectProtocol?
@@ -201,6 +202,7 @@ final class GameOverlayController {
         show(request)
         guard !isPresented else { return true }
         isPresented = true
+        steam.chat.isOverlayPresented = true
         openedByPlayer = userInitiated
         environment.toaster.hide()
         let frontmost = environment.frontmost()
@@ -275,12 +277,15 @@ final class GameOverlayController {
 
     /// A game that ended is told nothing more.
     private func hide(returningFocus: Bool, gameEnded: Bool = false) {
+        steam.chat.isOverlayPresented = false
         guard isPresented else { return }
+        let wasSuspended = suspendedForAppSwitch
+        suspendedForAppSwitch = false
         if isInviting { steam.chat.closeInvitePicker() }
         isPresented = false
         request = .home
         focus.conversation = nil
-        environment.presenter.hide(returningTo: returningFocus ? returnTo : nil)
+        environment.presenter.hide(returningTo: returningFocus && !wasSuspended ? returnTo : nil)
         returnTo = nil
         updateHotKey()
         onVisibilityChanged?(false)
@@ -339,6 +344,20 @@ final class GameOverlayController {
         avatars.activate(account: friends?.account)
         environment.toaster.show(toast, avatars: avatars, over: gameApplication) { [weak self] in
             self?.present(.home, userInitiated: true)
+        }
+        return true
+    }
+
+    func announceMessage(_ steamId: UInt64) -> Bool {
+        follow(runningSession)
+        guard let session, case .steam = session.game else { return false }
+        let friend = steamFriend(steamId)
+        let toast = OverlayToast(friend: friend,
+            message: L10n.string("ui.chat.newMessage"),
+            hint: friend?.displayName ?? L10n.string("ui.overlay.invites.someone"))
+        avatars.activate(account: friends?.account)
+        environment.toaster.show(toast, avatars: avatars, over: gameApplication) { [weak self] in
+            self?.present(.user(steamId: steamId), userInitiated: true)
         }
         return true
     }
@@ -533,6 +552,23 @@ final class GameOverlayController {
         guard session != nil else { return }
         gameIsFrontmost = isGame(application)
         if gameIsFrontmost { gameApplication = application }
+        if isPresented {
+            if gameIsFrontmost && suspendedForAppSwitch {
+                suspendedForAppSwitch = false
+                environment.presenter.show(self, over: gameApplication)
+                steam.chat.isOverlayPresented = true
+                onVisibilityChanged?(true)
+                tellSteam(active: true)
+            } else if !gameIsFrontmost && application.pid != ProcessInfo.processInfo.processIdentifier
+                        && !suspendedForAppSwitch {
+                suspendedForAppSwitch = true
+                steam.chat.isOverlayPresented = false
+                environment.presenter.hide(returningTo: nil)
+                environment.toaster.hide()
+                onVisibilityChanged?(false)
+                tellSteam(active: false)
+            }
+        }
         updateHotKey()
     }
 
@@ -569,7 +605,7 @@ final class GameOverlayController {
 
     /// Shift-Tab is the overlay's while the game or the overlay is in front.
     private func updateHotKey() {
-        if session != nil && (gameIsFrontmost || isPresented) {
+        if session != nil && (gameIsFrontmost || isPresented && !suspendedForAppSwitch) {
             environment.hotKey.register { [weak self] in self?.toggle() }
         } else {
             environment.hotKey.unregister()

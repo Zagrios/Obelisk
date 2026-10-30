@@ -43,7 +43,12 @@ extension SessionStorefront {
 enum DownloadFormatting {
     /// A speed in the file sizes Finder shows; nothing reads as "0 kB/s".
     static func speed(_ bytesPerSecond: Double) -> String {
-        L10n.string("ui.downloads.speed", size(UInt64(max(0, bytesPerSecond))))
+        if UserDefaults.standard.bool(forKey: "downloadSpeedInMbps") {
+            return L10n.string("ui.settings.speed_mbps_value",
+                (max(0, bytesPerSecond) * 8 / 1_000_000)
+                    .formatted(.number.precision(.fractionLength(0...1)).locale(L10n.locale)))
+        }
+        return L10n.string("ui.downloads.speed", size(UInt64(max(0, bytesPerSecond))))
     }
 
     /// A size in the units Finder shows; nothing reads as "Zero kB".
@@ -300,6 +305,7 @@ struct DownloadsPanel: View {
 /// The running Transfer's download speed over the last two minutes, under its
 /// current value. Hovering reads any moment.
 private struct DownloadSpeedCard: View {
+    @AppStorage("downloadSpeedInMbps") private var speedInMbps = false
     let downloads: DownloadsModel
     @State private var selected: Date?
 
@@ -328,6 +334,7 @@ private struct DownloadSpeedCard: View {
                 .frame(height: 104)
         }
         .modifier(GamePageCard())
+        .id(speedInMbps)
     }
 
     private var headline: String { DownloadFormatting.speed(downloads.currentSpeed ?? 0) }

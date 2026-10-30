@@ -4,6 +4,120 @@ import XCTest
 @testable import Obelisk
 
 final class GameOverlayTests: XCTestCase {
+    @MainActor
+    func testSystemTabShortcutsBypassOverlayFocusNavigation() throws {
+        let focus = FriendsPanelFocus()
+        let before = focus.target
+        for modifiers: NSEvent.ModifierFlags in [.command, [.command, .shift], .option, [.option, .shift]] {
+            let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero,
+                modifierFlags: modifiers, timestamp: 0, windowNumber: 0, context: nil,
+                characters: "\t", charactersIgnoringModifiers: "\t", isARepeat: false, keyCode: 48))
+            XCTAssertFalse(focus.handle(event) { XCTFail("System shortcut dismissed overlay") })
+            XCTAssertEqual(focus.target, before)
+        }
+    }
+
+    @MainActor
+    func testAppSwitchHidesAndRestoresTheOpenOverlayWithoutResettingItsPage() async throws {
+        let fixture = OverlayFixture()
+        let overlay = fixture.overlay
+        fixture.frontmost = Self.game
+        fixture.steamSessions.fake.show(.steam(appID: 620, id: "portal"))
+        try await eventually { overlay.session?.game == .steam(appId: 620) }
+        let request = OverlayRequest.webPage(URL(string: "https://store.steampowered.com/app/620")!)
+        overlay.present(request)
+        overlay.applicationActivated(Self.finder)
+        XCTAssertEqual(fixture.presenter.hidden.count, 1)
+        XCTAssertNil(fixture.presenter.hidden.last!)
+        XCTAssertFalse(fixture.hotKey.isRegistered)
+        XCTAssertFalse(overlay.steam.chat.isOverlayPresented)
+        XCTAssertEqual(overlay.request, request)
+        overlay.applicationActivated(Self.game)
+        XCTAssertEqual(fixture.presenter.shown.count, 2)
+        XCTAssertTrue(overlay.isPresented)
+        XCTAssertTrue(fixture.hotKey.isRegistered)
+        XCTAssertTrue(overlay.steam.chat.isOverlayPresented)
+        XCTAssertEqual(overlay.request, request)
+        overlay.hide()
+        overlay.applicationActivated(Self.finder)
+        overlay.applicationActivated(Self.game)
+        XCTAssertEqual(fixture.presenter.shown.count, 2, "Explicitly closed overlay stays closed")
+    }
+    @MainActor
+    func testNativeToolRegistersItsHeaderThroughTheHostingEnvironment() async throws {
+        let parent = NSPanel(contentRect: NSRect(x: -1000, y: -1000, width: 640, height: 480),
+            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        parent.isReleasedWhenClosed = false
+        parent.contentView = NSHostingView(rootView: NativeOverlayTool(
+            key: "drag-regression", title: "Test", initialSize: CGSize(width: 400, height: 300),
+            isFrontmost: false, close: {}, content: AnyView(VStack {
+                Text("Header").frame(maxWidth: .infinity).frame(height: 70)
+                    .modifier(OverlayDraggableHeader())
+                Spacer()
+            })))
+        defer {
+            parent.contentView = nil
+            GameOverlayPanelPresenter.hideToolWindows()
+            parent.close()
+        }
+        parent.orderFrontRegardless()
+        parent.contentView?.layoutSubtreeIfNeeded()
+        try await eventually {
+            guard let panel = NSApp.windows.first(where: { $0.identifier?.rawValue == "game-overlay-tool.drag-regression" }),
+                  let coordinator = panel.delegate as? NativeOverlayTool.Coordinator,
+                  let header = coordinator.header else { return false }
+            return header.window === panel && header.bounds.width > 0 && header.bounds.height > 0
+        }
+        let panel = try XCTUnwrap(NSApp.windows.first {
+            $0.identifier?.rawValue == "game-overlay-tool.drag-regression"
+        } as? NativeOverlayTool.ToolPanel)
+        let header = try XCTUnwrap(panel.dragRegion)
+        let headerFrame = try XCTUnwrap(panel.dragRegionFrame)
+        XCTAssertTrue(panel.acceptsDrag(at: NSPoint(x: headerFrame.midX, y: headerFrame.midY)))
+
+        // A chat render can replace its SwiftUI header between event-loop
+        // turns. The panel must still have a native hit area until the new
+        // header arrives.
+        panel.dragRegion = nil
+        XCTAssertTrue(panel.acceptsDrag(at: NSPoint(x: headerFrame.midX, y: headerFrame.midY)))
+        panel.dragRegion = header
+        let frame = panel.frame
+        for _ in 0..<3 {
+            GameOverlayPanelPresenter.hideToolWindows()
+            parent.orderOut(nil)
+            XCTAssertFalse(panel.isVisible)
+            // Exercise recovery even on AppKit versions that keep the child
+            // relationship when ordered out.
+            panel.parent?.removeChildWindow(panel)
+            parent.orderFrontRegardless()
+            GameOverlayPanelPresenter.restoreToolWindows(to: parent)
+            XCTAssertTrue(panel.isVisible)
+            XCTAssertTrue(panel.parent === parent)
+            XCTAssertTrue(panel.dragRegion === header)
+            XCTAssertTrue(header.window === panel)
+            XCTAssertEqual(panel.frame, frame)
+            XCTAssertTrue(panel.isMovable)
+        }
+    }
+    @MainActor
+    func testDismissalHidesOrphanedToolsWithoutHidingOtherWindows() {
+        let tool = NSPanel(contentRect: NSRect(x: -1000, y: -1000, width: 100, height: 100),
+                           styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        let other = NSPanel(contentRect: NSRect(x: -1000, y: -1000, width: 100, height: 100),
+                            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        tool.identifier = NSUserInterfaceItemIdentifier("game-overlay-tool.test")
+        other.identifier = NSUserInterfaceItemIdentifier("test-unrelated-window")
+        tool.isReleasedWhenClosed = false
+        other.isReleasedWhenClosed = false
+        defer { tool.close(); other.close() }
+        tool.orderFrontRegardless()
+        other.orderFrontRegardless()
+        XCTAssertNil(tool.parent)
+        XCTAssertTrue(tool.isVisible)
+        GameOverlayPanelPresenter.hideToolWindows()
+        XCTAssertFalse(tool.isVisible)
+        XCTAssertTrue(other.isVisible)
+    }
     private static let game = OverlayApplication(pid: 4_242, bundleIdentifier: "com.zagrios.obelisk.game.620")
     private static let finder = OverlayApplication(pid: 4_343, bundleIdentifier: "com.apple.finder",
                                                    executable: URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app/Contents/MacOS/Finder"))

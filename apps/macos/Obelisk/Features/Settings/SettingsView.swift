@@ -9,6 +9,9 @@ import UniformTypeIdentifiers
 /// bar's backdrop and the page's title show once the hero scrolled under it.
 struct SettingsView: View {
     @Bindable var model: AppModel
+    @AppStorage("downloadSpeedInMbps") private var downloadSpeedInMbps = false
+    @AppStorage("steamDownloadLimitMbps") private var steamDownloadParallelism = 0
+    private let steamSpeedLimits = [5, 10, 25, 50, 100, 250, 500, 1000, 0]
     @State private var showsBackdrop = false
     @State private var showsTitle = false
     /// The player picks another folder for the games.
@@ -28,6 +31,19 @@ struct SettingsView: View {
                         ObeliskCard {
                             AppearancePicker(selection: $model.appearance)
                                 .padding(18)
+                            ObeliskCardDivider()
+                            HStack {
+                                Text(L10n.string("ui.settings.speed_units"))
+                                Spacer()
+                                Picker(L10n.string("ui.settings.speed_units"), selection: $downloadSpeedInMbps) {
+                                    Text(L10n.string("ui.settings.speed_bytes")).tag(false)
+                                    Text(L10n.string("ui.settings.speed_bits")).tag(true)
+                                }
+                                .labelsHidden()
+                                .pickerStyle(.segmented)
+                                .frame(width: 190)
+                            }
+                            .padding(18)
                         }
                     }
                     GamePageSection(title: L10n.string("ui.settings.language")) {
@@ -49,6 +65,8 @@ struct SettingsView: View {
                             overlay
                             ObeliskCardDivider()
                             sharePerformance
+                            ObeliskCardDivider()
+                            steamDownloadParallelismRow
                         }
                     }
                     GamePageSection(title: L10n.string("ui.settings.storage")) {
@@ -108,11 +126,43 @@ struct SettingsView: View {
         .fileDialogMessage(L10n.string("ui.settings.games_folder_pick", AppIdentity.name))
         .fileDialogConfirmationLabel(L10n.string("ui.settings.games_folder_pick_confirm"))
         .fileDialogDefaultDirectory(URL(filePath: "/Volumes", directoryHint: .isDirectory))
+        .onAppear { applySteamDownloadParallelism() }
+        .onChange(of: steamDownloadParallelism) { _, _ in applySteamDownloadParallelism() }
         .sheet(item: Bindable(model.gamesFolder).proposal) { proposal in
             GamesFolderSheet(proposal: proposal, cancel: { model.gamesFolder.proposal = nil },
                              confirm: model.gamesFolder.confirm)
         }
         .errorAlert(L10n.string("ui.settings.games_folder_failed"), message: Bindable(model.gamesFolder).failure)
+    }
+
+    private var steamDownloadParallelismRow: some View {
+        ObeliskRow(title: L10n.string("ui.settings.steam_speed_title")) {
+            SymbolTile(name: "arrow.down.circle", colors: TileColors.blue)
+        } detail: {
+            Text(L10n.string("ui.settings.steam_speed_detail"))
+        } accessory: {
+            HStack(spacing: 8) {
+                Slider(value: Binding(
+                    get: { Double(steamSpeedLimits.firstIndex(of: steamDownloadParallelism) ?? 8) },
+                    set: { steamDownloadParallelism = steamSpeedLimits[Int($0.rounded())] }
+                ), in: 0...8, step: 1)
+                .frame(width: 150)
+                .accessibilityLabel(L10n.string("ui.settings.steam_speed_title"))
+                .accessibilityValue(steamSpeedLabel)
+                Text(steamSpeedLabel)
+                    .monospacedDigit()
+                    .frame(width: 100, alignment: .trailing)
+            }
+        }
+    }
+
+    private var steamSpeedLabel: String {
+        steamDownloadParallelism == 0 ? L10n.string("ui.settings.steam_speed_unlimited")
+            : L10n.string("ui.settings.steam_speed_value", Int64(steamDownloadParallelism))
+    }
+
+    private func applySteamDownloadParallelism() {
+        setSteamDownloadLimitMbps(value: UInt64(max(0, min(1000, steamDownloadParallelism))))
     }
 
     /// Asks for the restart a newly chosen language waits for.

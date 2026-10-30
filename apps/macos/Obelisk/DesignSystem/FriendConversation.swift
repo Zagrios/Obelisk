@@ -89,6 +89,7 @@ struct FriendConversationView: View {
             }
         }
         .padding(.horizontal, 18).padding(.vertical, 14)
+        .modifier(OverlayDraggableHeader())
     }
 
     private var messages: some View {
@@ -191,6 +192,12 @@ struct FriendConversationView: View {
                 .lineLimit(1...6)
                 .font(.system(size: 13))
                 .focused($focusedControl, equals: .composer)
+                .onKeyPress(keys: [.return], phases: .down) { press in
+                    guard !press.modifiers.contains(.shift),
+                          (NSApp.keyWindow?.firstResponder as? NSTextView)?.hasMarkedText() != true else { return .ignored }
+                    send()
+                    return .handled
+                }
                 .padding(.horizontal, 13).padding(.vertical, 9)
                 .background(.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 17))
                 .overlay { RoundedRectangle(cornerRadius: 17).strokeBorder(.primary.opacity(0.08), lineWidth: 1) }

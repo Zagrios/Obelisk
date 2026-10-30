@@ -129,17 +129,45 @@ struct SteamInviteOffer: Equatable, Sendable {
 /// forgets every conversation.
 @MainActor @Observable
 final class SteamChatModel {
+    var requestedFriend: UInt64?
+    @ObservationIgnored var onIncomingMessage: ((UInt64) -> Void)?
     private(set) var conversations: [UInt64: SteamConversation] = [:]
     /// What the account is writing to each friend, apart from the
     /// conversations so that typing redraws none of their messages.
     private(set) var drafts: [UInt64: String] = [:]
     /// Unread messages per friend, as Steam counts them.
     private(set) var unread: [UInt64: Int] = [:]
+    private(set) var recentActivity: [UInt64: UInt32] = [:]
+
+    func lastActivity(for friend: UInt64) -> UInt32? {
+        let timestamp = max(recentActivity[friend] ?? 0, conversations[friend]?.latestTimestamp ?? 0)
+        return timestamp > 0 ? timestamp : nil
+    }
+
+    func preview(for friend: UInt64) -> String? {
+        guard let line = conversations[friend]?.lines.last(where: { $0.position != nil }) else { return nil }
+        return line.contents.compactMap { content in
+            if case .text(let text) = content { return String(text.characters) }
+            return nil
+        }.joined(separator: " ").replacingOccurrences(of: "\n", with: " ")
+    }
+
+    func loadPreview(for friend: UInt64) {
+        guard conversations[friend]?.isLoaded != true else { return }
+        loadLatest(friend, replacing: false)
+    }
     private(set) var ownGame: SteamOwnGame?
     private(set) var isConnected = false
     /// The conversation on screen; read as messages arrive while Obelisk is active.
     private(set) var visibleFriend: UInt64?
     private(set) var isApplicationActive: Bool
+    /// A nonactivating overlay can receive chat input while the game remains
+    /// the active application.
+    var isOverlayPresented = false {
+        didSet {
+            if isOverlayPresented, let visibleFriend { acknowledgeIfReading(visibleFriend) }
+        }
+    }
     var totalUnread: Int { unread.values.reduce(0, +) }
     /// The lobby the account's running Steam game is in now, as the engine
     /// hosting it shows it: Steam may never show this session the game's
@@ -211,7 +239,9 @@ final class SteamChatModel {
         conversations = [:]
         drafts = [:]
         unread = [:]
+        recentActivity = [:]
         visibleFriend = nil
+        requestedFriend = nil
         acknowledged = [:]
     }
 
@@ -284,7 +314,10 @@ final class SteamChatModel {
             conversations[friend] = conversation
             guard added, !message.fromMe else { return }
             if isReading(friend) { acknowledgeIfReading(friend) }
-            else if counting { unread[friend, default: 0] += 1 }
+            else if counting {
+                unread[friend, default: 0] += 1
+                onIncomingMessage?(friend)
+            }
         case .typing(let friend):
             conversations[friend, default: SteamConversation()].isFriendTyping = true
             typingExpiries[friend]?.cancel()
@@ -310,10 +343,17 @@ final class SteamChatModel {
             guard let self, current == self.generation else { return }
             var counts: [UInt64: Int] = [:]
             for entry in sessions {
+                recentActivity[entry.friendSteamId] = max(recentActivity[entry.friendSteamId] ?? 0, entry.lastMessage)
                 acknowledged[entry.friendSteamId] = max(acknowledged[entry.friendSteamId] ?? 0, entry.lastView)
                 if entry.unreadMessageCount > 0 { counts[entry.friendSteamId] = Int(entry.unreadMessageCount) }
             }
             unread = counts
+            // Metadata restores conversation ordering across launches. Fetch
+            // recent previews without marking those conversations as read.
+            for entry in sessions.sorted(by: { $0.lastMessage > $1.lastMessage }).prefix(20)
+                where conversations[entry.friendSteamId]?.isLoaded != true {
+                loadLatest(entry.friendSteamId, replacing: false)
+            }
             if let visibleFriend { acknowledgeIfReading(visibleFriend) }
         }
         for (friend, conversation) in conversations where conversation.isLoaded {
@@ -343,7 +383,9 @@ final class SteamChatModel {
         if active, let visibleFriend { acknowledgeIfReading(visibleFriend) }
     }
 
-    private func isReading(_ friend: UInt64) -> Bool { visibleFriend == friend && isApplicationActive }
+    private func isReading(_ friend: UInt64) -> Bool {
+        visibleFriend == friend && (isApplicationActive || isOverlayPresented)
+    }
 
     private func acknowledgeIfReading(_ friend: UInt64) {
         guard isReading(friend), let session else { return }
