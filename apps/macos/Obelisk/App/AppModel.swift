@@ -63,6 +63,8 @@ final class AppModel {
     }
     static let sharePerformanceKey = "obelisk.games.sharePerformance"
     @ObservationIgnored let performance: PerformanceReports
+    /// Where the Mac's heat is noted while a game runs.
+    @ObservationIgnored private let thermal: ThermalLog
     /// How each game runs on this Mac's chip, as other players measured it.
     let estimates: PerformanceEstimates
     /// Obelisk's own new versions.
@@ -79,6 +81,7 @@ final class AppModel {
          epic: EpicModel? = nil, gog: GogModel? = nil, downloads: DownloadsModel? = nil,
          gamesFolder: GamesFolderModel? = nil,
          performance: PerformanceReports? = nil, estimates: PerformanceEstimates? = nil, updates: AppUpdates? = nil,
+         thermal: ThermalLog = .shared,
          overlay: GameOverlayEnvironment = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil
             ? .live : .inert) {
         libraryDirectory = directory.path
@@ -102,11 +105,13 @@ final class AppModel {
         let performance = performance ?? PerformanceReports(isEnabled: sharesGamePerformance)
         performance.isEnabled = sharesGamePerformance
         self.performance = performance
+        self.thermal = thermal
         self.estimates = estimates ?? PerformanceEstimates()
         self.updates = updates ?? AppUpdates()
         self.downloads.progress = { [weak self] item in self?.downloadTransfer(item) }
         applyAutomaticUpdates()
         reportPerformance()
+        observeGameRunning()
         followFriends()
     }
 
@@ -341,6 +346,17 @@ final class AppModel {
 
     /// Whether any storefront has a Game session, one still preparing included.
     var runsGame: Bool { accounts.contains { $0.hasGameSession } }
+
+    /// Tells the thermal log whether a game runs, as it starts and as it exits.
+    private func observeGameRunning() {
+        let running = withObservationTracking {
+            steam.gameSessions.active?.running == true || epic.gameSessions.active?.running == true
+                || gog.gameSessions.active?.running == true
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in self?.observeGameRunning() }
+        }
+        thermal.follow(running: running)
+    }
 
     /// Ends the running game of every storefront, one storefront after the other.
     func stopGames() async {

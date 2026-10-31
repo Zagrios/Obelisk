@@ -30,6 +30,8 @@ final class AppLifecycle: NSObject, NSApplicationDelegate {
         // this Obelisk yet.
         // The test host is no Obelisk of its own: it leaves every game alone.
         if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
+            // The unified log a bug report carries then says how hot the Mac was.
+            ThermalLog.shared.start()
             let locations = ObeliskLocations.live
             Task.detached(priority: .utility) { _ = endOrphanedWindowsGames(locations: locations) }
             // A release build reads the game notes and profiles from Obelisk's

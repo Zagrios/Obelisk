@@ -835,6 +835,29 @@ final class AppModelStorefrontsTests: XCTestCase {
                        "/Volumes/Old/steam-730 counts once, and a folder beside the games folder is outside it")
     }
 
+    // MARK: Thermal log
+
+    func testAGameRunningOnAnyStorefrontIsNotedUntilItExits() async throws {
+        let fixture = StorefrontsFixture(.init(epic: [StorefrontsFixture.epicGame()]))
+        defer { fixture.finish() }
+        await fixture.signIn()
+        XCTAssertTrue(fixture.thermalLines.values.isEmpty, "no game runs yet")
+
+        fixture.epicSessions.fake.show(.epic(account: StorefrontsFixture.epicAccount, namespace: "fixture",
+                                             appName: "one", phase: .preparing))
+        await drainMainQueue(times: 5)
+        XCTAssertTrue(fixture.thermalLines.values.isEmpty, "a game that prepares does not run yet")
+
+        fixture.epicSessions.fake.show(.epic(account: StorefrontsFixture.epicAccount, namespace: "fixture",
+                                             appName: "one", phase: .running))
+        try await eventually { fixture.thermalLines.values.count == 1 }
+        XCTAssertEqual(fixture.thermalLines.values.first?.hasPrefix("game started"), true)
+
+        fixture.epicSessions.fake.show(nil)
+        try await eventually { fixture.thermalLines.values.count == 2 }
+        XCTAssertEqual(fixture.thermalLines.values.last?.hasPrefix("game ended"), true)
+    }
+
     // MARK: Performance reports
 
     func testEachStorefrontsEndedGameIsReportedUnderItsStoreWithTheTitleItsLibraryKnowsIt() async throws {

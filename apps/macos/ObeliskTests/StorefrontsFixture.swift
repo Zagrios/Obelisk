@@ -60,6 +60,8 @@ final class StorefrontsFixture {
     let signInGate = GameSessionGate<Void>()
     let logins = LoginAttempts()
     let sent = SentReports()
+    /// What the app's thermal log wrote.
+    let thermalLines = ThermalLines()
     let steam: SteamModel
     let epic: EpicModel
     let gog: GogModel
@@ -160,12 +162,15 @@ final class StorefrontsFixture {
         )
         let gamesFolder = setup.gamesFolder ?? root.appending(path: "Games").path
         let sent = sent
+        let thermalLines = thermalLines
         app = AppModel(
             directory: root, defaults: defaults, steam: steam, epic: epic, gog: gog,
             downloads: DownloadsModel(backend: FakeDownloads(), defaults: defaults),
             gamesFolder: GamesFolderModel(library: root, backend: FakeGamesFolder(path: gamesFolder),
                                           workspace: NotificationCenter()),
-            performance: PerformanceReports(isEnabled: true, mac: Self.mac) { await sent.add($0) }
+            performance: PerformanceReports(isEnabled: true, mac: Self.mac) { await sent.add($0) },
+            thermal: ThermalLog(snapshot: { ThermalSnapshot(thermalState: .nominal, lowPowerMode: false, onBattery: false) },
+                                write: { thermalLines.values.append($0) })
         )
     }
 
