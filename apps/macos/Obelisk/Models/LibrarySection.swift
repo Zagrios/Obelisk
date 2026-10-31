@@ -54,8 +54,33 @@ enum LibrarySection: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    /// What names the section where its store is meant: the storefront's full
+    /// name, else the section's own title.
+    var storeTitle: String { storeName ?? title }
+
     var isStorefront: Bool { self == .steam || self == .epic || self == .gog }
 
     /// Store tabs in sidebar order; the single source for every storefront list.
     static let storefronts: [LibrarySection] = allCases.filter(\.isStorefront)
+}
+
+extension SessionStorefront {
+    /// The section of the storefront's library.
+    var section: LibrarySection {
+        switch self {
+        case .steam: .steam
+        case .epic: .epic
+        case .gog: .gog
+        }
+    }
+
+    /// How getobelisk.app names the storefront: a wire value, spelled apart
+    /// from the section's.
+    var siteName: String {
+        switch self {
+        case .steam: "steam"
+        case .epic: "epic"
+        case .gog: "gog"
+        }
+    }
 }

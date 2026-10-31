@@ -104,12 +104,12 @@ struct StorefrontWarningBanner: View {
 /// A store whose search the library offers when no game it holds matches,
 /// for a game the player does not own yet.
 struct StoreSearch: Identifiable {
-    let storeID: String
-    let storeTitle: String
+    let section: LibrarySection
     /// The store's search for a query, signed in as the account.
     let page: @MainActor (String) async -> WebPageStart
 
-    var id: String { storeID }
+    var id: LibrarySection { section }
+    var storeTitle: String { section.storeTitle }
 }
 
 /// Shown when the library is empty or no game matches its search and filter.
@@ -159,7 +159,7 @@ struct StorefrontEmptyLibrary: View {
                     ForEach(searchedStores) { store in
                         Button(L10n.string("ui.search.store", store.storeTitle)) { search(store) }
                             .obeliskButtonStyle(.borderedProminent)
-                            .accessibilityIdentifier("search-store-\(store.storeID)")
+                            .accessibilityIdentifier("search-store-\(store.section.rawValue)")
                     }
                 }
             }
@@ -179,7 +179,7 @@ struct StorefrontEmptyLibrary: View {
     /// Opens `store`'s search for the query over the whole window.
     private func search(_ store: StoreSearch) {
         let query = query
-        presentStore?(StorePresentation(storeID: store.storeID, storeTitle: store.storeTitle) {
+        presentStore?(StorePresentation(section: store.section) {
             await store.page(query)
         })
     }

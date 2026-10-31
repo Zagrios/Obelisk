@@ -31,7 +31,7 @@ struct RootView: View {
             // The last friends shown, while the sheet goes away.
             if let friends = model.presentedFriends ?? shownFriends {
                 FriendsModal(state: friends, avatars: friendsAvatars,
-                             chat: friends.store.id == "steam" ? model.steam.chat : nil,
+                             chat: friends.store.id == LibrarySection.steam.rawValue ? model.steam.chat : nil,
                              dismiss: { model.closeFriends() },
                              retry: model.retryPresentedFriends, signIn: model.signInPresentedFriends)
                     .frame(width: 520, height: 550)
@@ -54,51 +54,16 @@ struct RootView: View {
         .environment(model.steam.libraryArtwork)
         // A store belongs to the library it opened from.
         .onChange(of: model.selection) { model.presentedStore = nil }
-        .onChange(of: model.steam.isFriendsPresented, initial: true) { _, presented in
-            if presented { model.presentFriends(storeID: "steam") }
-            else { model.closeFriends(storeID: "steam") }
-        }
-        .onChange(of: model.epic.isFriendsPresented, initial: true) { _, presented in
-            if presented { model.presentFriends(storeID: "epic") }
-            else { model.closeFriends(storeID: "epic") }
-        }
-        .onChange(of: model.steam.friends?.account) { _, _ in model.validateFriendsAccount() }
-        .onChange(of: model.epic.friends?.account) { _, _ in model.validateFriendsAccount() }
         .onChange(of: model.presentedFriends?.account, initial: true) { _, account in
             friendsAvatars.activate(account: account)
             if let friends = model.presentedFriends { shownFriends = friends }
         }
         .sheet(isPresented: Binding(get: { model.presentedPrompt != nil }, set: { _ in })) {
-            prompt.interactiveDismissDisabled()
-        }
-    }
-
-    @ViewBuilder private var prompt: some View {
-        switch model.presentedPrompt {
-        case .steamVoile:
-            voileUpdate(model.steam.gameSessions)
-        case .steamRosetta:
-            RosettaPromptView(model: model.steam.rosetta)
-        case .steamCloud:
-            CloudQuestionSheet(model: model.steam)
-        case .epicRosetta:
-            RosettaPromptView(model: model.epic.rosetta, storefront: "epic")
-        case .epicVoile:
-            voileUpdate(model.epic.gameSessions)
-        case .epicCloud:
-            CloudQuestionSheet(model: model.epic)
-        case .gogVoile:
-            voileUpdate(model.gog.gameSessions)
-        case .gogRosetta:
-            RosettaPromptView(model: model.gog.rosetta, storefront: "gog")
-        case nil:
-            EmptyView()
-        }
-    }
-
-    @ViewBuilder private func voileUpdate<Store>(_ sessions: GameSessions<Store>) -> some View {
-        if let offer = sessions.voileUpdate {
-            VoileUpdateSheet(offer: offer, answer: sessions.answerVoileUpdate)
+            if let prompt = model.presentedPrompt {
+                // Each storefront's question is a view of its own, though two
+                // storefronts may ask with the same sheet.
+                model.promptSheet(for: prompt).id(prompt).interactiveDismissDisabled()
+            }
         }
     }
 }

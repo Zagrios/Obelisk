@@ -30,16 +30,6 @@ private func verbatimCount(_ prefix: String, _ count: Int) -> String {
     prefix + count.formatted(.number.locale(L10n.locale))
 }
 
-extension SessionStorefront {
-    var section: LibrarySection {
-        switch self {
-        case .steam: .steam
-        case .epic: .epic
-        case .gog: .gog
-        }
-    }
-}
-
 enum DownloadFormatting {
     /// A speed in the file sizes Finder shows, or in megabits; nothing reads as
     /// "0 kB/s".

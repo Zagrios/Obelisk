@@ -2,7 +2,7 @@ import SwiftUI
 
 struct RosettaPromptView<Sessions: RosettaSessions>: View {
     @Bindable var model: RosettaModel<Sessions>
-    var storefront = "steam"
+    var storefront = LibrarySection.steam.rawValue
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {

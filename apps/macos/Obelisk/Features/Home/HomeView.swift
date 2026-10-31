@@ -54,24 +54,26 @@ struct HomeView: View {
         }
     }
 
-    private var showsLibrary: Bool {
-        model.steam.showsLibrary || model.epic.showsLibrary || model.gog.showsLibrary
-    }
-
     var body: some View {
         Group {
-            if showsLibrary {
+            switch model.homeContent {
+            case .libraries:
                 libraries
-            } else if model.restoringStorefronts.isEmpty {
+            case .signIn:
                 HomeSignIn(model: model)
-            } else {
+            case .restoring:
                 // Saved sessions are restoring: their libraries are on their way.
                 Color.clear
             }
         }
-        .errorAlert(L10n.string("ui.store.steam"), message: Bindable(model.steam).errorMessage)
-        .errorAlert(L10n.string("ui.store.epic"), message: Bindable(model.epic).errorMessage)
-        .errorAlert(L10n.string("ui.store.gog"), message: Bindable(model.gog).errorMessage)
+        .errorAlert(L10n.string("ui.store.steam"), message: errorMessage(of: .steam))
+        .errorAlert(L10n.string("ui.store.epic"), message: errorMessage(of: .epic))
+        .errorAlert(L10n.string("ui.store.gog"), message: errorMessage(of: .gog))
+    }
+
+    /// What a storefront's account failed with, which its alert dismisses.
+    private func errorMessage(of section: LibrarySection) -> Binding<String?> {
+        Binding(get: { model.account(section)?.errorMessage }, set: { model.account(section)?.errorMessage = $0 })
     }
 
     private var libraries: some View {
@@ -161,7 +163,7 @@ private struct HomeBar: View {
 
     /// The game's storefront, opening its library.
     private func storeButton(_ section: LibrarySection) -> some View {
-        let name = section.storeName ?? section.title
+        let name = section.storeTitle
         let label = L10n.string("ui.library.store_accessibility", name)
         return Button { openLibrary(section) } label: {
             HStack(spacing: 8) {
@@ -233,6 +235,16 @@ private struct HomePage: View {
         let gog: HomeLibrary
 
         var all: [HomeLibrary] { [steam, epic, gog] }
+
+        /// The library of a storefront's section; Home and Settings have none.
+        subscript(section: LibrarySection) -> HomeLibrary? {
+            switch section {
+            case .steam: steam
+            case .epic: epic
+            case .gog: gog
+            case .home, .settings: nil
+            }
+        }
     }
 
     private var homeLibraries: Libraries {
@@ -310,22 +322,22 @@ private struct HomePage: View {
     }
 
     private var hasNotices: Bool {
-        model.steam.storageWarning != nil || model.epic.storageWarning != nil || model.gog.storageWarning != nil
+        model.accounts.contains { $0.storageWarning != nil }
     }
 
     @ViewBuilder private var notices: some View {
         if hasNotices {
             VStack(alignment: .leading, spacing: 22) {
-                notice(model.steam)
-                notice(model.epic)
-                notice(model.gog)
+                ForEach(LibrarySection.storefronts) { section in
+                    if let account = model.account(section) { notice(account) }
+                }
             }
             .padding(.horizontal, ObeliskStyle.contentPadding)
         }
     }
 
-    private func notice<Model: LibraryStorefront>(_ storefront: Model) -> some View {
-        StorefrontWarningBanner(message: Bindable(storefront).storageWarning)
+    private func notice(_ account: any StorefrontAccount) -> StorefrontWarningBanner {
+        StorefrontWarningBanner(message: Binding(get: { account.storageWarning }, set: { account.storageWarning = $0 }))
     }
 
     private func hero(_ game: HomeGame) -> some View {
@@ -333,7 +345,7 @@ private struct HomePage: View {
         return LibraryHero(
             title: game.title,
             details: [
-                section.logoAssetName.map { LibraryHeroDetail(logo: $0, text: section.storeName ?? section.title) },
+                section.logoAssetName.map { LibraryHeroDetail(logo: $0, text: section.storeTitle) },
                 game.lastPlayed.map { LibraryHeroDetail(symbol: "calendar", text: GameFormatting.lastPlayed($0)) },
                 game.playtime.map { LibraryHeroDetail(symbol: "clock", text: GameFormatting.playtime($0)) },
             ].compactMap { $0 },
@@ -371,59 +383,31 @@ private struct HomePage: View {
                 .frame(height: 36)
                 .accessibilityAddTraits(.isHeader)
             StorefrontRows(inOneRow: tilesInOneRow) { section, _ in
-                switch section {
-                case .steam:
-                    tile(.steam, library: libraries.steam, showsLibrary: model.steam.showsLibrary,
-                         isRestoring: model.steam.isRestoring, account: model.steam.displayName,
-                         avatarURL: model.steam.avatarURL)
-                case .epic:
-                    tile(.epic, library: libraries.epic, showsLibrary: model.epic.showsLibrary,
-                         isRestoring: model.epic.isRestoring, account: model.epic.accountName,
-                         avatarURL: model.epic.avatarURL)
-                default:
-                    tile(.gog, library: libraries.gog, showsLibrary: model.gog.showsLibrary,
-                         isRestoring: model.gog.isRestoring, account: model.gog.accountName,
-                         avatarURL: model.gog.avatarURL)
-                }
+                LibraryTile(
+                    section: section,
+                    title: section.storeTitle,
+                    status: model.standing(of: section),
+                    covers: libraries[section]?.covers.map { $0.cover() } ?? [],
+                    open: { model.selection = section }
+                )
             }
             .onGeometryChange(for: Bool.self, of: { Self.tilesInOneRow(width: $0.size.width) }) { tilesInOneRow = $0 }
         }
         .padding(.horizontal, ObeliskStyle.contentPadding)
     }
 
-    private func tile(_ section: LibrarySection, library: HomeLibrary, showsLibrary: Bool, isRestoring: Bool,
-                      account: String?, avatarURL: URL?) -> some View {
-        let status: LibraryTile.Status = if showsLibrary {
-            .signedIn(account: account, avatarURL: avatarURL, games: library.count, installed: library.installed.count)
-        } else if isRestoring || model.restoringStorefronts.contains(section) {
-            .restoring
-        } else {
-            .signedOut
-        }
-        return LibraryTile(
-            section: section,
-            title: section.storeName ?? section.title,
-            status: status,
-            covers: library.covers.map { $0.cover() },
-            open: { model.selection = section }
-        )
-    }
-
     /// The stores whose search Home offers for a game no library holds: those
     /// of the storefronts signed in.
     private var stores: [StoreSearch] {
-        let steam = StoreSearch(storeID: "steam", storeTitle: L10n.string("ui.store.steam"), page: model.steam.storeSearch)
-        let epic = StoreSearch(storeID: "epic", storeTitle: L10n.string("ui.store.epic"), page: model.epic.storeSearch)
+        let steam = StoreSearch(section: model.steam.section, page: model.steam.storeSearch)
+        let epic = StoreSearch(section: model.epic.section, page: model.epic.storeSearch)
         return [model.steam.isConnected ? steam : nil, model.epic.isConnected ? epic : nil].compactMap { $0 }
     }
 
     /// A signed-in library is still fetching its first games, so a search
     /// that finds nothing cannot tell yet.
     private var isFetching: Bool {
-        func fetching(_ storefront: some LibraryStorefront) -> Bool {
-            storefront.isLoadingGames && storefront.library.games.isEmpty
-        }
-        return fetching(model.steam) || fetching(model.epic) || fetching(model.gog)
+        model.accounts.contains { $0.isFetchingFirstGames }
     }
 
     private func results(_ games: [HomeGame]) -> some View {
@@ -460,20 +444,12 @@ private struct HomeSignIn: View {
         SignInPage(section: .home, title: L10n.string("ui.home.welcome_title", AppIdentity.name),
                    subtitle: L10n.string("ui.home.welcome_subtitle")) {
             StorefrontRows { section, spansRow in
-                StorefrontSignInCard(section: section, isConnecting: isConnecting(section), spansRow: spansRow) {
+                StorefrontSignInCard(section: section, isConnecting: model.standing(of: section).isBusy,
+                                     spansRow: spansRow) {
                     model.selection = section
                 }
             }
             .frame(maxWidth: 640)
-        }
-    }
-
-    private func isConnecting(_ section: LibrarySection) -> Bool {
-        switch section {
-        case .steam: model.steam.isRestoring || model.steam.isConnecting
-        case .epic: model.epic.isRestoring || model.epic.isConnecting
-        case .gog: model.gog.isRestoring || model.gog.isConnecting
-        default: false
         }
     }
 }

@@ -214,16 +214,7 @@ final class EpicFriends: AccountPresence {
     }
 }
 
-/// Epic's friends, in SteamModel's words, so AppModel treats both stores alike.
 extension WebAccountModel where Store == EpicGames {
-    var friends: FriendsPresentationState? { presence.state }
-    var isFriendsPresented: Bool { presence.isPresented }
-
-    func openFriends() { presence.open() }
-    func closeFriends() { presence.close() }
-    /// Replaces only the social socket. The OAuth session and downloads stay alive.
-    func retryFriends() { presence.retry() }
-
     /// Epic's store searching for `query`, signed in as the account.
     func storeSearch(_ query: String) async -> WebPageStart {
         await storePage(at: EpicGames.storeSearchURL(query))

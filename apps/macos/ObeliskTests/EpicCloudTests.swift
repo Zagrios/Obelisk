@@ -213,7 +213,7 @@ final class EpicCloudTests: XCTestCase {
 
         backend.publish { $0.cloudSync = .exit("sandbox:game", question: .conflict(1)) }
 
-        try await eventually { app.presentedPrompt == .epicCloud }
+        try await eventually { app.presentedPrompt == AccountPrompt(section: .epic, kind: .cloud) }
         backend.publish { $0.cloudSync = nil }
         try await eventually { app.presentedPrompt == nil }
     }
@@ -232,7 +232,7 @@ final class EpicCloudTests: XCTestCase {
 
         sessions.fake.show(launch)
 
-        try await eventually { app.presentedPrompt == .epicVoile }
+        try await eventually { app.presentedPrompt == AccountPrompt(section: .epic, kind: .voile) }
         XCTAssertEqual(sessions.voileUpdate?.version, "v26.3.0-17")
         sessions.answerVoileUpdate(.skip)
         XCTAssertEqual(sessions.fake.voileAnswers, [.skip])

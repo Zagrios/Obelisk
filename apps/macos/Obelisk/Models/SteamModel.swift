@@ -39,7 +39,7 @@ final class SteamModel {
         didSet { if selectedGame?.appId != oldValue?.appId { achievements.reset() } }
     }
     private(set) var details: SteamGameDetails?
-    let achievements = GameAchievementsModel(storeID: "steam", describe: SteamModel.message)
+    let achievements = GameAchievementsModel(storeID: LibrarySection.steam.rawValue, describe: SteamModel.message)
     private(set) var news: [SteamNews] = []
     private(set) var isLoadingDetails = false
     private(set) var isLoadingNews = false
@@ -747,8 +747,8 @@ final class SteamModel {
 
     private static func emptyFriends(accountID: UInt64) -> FriendsPresentationState {
         FriendsPresentationState(
-            store: FriendsStoreIdentity(id: "steam", name: L10n.string("ui.store.steam"), logoAssetName: "SteamLogo"),
-            account: FriendsAccountIdentity(storeID: "steam", accountID: String(accountID)),
+            store: FriendsStoreIdentity(.steam),
+            account: FriendsAccountIdentity(storeID: LibrarySection.steam.rawValue, accountID: String(accountID)),
             friends: [], connection: .loading
         )
     }

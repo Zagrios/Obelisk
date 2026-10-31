@@ -186,14 +186,10 @@ struct AppMenuBarLabel: View {
                 model.overlay.showLibrary = { lifecycle.show() }
                 model.restart = { lifecycle.restart() }
                 model.updates.quitToInstall = { install in lifecycle.update(install) }
-                let (steam, epic, gog) = (model.steam.gameSessions, model.epic.gameSessions, model.gog.gameSessions)
+                // The model holds the lifecycle, so the lifecycle holds it weakly.
                 lifecycle.games = (
-                    running: { steam.active != nil || epic.active != nil || gog.active != nil },
-                    stop: {
-                        await steam.stop()
-                        await epic.stop()
-                        await gog.stop()
-                    }
+                    running: { [weak app = model] in app?.runsGame ?? false },
+                    stop: { [weak app = model] in await app?.stopGames() }
                 )
             }
             .onReceive(NotificationCenter.default.publisher(for: AppLifecycle.showLibrary)) { _ in

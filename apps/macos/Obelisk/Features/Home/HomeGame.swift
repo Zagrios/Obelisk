@@ -42,7 +42,6 @@ struct HomeLibrary {
     let verified: [HomeGame]
     /// The first games of its last played order, as its tile shows them.
     let covers: [HomeGame]
-    let count: Int
 }
 
 extension HomeGame {
@@ -66,8 +65,7 @@ extension HomeLibrary {
             recent: order.prefix { library.lastPlayed(of: $0) != nil }.prefix(HomeShelves.shelfLimit + 1).map(home),
             installed: library.games(by: .lastPlayed, filter: .installed).map(home),
             verified: order.lazy.filter { verified.contains($0.id) }.prefix(HomeShelves.shelfLimit).map(home),
-            covers: order.prefix(3).map(home),
-            count: library.games.count
+            covers: order.prefix(3).map(home)
         )
     }
 }

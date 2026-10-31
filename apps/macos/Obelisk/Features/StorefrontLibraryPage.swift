@@ -1,10 +1,18 @@
 import SwiftUI
 
-/// What a storefront model gives its library and its game page.
-@MainActor protocol LibraryStorefront: AnyObject, Observable {
+/// What a storefront model gives its library and its game page. It carries
+/// what `StorefrontAccount` tells of the account in the window, which the
+/// extensions of `StorefrontAccount.swift` write for every storefront.
+@MainActor protocol LibraryStorefront: StorefrontAccount, Observable {
     associatedtype Store: InstallationStorefront
     associatedtype Game: LibraryGame where Game.ID == Store.GameID
     var installations: GameInstallations<Store> { get }
+    var accountName: String? { get }
+    var avatarURL: URL? { get }
+    var isRestoring: Bool { get }
+    var isConnecting: Bool { get }
+    var gameSessions: GameSessions<Store> { get }
+    var rosetta: RosettaModel<GameSessions<Store>> { get }
     /// The account's games, which every library view reads.
     var library: AccountLibrary<Store, Game> { get }
     var achievements: GameAchievementsModel { get }
@@ -12,9 +20,7 @@ import SwiftUI
     func syncCloud()
     func reloadAchievements()
     var isLoadingGames: Bool { get }
-    var storageWarning: String? { get set }
     var cloud: CloudModel<Store> { get }
-    func refresh()
     /// The game whose page shows instead of the library.
     var selectedGame: Game? { get }
     func open(_ game: Game)

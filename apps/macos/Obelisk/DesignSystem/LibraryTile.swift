@@ -6,20 +6,13 @@ import SwiftUI
 struct LibraryTile: View {
     let section: LibrarySection
     let title: String
-    let status: Status
+    let status: AccountStanding
     /// The library's last played covers, the last played on top.
     let covers: [AnyView]
     let open: () -> Void
     @State private var hovered = false
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    enum Status {
-        /// The account's library shows.
-        case signedIn(account: String?, avatarURL: URL?, games: Int, installed: Int)
-        case restoring
-        case signedOut
-    }
 
     private static var coverWidth: CGFloat { 58 }
 

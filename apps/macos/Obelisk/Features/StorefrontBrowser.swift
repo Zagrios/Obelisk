@@ -7,8 +7,6 @@ import SwiftUI
 struct StorefrontBrowser<Model: LibraryStorefront, HeroArtwork: View, HeroLogo: View, Artwork: View,
                          AccountMenu: View, GamePage: View>: View {
     @Bindable var model: Model
-    let storeID: String
-    let storeTitle: String
     let libraryTitle: String
     let accountName: String?
     let avatarURL: URL?
@@ -32,8 +30,6 @@ struct StorefrontBrowser<Model: LibraryStorefront, HeroArtwork: View, HeroLogo: 
 
     init(
         model: Model,
-        storeID: String,
-        storeTitle: String,
         libraryTitle: String,
         accountName: String?,
         avatarURL: URL? = nil,
@@ -47,8 +43,6 @@ struct StorefrontBrowser<Model: LibraryStorefront, HeroArtwork: View, HeroLogo: 
         @ViewBuilder gamePage: @escaping (Model.Game, GamePageContext<HeroArtwork, Artwork>) -> GamePage
     ) {
         self.model = model
-        self.storeID = storeID
-        self.storeTitle = storeTitle
         self.libraryTitle = libraryTitle
         self.accountName = accountName
         self.avatarURL = avatarURL
@@ -61,6 +55,9 @@ struct StorefrontBrowser<Model: LibraryStorefront, HeroArtwork: View, HeroLogo: 
         self.accountMenu = accountMenu()
         self.gamePage = gamePage
     }
+
+    private var section: LibrarySection { model.section }
+    private var storeTitle: String { section.storeTitle }
 
     var body: some View {
         ZStack {
@@ -78,7 +75,7 @@ struct StorefrontBrowser<Model: LibraryStorefront, HeroArtwork: View, HeroLogo: 
                     storeTitle: storeTitle,
                     libraryTitle: libraryTitle,
                     scrollMemory: scrollMemory,
-                    stores: storeSearch.map { [StoreSearch(storeID: storeID, storeTitle: storeTitle, page: $0)] } ?? [],
+                    stores: storeSearch.map { [StoreSearch(section: section, page: $0)] } ?? [],
                     open: open,
                     heroArtwork: heroArtwork,
                     heroLogo: heroLogo,
@@ -112,7 +109,7 @@ struct StorefrontBrowser<Model: LibraryStorefront, HeroArtwork: View, HeroLogo: 
     /// Opens the store over the whole window, when the storefront has one.
     private var openStore: (() -> Void)? {
         guard let storePage, let presentStore else { return nil }
-        let store = StorePresentation(storeID: storeID, storeTitle: storeTitle, start: storePage)
+        let store = StorePresentation(section: section, start: storePage)
         return { presentStore(store) }
     }
 
@@ -163,11 +160,11 @@ private struct StorefrontBrowserBar<Model: LibraryStorefront, AccountMenu: View>
 
 /// A storefront's store, as the window presents it in a sheet.
 struct StorePresentation: Identifiable {
-    let storeID: String
-    let storeTitle: String
+    let section: LibrarySection
     let start: @MainActor () async -> WebPageStart
 
-    var id: String { storeID }
+    var id: LibrarySection { section }
+    var storeTitle: String { section.storeTitle }
 }
 
 /// The storefront's store in a sheet, in a web page signed in as the
@@ -179,8 +176,8 @@ struct StorefrontStoreModal: View {
     var body: some View {
         let title = L10n.string("ui.store.openStore", store.storeTitle)
         WebPagePanel(start: store.start, close: close, showsCloseButton: true, placeholderTitle: title,
-                     identifier: "\(store.storeID)-store", isPanel: false,
-                     store: LibrarySection(rawValue: store.storeID))
+                     identifier: "\(store.section.rawValue)-store", isPanel: false,
+                     store: store.section)
             .presentationSizing(.fitted)
             .accessibilityLabel(title)
     }

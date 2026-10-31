@@ -36,15 +36,15 @@ struct DeveloperModal: Identifiable {
                 symbol: "arrow.triangle.branch",
                 variants: [
                     Variant("Steam") {
-                        $0.cloudConflict(storefront: "steam", title: SteamGames.cloudTitle,
+                        $0.cloudConflict(.steam, title: SteamGames.cloudTitle,
                                          message: "backend.steam.cloud.conflict")
                     },
                     Variant("Epic Games") {
-                        $0.cloudConflict(storefront: "epic", title: EpicGames.cloudTitle,
+                        $0.cloudConflict(.epic, title: EpicGames.cloudTitle,
                                          message: "backend.epic.cloud_conflict")
                     },
                     Variant("Working") {
-                        $0.cloudConflict(storefront: "steam", title: SteamGames.cloudTitle,
+                        $0.cloudConflict(.steam, title: SteamGames.cloudTitle,
                                          message: "backend.steam.cloud.conflict", busy: true)
                     },
                 ]),
@@ -54,19 +54,19 @@ struct DeveloperModal: Identifiable {
                 symbol: "icloud.slash",
                 variants: [
                     Variant("Steam") {
-                        $0.cloudFailure(storefront: "steam", title: SteamGames.cloudTitle,
+                        $0.cloudFailure(.steam, title: SteamGames.cloudTitle,
                                         message: "backend.steam.cloud.unsupported")
                     },
                     Variant("Epic Games") {
-                        $0.cloudFailure(storefront: "epic", title: EpicGames.cloudTitle,
+                        $0.cloudFailure(.epic, title: EpicGames.cloudTitle,
                                         message: "backend.epic.cloud.failed")
                     },
                     Variant("No Launch anyway") {
-                        $0.cloudFailure(storefront: "steam", title: SteamGames.cloudTitle,
+                        $0.cloudFailure(.steam, title: SteamGames.cloudTitle,
                                         message: "backend.steam.cloud.network", canLaunchAnyway: false)
                     },
                     Variant("Working") {
-                        $0.cloudFailure(storefront: "steam", title: SteamGames.cloudTitle,
+                        $0.cloudFailure(.steam, title: SteamGames.cloudTitle,
                                         message: "backend.steam.cloud.network", busy: true)
                     },
                 ]),
@@ -145,12 +145,12 @@ struct DeveloperModal: Identifiable {
                 symbol: "bag.fill",
                 variants: [
                     Variant("Steam") {
-                        $0.store("steam", title: L10n.string("ui.store.steam"), url: "https://store.steampowered.com/")
+                        $0.store(.steam, url: "https://store.steampowered.com/")
                     },
                     Variant("Epic Games") {
-                        $0.store("epic", title: L10n.string("ui.store.epic"), url: EpicGames.storeURL.absoluteString)
+                        $0.store(.epic, url: EpicGames.storeURL.absoluteString)
                     },
-                    Variant("GOG") { $0.store("gog", title: L10n.string("ui.store.gog"), url: "https://www.gog.com/") },
+                    Variant("GOG") { $0.store(.gog, url: "https://www.gog.com/") },
                 ]),
             DeveloperModal(
                 id: "games-folder", title: "Games folder",
@@ -219,20 +219,20 @@ final class DeveloperModals {
         sheet = Sheet { AnyView(content($0)) }
     }
 
-    func cloudConflict(storefront: String, title: String, message: String, busy: Bool = false) {
+    func cloudConflict(_ section: LibrarySection, title: String, message: String, busy: Bool = false) {
         present { close in
             SteamCloudPromptView(title: "\(title) · \(Self.gameName)", message: message, busy: busy,
-                                 onCancel: close, onChooseLocal: close, onChooseCloud: close, storefront: storefront)
+                                 onCancel: close, onChooseLocal: close, onChooseCloud: close, storefront: section.rawValue)
                 .interactiveDismissDisabled()
         }
     }
 
-    func cloudFailure(storefront: String, title: String, message: String, busy: Bool = false,
+    func cloudFailure(_ section: LibrarySection, title: String, message: String, busy: Bool = false,
                       canLaunchAnyway: Bool = true) {
         present { close in
             SteamCloudFailureView(title: "\(title) · \(Self.gameName)", message: message, busy: busy,
                                   canLaunchAnyway: canLaunchAnyway, onRetry: close, onCancel: close,
-                                  onLaunchAnyway: close, storefront: storefront)
+                                  onLaunchAnyway: close, storefront: section.rawValue)
         }
     }
 
@@ -359,7 +359,7 @@ final class DeveloperModals {
     }
 
     func achievements(_ fetch: @escaping @MainActor @Sendable () async throws -> [GameAchievement]) {
-        let model = GameAchievementsModel(storeID: "steam") { _ in
+        let model = GameAchievementsModel(storeID: LibrarySection.steam.rawValue) { _ in
             L10n.message("backend.steam.achievements.invalidResponse")
         }
         model.load(fetch)
@@ -384,9 +384,9 @@ final class DeveloperModals {
     }
 
     func friends(_ connection: FriendsConnectionState, friends: [FriendPresentation]? = nil) {
-        let account = FriendsAccountIdentity(storeID: "steam", accountID: "0")
+        let account = FriendsAccountIdentity(storeID: LibrarySection.steam.rawValue, accountID: "0")
         let state = FriendsPresentationState(
-            store: FriendsStoreIdentity(id: "steam", name: L10n.string("ui.store.steam"), logoAssetName: "SteamLogo"),
+            store: FriendsStoreIdentity(.steam),
             account: account, friends: friends ?? Self.friends(of: account), connection: connection,
             lastKnownOnlineCount: connection == .interrupted ? 4 : nil)
         let avatars = FriendsAvatarCache()
@@ -415,9 +415,11 @@ final class DeveloperModals {
         }
     }
 
-    func store(_ id: String, title: String, url: String) {
+    func store(_ section: LibrarySection, url: String) {
         guard let url = URL(string: url) else { return }
-        let store = StorePresentation(storeID: id, storeTitle: title) { WebPageStart(url: url) }
+        let store = StorePresentation(section: section) {
+            WebPageStart(url: url)
+        }
         present { close in
             StorefrontStoreModal(store: store, close: close)
                 .frame(width: 1000, height: 680)

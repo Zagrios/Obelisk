@@ -1,18 +1,6 @@
 import Observation
 import SwiftUI
 
-/// A storefront whose account shows its friends: Steam and Epic.
-@MainActor
-protocol FriendsStorefront: AnyObject {
-    var friends: FriendsPresentationState? { get }
-    func closeFriends()
-    func retryFriends()
-    func signOut()
-}
-
-extension SteamModel: FriendsStorefront {}
-extension WebAccountModel: FriendsStorefront where Store == EpicGames {}
-
 @MainActor
 @Observable
 final class AppModel {
@@ -35,11 +23,13 @@ final class AppModel {
     /// The bug report being written, open over the whole window.
     var bugReport: BugReportModel?
     private(set) var activeFriendsAccount: FriendsAccountIdentity?
+    /// The storefronts whose friends list was open when `followFriends` last looked.
+    @ObservationIgnored private var askedFriends: Set<LibrarySection> = []
     /// The game whose page Home opened, while its storefront still shows it.
     var homeGame: HomeGame.ID?
     /// The storefronts whose saved session is still restoring since launch,
     /// so Home tells a library on its way from a signed-out one.
-    private(set) var restoringStorefronts = Set(LibrarySection.storefronts)
+    private var restoringStorefronts = Set(LibrarySection.storefronts)
     var appearance: AppAppearance {
         didSet { defaults.set(appearance.rawValue, forKey: "appearance") }
     }
@@ -117,6 +107,7 @@ final class AppModel {
         self.downloads.progress = { [weak self] item in self?.downloadTransfer(item) }
         applyAutomaticUpdates()
         reportPerformance()
+        followFriends()
     }
 
     /// Each storefront's ended games go to the performance reports, with the
@@ -143,11 +134,7 @@ final class AppModel {
 
     /// A queued Transfer's progress, from its storefront's installations.
     func downloadTransfer(_ item: DownloadItem) -> GameTransfer? {
-        switch item.storefront {
-        case .steam: steam.installations.transfer(named: item.game)
-        case .epic: epic.installations.transfer(named: item.game)
-        case .gog: gog.installations.transfer(named: item.game)
-        }
+        account(item.storefront.section)?.transfer(named: item.game)
     }
 
     /// What the download queue shows of a queued Transfer's game.
@@ -162,17 +149,9 @@ final class AppModel {
     /// Opens a queued Transfer's game page, in its storefront's library.
     func openDownload(_ item: DownloadItem) {
         downloads.isPresented = false
-        switch item.storefront {
-        case .steam: open(item, in: steam)
-        case .epic: open(item, in: epic)
-        case .gog: open(item, in: gog)
-        }
-    }
-
-    private func open<Model: LibraryStorefront>(_ item: DownloadItem, in model: Model) {
-        guard let id = Model.Store.game(item.game), let game = model.library.game(id) else { return }
-        selection = item.storefront.section
-        model.open(game)
+        let section = item.storefront.section
+        guard account(section)?.openGame(named: item.game) == true else { return }
+        selection = section
     }
 
     /// Shows the section the sidebar picked at its first page: Home or the
@@ -191,26 +170,15 @@ final class AppModel {
     /// Returns a storefront from its game page, which Home shows too when it
     /// opened it.
     private func closeGame(of section: LibrarySection) {
-        switch section {
-        case .steam: closeGame(in: steam)
-        case .epic: closeGame(in: epic)
-        case .gog: closeGame(in: gog)
-        case .home, .settings: return
-        }
+        account(section)?.closeGamePage()
         if homeGame?.section == section { homeGame = nil }
-    }
-
-    private func closeGame<Model: LibraryStorefront>(in model: Model) {
-        if model.selectedGame != nil { model.closeGame() }
     }
 
     /// The installed games outside the games folder: their move was stopped,
     /// or they were installed meanwhile. Two accounts' installations of one
     /// folder count once.
     var gamesOutsideFolder: Int {
-        let directories = steam.installations.receipts.map(\.directory)
-            + epic.installations.receipts.map(\.directory)
-            + gog.installations.receipts.map(\.directory)
+        let directories = accounts.flatMap(\.installedDirectories)
         return Set(directories.filter { !gamesFolder.holds($0) }).count
     }
 
@@ -220,92 +188,162 @@ final class AppModel {
     }
 
     private func applyAutomaticUpdates() {
-        steam.installations.updatesAutomatically = updatesGamesAutomatically
-        epic.installations.updatesAutomatically = updatesGamesAutomatically
-        gog.installations.updatesAutomatically = updatesGamesAutomatically
+        for account in accounts { account.setUpdatesAutomatically(updatesGamesAutomatically) }
     }
+
+    // MARK: Accounts
+
+    /// The account of a storefront's section, which Home and Settings do not
+    /// have. The one exhaustive switch over the storefronts: adding a section
+    /// fails to compile here.
+    func account(_ section: LibrarySection) -> (any StorefrontAccount)? {
+        switch section {
+        case .steam: steam
+        case .epic: epic
+        case .gog: gog
+        case .home, .settings: nil
+        }
+    }
+
+    /// Every storefront's account in sidebar order, which orders prompts,
+    /// friends, refreshes, restorations and the lifecycle's stops.
+    var accounts: [any StorefrontAccount] {
+        LibrarySection.storefronts.compactMap { account($0) }
+    }
+
+    /// How a storefront's tile, row and sign-in card tell its account: its
+    /// own standing, but restoring as long as the launch restoration lists it.
+    func standing(of section: LibrarySection) -> AccountStanding {
+        guard let standing = account(section)?.standing else { return .signedOut(connecting: false) }
+        if case .signedIn = standing { return standing }
+        return restoringStorefronts.contains(section) ? .restoring : standing
+    }
+
+    /// What Home shows: the libraries, a blank while saved sessions restore,
+    /// or its sign-in page.
+    enum HomeContent: Equatable { case libraries, restoring, signIn }
+
+    var homeContent: HomeContent {
+        if accounts.contains(where: { $0.showsLibrary }) { return .libraries }
+        return restoringStorefronts.isEmpty ? .signIn : .restoring
+    }
+
+    // MARK: Prompts
 
     /// The newer Voile release, Cloud or Rosetta question shown over the whole
-    /// app, whichever tab is open. One sheet at a time, in a fixed order.
-    enum StorefrontPrompt: Equatable {
-        case steamVoile, steamRosetta, steamCloud, epicVoile, epicRosetta, epicCloud, gogVoile, gogRosetta
-    }
-
-    var presentedPrompt: StorefrontPrompt? {
-        if steam.gameSessions.voileUpdate != nil { return .steamVoile }
-        if steam.rosetta.prompt != nil { return .steamRosetta }
-        if steam.cloud.question != nil { return .steamCloud }
-        if epic.gameSessions.voileUpdate != nil { return .epicVoile }
-        if epic.rosetta.prompt != nil { return .epicRosetta }
-        if epic.cloud.question != nil { return .epicCloud }
-        if gog.gameSessions.voileUpdate != nil { return .gogVoile }
-        if gog.rosetta.prompt != nil { return .gogRosetta }
+    /// app, whichever tab is open. One sheet at a time, in a fixed order: the
+    /// storefronts' in the sidebar's, each one's Voile, Rosetta, Cloud.
+    var presentedPrompt: AccountPrompt? {
+        for account in accounts {
+            if let kind = account.pendingPrompt { return AccountPrompt(section: account.section, kind: kind) }
+        }
         return nil
     }
 
-    /// The storefront whose friends `storeID` names; GOG shows none.
-    private func friendsModel(storeID: String?) -> (any FriendsStorefront)? {
-        switch storeID {
-        case "steam": steam
-        case "epic": epic
-        default: nil
-        }
+    /// The sheet of `prompt`, asked by its storefront's account.
+    func promptSheet(for prompt: AccountPrompt) -> AnyView {
+        account(prompt.section)?.promptSheet(prompt.kind) ?? AnyView(EmptyView())
+    }
+
+    // MARK: Friends
+
+    /// The account whose friends `storeID` names, the one place a friends
+    /// identity meets a section.
+    private func account(storeID: String?) -> (any StorefrontAccount)? {
+        accounts.first { $0.section.rawValue == storeID }
     }
 
     var presentedFriends: FriendsPresentationState? {
         guard let activeFriendsAccount else { return nil }
-        let state = friendsModel(storeID: activeFriendsAccount.storeID)?.friends
+        let state = account(storeID: activeFriendsAccount.storeID)?.friends
         return state?.account == activeFriendsAccount ? state : nil
     }
 
-    func presentFriends(storeID: String) {
-        guard let model = friendsModel(storeID: storeID), let state = model.friends else { return }
+    /// Shows `account`'s friends, which closes the other storefronts' lists.
+    private func presentFriends(of account: any StorefrontAccount) {
+        guard let state = account.friends else { return }
         activeFriendsAccount = state.account
-        for other in [steam, epic] as [any FriendsStorefront] where other !== model { other.closeFriends() }
+        for other in accounts where other !== account { other.closeFriends() }
     }
 
-    func closeFriends(storeID: String? = nil) {
-        if let storeID, activeFriendsAccount?.storeID != storeID { return }
+    /// Closes the friends when they are `account`'s.
+    private func closeFriends(ifActive account: any StorefrontAccount) {
+        if activeFriendsAccount?.storeID == account.section.rawValue { closeFriends() }
+    }
+
+    func closeFriends() {
         activeFriendsAccount = nil
-        steam.closeFriends()
-        epic.closeFriends()
-    }
-
-    func validateFriendsAccount() {
-        if activeFriendsAccount != nil && presentedFriends == nil { closeFriends() }
+        for account in accounts { account.closeFriends() }
     }
 
     func retryPresentedFriends() {
-        friendsModel(storeID: activeFriendsAccount?.storeID)?.retryFriends()
+        account(storeID: activeFriendsAccount?.storeID)?.retryFriends()
     }
 
     func signInPresentedFriends() {
-        friendsModel(storeID: activeFriendsAccount?.storeID)?.signOut()
+        account(storeID: activeFriendsAccount?.storeID)?.signOut()
         closeFriends()
     }
+
+    /// Follows the accounts' friends lists as their menus open and close them:
+    /// the list just opened shows and the others close, and the friends of an
+    /// account that went away close. It runs whether or not a window shows.
+    private func followFriends() {
+        let followed: [any StorefrontAccount] = withObservationTracking {
+            // The active account's state: it changes, or goes, with the account.
+            _ = presentedFriends
+            // Every flag is read, so any of them wakes it.
+            let all = accounts
+            for account in all { _ = account.isFriendsPresented }
+            return all
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in self?.followFriends() }
+        }
+        for account in followed {
+            // Read again: presenting one account closed the others' lists.
+            let presented = account.isFriendsPresented
+            guard presented != askedFriends.contains(account.section) else { continue }
+            if presented {
+                askedFriends.insert(account.section)
+                presentFriends(of: account)
+            } else {
+                askedFriends.remove(account.section)
+                closeFriends(ifActive: account)
+            }
+        }
+        if activeFriendsAccount != nil && presentedFriends == nil { closeFriends() }
+    }
+
+    // MARK: Restoring and refreshing
 
     /// Restores every storefront's saved session, so Home shows each library
     /// from launch. A signed-out store offers its sign-in on its own tab.
     func restoreStorefronts() async {
-        let restorations = [
-            Task { await steam.start(signIn: false); restoringStorefronts.remove(.steam) },
-            Task { await epic.start(); restoringStorefronts.remove(.epic) },
-            Task { await gog.start(); restoringStorefronts.remove(.gog) },
-        ]
+        let restorations = accounts.map { account in
+            Task {
+                await account.restoreSavedSession()
+                restoringStorefronts.remove(account.section)
+            }
+        }
         for restoration in restorations { await restoration.value }
     }
 
     /// Reloads the open storefront's library; Home's, every storefront's.
     func refresh() {
         switch selection {
-        case .home:
-            steam.refresh()
-            epic.refresh()
-            gog.refresh()
-        case .steam: steam.refresh()
-        case .epic: epic.refresh()
-        case .gog: gog.refresh()
+        case .home: for account in accounts { account.refresh() }
         case .settings: break
+        default: account(selection)?.refresh()
         }
+    }
+
+    // MARK: Game sessions
+
+    /// Whether any storefront has a Game session, one still preparing included.
+    var runsGame: Bool { accounts.contains { $0.hasGameSession } }
+
+    /// Ends the running game of every storefront, one storefront after the other.
+    func stopGames() async {
+        for account in accounts { await account.stopGames() }
     }
 }

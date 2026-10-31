@@ -6,7 +6,7 @@ struct CloudQuestionSheet<Model: LibraryStorefront>: View {
     let model: Model
 
     var body: some View {
-        let storefront = Model.Store.storefront.section.rawValue
+        let storefront = model.section.rawValue
         switch model.cloud.question?.kind {
         case .conflict: SteamCloudPromptView(model: model, storefront: storefront)
         case .failed: SteamCloudFailureView(model: model, storefront: storefront)
@@ -22,7 +22,7 @@ struct SteamCloudPromptView: View {
     let onCancel: () -> Void
     let onChooseLocal: () -> Void
     let onChooseCloud: () -> Void
-    var storefront = "steam"
+    var storefront = LibrarySection.steam.rawValue
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -109,7 +109,7 @@ struct SteamCloudFailureView: View {
     let onRetry: () -> Void
     let onCancel: () -> Void
     let onLaunchAnyway: () -> Void
-    var storefront = "steam"
+    var storefront = LibrarySection.steam.rawValue
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {

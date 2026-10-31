@@ -28,8 +28,6 @@ struct GogView: View {
     private var browser: some View {
         StorefrontBrowser(
             model: model,
-            storeID: "gog",
-            storeTitle: L10n.string("ui.store.gog"),
             libraryTitle: L10n.string("ui.gog.library"),
             accountName: model.accountName,
             avatarURL: model.avatarURL,

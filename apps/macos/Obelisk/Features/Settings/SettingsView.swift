@@ -60,7 +60,7 @@ struct SettingsView: View {
                         ObeliskCard {
                             ForEach(LibrarySection.storefronts) { section in
                                 if section != LibrarySection.storefronts.first { ObeliskCardDivider() }
-                                SettingsStoreRow(section: section, status: status(of: section)) {
+                                SettingsStoreRow(section: section, status: model.standing(of: section)) {
                                     model.selection = section
                                 }
                             }
@@ -352,38 +352,6 @@ struct SettingsView: View {
                                 identifier: "settings-show-library-folder") {
                 NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: model.libraryDirectory)
             }
-        }
-    }
-
-    /// What a storefront's row tells of its account, as Home's tile does.
-    private func status(of section: LibrarySection) -> LibraryTile.Status {
-        switch section {
-        case .steam:
-            status(of: model.steam, in: section, showsLibrary: model.steam.showsLibrary,
-                   isRestoring: model.steam.isRestoring, account: model.steam.displayName,
-                   avatarURL: model.steam.avatarURL)
-        case .epic:
-            status(of: model.epic, in: section, showsLibrary: model.epic.showsLibrary,
-                   isRestoring: model.epic.isRestoring, account: model.epic.accountName,
-                   avatarURL: model.epic.avatarURL)
-        default:
-            status(of: model.gog, in: section, showsLibrary: model.gog.showsLibrary,
-                   isRestoring: model.gog.isRestoring, account: model.gog.accountName,
-                   avatarURL: model.gog.avatarURL)
-        }
-    }
-
-    private func status<Store: LibraryStorefront>(
-        of store: Store, in section: LibrarySection, showsLibrary: Bool, isRestoring: Bool, account: String?,
-        avatarURL: URL?
-    ) -> LibraryTile.Status {
-        if showsLibrary {
-            .signedIn(account: account, avatarURL: avatarURL, games: store.library.games.count,
-                      installed: Set(store.installations.receipts.map(\.gameID)).count)
-        } else if isRestoring || model.restoringStorefronts.contains(section) {
-            .restoring
-        } else {
-            .signedOut
         }
     }
 }
@@ -873,10 +841,10 @@ private struct DiagonalEdge: Shape {
 /// or its sign-in.
 private struct SettingsStoreRow: View {
     let section: LibrarySection
-    let status: LibraryTile.Status
+    let status: AccountStanding
     let open: () -> Void
 
-    private var name: String { section.storeName ?? section.title }
+    private var name: String { section.storeTitle }
 
     var body: some View {
         ObeliskRow(title: name) {

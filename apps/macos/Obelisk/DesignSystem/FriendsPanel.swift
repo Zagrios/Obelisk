@@ -663,7 +663,7 @@ extension FriendPresentation {
     }
 
     /// Nil for a friend of another storefront.
-    var steamID: UInt64? { id.account.storeID == "steam" ? UInt64(id.friendID) : nil }
+    var steamID: UInt64? { id.account.storeID == LibrarySection.steam.rawValue ? UInt64(id.friendID) : nil }
 }
 
 extension FriendsPresentationState {

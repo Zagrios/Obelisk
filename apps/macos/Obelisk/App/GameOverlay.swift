@@ -30,11 +30,11 @@ struct OverlaySession: Equatable {
     /// When this Obelisk saw the game start; a game recovered running has none.
     let startedAt: Date?
 
-    var storeID: String {
+    var section: LibrarySection {
         switch game {
-        case .steam: "steam"
-        case .epic: "epic"
-        case .gog: "gog"
+        case .steam: .steam
+        case .epic: .epic
+        case .gog: .gog
         }
     }
 }
@@ -375,14 +375,18 @@ final class GameOverlayController {
 
     // MARK: The running game
 
-    /// The friends of the game's storefront; GOG shows none.
-    var friends: FriendsPresentationState? {
+    /// The account of the running game's storefront.
+    private var account: (any StorefrontAccount)? {
         switch session?.game {
-        case .steam?: steam.friends
-        case .epic?: epic.friends
-        case .gog?, nil: nil
+        case .steam?: steam
+        case .epic?: epic
+        case .gog?: gog
+        case nil: nil
         }
     }
+
+    /// The friends of the game's storefront; GOG shows none.
+    var friends: FriendsPresentationState? { account?.friends }
 
     /// Steam's chat, while a Steam game runs.
     var chat: SteamChatModel? {
@@ -408,9 +412,7 @@ final class GameOverlayController {
         }
     }
 
-    func retryFriends() {
-        if case .epic? = session?.game { epic.retryFriends() } else { steam.retryFriends() }
-    }
+    func retryFriends() { account?.retryFriends() }
 
     /// Closes the overlay for the library window, where signing in again
     /// happens too.
@@ -428,15 +430,15 @@ final class GameOverlayController {
         guard let session, achievements == nil else { return }
         switch session.game {
         case .steam(let appId):
-            let model = GameAchievementsModel(storeID: "steam", describe: SteamModel.message)
+            let model = GameAchievementsModel(storeID: LibrarySection.steam.rawValue, describe: SteamModel.message)
             achievements = model
             steam.loadAchievements(appId: appId, into: model)
         case .epic(let id):
-            let model = GameAchievementsModel(storeID: "epic", describe: EpicGames.describe)
+            let model = GameAchievementsModel(storeID: LibrarySection.epic.rawValue, describe: EpicGames.describe)
             achievements = model
             epic.loadAchievements(of: id, into: model)
         case .gog(let id):
-            let model = GameAchievementsModel(storeID: "gog", describe: GogGames.describe)
+            let model = GameAchievementsModel(storeID: LibrarySection.gog.rawValue, describe: GogGames.describe)
             achievements = model
             gog.loadAchievements(of: id, into: model)
         }

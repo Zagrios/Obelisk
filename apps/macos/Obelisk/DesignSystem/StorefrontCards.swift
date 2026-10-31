@@ -38,7 +38,7 @@ struct StorefrontSignInCard: View {
     @State private var hovered = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var name: String { section.storeName ?? section.title }
+    private var name: String { section.storeTitle }
 
     var body: some View {
         Button(action: open) {

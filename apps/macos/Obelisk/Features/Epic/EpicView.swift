@@ -28,8 +28,6 @@ struct EpicView: View {
     private var browser: some View {
         StorefrontBrowser(
             model: model,
-            storeID: "epic",
-            storeTitle: L10n.string("ui.store.epic"),
             libraryTitle: L10n.string("ui.epic.library"),
             accountName: model.accountName,
             storePage: model.storePage,

@@ -16,7 +16,6 @@ final class HomeShelvesTests: XCTestCase {
         XCTAssertEqual(library.recent.map(\.title), ["Hades", "Portal 2"], "Played games only")
         XCTAssertEqual(library.installed.map(\.title), ["Hades", "Celeste"])
         XCTAssertEqual(library.covers.map(\.title), ["Hades", "Portal 2", "Braid"])
-        XCTAssertEqual(library.count, 4)
         XCTAssertNil(library.featured?.playtime)
         XCTAssertEqual(library.recent.last?.playtime, .seconds(300))
         XCTAssertEqual(library.recent.last?.lastPlayed, Date(timeIntervalSince1970: 100))

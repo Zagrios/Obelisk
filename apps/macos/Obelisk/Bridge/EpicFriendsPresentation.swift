@@ -3,14 +3,14 @@ import Foundation
 extension FriendsPresentationState {
     static func epic(accountID: String) -> Self {
         FriendsPresentationState(
-            store: FriendsStoreIdentity(id: "epic", name: L10n.string("ui.store.epic"), logoAssetName: "EpicGamesLogo"),
-            account: FriendsAccountIdentity(storeID: "epic", accountID: accountID),
+            store: FriendsStoreIdentity(.epic),
+            account: FriendsAccountIdentity(storeID: LibrarySection.epic.rawValue, accountID: accountID),
             friends: [], connection: .loading
         )
     }
 
     mutating func apply(_ snapshot: EpicFriendsSnapshot) {
-        guard account.storeID == "epic", snapshot.accountId == account.accountID else { return }
+        guard account.storeID == LibrarySection.epic.rawValue, snapshot.accountId == account.accountID else { return }
         // The Rust service keeps its last full snapshot during reconnects.
         if snapshot.connection != .loading || friends.isEmpty {
             friends = snapshot.friends.map { friend in

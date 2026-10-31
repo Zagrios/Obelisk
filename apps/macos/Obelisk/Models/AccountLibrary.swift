@@ -138,8 +138,7 @@ final class AccountLibrary<Store: InstallationStorefront, Game: LibraryGame> whe
         // updating after a search, a filter, an installation or new metadata.
         let games = self.games
         keep(revision)
-        let receipts = filter == .installed || sort == .size ? installations.receipts : []
-        let installed = Dictionary(receipts.map { ($0.gameID, $0.totalBytes) }, uniquingKeysWith: +)
+        let installed = filter == .installed || sort == .size ? installedSizes : [:]
         // What only one order reads, such as library dates or the sizes an
         // installation changes, changes only that order.
         let inputs = Inputs(values: revisions[sort, default: 0], sizes: sort == .size ? installed : [:])
@@ -167,6 +166,19 @@ final class AccountLibrary<Store: InstallationStorefront, Game: LibraryGame> whe
     }
 
     func game(_ id: Game.ID) -> Game? { games.first { $0.id == id } }
+
+    /// How many of the library's games an Installation receipt names: what
+    /// the installed filter keeps.
+    var installedCount: Int {
+        let installed = installedSizes
+        return games.count { installed[$0.id] != nil }
+    }
+
+    /// The size of each game an Installation receipt names, receipts of one
+    /// game added.
+    private var installedSizes: [Game.ID: UInt64] {
+        Dictionary(installations.receipts.map { ($0.gameID, $0.totalBytes) }, uniquingKeysWith: +)
+    }
 
     /// How long the account played the game; nil until the storefront told
     /// it, or when the game was never played.

@@ -37,6 +37,14 @@ protocol AccountPresence: AnyObject {
     func connect(_ session: Session, account: String)
     /// Stops its network work at once: nothing the revoked session sends later shows.
     func revoke()
+    /// The connected account's friends; nil signed out.
+    var state: FriendsPresentationState? { get }
+    /// Whether the account's menu opened them.
+    var isPresented: Bool { get }
+    func open()
+    func close()
+    /// Replaces only the social socket.
+    func retry()
 }
 
 /// The presence of a storefront that has none.
@@ -45,6 +53,11 @@ final class NoPresence<Session>: AccountPresence {
     init() {}
     func connect(_ session: Session, account: String) {}
     func revoke() {}
+    var state: FriendsPresentationState? { nil }
+    var isPresented: Bool { false }
+    func open() {}
+    func close() {}
+    func retry() {}
 }
 
 /// A storefront whose account signs in on its own web page and whose Rust
@@ -569,4 +582,15 @@ final class WebAccountModel<Store: WebStorefront> {
             warn: { [weak self] in self?.storageWarning = $0 }
         )
     }
+}
+
+extension WebAccountModel {
+    /// The account's friends, whichever its presence is: none for a storefront
+    /// without any.
+    var friends: FriendsPresentationState? { presence.state }
+    var isFriendsPresented: Bool { presence.isPresented }
+
+    func openFriends() { presence.open() }
+    func closeFriends() { presence.close() }
+    func retryFriends() { presence.retry() }
 }

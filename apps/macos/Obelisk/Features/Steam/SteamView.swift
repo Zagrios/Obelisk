@@ -19,8 +19,6 @@ struct SteamView: View {
     private var browser: some View {
         StorefrontBrowser(
             model: model,
-            storeID: "steam",
-            storeTitle: L10n.string("ui.store.steam"),
             libraryTitle: L10n.string("ui.steam.library"),
             accountName: model.displayName,
             avatarURL: model.avatarURL,
