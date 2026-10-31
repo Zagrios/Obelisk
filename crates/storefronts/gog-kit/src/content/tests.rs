@@ -1,99 +1,39 @@
 use std::{
     collections::HashMap,
-    io::{BufRead, BufReader},
-    net::{TcpListener, TcpStream},
     os::unix::fs::PermissionsExt,
-    sync::Mutex as StdMutex,
-    thread,
+    sync::{
+        Mutex as StdMutex,
+        atomic::{AtomicUsize, Ordering},
+    },
 };
 
 use futures_util::FutureExt;
+use obelisk_core::testing::{Cdn, Reply, reaching};
 use serde_json::json;
 use tokio::sync::mpsc;
 
 use super::*;
 use crate::manifest::{DepotManifest, Installed};
 
-/// A CDN on the loopback interface that serves fixed chunks and records
-/// every request.
-struct Cdn {
-    base: String,
-    requests: Arc<StdMutex<Vec<String>>>,
+mod chunk_request;
+mod publish;
+
+/// A CDN in memory that serves fixed chunks by path.
+fn serving(responses: HashMap<String, Vec<u8>>) -> Cdn {
+    unavailable_for(responses, 0)
 }
 
-impl Cdn {
-    fn new(responses: HashMap<String, Vec<u8>>) -> Self {
-        Self::unavailable_for(responses, 0)
-    }
-
-    /// A CDN that answers its first `unavailable` requests with 503.
-    fn unavailable_for(responses: HashMap<String, Vec<u8>>, unavailable: usize) -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let base = format!("http://{}/store", listener.local_addr().unwrap());
-        let requests = Arc::new(StdMutex::new(Vec::new()));
-        let recorded = requests.clone();
-        thread::spawn(move || {
-            for (index, mut socket) in listener.incoming().flatten().enumerate() {
-                if index < unavailable {
-                    let mut request = BufReader::new(socket.try_clone().unwrap());
-                    let mut line = String::new();
-                    while request.read_line(&mut line).unwrap() > 2 {
-                        line.clear();
-                    }
-                    let _ = write!(
-                        socket,
-                        "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-                    );
-                    continue;
-                }
-                serve(socket, &responses, &recorded);
-            }
-        });
-        Self { base, requests }
-    }
-
-    fn requests(&self) -> Vec<String> {
-        std::mem::take(&mut *self.requests.lock().unwrap())
-    }
-}
-
-fn serve(
-    socket: TcpStream,
-    responses: &HashMap<String, Vec<u8>>,
-    requests: &StdMutex<Vec<String>>,
-) {
-    let mut reader = BufReader::new(socket.try_clone().unwrap());
-    let mut line = String::new();
-    reader.read_line(&mut line).unwrap();
-    let path = line
-        .split_whitespace()
-        .nth(1)
-        .unwrap_or_default()
-        .to_owned();
-    loop {
-        let mut header = String::new();
-        if reader.read_line(&mut header).unwrap() <= 2 {
-            break;
+/// A CDN that answers its first `unavailable` requests with 503.
+fn unavailable_for(responses: HashMap<String, Vec<u8>>, unavailable: usize) -> Cdn {
+    Cdn::in_memory(move |arrival| {
+        if arrival.index < unavailable {
+            Reply::status(503, "")
+        } else {
+            responses
+                .get(arrival.path())
+                .map_or_else(|| Reply::status(404, ""), |body| Reply::ok(body.clone()))
         }
-    }
-    requests.lock().unwrap().push(path.clone());
-    let mut socket = socket;
-    match responses.get(&path) {
-        Some(body) => {
-            write!(
-                socket,
-                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                body.len()
-            )
-            .unwrap();
-            socket.write_all(body).unwrap();
-        }
-        None => write!(
-            socket,
-            "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-        )
-        .unwrap(),
-    }
+    })
 }
 
 fn md5_hex(bytes: &[u8]) -> String {
@@ -109,6 +49,8 @@ fn compressed(bytes: &[u8]) -> Vec<u8> {
 /// A depot whose files are made of `chunks`, served by the CDN it returns.
 struct Fixture {
     cdn: Cdn,
+    /// How many of the CDN's requests `requests` already told of.
+    told: AtomicUsize,
     installed: Arc<Installed>,
     chunks: HashMap<&'static str, (Vec<u8>, String)>,
 }
@@ -153,16 +95,36 @@ fn fixture_serving(edit: impl Fn(&str, &mut Vec<u8>)) -> Fixture {
         .add("", "1207658924", manifest.depot.items)
         .unwrap();
     Fixture {
-        cdn: Cdn::new(responses),
+        cdn: serving(responses),
+        told: AtomicUsize::new(0),
         installed: Arc::new(installed),
         chunks,
     }
 }
 
 impl Fixture {
+    /// The CDN's URL for the product's chunks.
+    fn base(&self) -> String {
+        format!("{}/store", self.cdn.base())
+    }
+
+    fn client(&self) -> CdnClient {
+        reaching(&[&self.cdn])
+    }
+
+    /// The paths of the requests the CDN took since this was last called.
+    fn requests(&self) -> Vec<String> {
+        let arrivals = self.cdn.arrivals();
+        let told = self.told.swap(arrivals.len(), Ordering::AcqRel);
+        arrivals[told..]
+            .iter()
+            .map(|arrival| arrival.path().to_owned())
+            .collect()
+    }
+
     /// Endpoints for the product, renewed on demand.
     fn links(&self) -> Arc<SecureLinks> {
-        let base = self.cdn.base.clone();
+        let base = self.base();
         Arc::new(SecureLinks::new(Arc::new(move |source| {
             assert_eq!(source, "1207658924");
             let endpoint = Endpoint {
@@ -178,7 +140,7 @@ impl Fixture {
 
     async fn install(&self, root: &Path) -> Result<DownloadSummary, GogError> {
         download(
-            crate::http::client().unwrap(),
+            self.client(),
             self.links(),
             self.installed.clone(),
             "build".into(),
@@ -190,35 +152,39 @@ impl Fixture {
     }
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test(start_paused = true)]
 async fn a_chunk_outlasts_a_cdn_unavailable_past_its_quick_retries() {
     let mut fixture = fixture();
     let (bytes, path) = fixture.chunks["a"].clone();
     let packed = compressed(&bytes);
     // Four answers of 503 used up every attempt before: three quick retries
     // after the first.
-    fixture.cdn = Cdn::unavailable_for([(path.clone(), packed)].into(), 4);
-    let http = crate::http::client().unwrap();
-    let file = &fixture.installed.files[0];
-    let started = std::time::Instant::now();
-    let head = read(&http, &fixture.links(), file, 5, &CancelToken::new())
-        .await
-        .unwrap();
+    fixture.cdn = unavailable_for([(path.clone(), packed)].into(), 4);
+    let started = tokio::time::Instant::now();
+    let head = read(
+        &fixture.client(),
+        &fixture.links(),
+        &fixture.installed.files[0],
+        5,
+        &CancelToken::new(),
+    )
+    .await
+    .unwrap();
     assert_eq!(head, b"first");
-    assert_eq!(fixture.cdn.requests(), [path]);
+    assert_eq!(fixture.requests(), vec![path; 5]);
     assert!(started.elapsed() >= transfer::NETWORK_RETRY_WAITS[0]);
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_file_s_first_bytes_are_read_from_the_chunks_that_hold_them() {
     let fixture = fixture();
-    let http = crate::http::client().unwrap();
+    let http = fixture.client();
     let links = fixture.links();
     let file = &fixture.installed.files[0];
     let cancel = CancelToken::new();
     let head = read(&http, &links, file, 5, &cancel).await.unwrap();
     assert_eq!(head, b"first");
-    assert_eq!(fixture.cdn.requests(), [fixture.chunks["a"].1.clone()]);
+    assert_eq!(fixture.requests(), [fixture.chunks["a"].1.clone()]);
     let whole = read(&http, &links, file, 100, &cancel).await.unwrap();
     assert_eq!(whole, b"first part second");
 }
@@ -230,7 +196,7 @@ async fn a_transfer_installs_every_file_then_reuses_what_is_on_disk() {
     let root = folder.path().join("gog-1207658924-windows");
 
     let summary = fixture.install(&root).await.unwrap();
-    assert_eq!(fixture.cdn.requests().len(), 3);
+    assert_eq!(fixture.requests().len(), 3);
     assert_eq!(summary.reused_bytes, 0);
     assert_eq!(
         fs::read(root.join("Game/game.exe")).unwrap(),
@@ -262,7 +228,7 @@ async fn a_transfer_installs_every_file_then_reuses_what_is_on_disk() {
 
     let summary = fixture.install(&root).await.unwrap();
     assert!(
-        fixture.cdn.requests().is_empty(),
+        fixture.requests().is_empty(),
         "a verified installation downloads nothing"
     );
     assert_eq!(summary.reused_bytes, summary.total_bytes);
@@ -270,7 +236,7 @@ async fn a_transfer_installs_every_file_then_reuses_what_is_on_disk() {
     // The file's second chunk changed: only it is downloaded again.
     fs::write(root.join("Game/game.exe"), b"first part SECOND").unwrap();
     fixture.install(&root).await.unwrap();
-    assert_eq!(fixture.cdn.requests(), [fixture.chunks["b"].1.clone()]);
+    assert_eq!(fixture.requests(), [fixture.chunks["b"].1.clone()]);
     assert_eq!(
         fs::read(root.join("Game/game.exe")).unwrap(),
         b"first part second"
@@ -284,7 +250,7 @@ async fn assembling_a_file_never_shows_the_download_as_verifying_again() {
     let phases = Arc::new(StdMutex::new(Vec::new()));
     let captured = Arc::clone(&phases);
     download(
-        crate::http::client().unwrap(),
+        fixture.client(),
         fixture.links(),
         fixture.installed.clone(),
         "build".into(),
@@ -520,7 +486,6 @@ async fn a_chunk_with_a_wrong_length_fails_as_integrity() {
     );
     let path = &fixture.chunks["a"].1;
     let asked = fixture
-        .cdn
         .requests()
         .iter()
         .filter(|request| *request == path)
@@ -531,10 +496,10 @@ async fn a_chunk_with_a_wrong_length_fails_as_integrity() {
     // The decode's MD5 check would refuse this body too. Fetched alone, the
     // exact bound refuses its advertised length before a byte is read.
     let (bytes, path) = &fixture.chunks["a"];
-    let url = Url::parse(&fixture.cdn.base).unwrap().join(path).unwrap();
+    let url = Url::parse(&fixture.base()).unwrap().join(path).unwrap();
     let reporter = Reporter::new(DownloadProgress::default(), |_| {});
     let fetched = fetch(
-        &crate::http::client().unwrap(),
+        &fixture.client(),
         url,
         compressed(bytes).len() as u64,
         &CancelToken::new(),

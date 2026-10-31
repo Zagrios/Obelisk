@@ -183,16 +183,16 @@ impl<N: Network> Content<N> {
         self.credentials.steam_id
     }
 
-    /// Where the installation's Cloud saves live: a Windows game's in its
-    /// Wine prefix.
-    fn cloud(&self, receipt: &Receipt<Steam>) -> steam_cloud::Config {
-        steam_cloud::Config {
+    /// Where the installation's Cloud saves live: a Windows game's in the
+    /// Wine prefix of the engine it runs on.
+    async fn cloud(&self, receipt: &Receipt<Steam>) -> Result<steam_cloud::Config, Failure> {
+        Ok(steam_cloud::Config {
             root: self.locations.cloud_archive.clone(),
             home: self.locations.home.clone(),
             install: receipt.directory.clone().into(),
             app_id: receipt.product.app_id,
-            prefix: receipt.wine_prefix(&self.locations),
-        }
+            prefix: receipt.wine_prefix(&self.locations).await?,
+        })
     }
 }
 
@@ -304,7 +304,7 @@ impl<N: Network> installations::Content<Steam> for Content<N> {
             let Some((metadata, listing)) = rules else {
                 return Ok(());
             };
-            let config = self.cloud(receipt);
+            let config = self.cloud(receipt).await?;
             blocking(super::Error::Storage.to_string(), move || {
                 steam_cloud::archive_with_rules(&config, metadata, listing)
             })
@@ -314,7 +314,7 @@ impl<N: Network> installations::Content<Steam> for Content<N> {
     }
     fn removed<'a>(&'a self, receipt: &'a Receipt<Steam>) -> BoxFuture<'a, Result<(), Failure>> {
         Box::pin(async move {
-            let (config, account) = (self.cloud(receipt), self.account());
+            let (config, account) = (self.cloud(receipt).await?, self.account());
             blocking(Steam::SESSION_FAILED, move || {
                 record::removed::<steam_cloud::Context>(&config, &account)
             })
@@ -340,7 +340,9 @@ impl<N: Network> installations::Content<Steam> for Content<N> {
         Box::pin(async move {
             // An uninstalled game syncs what its saved context names.
             let target = match installed {
-                Some(receipt) => steam_cloud::MaintenanceTarget::Installed(self.cloud(receipt)),
+                Some(receipt) => {
+                    steam_cloud::MaintenanceTarget::Installed(self.cloud(receipt).await?)
+                }
                 None => steam_cloud::MaintenanceTarget::Uninstalled {
                     root: self.locations.cloud_archive.clone(),
                     app_id: *game,

@@ -1,12 +1,14 @@
 //! Cancellation and progress vocabulary shared by storefront download engines.
 mod body;
+mod cdn;
 mod engine;
 mod lifecycle;
 mod pace;
 mod window;
-pub use body::{
-    BodyError, BodySize, CHUNK_DEADLINE, CHUNK_STALL, NETWORK_RETRY_WAITS, chunk_parts, read_body,
-};
+pub use body::{BodyError, BodySize, read_body};
+#[cfg(any(test, feature = "testing"))]
+pub(crate) use cdn::{Answer, Transport};
+pub use cdn::{CdnClient, CdnError, NETWORK_RETRY_WAITS, is_outage_status};
 pub use engine::{Chunks, Delivery, Interrupted, Pipeline, run_engine};
 pub use lifecycle::{TransferBusy, TransferContext, TransferStatus, Transfers};
 pub use pace::set_speed_limit;

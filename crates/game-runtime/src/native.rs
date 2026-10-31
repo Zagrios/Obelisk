@@ -131,7 +131,9 @@ fn environment_from(home: &Path, read: impl Fn(&str) -> Option<String>) -> HashM
 
 /// The player's locale, such as `it_IT`: Obelisk's `LC_ALL`, else its
 /// `LANG`, which Obelisk sets to the player's language as it starts. None
-/// for C, POSIX or a name that is no locale.
+/// for C, POSIX or a name that is no locale. Read where Launch settings are
+/// resolved, in Obelisk's process; they carry it to every process that starts
+/// a game.
 pub(crate) fn player_locale() -> Option<String> {
     locale_from(|key| std::env::var(key).ok())
 }

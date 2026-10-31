@@ -12,7 +12,7 @@ use obelisk_core::{
     installation::{self, Destination, InstallFailure, InstalledFiles, TransferError},
     mac_build,
     platform::Platform,
-    transfer::{CancelToken, TransferBusy, TransferContext, Transfers},
+    transfer::{CancelToken, CdnClient, TransferBusy, TransferContext, Transfers},
 };
 use serde::{Deserialize, Serialize};
 
@@ -406,10 +406,10 @@ impl Client {
             listing.link(&link.path, &link.target);
         }
         let links = SecureLinks::new(self.secure_links());
-        let http = &self.tokens.api.http;
+        let cdn = &CdnClient::new(self.tokens.api.http.clone());
         let links = &links;
         let read = move |index: usize, bytes: u64| {
-            content::read(http, links, &installed.files[index], bytes, cancel)
+            content::read(cdn, links, &installed.files[index], bytes, cancel)
         };
         let mut program = None;
         for info in launch::info_files(product_id) {
@@ -637,7 +637,7 @@ impl Client {
         let links = Arc::new(SecureLinks::new(self.secure_links()));
         let progress = transfer.clone();
         let summary = content::download(
-            self.tokens.api.http.clone(),
+            CdnClient::new(self.tokens.api.http.clone()),
             links,
             Arc::new(installed),
             key,

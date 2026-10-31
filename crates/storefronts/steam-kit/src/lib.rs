@@ -18,18 +18,3 @@ mod message;
 pub mod news;
 pub mod own_game;
 mod proto;
-
-use obelisk_core::storefront::{StorefrontCapabilities, StorefrontDescriptor, StorefrontId};
-
-pub fn descriptor() -> StorefrontDescriptor {
-    StorefrontDescriptor {
-        id: StorefrontId::Steam,
-        display_name: "Steam",
-        capabilities: StorefrontCapabilities {
-            authentication: true,
-            owned_library: true,
-            downloads: true,
-            local_import: false,
-        },
-    }
-}

@@ -410,6 +410,66 @@ fn the_guest_gets_the_mac_s_time_zone_unless_the_caller_passes_one() {
 }
 
 #[test]
+fn the_launcher_hands_the_guest_none_of_the_locale_in_its_own_environment() {
+    let (_directory, root) = installation();
+
+    let (engine, _) = run_launcher(
+        &root,
+        &["--env", "LC_ALL=it_IT.UTF-8"],
+        &[
+            ("LANG", "fr_FR.UTF-8"),
+            ("LC_ALL", "de_DE.UTF-8"),
+            ("LC_CTYPE", "de_DE.UTF-8"),
+        ],
+    );
+
+    // Only the variables the caller names reach the guest: the locale of the
+    // launcher's own process, which the game's environment holds, does not.
+    let lines: Vec<&str> = engine.lines().collect();
+    let variables: Vec<&str> = lines
+        .windows(2)
+        .filter(|pair| pair[0] == "--env" && !pair[1].starts_with("TZ="))
+        .map(|pair| pair[1])
+        .collect();
+    assert_eq!(variables, ["LC_ALL=it_IT.UTF-8"]);
+}
+
+#[test]
+fn the_guest_speaks_the_locale_its_launch_settings_carry_and_no_other() {
+    let (_directory, root) = installation();
+    let environment = |locale: Option<&str>| {
+        let mut config = linux_config(&root);
+        config.settings.locale = locale.map(str::to_owned);
+        config.settings.variables =
+            std::collections::BTreeMap::from([("ZZ_PROFILE".to_owned(), "1".to_owned())]);
+        guest_environment(&config)
+    };
+    let names = |environment: &[(String, String)]| -> Vec<String> {
+        environment.iter().map(|(name, _)| name.clone()).collect()
+    };
+
+    // A locale no runner has, so no process environment can stand in for it.
+    let with = environment(Some("tl_PH"));
+
+    assert!(with.contains(&("LC_ALL".into(), "tl_PH.UTF-8".into())));
+    assert!(
+        with.contains(&("LANG".into(), "en_US.UTF-8".into())),
+        "Wine takes nothing from LANG"
+    );
+    // The chain: the engine's own variables, then the locale, then the
+    // profile's.
+    assert_eq!(
+        names(&with)[names(&with).len() - 2..],
+        ["LC_ALL", "ZZ_PROFILE"]
+    );
+    assert!(
+        !names(&environment(None))
+            .iter()
+            .any(|name| name == "LC_ALL")
+    );
+}
+
+#[test]
 fn the_launcher_runs_d3dmetal_in_the_intel_render_server() {
     let (_directory, root) = installation();
 

@@ -1,3 +1,5 @@
+use obelisk_core::testing::GATE_PATIENCE;
+
 use super::*;
 
 fn files_fixture(count: usize) -> (Manifest, HashMap<String, Vec<u8>>, Vec<Vec<u8>>) {
@@ -42,16 +44,12 @@ async fn later_files_download_before_the_first_response_and_window_keeps_advanci
         overlapping_files > 1,
         "this test requires overlap across files"
     );
-    let gate = Arc::new(RequestGate {
-        path: format!("/{}", first.relative_path(18)),
-        requests: overlapping_files,
-        opened: AtomicBool::new(false),
-    });
-    let server = Server::with_gate(responses, false, Some(Arc::clone(&gate)));
+    let gated = format!("/{}", first.relative_path(18));
+    let server = Server::gated(responses, gated.clone(), overlapping_files);
     let temporary = tempfile::tempdir().unwrap();
     let summary = tokio::time::timeout(
         Duration::from_secs(8),
-        ContentClient::new(Client::new()).download(
+        client(&[&server]).download(
             Arc::new(manifest.clone()),
             std::slice::from_ref(&server.base),
             temporary.path(),
@@ -62,8 +60,15 @@ async fn later_files_download_before_the_first_response_and_window_keeps_advanci
     .await
     .unwrap()
     .unwrap();
+    // The gate opened by itself, not for want of patience.
+    let arrivals = server.cdn.arrivals();
+    let held = arrivals
+        .iter()
+        .find(|arrival| arrival.path() == gated)
+        .unwrap();
     assert!(
-        gate.opened.load(Ordering::Acquire),
+        arrivals.len() >= overlapping_files
+            && arrivals[overlapping_files - 1].at < held.at + GATE_PATIENCE,
         "later files must be requested while file 0 is blocked"
     );
     assert_eq!(summary.completed_files as usize, outputs.len());
@@ -116,7 +121,7 @@ async fn shared_chunks_cross_the_window_and_survive_cancellation_with_cached_rep
     fs::write(&old_target, b"previous installed file").unwrap();
     let cancel = CancelToken::new();
     let stop = cancel.clone();
-    let client = ContentClient::new(Client::new());
+    let client = client(&[&server]);
     let result = client
         .download(
             Arc::new(manifest.clone()),

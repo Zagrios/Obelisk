@@ -22,8 +22,8 @@ use std::{
 
 /// How one Windows installation runs from its next launch: its game's
 /// profile with its player's choices over it, in its player's language. It
-/// travels whole to the Game session, so nothing there looks the profile up
-/// again.
+/// travels whole to the Game session, so nothing there looks the profile, or
+/// the player's language, up again.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Settings {
     pub engine: Engine,
@@ -50,6 +50,13 @@ pub struct Settings {
     pub dll_overrides: BTreeMap<String, String>,
     /// Metal's Performance HUD shows over the game.
     pub performance_hud: bool,
+    /// The player's locale, such as `it_IT`, as `of` and `choose` were given
+    /// it. The Linux engine's guest takes its Windows locale from it: the
+    /// supervisor that builds an Epic or GOG target has no environment of
+    /// Obelisk's to read it from. Rosetta's Wine takes its locale from the
+    /// game's environment instead.
+    #[serde(default)]
+    pub locale: Option<String>,
 }
 
 /// How a game no profile names runs without choices: in Rosetta's Wine,
@@ -100,7 +107,9 @@ impl Settings {
 /// The launch settings of the Windows installation of `game` in `install`,
 /// by its profile and the choices kept for it in Obelisk's `library`, for a
 /// player whose locale is `locale`, such as `it_IT`. An installation without
-/// choices, or whose file cannot be read, runs as its profile says.
+/// choices, or whose file cannot be read, runs as its profile says. It reads
+/// the installation's folders for Easy Anti-Cheat, so it blocks on a slow
+/// disk.
 pub fn of(library: &Path, game: profile::Game<'_>, install: &Path, locale: Option<&str>) -> View {
     let profile = profile::of(game, install);
     View::new(game, &profile, load(library, install), locale)
@@ -109,7 +118,8 @@ pub fn of(library: &Path, game: profile::Game<'_>, install: &Path, locale: Optio
 /// Keeps `choices` for that installation, without those its profile or its
 /// engine already gives, and returns its launch settings from its next
 /// launch on, for a player whose locale is `locale`. No choice at all leaves
-/// no file.
+/// no file. It reads the installation's folders for Easy Anti-Cheat, so it
+/// blocks on a slow disk.
 pub fn choose(
     library: &Path,
     game: profile::Game<'_>,
@@ -125,7 +135,9 @@ pub fn choose(
 
 /// The engine the Windows installation of `game` in `install` runs on from
 /// its next launch, as `of` gives it: its player's, else its profile's,
-/// reading no more of the profile than that engine takes.
+/// reading no more of the profile than that engine takes. Only a game its
+/// table does not name has its installation read for Easy Anti-Cheat, which
+/// blocks on a slow disk.
 pub(crate) fn engine(library: &Path, game: profile::Game<'_>, install: &Path) -> Engine {
     load(library, install)
         .engine
@@ -285,6 +297,7 @@ impl Choices {
             variables: profile.variables.clone(),
             dll_overrides: profile.dll_overrides.clone(),
             performance_hud: self.performance_hud,
+            locale: None,
         }
     }
 
@@ -406,6 +419,7 @@ impl View {
         locale: Option<&str>,
     ) -> Self {
         let mut settings = choices.apply(profile);
+        settings.locale = locale.map(str::to_owned);
         let language =
             locale.and_then(|locale| language_argument(game, &settings.arguments, locale));
         settings.profile_arguments.extend(language);

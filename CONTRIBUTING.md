@@ -87,7 +87,7 @@ apps/macos/
     Resources/          Assets and Localizable.xcstrings
   ObeliskTests/         Swift ↔ Rust integration tests
 crates/
-  obelisk-core/         Catalog, library cache, verification and the shared download engine
+  obelisk-core/         Library cache, verification, publishing and the shared download engine
   obelisk-bridge/       UniFFI bridge between Swift and Rust
   game-runtime/         Installations, download queue, launches, Wine, Cloud sync
   cloud-vault/          Local archive of each account's save versions

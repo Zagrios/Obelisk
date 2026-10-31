@@ -1,4 +1,4 @@
-//! A depot spread over several CDN servers, each a local fixture that answers
+//! A depot spread over several CDN servers, each a CDN in memory that answers
 //! its own way.
 
 use super::*;
@@ -80,7 +80,7 @@ async fn a_failing_server_hands_its_requests_to_the_others() {
         pieces.concat()
     );
     // Three failures in a row retire it for the rest of the depot.
-    assert!(failing.requests.lock().unwrap().len() <= 3);
+    assert!(failing.requests().len() <= 3);
 }
 
 #[tokio::test]
@@ -213,7 +213,8 @@ async fn a_chunk_every_server_reports_missing_fails_the_depot() {
 async fn a_chunk_the_writer_waits_on_is_raced_on_a_faster_server() {
     let directory = tempfile::tempdir().unwrap();
     let (pieces, routes) = game(24);
-    // A busy server: it answers the manifest at once, then holds every chunk.
+    // A busy server: it answers the manifest at once, then holds each chunk
+    // request for a minute.
     let slow = CdnFixture::answering({
         let routes = routes.clone();
         move |path| {

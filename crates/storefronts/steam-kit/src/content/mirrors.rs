@@ -305,10 +305,7 @@ impl<'a> Mirrors<'a> {
                             } else {
                                 failures += 1;
                             }
-                            let outage = matches!(
-                                error,
-                                ContentError::Network | ContentError::Http(429 | 500..=599)
-                            );
+                            let outage = error.is_outage();
                             let late = failures.saturating_sub(REQUEST_ATTEMPTS) as usize;
                             if missing >= MISSING_REPORTS
                                 || failures >= REQUEST_ATTEMPTS

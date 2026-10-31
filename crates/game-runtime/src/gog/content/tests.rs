@@ -2,13 +2,17 @@
 //! network the test stands in for and real folders in a temporary library.
 use super::*;
 use crate::{
+    gog::Store,
     installations::{Content as _, Installations, Offer, Queueing, tests::eventually},
-    queue::DownloadQueue,
-    runtimes::{
-        Runtimes,
-        tests::{FakeRuntimes, ready, recorded},
+    launch_shell::{
+        SignIn,
+        tests::{Library, Opened, Setup, folders},
     },
+    profile::Game,
+    queue::DownloadQueue,
+    runtimes::tests::ready,
     sessions::Sessions,
+    supervisor::{self, session as lifecycle},
 };
 use std::sync::Mutex;
 use tokio::sync::Notify;
@@ -109,7 +113,7 @@ impl Network for Fake {
     }
 }
 
-struct Fixture {
+pub(crate) struct Fixture {
     _root: tempfile::TempDir,
     locations: Locations,
     fake: Arc<Fake>,
@@ -117,14 +121,9 @@ struct Fixture {
 }
 
 impl Fixture {
-    fn new() -> Self {
-        let root = tempfile::tempdir().unwrap();
-        let library = root.path().canonicalize().unwrap();
-        let locations = Locations::new(
-            &library,
-            Path::new("/Applications/Obelisk.app"),
-            &library.join("home"),
-        );
+    /// A library with Obelisk's bundle outside it, or inside it when `bundled`.
+    fn in_library(bundled: bool) -> Self {
+        let (root, locations) = folders(bundled);
         let fake = Arc::new(Fake::default());
         let saves = fake.clone();
         let content = Content::new(
@@ -141,27 +140,18 @@ impl Fixture {
         }
     }
 
+    fn windows_directory(&self) -> PathBuf {
+        self.locations
+            .library
+            .join("Games/GOG/gog-1207658924-windows")
+    }
+
     fn transfer(&self, platform: Platform) -> Transfer<Gog> {
         Transfer {
             product: witcher(),
             name: "The Witcher".into(),
             platform: Some(platform),
             directory: self.locations.library.join("Games/GOG"),
-        }
-    }
-
-    fn receipt(&self, platform: Platform) -> Receipt<Gog> {
-        let directory = self.locations.library.join("Games/GOG").join(
-            gog_kit::client::installation_directory_name("1207658924", platform),
-        );
-        std::fs::create_dir_all(&directory).unwrap();
-        Receipt {
-            product: witcher(),
-            name: "The Witcher".into(),
-            directory: directory.to_string_lossy().into_owned(),
-            platform,
-            total_bytes: 100,
-            needs_verification: false,
         }
     }
 }
@@ -236,49 +226,6 @@ async fn a_transfer_cancelled_while_its_credentials_renew_never_begins() {
 }
 
 #[tokio::test]
-async fn a_windows_launch_gets_voile_before_it_is_prepared_and_a_mac_launch_gets_none() {
-    let fixture = Fixture::new();
-    let (events, record) = recorded();
-    let runtimes = FakeRuntimes::new(&[], record);
-    runtimes.hold();
-    let sessions = Sessions::<Gog>::new(
-        Box::new(|| Ok(None)),
-        Runtimes::from_source(runtimes.clone()),
-    );
-    eventually(|| !sessions.state().recovering).await;
-    let admission = sessions
-        .admit(witcher().product_id, ACCOUNT.into())
-        .unwrap();
-    let canceller = admission.canceller();
-    let windows = fixture.receipt(Platform::Windows);
-
-    let (launched, ()) = tokio::join!(fixture.content.launch(&windows, admission, None), async {
-        eventually(|| !events.lock().unwrap().is_empty()).await;
-        canceller.cancel();
-    });
-
-    assert_eq!(launched, Err(Failure::Cancelled), "nothing is prepared");
-    assert_eq!(*events.lock().unwrap(), ["voile"]);
-
-    // Downloads no longer wait: one the Mac build got would show.
-    runtimes.release();
-    // The signed-out account stops the Mac launch once prepared.
-    *fixture.fake.signed_out.lock().unwrap() = true;
-    let admission = sessions
-        .admit(witcher().product_id, ACCOUNT.into())
-        .unwrap();
-    let launched = fixture
-        .content
-        .launch(&fixture.receipt(Platform::Mac), admission, None)
-        .await;
-    assert_eq!(
-        launched,
-        Err(Failure::Failed("backend.gog.unauthorized".into()))
-    );
-    assert_eq!(*events.lock().unwrap(), ["voile"], "a Mac build needs none");
-}
-
-#[tokio::test]
 async fn gog_keeps_no_cloud_saves() {
     let fixture = Fixture::new();
     let receipt = fixture.receipt(Platform::Mac);
@@ -301,11 +248,11 @@ async fn gog_keeps_no_cloud_saves() {
     );
 }
 
-#[test]
-fn only_a_windows_build_runs_in_its_own_prefix() {
+#[tokio::test]
+async fn only_a_windows_build_runs_in_its_own_prefix() {
     let fixture = Fixture::new();
     let windows = fixture.receipt(Platform::Windows);
-    let prefix = windows.wine_prefix(&fixture.locations);
+    let prefix = windows.wine_prefix(&fixture.locations).await.unwrap();
     let configuration = fixture.content.configuration(&windows, prefix);
     assert_eq!(
         configuration.prefix.as_deref(),
@@ -322,13 +269,13 @@ fn only_a_windows_build_runs_in_its_own_prefix() {
         fixture.locations.gog_sessions
     );
     assert_eq!(configuration.title, "The Witcher");
-    configuration.validate(ACCOUNT).unwrap();
+    launch_shell::validate::<Gog>(&configuration, ACCOUNT).unwrap();
 
     let mac = fixture.receipt(Platform::Mac);
-    let prefix = mac.wine_prefix(&fixture.locations);
+    let prefix = mac.wine_prefix(&fixture.locations).await.unwrap();
     let configuration = fixture.content.configuration(&mac, prefix);
     assert_eq!(configuration.prefix, None);
-    configuration.validate(ACCOUNT).unwrap();
+    launch_shell::validate::<Gog>(&configuration, ACCOUNT).unwrap();
     assert_eq!(fixture.content.directory_name(&mac), "gog-1207658924-macos");
 }
 
@@ -395,4 +342,279 @@ async fn an_installed_build_updates_in_place_whether_updated_or_offered_again() 
             .count(),
         2
     );
+}
+
+mod builds {
+    crate::launch_shell::tests::setup_suite!(super::Fixture);
+}
+
+mod launches {
+    crate::launch_shell::tests::library_suite!(super::Fixture);
+}
+
+impl Setup for Fixture {
+    type G = Gog;
+    const SUPERVISE: &'static str = "gog-supervise";
+    const UNSUPPORTED: &'static str = "backend.gog.unsupported";
+    const SESSION: &'static str = "backend.gog.session";
+    const CANCELLED: &'static str = "backend.gog.cancelled";
+    const BAD_ACCOUNT: &'static str = "backend.gog.unsupported";
+    const WINDOWS: &'static str = "windows";
+    const TITLE: &'static str = "The Witcher";
+    const GAME: Game<'static> = Game::Gog {
+        product_id: "1207658924",
+    };
+    const LAUNCH_KEYS: [(crate::launch::Error, &'static str); 7] = {
+        use crate::launch::Error as Launch;
+        [
+            (
+                Launch::IncompatibleArchitecture,
+                "backend.runtime.macBuildNotNative",
+            ),
+            (Launch::WineUnavailable, "backend.runtime.wineUnavailable"),
+            (Launch::InvalidApplication, "backend.gog.unsupported"),
+            (Launch::NotExecutable, "backend.gog.unsupported"),
+            (Launch::Storage, "backend.gog.session"),
+            (Launch::StartFailed, "backend.gog.session"),
+            (Launch::Unavailable, "backend.gog.session"),
+        ]
+    };
+    const SUPERVISOR_KEYS: [(supervisor::Error, &'static str); 8] = {
+        use supervisor::Error as Core;
+        [
+            (Core::Storage, "backend.gog.storage"),
+            (Core::NewerSession, "backend.gog.busy"),
+            (Core::Busy, "backend.gog.busy"),
+            (Core::Cancelled, "backend.gog.cancelled"),
+            (
+                Core::RosettaUnavailable,
+                "backend.runtime.rosettaUnavailable",
+            ),
+            (Core::InvalidSession, "backend.gog.session"),
+            (Core::Unavailable, "backend.gog.session"),
+            (Core::StartFailed, "backend.gog.session"),
+        ]
+    };
+
+    fn account() -> String {
+        ACCOUNT.into()
+    }
+    fn credential() -> NoCredential {
+        NoCredential {}
+    }
+    fn credential_json() -> serde_json::Value {
+        serde_json::json!({})
+    }
+    fn configuration_in(root: &Path, platform: Platform, prefix: Option<PathBuf>) -> Configuration {
+        Configuration {
+            home: root.join("home"),
+            install: root.join("library/Games/GOG").join(
+                gog_kit::client::installation_directory_name("1207658924", platform),
+            ),
+            session_directory: root.join("library/GOGSessions"),
+            helper: root.join("Obelisk.app/Contents/Helpers/SteamNative/obelisk-steam-host"),
+            product_id: "1207658924".into(),
+            platform,
+            title: "The Witcher".into(),
+            prefix,
+        }
+    }
+    fn wire(configuration: &Configuration) -> serde_json::Value {
+        serde_json::json!({
+            "home": configuration.home,
+            "install": configuration.install,
+            "session_directory": configuration.session_directory,
+            "helper": configuration.helper,
+            "product_id": "1207658924",
+            "platform": match configuration.platform {
+                Platform::Mac => "macos",
+                Platform::Windows => "windows",
+            },
+            "title": "The Witcher",
+            "prefix": configuration.prefix,
+        })
+    }
+    fn paths(configuration: &mut Configuration) -> [&mut PathBuf; 4] {
+        [
+            &mut configuration.home,
+            &mut configuration.install,
+            &mut configuration.session_directory,
+            &mut configuration.helper,
+        ]
+    }
+    fn refused_by_the_store(root: &Path) -> Vec<(Configuration, String, &'static str)> {
+        let mac = Self::configuration_in(root, Platform::Mac, None);
+        let product = |product_id: &str| Configuration {
+            product_id: product_id.into(),
+            ..mac.clone()
+        };
+        let refused = [
+            (mac.clone(), "not-a-user".to_owned()),
+            (mac.clone(), String::new()),
+            (product(""), ACCOUNT.to_owned()),
+            (product("1207658924x"), ACCOUNT.to_owned()),
+            (product(&"1".repeat(21)), ACCOUNT.to_owned()),
+        ];
+        refused
+            .into_iter()
+            .map(|(configuration, account)| (configuration, account, Self::UNSUPPORTED))
+            .collect()
+    }
+    fn handoff() -> serde_json::Value {
+        serde_json::json!({
+            "config": {
+                "home": "/Users/player",
+                "install": "/library/Games/GOG/gog-1207658924-macos",
+                "session_directory": "/library/GOGSessions",
+                "helper": "/Obelisk.app/Contents/Helpers/SteamNative/obelisk-steam-host",
+                "product_id": "1207658924",
+                "platform": "macos",
+                "title": "The Witcher",
+                "prefix": null,
+            },
+            "id": "6f1c1a0e-8a0f-4a3e-9a7b-0d2f6f3a8b11",
+            "account_id": ACCOUNT,
+            "environment": {"HOME": "/Users/player"},
+            "wine": null,
+        })
+    }
+    fn session_root() -> &'static str {
+        "/library/GOGSessions"
+    }
+    fn store() -> Store {
+        Store {
+            product_id: "1207658924".into(),
+        }
+    }
+    fn open(input: &mut dyn std::io::Read) -> crate::gog::Result<Opened<Gog>> {
+        let (opening, launch) = <crate::gog::launch::Launch as lifecycle::Launch>::open(input)?;
+        Ok((opening, lifecycle::Launch::wine(&launch)))
+    }
+}
+
+impl Library for Fixture {
+    const PREREQUISITE_ARGUMENTS: &'static str = "/install /quiet";
+    const INCOMPLETE: &'static str = "backend.gog.launch.incompleteInstallation";
+    const CREDENTIAL_CALLS: &'static [&'static str] = &["account"];
+
+    fn new() -> Self {
+        Self::in_library(false)
+    }
+    fn bundled() -> Self {
+        Self::in_library(true)
+    }
+    fn locations(&self) -> &Locations {
+        &self.locations
+    }
+    fn receipt(&self, platform: Platform) -> Receipt<Gog> {
+        let directory = self.locations.library.join("Games/GOG").join(
+            gog_kit::client::installation_directory_name("1207658924", platform),
+        );
+        std::fs::create_dir_all(&directory).unwrap();
+        Receipt {
+            product: witcher(),
+            name: "The Witcher".into(),
+            directory: directory.to_string_lossy().into_owned(),
+            platform,
+            total_bytes: 100,
+            needs_verification: false,
+        }
+    }
+    fn nameless(&self) -> Receipt<Gog> {
+        // A folder with no name of its own, such as `..`.
+        let nameless = self.locations.library.join("Games/GOG/..");
+        Receipt {
+            directory: nameless.to_string_lossy().into_owned(),
+            ..self.receipt(Platform::Windows)
+        }
+    }
+    fn game() -> String {
+        witcher().product_id
+    }
+    fn launch<'a>(
+        &'a self,
+        receipt: &'a Receipt<Gog>,
+        admission: Admission<Gog>,
+    ) -> BoxFuture<'a, Result<(), Failure>> {
+        self.content.launch(receipt, admission, None)
+    }
+    fn configuration(&self, receipt: &Receipt<Gog>, prefix: Option<PathBuf>) -> Configuration {
+        self.content.configuration(receipt, prefix)
+    }
+    fn signing(&self) -> impl SignIn<Gog> {
+        Signing(self.fake.clone())
+    }
+    fn wire_config(&self, receipt: &Receipt<Gog>, prefix: Option<&Path>) -> serde_json::Value {
+        let locations = &self.locations;
+        serde_json::json!({
+            "home": locations.home,
+            "install": receipt.directory,
+            "session_directory": locations.gog_sessions,
+            "helper": locations.helper,
+            "product_id": "1207658924",
+            "platform": match receipt.platform {
+                Platform::Mac => "macos",
+                Platform::Windows => "windows",
+            },
+            "title": "The Witcher",
+            "prefix": prefix,
+        })
+    }
+    fn prefix(&self) -> PathBuf {
+        self.locations.wine_prefixes.join("gog-1207658924-windows")
+    }
+    /// What a completed Windows installation holds: the program its primary
+    /// play task starts, `program`, its receipt, and the redistributable the
+    /// receipt names. Returns the redistributable.
+    fn complete_windows_build(&self, program: &[u8]) -> PathBuf {
+        let install = self.windows_directory();
+        let redistributable = install.join("__redist/MSVC2017/VC_redist.x86.exe");
+        std::fs::create_dir_all(install.join("System")).unwrap();
+        std::fs::create_dir_all(redistributable.parent().unwrap()).unwrap();
+        std::fs::write(install.join("System/witcher.exe"), program).unwrap();
+        std::fs::write(&redistributable, "").unwrap();
+        let info = serde_json::json!({"playTasks": [
+            {"category": "game", "isPrimary": true, "path": "System\\witcher.exe", "type": "FileTask"},
+        ]});
+        std::fs::write(
+            install.join("goggame-1207658924.info"),
+            serde_json::to_vec(&info).unwrap(),
+        )
+        .unwrap();
+        let receipt = gog_kit::client::Installation {
+            product_id: "1207658924".into(),
+            user_id: ACCOUNT.into(),
+            directory: install.to_string_lossy().into_owned(),
+            platform: Platform::Windows,
+            total_bytes: 1,
+            build_id: "1".into(),
+            version_name: "1.0".into(),
+            language: "en-US".into(),
+            content_root: String::new(),
+            script_interpreter: false,
+            products: Vec::new(),
+            dependencies: serde_json::from_value(serde_json::json!([{
+                "id": "MSVC2017",
+                "path": "__redist/MSVC2017/VC_redist.x86.exe",
+                "arguments": "/install /quiet",
+            }]))
+            .unwrap(),
+        };
+        std::fs::write(
+            install.join(obelisk_core::install::RECEIPT_FILE),
+            serde_json::to_vec(&receipt).unwrap(),
+        )
+        .unwrap();
+        redistributable
+    }
+    fn asked(&self) -> Vec<String> {
+        self.fake.calls()
+    }
+    fn refuse_credential(&self) -> &'static str {
+        *self.fake.signed_out.lock().unwrap() = true;
+        "backend.gog.unauthorized"
+    }
+    fn saved(&self) -> bool {
+        self.fake.calls().iter().any(|call| call == "saved")
+    }
 }

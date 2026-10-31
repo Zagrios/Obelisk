@@ -6,6 +6,7 @@ use super::*;
 use crate::supervisor::client::Client;
 use std::{fs, path::Path};
 
+mod gog;
 mod recording;
 
 /// What the storefront's fakes do at each step.
@@ -148,6 +149,7 @@ fn supervisor_fixture() {
         crate::epic::launch::tests::EpicHarness::NAME => {
             crate::epic::launch::tests::EpicHarness::serve(input, output)
         }
+        gog::GogHarness::NAME => gog::GogHarness::serve(input, output),
         other => panic!("unknown harness {other}"),
     };
     if let Err(error) = &served {
@@ -228,6 +230,61 @@ pub(crate) fn write_helper(path: &Path, directory: &Path, script: &Script) {
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(path, helper(directory, script.helper)).unwrap();
     fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
+}
+
+/// What a client handed the supervisor it started: the request on the pipe,
+/// the command line and the environment the supervisor started with.
+pub(crate) struct HandedOver {
+    pub request: serde_json::Value,
+    pub arguments: Vec<String>,
+    /// Sorted, without the variables the shell itself adds.
+    pub environment: Vec<String>,
+}
+
+/// Installs at `helper` a supervisor that records its handoff in `into` and
+/// exits without acknowledging it: the client's start then fails.
+pub(crate) fn write_recording_supervisor(helper: &Path, into: &Path) {
+    fs::create_dir_all(helper.parent().unwrap()).unwrap();
+    fs::create_dir_all(into).unwrap();
+    let into = into.to_string_lossy();
+    fs::write(
+        helper,
+        format!(
+            "#!/bin/sh\n\
+             IFS= read -r request\n\
+             printf '%s' \"$request\" > '{into}/request.json'\n\
+             printf '%s\\n' \"$@\" > '{into}/arguments'\n\
+             /usr/bin/env > '{into}/environment'\n"
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(helper, fs::Permissions::from_mode(0o700)).unwrap();
+}
+
+/// The handoff the recording supervisor of `from` took, if it was started.
+pub(crate) fn handed_over(from: &Path) -> Option<HandedOver> {
+    let request = fs::read(from.join("request.json")).ok()?;
+    let lines = |name: &str| -> Vec<String> {
+        fs::read_to_string(from.join(name))
+            .unwrap_or_default()
+            .lines()
+            .map(str::to_owned)
+            .collect()
+    };
+    let mut environment: Vec<String> = lines("environment")
+        .into_iter()
+        .filter(|line| {
+            !["PWD=", "OLDPWD=", "SHLVL=", "_="]
+                .iter()
+                .any(|own| line.starts_with(own))
+        })
+        .collect();
+    environment.sort();
+    Some(HandedOver {
+        request: serde_json::from_slice(&request).unwrap(),
+        arguments: lines("arguments"),
+        environment,
+    })
 }
 
 /// The game a fake storefront names in its target.

@@ -7,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use futures_util::{StreamExt, TryStreamExt, future::BoxFuture};
+use futures_util::future::BoxFuture;
 use obelisk_core::{
     build_choice::{BuildChoice, NOT_NATIVE, Unavailable},
     installation::{self, Destination, InstallFailure, InstalledFiles, TransferError},
@@ -22,20 +22,21 @@ use tokio::sync::Mutex as AsyncMutex;
 
 use crate::{
     chat::{self, ChatEventSource},
-    cm::{
-        AppInfo, CONCURRENT_REQUESTS, ChatMode, ContentLicenses, ContentServer, DepotInfo,
-        SteamConnection, supports_platform,
-    },
+    cm::{AppInfo, ChatMode, ContentLicenses, ContentServer, SteamConnection},
     content::{
-        CachedManifest, CancelToken, CdnAuthorization, ContentClient, ContentError, DepotDownload,
+        CancelToken, CdnAuthorization, ContentClient, ContentError, DepotDownload,
         DepotInstallation,
     },
     invites::{InviteSource, ReceivedInvites},
     own_game::{GameInvite, OwnGame, OwnGameSource},
 };
+mod build;
 mod build_choice;
 mod cloud;
+#[cfg(test)]
+mod depots_tests;
 
+use build::{Kept, PreparedDepot, Revision, Selection};
 use build_choice::{Licensed, OwnedApp};
 
 pub use obelisk_core::{installation::TransferProgress, transfer::TransferState};
@@ -164,30 +165,6 @@ pub struct InstalledDepot {
     pub manifest_id: u64,
 }
 
-// Intentionally no Debug: depot keys are credentials.
-/// Steamworks Common Redistributables, free to every account. Windows games
-/// name its depots, such as Visual C++ or DirectX, for Steam to install and run
-/// before their first launch.
-const COMMON_REDISTRIBUTABLES: u32 = 228_980;
-/// Its depots a download leaves out: .NET Framework and XNA, which needs it,
-/// 229000 to 229012. Their installers do not work in Wine, and .NET games run
-/// on Wine Mono instead. The others, such as Visual C++, install in the prefix
-/// as Steam installs them under Proton.
-const SKIPPED_REDISTRIBUTABLES: std::ops::RangeInclusive<u32> = 229_000..=229_012;
-
-/// One Mac build of an app: the app, and the manifest of each of its depots.
-type MacBuild = (u32, Vec<(u32, u64)>);
-
-struct PreparedDepot {
-    depot_id: u32,
-    manifest_id: u64,
-    authorizing_app: u32,
-    key: [u8; 32],
-    estimated_bytes: u64,
-    /// The manifest the build's pick read, as the CDN served it.
-    picked: Option<CachedManifest>,
-}
-
 /// Everything resolved over the CM before the installation lock is taken.
 struct PreparedInstall {
     name: String,
@@ -223,7 +200,7 @@ pub struct Client {
     app_infos: Mutex<HashMap<u32, (Instant, Arc<AppInfo>)>>,
     /// Each Mac build's verdict, and the depot manifests the last native one
     /// read, by depot and manifest, which its installation starts from.
-    build_choice: BuildChoice<MacBuild, HashMap<(u32, u64), CachedManifest>>,
+    build_choice: BuildChoice<Revision, Kept>,
     downloads: Transfers<TransferProgress>,
     /// The session's own token, to ask Steam for web access tokens.
     refresh_token: String,
@@ -689,10 +666,9 @@ impl Client {
     pub async fn details(&self, app_id: u32, language: &str) -> Result<GameDetails, ClientError> {
         let owned = self.licensed_content().await?;
         let app = self.app_info(app_id).await?;
-        let windows = select_depots(&app, &owned, Platform::Windows, language);
-        let macos = select_depots(&app, &owned, Platform::Mac, language);
-        let windows_bytes = windows.iter().filter_map(|d| d.size_bytes).sum();
-        let macos_bytes = macos.iter().filter_map(|d| d.size_bytes).sum();
+        let windows = Selection::of(&app, &owned, Platform::Windows, language);
+        let macos = Selection::of(&app, &owned, Platform::Mac, language);
+        let (windows_bytes, macos_bytes) = (windows.size_bytes(), macos.size_bytes());
         // Not `OwnedApp::builds`: a page also shows a game the account does
         // not own, and needs the depots for their sizes.
         let offered = Licensed {
@@ -823,20 +799,6 @@ impl Client {
         .await
     }
 
-    /// The Mac build the account can install: its depots' public manifests.
-    async fn mac_build(
-        &self,
-        app: &AppInfo,
-        owned: &ContentLicenses,
-        language: &str,
-    ) -> Result<MacBuild, ClientError> {
-        let selected = select_depots(app, owned, Platform::Mac, language);
-        let sources = self
-            .cached_app_infos(&shared_sources(app, &selected))
-            .await?;
-        mac_build_of(app, &selected, &sources)
-    }
-
     /// The validated HTTPS CDN and SteamCache hosts allowed to serve the app.
     /// Every one is kept: Steam's first servers are often its busiest, and a
     /// depot spreads over the fastest ones it measures.
@@ -876,26 +838,10 @@ impl Client {
         };
         let owned = self.licensed_content().await?;
         let app = self.app_info(app_id).await?;
-        let selected = select_depots(&app, &owned, platform, language);
-        let sources = self
-            .cached_app_infos(&shared_sources(&app, &selected))
+        let build = self
+            .build_of(Selection::of(&app, &owned, platform, language))
             .await?;
-        let mut latest = HashSet::new();
-        for depot in selected {
-            if let Some(manifest_id) = public_manifest(&app, depot, &sources)? {
-                latest.insert((depot.depot_id, manifest_id));
-            }
-        }
-        // A build Steam would not install is no update.
-        if latest.is_empty() {
-            return Ok(false);
-        }
-        let installed: HashSet<_> = installed
-            .manifests
-            .iter()
-            .map(|depot| (depot.depot_id, depot.manifest_id))
-            .collect();
-        Ok(latest != installed)
+        Ok(build.is_update_of(&installed.manifests))
     }
 
     /// Installs every prepared depot under the installation lock, including
@@ -982,8 +928,8 @@ impl Client {
         cancel: &CancelToken,
     ) -> Result<PreparedInstall, ClientError> {
         let (owned, app) = self.owned_app(app_id).await?;
-        let selected = select_depots(&app, &owned, platform, language);
-        if selected.is_empty() {
+        let selection = Selection::of(&app, &owned, platform, language);
+        if selection.is_empty() {
             return Err(ClientError::Failure(
                 "backend.steam.client.noCompatibleDepot".into(),
             ));
@@ -991,29 +937,12 @@ impl Client {
         let servers = self.content_servers(app_id);
         let depots = async {
             cancel.check()?;
-            let sources = self
-                .cached_app_infos(&shared_sources(&app, &selected))
-                .await?;
-            let lookups: Vec<_> = selected
-                .iter()
-                .map(|depot| self.prepare_depot(&app, depot, &sources, cancel))
-                .collect();
-            let depots: Vec<Option<PreparedDepot>> = futures_util::stream::iter(lookups)
-                .buffered(CONCURRENT_REQUESTS)
-                .try_collect()
-                .await?;
-            let mut depots: Vec<_> = depots.into_iter().flatten().collect();
-            if depots.is_empty() {
-                return Err(ClientError::Failure(
-                    "backend.steam.client.noPublicManifest".into(),
-                ));
-            }
-            // The manifests the build's pick read, kept under the key
-            // `mac_build` gives it.
+            let build = self.build_of(selection).await?;
+            let mut depots = build.prepare(&self.cm, cancel).await?;
+            // The manifests the build's pick read, kept under the build's
+            // revision.
             if platform == Platform::Mac
-                && let Some(mut picked) = self
-                    .build_choice
-                    .take(&mac_build_of(&app, &selected, &sources)?)
+                && let Some(mut picked) = self.build_choice.take(&build.revision())
             {
                 for depot in &mut depots {
                     depot.picked = picked.remove(&(depot.depot_id, depot.manifest_id));
@@ -1027,40 +956,6 @@ impl Client {
             servers,
             depots,
         })
-    }
-
-    /// One selected depot's manifest ID and key, or `None` when it has no
-    /// public manifest. `sources` holds the apps shared depots come from.
-    async fn prepare_depot(
-        &self,
-        app: &AppInfo,
-        depot: &DepotInfo,
-        sources: &HashMap<u32, Arc<AppInfo>>,
-        cancel: &CancelToken,
-    ) -> Result<Option<PreparedDepot>, ClientError> {
-        cancel.check()?;
-        let Some(manifest_id) = public_manifest(app, depot, sources)? else {
-            return Ok(None);
-        };
-        let key_app = if depot.shared_from_app == Some(COMMON_REDISTRIBUTABLES) {
-            COMMON_REDISTRIBUTABLES
-        } else {
-            app.app_id
-        };
-        let key: [u8; 32] = self
-            .cm
-            .depot_key(depot.depot_id, key_app)
-            .await?
-            .try_into()
-            .map_err(|_| ClientError::Failure("backend.steam.client.invalidDepotKey".into()))?;
-        Ok(Some(PreparedDepot {
-            depot_id: depot.depot_id,
-            manifest_id,
-            authorizing_app: content_authorizing_app(app, depot),
-            key,
-            estimated_bytes: depot.size_bytes.unwrap_or(0),
-            picked: None,
-        }))
     }
 
     /// Installs one depot from every server allowed to serve it. A server that
@@ -1090,15 +985,9 @@ impl Client {
         let request_code = if cached_manifest.is_some() {
             0
         } else {
-            self.cm
-                .manifest_request_code(depot.depot_id, depot.authorizing_app, depot.manifest_id)
-                .await?
+            depot.request_code(&self.cm).await?
         };
-        let authorization = DepotAuthorization {
-            cm: &self.cm,
-            app_id: depot.authorizing_app,
-            depot_id: depot.depot_id,
-        };
+        let authorization = depot.authorization(&self.cm);
         let plan = DepotDownload {
             depot_id: depot.depot_id,
             manifest_id: depot.manifest_id,
@@ -1146,143 +1035,6 @@ impl CdnAuthorization for DepotAuthorization<'_> {
                 .await
                 .ok()
         })
-    }
-}
-
-/// The apps whose PICS metadata names the manifests of `selected`'s shared
-/// depots that have none of their own; one PICS query covers them all.
-fn shared_sources(app: &AppInfo, selected: &[&DepotInfo]) -> Vec<u32> {
-    selected
-        .iter()
-        .filter(|depot| depot.public_manifest.is_none())
-        .filter_map(|depot| depot.shared_from_app)
-        .filter(|source| *source != app.app_id)
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .collect()
-}
-
-/// The Mac build of `app` whose depots are `selected`: the public manifest
-/// of each that has one. `sources` holds the apps shared depots come from.
-fn mac_build_of(
-    app: &AppInfo,
-    selected: &[&DepotInfo],
-    sources: &HashMap<u32, Arc<AppInfo>>,
-) -> Result<MacBuild, ClientError> {
-    let mut manifests = Vec::new();
-    for depot in selected {
-        if let Some(manifest_id) = public_manifest(app, depot, sources)? {
-            manifests.push((depot.depot_id, manifest_id));
-        }
-    }
-    Ok((app.app_id, manifests))
-}
-
-/// The depot's public manifest ID, taken from its source app for a shared
-/// depot without its own. `None` when it has no public manifest.
-fn public_manifest(
-    app: &AppInfo,
-    depot: &DepotInfo,
-    sources: &HashMap<u32, Arc<AppInfo>>,
-) -> Result<Option<u64>, ClientError> {
-    let manifest_app = depot.shared_from_app.unwrap_or(app.app_id);
-    match depot.public_manifest {
-        Some(id) => Ok(Some(id)),
-        None if manifest_app != app.app_id => sources
-            .get(&manifest_app)
-            .ok_or(crate::cm::CmError::MissingApp(manifest_app))?
-            .depots
-            .iter()
-            .find(|other| other.depot_id == depot.depot_id)
-            .and_then(|other| other.public_manifest)
-            .map(Some)
-            .ok_or_else(|| {
-                ClientError::Failure(crate::message::format(
-                    "backend.steam.client.sharedManifestMissing",
-                    &[depot.depot_id.to_string()],
-                ))
-            }),
-        None => Ok(None),
-    }
-}
-
-/// Whether the account's licenses grant the Mac build and the Windows build.
-fn installable_builds(app: &AppInfo, owned: &ContentLicenses, language: &str) -> (bool, bool) {
-    let installable = |platform| !select_depots(app, owned, platform, language).is_empty();
-    (installable(Platform::Mac), installable(Platform::Windows))
-}
-
-fn select_depots<'a>(
-    app: &'a AppInfo,
-    owned: &ContentLicenses,
-    platform: Platform,
-    language: &str,
-) -> Vec<&'a DepotInfo> {
-    if !supports_platform(&app.os_list, platform) {
-        return Vec::new();
-    }
-    let eligible: Vec<_> = app
-        .depots
-        .iter()
-        .filter(|depot| {
-            let redistributable = depot.shared_from_app == Some(COMMON_REDISTRIBUTABLES);
-            supports_platform(&depot.os_list, platform)
-                && !(redistributable && SKIPPED_REDISTRIBUTABLES.contains(&depot.depot_id))
-                && (app.free_to_download
-                    || owned.depots.contains(&depot.depot_id)
-                    || redistributable)
-                && depot.dlc_app_id.is_none_or(|dlc| owned.apps.contains(&dlc))
-                && (depot.public_manifest.is_some() || depot.shared_from_app.is_some())
-        })
-        .collect();
-    // Shared asset depots often have no OS restriction. They do not establish
-    // that the application ships an executable for an otherwise unknown OS.
-    if app.os_list.is_empty()
-        && !eligible
-            .iter()
-            .any(|depot| depot.os_list.iter().any(|os| os == PLATFORM.name(platform)))
-    {
-        return Vec::new();
-    }
-    let has_language = eligible
-        .iter()
-        .any(|depot| depot.language.as_deref() == Some(language));
-    let language = if has_language { language } else { "english" };
-    let eligible: Vec<_> = eligible
-        .into_iter()
-        .filter(|depot| {
-            depot
-                .language
-                .as_deref()
-                .is_none_or(|value| value.is_empty() || value == language)
-        })
-        .collect();
-    let arch = if eligible
-        .iter()
-        .any(|depot| depot.os_arch.as_deref() == Some("64"))
-    {
-        "64"
-    } else {
-        "32"
-    };
-    eligible
-        .into_iter()
-        .filter(|depot| {
-            depot
-                .os_arch
-                .as_deref()
-                .is_none_or(|value| value == arch || value.is_empty())
-        })
-        .collect()
-}
-
-fn content_authorizing_app(app: &AppInfo, depot: &DepotInfo) -> u32 {
-    // FreeToDownload titles authorize shared depot requests through their own app,
-    // even when the manifest itself must be looked up on the source app.
-    if app.free_to_download {
-        app.app_id
-    } else {
-        depot.shared_from_app.unwrap_or(app.app_id)
     }
 }
 
@@ -1372,6 +1124,7 @@ impl TransferError for ClientError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cm::supports_platform;
 
     #[test]
     fn steam_spells_its_builds_as_pics_oslists_do() {
@@ -1400,77 +1153,6 @@ mod tests {
         assert!(!supports_platform(&["windows".into()], Platform::Mac));
         assert!(supports_platform(&[], Platform::Mac));
     }
-    fn depot(id: u32, os: &str, language: Option<&str>, dlc: Option<u32>) -> DepotInfo {
-        DepotInfo {
-            depot_id: id,
-            shared_from_app: None,
-            dlc_app_id: dlc,
-            os_list: if os.is_empty() {
-                vec![]
-            } else {
-                vec![os.into()]
-            },
-            os_arch: None,
-            language: language.map(Into::into),
-            public_manifest: Some(1),
-            size_bytes: None,
-        }
-    }
-    fn licenses(
-        apps: impl IntoIterator<Item = u32>,
-        depots: impl IntoIterator<Item = u32>,
-    ) -> ContentLicenses {
-        ContentLicenses {
-            apps: apps.into_iter().collect(),
-            depots: depots.into_iter().collect(),
-            ..ContentLicenses::default()
-        }
-    }
-
-    #[test]
-    fn unlicensed_depot_without_dlc_tag_is_not_selected() {
-        // Dead Cells publishes this additional Mac depot without dlcappid.
-        // Its base package grants 588652, but not 1046443.
-        let mut app = app(vec![
-            depot(588652, "macos", None, None),
-            depot(1046443, "macos", None, None),
-        ]);
-        app.app_id = 588650;
-        let rights = licenses([588650], [588651, 588652, 588653, 588654]);
-        let selected: Vec<_> = select_depots(&app, &rights, Platform::Mac, "english")
-            .iter()
-            .map(|d| d.depot_id)
-            .collect();
-        assert_eq!(selected, [588652]);
-        let rights = licenses([588650], [588652, 1046443]);
-        assert_eq!(
-            select_depots(&app, &rights, Platform::Mac, "english").len(),
-            2
-        );
-    }
-
-    #[test]
-    fn the_installable_builds_are_those_the_account_owns() {
-        let app = AppInfo {
-            os_list: vec!["windows".into(), "macos".into()],
-            ..app(vec![
-                depot(2, "windows", None, None),
-                depot(3, "macos", None, None),
-            ])
-        };
-        assert_eq!(
-            installable_builds(&app, &licenses([1], [2, 3]), "english"),
-            (true, true)
-        );
-        assert_eq!(
-            installable_builds(&app, &licenses([1], [2]), "english"),
-            (false, true)
-        );
-        assert_eq!(
-            installable_builds(&app, &licenses([1], []), "english"),
-            (false, false)
-        );
-    }
 
     #[test]
     fn a_game_without_an_installable_build_says_why() {
@@ -1486,248 +1168,5 @@ mod tests {
             message(Unavailable::NotNative),
             "backend.install.macBuildNotNative"
         );
-    }
-
-    #[tokio::test]
-    async fn a_mac_build_without_a_launch_configuration_keeps_no_verdict() {
-        use obelisk_core::build_choice::{GameBuilds, Inspection};
-        let (connection, _server) = crate::cm::test_server::connection(1, true).await;
-        let client = Client::with_test_connection(connection);
-        let game = OwnedApp {
-            client: &client,
-            app_id: 1,
-            language: "english",
-        };
-        let mac = Licensed {
-            owned: Arc::new(licenses([1], [3])),
-            app: Arc::new(app(vec![depot(3, "macos", None, None)])),
-        };
-        // Neither asks Steam anything: the test server never answers, so a
-        // request would time out.
-        let quickly = Duration::from_secs(5);
-        let key = tokio::time::timeout(quickly, game.key(&mac)).await;
-        assert_eq!(key.expect("no request").unwrap(), None);
-        let cancel = CancelToken::new();
-        let inspection = tokio::time::timeout(quickly, game.inspect(&mac, &cancel)).await;
-        assert!(matches!(
-            inspection.expect("no request").unwrap(),
-            Inspection::NotNative
-        ));
-    }
-
-    #[test]
-    fn depot_rights_do_not_grant_dlc_app_ownership() {
-        let app = app(vec![depot(2, "macos", None, Some(99))]);
-        assert!(select_depots(&app, &licenses([1], [2, 99]), Platform::Mac, "english").is_empty());
-        assert_eq!(
-            select_depots(&app, &licenses([1, 99], [2]), Platform::Mac, "english").len(),
-            1
-        );
-    }
-
-    #[test]
-    fn free_to_download_depots_do_not_require_package_membership() {
-        let mut app = app(vec![depot(2, "macos", None, None)]);
-        assert!(select_depots(&app, &licenses([1], []), Platform::Mac, "english").is_empty());
-        app.free_to_download = true;
-        assert_eq!(
-            select_depots(&app, &licenses([1], []), Platform::Mac, "english").len(),
-            1
-        );
-    }
-
-    #[test]
-    fn unlicensed_depots_cannot_choose_language_or_architecture() {
-        let mut english = depot(2, "macos", Some("english"), None);
-        english.os_arch = Some("32".into());
-        let mut unlicensed = depot(3, "macos", Some("french"), None);
-        unlicensed.os_arch = Some("64".into());
-        let app = app(vec![english, unlicensed]);
-        let rights = licenses([1], [2]);
-        let selected = select_depots(&app, &rights, Platform::Mac, "french");
-        assert_eq!(selected.iter().map(|d| d.depot_id).collect::<Vec<_>>(), [2]);
-    }
-
-    #[test]
-    fn selection_respects_platform_language_and_dlc_ownership() {
-        let app = AppInfo {
-            app_id: 1,
-            name: "Game".into(),
-            free_to_download: false,
-            os_list: vec!["windows".into(), "macos".into()],
-            launch_configs: vec![],
-            cloud: None,
-            tree: crate::kv::Kv::Object(Vec::new()),
-            depots: vec![
-                depot(1, "", None, None),
-                depot(2, "windows", Some("english"), None),
-                depot(3, "windows", Some("french"), None),
-                depot(4, "macos", None, None),
-                depot(5, "windows", None, Some(99)),
-            ],
-        };
-        let owned = licenses([1], [1, 2, 3, 4, 5]);
-        assert_eq!(
-            select_depots(&app, &owned, Platform::Windows, "french")
-                .iter()
-                .map(|d| d.depot_id)
-                .collect::<Vec<_>>(),
-            vec![1, 3]
-        );
-        assert_eq!(
-            select_depots(&app, &owned, Platform::Mac, "french")
-                .iter()
-                .map(|d| d.depot_id)
-                .collect::<Vec<_>>(),
-            vec![1, 4]
-        );
-    }
-    fn app(depots: Vec<DepotInfo>) -> AppInfo {
-        AppInfo {
-            app_id: 1,
-            name: "Game".into(),
-            free_to_download: false,
-            os_list: vec!["windows".into(), "macos".into()],
-            launch_configs: vec![],
-            cloud: None,
-            tree: crate::kv::Kv::Object(Vec::new()),
-            depots,
-        }
-    }
-    #[test]
-    fn unavailable_depots_cannot_change_language_or_architecture_selection() {
-        let mut english = depot(2, "windows", Some("english"), None);
-        english.os_arch = Some("32".into());
-        let mut unavailable_dlc = depot(3, "windows", Some("french"), Some(99));
-        unavailable_dlc.os_arch = Some("64".into());
-        let mut unpublished = depot(4, "windows", Some("french"), None);
-        unpublished.public_manifest = None;
-        unpublished.os_arch = Some("64".into());
-        let mut other_platform = depot(5, "macos", Some("french"), None);
-        other_platform.os_arch = Some("64".into());
-        let app = app(vec![
-            depot(1, "", None, None),
-            english,
-            unavailable_dlc,
-            unpublished,
-            other_platform,
-        ]);
-        let selected: Vec<_> = select_depots(
-            &app,
-            &licenses([1], [1, 2, 3, 4, 5]),
-            Platform::Windows,
-            "french",
-        )
-        .into_iter()
-        .map(|depot| depot.depot_id)
-        .collect();
-        assert_eq!(selected, [1, 2]);
-    }
-    #[test]
-    fn neutral_depots_cannot_create_unsupported_or_unknown_platform_support() {
-        let owned = licenses([1], [1, 2, 3, 4, 5]);
-        let mut app = app(vec![
-            depot(1, "", None, None),
-            depot(2, "windows", None, None),
-        ]);
-        app.os_list = vec!["windows".into()];
-        assert!(select_depots(&app, &owned, Platform::Mac, "english").is_empty());
-        assert_eq!(
-            select_depots(&app, &owned, Platform::Windows, "english").len(),
-            2
-        );
-        app.os_list.clear();
-        assert!(select_depots(&app, &owned, Platform::Mac, "english").is_empty());
-        assert_eq!(
-            select_depots(&app, &owned, Platform::Windows, "english").len(),
-            2
-        );
-        app.depots.retain(|depot| depot.os_list.is_empty());
-        assert!(select_depots(&app, &owned, Platform::Windows, "english").is_empty());
-    }
-    #[test]
-    fn unowned_platform_specific_dlc_cannot_establish_unknown_app_platform() {
-        let mut app = app(vec![
-            depot(1, "", None, None),
-            depot(2, "macos", None, Some(99)),
-        ]);
-        app.os_list.clear();
-        assert!(
-            select_depots(
-                &app,
-                &licenses([1], [1, 2, 3, 4, 5]),
-                Platform::Mac,
-                "english"
-            )
-            .is_empty()
-        );
-        assert_eq!(
-            select_depots(
-                &app,
-                &licenses([1, 99], [1, 2, 3, 4, 5]),
-                Platform::Mac,
-                "english"
-            )
-            .len(),
-            2
-        );
-    }
-    #[test]
-    fn architecture_is_chosen_among_depots_for_the_selected_language() {
-        let mut english = depot(2, "windows", Some("english"), None);
-        english.os_arch = Some("64".into());
-        let mut french = depot(3, "windows", Some("french"), None);
-        french.os_arch = Some("32".into());
-        let app = app(vec![english, french]);
-        assert_eq!(
-            select_depots(
-                &app,
-                &licenses([1], [1, 2, 3, 4, 5]),
-                Platform::Windows,
-                "french"
-            )[0]
-            .depot_id,
-            3
-        );
-    }
-    #[test]
-    fn a_windows_game_gets_the_common_redistributables_it_names_without_owning_them() {
-        let mut directx = depot(228_990, "windows", None, None);
-        directx.shared_from_app = Some(COMMON_REDISTRIBUTABLES);
-        directx.public_manifest = None;
-        let mut visual_cpp = depot(228_989, "windows", None, None);
-        visual_cpp.shared_from_app = Some(COMMON_REDISTRIBUTABLES);
-        let mut dotnet = depot(229_005, "windows", None, None);
-        dotnet.shared_from_app = Some(COMMON_REDISTRIBUTABLES);
-        let mut other = depot(3, "windows", None, None);
-        other.shared_from_app = Some(99);
-        other.public_manifest = None;
-        let app = app(vec![
-            depot(2, "windows", None, None),
-            directx,
-            visual_cpp,
-            dotnet,
-            other,
-        ]);
-        let selected: Vec<_> = select_depots(
-            &app,
-            &licenses([1], [2, 228_989, 229_005]),
-            Platform::Windows,
-            "english",
-        )
-        .iter()
-        .map(|depot| depot.depot_id)
-        .collect();
-        assert_eq!(selected, [2, 228_990, 228_989]);
-        assert!(select_depots(&app, &licenses([1], [2]), Platform::Mac, "english").is_empty());
-    }
-    #[test]
-    fn free_to_download_shared_depots_use_the_requesting_app_for_authorization() {
-        let mut shared = depot(2, "windows", None, None);
-        shared.shared_from_app = Some(99);
-        let mut app = app(vec![]);
-        assert_eq!(content_authorizing_app(&app, &shared), 99);
-        app.free_to_download = true;
-        assert_eq!(content_authorizing_app(&app, &shared), 1);
     }
 }

@@ -1207,12 +1207,18 @@ fn a_configuration_reaches_its_game_session_whole() {
             variables: BTreeMap::from([("SteamDeck".to_owned(), "1".to_owned())]),
             dll_overrides: BTreeMap::from([("xaudio2_7".to_owned(), "n,b".to_owned())]),
             performance_hud: true,
+            locale: Some("it_IT".into()),
         },
     };
 
     let again: Config = serde_json::from_slice(&serde_json::to_vec(&config).unwrap()).unwrap();
 
     assert_eq!(again, config);
+    // A handoff that predates the locale still opens, without one.
+    let mut older = serde_json::to_value(&config).unwrap();
+    older["settings"].as_object_mut().unwrap().remove("locale");
+    let older: Config = serde_json::from_value(older).unwrap();
+    assert_eq!(older.settings.locale, None);
 }
 
 #[test]

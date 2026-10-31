@@ -2,11 +2,11 @@
 //! Cloud, the launch plan and its ownership token, and Epic presence.
 use super::session as cloud_session;
 use super::*;
+use crate::launch_shell::{ArgumentFile, Request, Started};
 use crate::supervisor::{
     Error as Core,
     architecture::Architecture,
     session::{self as lifecycle, LaunchCloud, Opening, Prepared, Session},
-    storage,
 };
 use epic_kit::{client::LaunchPlan, friends::Activity};
 use std::{
@@ -82,7 +82,7 @@ impl Services for epic_kit::client::Client {
 }
 
 pub(crate) struct Launch<S: Services = epic_kit::client::Client> {
-    request: Request,
+    request: Request<Epic>,
     api: Option<Arc<S>>,
     activity: Option<Activity>,
     ownership: Option<tempfile::TempDir>,
@@ -110,25 +110,7 @@ impl<S: Services> lifecycle::Launch for Launch<S> {
     }
 
     fn open(input: &mut dyn Read) -> Result<(Opening<Epic>, Self)> {
-        let request: Request = storage::packet(input)?;
-        request.config.validate(&request.account_id)?;
-        if uuid::Uuid::parse_str(&request.id).is_err()
-            || !request.config.runs_in(request.wine.as_ref())
-        {
-            return Err(Error::Session);
-        }
-        let opening = Opening {
-            root: request.config.session_directory.clone(),
-            id: request.id.clone(),
-            account_id: request.account_id.clone(),
-            store: Store {
-                namespace: request.config.namespace.clone(),
-                app_name: request.config.app_name.clone(),
-            },
-            helpers: crate::supervisor::rosetta::helpers_of_host(&request.config.helper)
-                .ok_or(Error::Session)?
-                .into(),
-        };
+        let (opening, request) = Request::<Epic>::open(input)?;
         let launch = Self {
             request,
             api: None,
@@ -139,7 +121,11 @@ impl<S: Services> lifecycle::Launch for Launch<S> {
     }
 
     async fn authenticate(&mut self, _: &Arc<Session<Epic>>) -> Result<()> {
-        let api = S::login(&self.request.exchange_code, &self.request.account_id).await?;
+        let api = S::login(
+            &self.request.credential.exchange_code,
+            &self.request.account_id,
+        )
+        .await?;
         self.api = Some(api);
         Ok(())
     }
@@ -167,14 +153,10 @@ impl<S: Services> lifecycle::Launch for Launch<S> {
         let plan = self.api()?.launch_plan(&self.request.config).await?;
         session.cloud().check()?;
         // A fresh plan, after Rosetta was installed, drops the old token.
-        let request = &self.request;
-        let (target, architecture, ownership) = match &request.wine {
-            Some(wine) => windows_target(&plan, &request.config, wine, &request.environment)?,
-            None => native_target(&plan, &request.config, &request.environment)?,
-        };
+        let started = started(&self.request, &plan)?;
         self.activity = plan.activity;
-        self.ownership = ownership;
-        Ok((target, Some(architecture)))
+        self.ownership = started.kept;
+        Ok((started.target, Some(started.architecture)))
     }
 
     async fn prepare_host(
@@ -184,14 +166,12 @@ impl<S: Services> lifecycle::Launch for Launch<S> {
         _: Option<Architecture>,
         _: Option<&Box<dyn LaunchCloud<Error>>>,
     ) -> Result<Prepared<Host>> {
-        Ok(Prepared {
-            host: Host {
+        Ok(self.request.prepared(
+            Host {
                 _ownership: self.ownership.take(),
             },
-            helper: self.request.config.helper.clone(),
-            subcommand: "game-exec",
-            environment: target.environment.clone(),
-        })
+            target,
+        ))
     }
 
     fn running(&self, _: &Arc<Host>, _: u32) -> Box<dyn Fn(bool) + Send + Sync> {
@@ -231,64 +211,21 @@ impl<S: Services> lifecycle::Launch for Launch<S> {
     }
 }
 
-/// A Windows build, which Wine starts in its prefix, with the plan's
-/// ownership token where that Wine reads it.
-pub(super) fn windows_target(
-    plan: &LaunchPlan,
-    config: &Configuration,
-    wine: &crate::wine::Config,
-    environment: &std::collections::HashMap<String, String>,
-) -> Result<(Target, Architecture, Option<tempfile::TempDir>)> {
-    let mut target = crate::wine::target::<super::windows::Prefix<'_>>(
-        wine,
-        &config.game(),
-        &plan.target,
-        environment.clone(),
-    )?;
-    let ownership = match &plan.ownership_token {
-        Some(bytes) => {
-            let (directory, path) = crate::wine::private_file(wine, "ownership.bin", bytes)?;
-            target.arguments.push(format!("-epicovt={path}"));
-            Some(directory)
-        }
-        None => None,
-    };
-    Ok((target, wine.architecture(), ownership))
+/// What `request` starts of `plan`: its target, with the ownership token it
+/// carries.
+fn started(request: &Request<Epic>, plan: &LaunchPlan) -> Result<Started> {
+    request.target(&plan.target, ownership(plan))
 }
 
-/// A Mac build, with the plan's ownership token in a private folder that
-/// lives as long as the game.
-pub(super) fn native_target(
-    plan: &LaunchPlan,
-    config: &Configuration,
-    environment: &std::collections::HashMap<String, String>,
-) -> Result<(Target, Architecture, Option<tempfile::TempDir>)> {
-    let mut arguments = plan.target.arguments.clone();
-    let ownership = match &plan.ownership_token {
-        Some(bytes) => {
-            let (directory, path) = crate::files::private_temp_file(
-                &std::env::temp_dir(),
-                "obelisk-epic-ownership-",
-                "ownership.bin",
-                bytes,
-            )?;
-            arguments.push(format!("-epicovt={}", path.display()));
-            Some(directory)
-        }
-        None => None,
-    };
-    let (target, architecture) = crate::native::target(
-        &config.install,
-        &plan.target,
-        arguments,
-        environment.clone(),
-        crate::diagnostics::game_log(
-            &config.home,
-            config.profile_game().into(),
-            obelisk_core::Platform::Mac,
-        ),
-    )?;
-    Ok((target, architecture, ownership))
+/// The plan's ownership token, which the game reads from a private file its
+/// `-epicovt` argument names.
+fn ownership(plan: &LaunchPlan) -> Option<ArgumentFile<'_>> {
+    plan.ownership_token.as_deref().map(|bytes| ArgumentFile {
+        argument: "-epicovt",
+        folder: "obelisk-epic-ownership-",
+        name: "ownership.bin",
+        bytes,
+    })
 }
 
 /// The `obelisk-steam-host epic-supervise` entry point.

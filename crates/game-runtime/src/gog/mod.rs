@@ -1,15 +1,12 @@
 //! GOG game ownership and Game sessions. GOG's builds are DRM free: a launch
 //! needs no account credential, only its installation. No Cloud sync runs
 //! yet: GOG Cloud saves need the game's own Galaxy credentials.
-mod client;
 pub mod content;
 mod launch;
-mod windows;
 
 use crate::runtimes::Runtime;
 use crate::supervisor::{self, Record};
 pub use crate::supervisor::{FailureReason, Phase};
-pub use client::start;
 pub use launch::serve;
 use obelisk_core::Platform;
 use serde::{Deserialize, Serialize};
@@ -38,7 +35,7 @@ pub enum Error {
     #[error("backend.gog.storage")]
     Io(#[from] std::io::Error),
 }
-supervisor::session_error_conversions!(Error);
+crate::launch_shell::session_error_conversions!(Error);
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// What a GOG Game session starts: one installed build.
@@ -60,50 +57,6 @@ pub struct Configuration {
     #[serde(default)]
     pub prefix: Option<PathBuf>,
 }
-impl Configuration {
-    /// The game as Obelisk's profiles and logs name it.
-    pub(crate) fn profile_game(&self) -> crate::profile::Game<'_> {
-        crate::profile::Game::Gog {
-            product_id: &self.product_id,
-        }
-    }
-    /// The game as Wine starts a Windows build.
-    pub(crate) fn game(&self) -> crate::wine::Game<'_> {
-        crate::wine::Game {
-            install: &self.install,
-            title: &self.title,
-        }
-    }
-    /// Whether `wine` runs this build in its own prefix, and only a Windows
-    /// build.
-    fn runs_in(&self, wine: Option<&crate::wine::Config>) -> bool {
-        self.prefix.as_ref() == wine.map(|wine| &wine.prefix)
-    }
-    fn validate(&self, account: &str) -> Result<()> {
-        // A Mac build runs natively; a Windows build in its prefix.
-        let prefix = match (self.platform, &self.prefix) {
-            (Platform::Mac, None) => None,
-            (Platform::Windows, Some(prefix)) => Some(prefix),
-            _ => return Err(Error::Unsupported),
-        };
-        if [
-            &self.home,
-            &self.install,
-            &self.session_directory,
-            &self.helper,
-        ]
-        .into_iter()
-        .chain(prefix)
-        .any(|path| !supervisor::plain_absolute(path))
-            || !gog_kit::client::valid_product_id(&self.product_id)
-            || !gog_kit::auth::valid_user_id(account)
-        {
-            return Err(Error::Unsupported);
-        }
-        Ok(())
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Gog;
 
@@ -161,20 +114,6 @@ impl crate::sessions::Storefront for Gog {
     }
 }
 
-/// What the handoff pipe carries to a GOG supervisor. It holds no credential.
-#[derive(Serialize, Deserialize)]
-struct Request {
-    config: Configuration,
-    id: String,
-    account_id: String,
-    /// Built in Obelisk's process: a supervisor starts without any environment.
-    #[serde(default)]
-    environment: std::collections::HashMap<String, String>,
-    /// How a Windows build runs.
-    #[serde(default)]
-    wine: Option<crate::wine::Config>,
-}
-
 /// What a GOG installation names of its game: its product.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -204,6 +143,64 @@ impl crate::installations::Storefront for Gog {
     }
     fn transfer_name(product_id: &String) -> String {
         product_id.clone()
+    }
+}
+
+impl crate::launch_shell::Launchable for Gog {
+    type Configuration = Configuration;
+    type Credential = crate::launch_shell::NoCredential;
+
+    fn build(configuration: &Configuration) -> crate::launch_shell::Build<'_> {
+        crate::launch_shell::Build {
+            home: &configuration.home,
+            install: &configuration.install,
+            session_directory: &configuration.session_directory,
+            helper: &configuration.helper,
+            platform: configuration.platform,
+            title: &configuration.title,
+            prefix: configuration.prefix.as_deref(),
+            game: crate::profile::Game::Gog {
+                product_id: &configuration.product_id,
+            },
+        }
+    }
+
+    fn store(configuration: &Configuration) -> Store {
+        Store {
+            product_id: configuration.product_id.clone(),
+        }
+    }
+
+    fn check(configuration: &Configuration, account: &str) -> Result<()> {
+        if !gog_kit::client::valid_product_id(&configuration.product_id)
+            || !gog_kit::auth::valid_user_id(account)
+        {
+            return Err(Error::Unsupported);
+        }
+        Ok(())
+    }
+
+    /// What the installation's files say its build starts, and, for a Windows
+    /// build, its installer scripts and redistributables, as Galaxy runs
+    /// them, to run once in the build's prefix first.
+    fn installed(configuration: &Configuration) -> Result<crate::launch_shell::Installed> {
+        let installed = gog_kit::client::installed_launch(
+            &configuration.product_id,
+            configuration.platform,
+            &configuration.install,
+        )?;
+        let prerequisites = installed
+            .prerequisites(crate::wine::windows_path)
+            .into_iter()
+            .map(|prerequisite| crate::wine::Prerequisite {
+                id: format!("gog:{}", prerequisite.id),
+                programs: vec![(prerequisite.program, prerequisite.arguments)],
+            })
+            .collect();
+        Ok(crate::launch_shell::Installed {
+            target: installed.target,
+            prerequisites,
+        })
     }
 }
 

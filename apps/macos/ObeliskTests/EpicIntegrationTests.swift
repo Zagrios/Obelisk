@@ -117,12 +117,6 @@ final class EpicIntegrationTests: XCTestCase {
             XCTAssertFalse(String(describing: error).contains("private-test-token"))
         }
     }
-
-    func testEpicAvailabilityAcrossBridge() {
-        let epic = storefronts().first { $0.id == .epic }
-        XCTAssertEqual(epic?.available, true)
-        XCTAssertEqual(epic?.displayName, "Epic Games")
-    }
 }
 
 private actor EpicArtworkTestLoader {

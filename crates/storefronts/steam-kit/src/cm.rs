@@ -43,6 +43,8 @@ mod platforms_tests;
 mod social_tests;
 #[cfg(test)]
 pub(crate) mod test_server;
+#[cfg(test)]
+pub(crate) mod test_steam;
 
 const PROTOCOL: u32 = 65_581;
 const PROTO_MASK: u32 = 0x8000_0000;

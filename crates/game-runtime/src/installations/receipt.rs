@@ -135,14 +135,26 @@ impl<S: Storefront> Receipt<S> {
     /// Its Wine prefix when it is a Windows build, the one of the engine it
     /// runs on, without the rest of its launch settings: where its saves
     /// live. None for a Mac build, or one whose folder names no prefix.
-    pub(crate) fn wine_prefix(&self, locations: &crate::Locations) -> Option<PathBuf> {
+    /// Worked out off the async runtime, as `windows_for_launch` does:
+    /// without a choice of engine, finding Easy Anti-Cheat reads folders of
+    /// the installation, on a disk that may still be spinning up. A lost join
+    /// is the storefront's `SESSION_FAILED`.
+    pub(crate) async fn wine_prefix(
+        &self,
+        locations: &crate::Locations,
+    ) -> Result<Option<PathBuf>, crate::sessions::Failure> {
         if self.platform != Platform::Windows {
-            return None;
+            return Ok(None);
         }
-        let (game, install) = (S::profile_game(&self.product), Path::new(&self.directory));
-        crate::launch_settings::engine(&locations.library, game, install)
-            .prefix(&locations.wine_prefixes, install)
-            .ok()
+        let (library, prefixes) = (locations.library.clone(), locations.wine_prefixes.clone());
+        let (product, directory) = (self.product.clone(), PathBuf::from(&self.directory));
+        super::blocking(S::SESSION_FAILED, move || {
+            let game = S::profile_game(&product);
+            crate::launch_settings::engine(&library, game, &directory)
+                .prefix(&prefixes, &directory)
+                .ok()
+        })
+        .await
     }
 
     /// Follows its installation, which moved from `from`: the Cloud
@@ -208,23 +220,6 @@ impl<S: Storefront> Offer<S> {
             directory,
         }
     }
-}
-
-/// The receipts in `file`, whose folders the installations then sort.
-pub(super) fn load<S: Storefront>(file: &Path) -> std::io::Result<Vec<Receipt<S>>> {
-    let bytes = match std::fs::read(file) {
-        Ok(bytes) => bytes,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(error) => return Err(error),
-    };
-    Ok(serde_json::from_slice(&bytes)?)
-}
-
-pub(super) fn save<S: Storefront>(file: &Path, receipts: &[Receipt<S>]) -> std::io::Result<()> {
-    if let Some(parent) = file.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    obelisk_core::write_atomic(file, &serde_json::to_vec(receipts)?)
 }
 
 /// The folder an installation's own folder sits in.

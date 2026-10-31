@@ -16,12 +16,12 @@ use std::{
 
 use obelisk_core::{
     install::{
-        self, PARTIAL_DIRECTORY, apply_permissions, checked_file_path, ensure_directory, hex,
-        safe_relative_path,
+        self, PARTIAL_DIRECTORY, checked_file_path, ensure_directory, hex, safe_relative_path,
     },
+    publish::{Assembled, Integrity, Publisher},
     transfer::{
-        self, BodyError, BodySize, CancelToken, Chunks, Delivery, DownloadPhase, DownloadProgress,
-        DownloadSummary, Interrupted, Pipeline, Reporter,
+        self, BodyError, BodySize, CancelToken, CdnClient, CdnError, Chunks, Delivery,
+        DownloadPhase, DownloadProgress, DownloadSummary, Interrupted, Pipeline, Reporter,
     },
 };
 use reqwest::{Client, Url};
@@ -59,7 +59,7 @@ const PIPELINE: Pipeline = Pipeline {
 
 #[derive(Clone)]
 pub struct ContentClient {
-    client: Client,
+    cdn: CdnClient,
 }
 
 type ChunkResult = Result<Vec<u8>, EpicError>;
@@ -72,17 +72,35 @@ impl From<Interrupted> for EpicError {
 
 impl From<BodyError> for EpicError {
     fn from(error: BodyError) -> Self {
+        CdnError::from(error).into()
+    }
+}
+
+impl From<CdnError> for EpicError {
+    fn from(error: CdnError) -> Self {
         match error {
-            BodyError::Network => Self::Network,
-            BodyError::Size => Self::Protocol,
-            BodyError::Cancelled => Self::Cancelled,
+            CdnError::Network => Self::Network,
+            CdnError::Http(status) => Self::Http(status),
+            CdnError::Size => Self::Protocol,
+            CdnError::Cancelled => Self::Cancelled,
         }
+    }
+}
+
+impl EpicError {
+    /// Whether the network or a server is failing rather than the chunk bad,
+    /// as [`CdnError::is_outage`] tells.
+    fn is_outage(&self) -> bool {
+        matches!(self, Self::Network)
+            || matches!(self, Self::Http(status) if transfer::is_outage_status(*status))
     }
 }
 
 impl ContentClient {
     pub fn new(client: Client) -> Self {
-        Self { client }
+        Self {
+            cdn: CdnClient::new(client),
+        }
     }
 
     pub async fn download(
@@ -219,10 +237,7 @@ impl ContentClient {
                     }
                 }
             }
-            let outage = matches!(
-                failure,
-                EpicError::Network | EpicError::Http(429 | 500..=599)
-            );
+            let outage = failure.is_outage();
             match transfer::NETWORK_RETRY_WAITS.get(late) {
                 Some(wait) if outage => cancel.race(tokio::time::sleep(*wait)).await?,
                 _ => break,
@@ -232,37 +247,22 @@ impl ContentClient {
     }
 
     async fn fetch(&self, url: &Url, cancel: &CancelToken, reporter: &Reporter) -> ChunkResult {
-        // A server that stops sending fails the request, not a slow link.
-        let request = self
-            .client
-            .get(url.clone())
-            // Chunks are compressed already: never gzip them again.
-            .header(reqwest::header::ACCEPT_ENCODING, "identity")
-            .timeout(transfer::CHUNK_DEADLINE)
-            .send();
-        let response = cancel
-            .race(tokio::time::timeout(transfer::CHUNK_STALL, request))
-            .await?
-            .map_err(|_| EpicError::Network)?
-            .map_err(|_| EpicError::Network)?;
-        if !response.status().is_success() {
-            return Err(EpicError::Http(response.status().as_u16()));
-        }
         // At most, never exactly `chunk.file_size`: that size is only an
         // estimate (see decode_chunk).
-        Ok(transfer::read_body(
-            response.content_length(),
-            transfer::chunk_parts(response.bytes_stream()),
-            BodySize::AtMost((MAX_CHUNK_BYTES + 98) as u64),
-            cancel,
-            |count| {
-                reporter.update(|status| {
-                    status.network_bytes += count;
-                    status.content_bytes += count;
-                });
-            },
-        )
-        .await?)
+        Ok(self
+            .cdn
+            .get(
+                url.clone(),
+                BodySize::AtMost((MAX_CHUNK_BYTES + 98) as u64),
+                cancel,
+                |count| {
+                    reporter.update(|status| {
+                        status.network_bytes += count;
+                        status.content_bytes += count;
+                    });
+                },
+            )
+            .await?)
     }
 }
 
@@ -380,20 +380,11 @@ impl DiskInstall {
             }
         }
         self.prefetch_files(&verified.valid, &chunk_root)?;
-        // Parents are created and checked once per distinct directory; every
-        // file's full path is still confined right before it is written.
-        let mut ensured_parents: HashSet<PathBuf> = HashSet::new();
+        let mut publisher = Publisher::new(&root, &self.cancel);
         for (index, (file, valid)) in manifest.files.iter().zip(&verified.valid).enumerate() {
             self.cancel.check()?;
-            let relative = safe_relative_path(&file.filename)?;
-            let parent = relative.parent().unwrap_or(Path::new(""));
-            if !ensured_parents.contains(parent) {
-                ensure_directory(&root, parent)?;
-                ensured_parents.insert(parent.to_path_buf());
-            }
-            let target = checked_file_path(&root, &relative)?;
             if *valid {
-                apply_permissions(&target, is_executable(file, &target)?)?;
+                publisher.keep(&file.filename, file.executable())?;
                 continue;
             }
             // The phase stays the network side's: chunks still arrive for
@@ -405,7 +396,7 @@ impl DiskInstall {
                 return Err(EpicError::Protocol);
             }
             reused_bytes +=
-                self.assemble(file, &plan, &partial_root, &chunk_root, &root, &relative)?;
+                self.assemble(file, &plan, &partial_root, &chunk_root, &mut publisher)?;
             // A published file can be verified directly next time. Keep only
             // chunks that are still required by unfinished files.
             for part in &file.parts {
@@ -435,7 +426,7 @@ impl DiskInstall {
         self.cancel.check()?;
         // Every file is in place: durable before the receipt says so, and
         // recorded whole for the next Transfer to skip.
-        verification::complete(&root, &manifest.files)?;
+        publisher.complete(&manifest.files)?;
         // Keep caches on failure/cancellation only, avoiding a second permanent copy of the game.
         fs::remove_dir_all(partial_root)?;
         Ok(reused_bytes)
@@ -532,10 +523,9 @@ impl DiskInstall {
         plan: &PlannedFile,
         partial_root: &Path,
         chunk_root: &Path,
-        root: &Path,
-        relative: &Path,
+        publisher: &mut Publisher,
     ) -> Result<u64, EpicError> {
-        let assembled = self.assemble_file(file, plan, partial_root, chunk_root, root, relative);
+        let assembled = self.assemble_file(file, plan, partial_root, chunk_root, publisher);
         if assembled.is_err() {
             for part in &file.parts {
                 // Best effort: the failure that ended the file is the one
@@ -568,8 +558,7 @@ impl DiskInstall {
         plan: &PlannedFile,
         partial_root: &Path,
         chunk_root: &Path,
-        root: &Path,
-        relative: &Path,
+        publisher: &mut Publisher,
     ) -> Result<u64, EpicError> {
         let manifest = Arc::clone(&self.manifest);
         for guid in &plan.delivered_earlier {
@@ -681,25 +670,19 @@ impl DiskInstall {
                 .update(|status| status.completed_bytes += u64::from(part.size));
         }
         self.cancel.check()?;
-        if hash.finalize()[..] != file.hash {
-            return Err(EpicError::Integrity);
-        }
-        install::write_out(&partial)?;
-        drop(partial);
-        apply_permissions(&partial_path, is_executable(file, &partial_path)?)?;
-        self.cancel.check()?;
-        let target = checked_file_path(root, relative)?;
-        fs::rename(&partial_path, &target)?;
-        install::write_out(&File::open(target.parent().unwrap_or(root))?)?;
+        let digest = hash.finalize();
+        publisher.publish(Assembled {
+            file: partial,
+            at: &partial_path,
+            name: &file.filename,
+            program: file.executable(),
+            integrity: Integrity::Whole {
+                written: &digest,
+                expected: &file.hash,
+            },
+        })?;
         Ok(reused_bytes)
     }
-}
-
-/// Manifests flag only the launch executable of some builds: Prison Architect's
-/// Paradox bootstrap runs an unflagged installer beside it. Programs are then
-/// recognised by their header, a Mach-O binary or a script.
-fn is_executable(file: &ManifestFile, path: &Path) -> std::io::Result<bool> {
-    Ok(file.flags & 4 != 0 || install::starts_as_program(path)?)
 }
 
 fn manifest_key(manifest: &Manifest) -> String {

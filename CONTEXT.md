@@ -22,17 +22,25 @@ _Avoid_: OS, os list (Steam's declared platforms, Linux included), macos/osx/Mac
 Where Obelisk installs games: its own folder in its library until the player chooses another, such as one on an external disk, inside which Obelisk makes its own. Choosing one moves every installation there, one at a time in the download queue: a game cannot launch while it moves, the others can, and a move the player stops leaves its game where it was. Wine prefixes, launch settings and the Cloud archive stay in the library. An installation whose disk is not connected shows as not installed until the disk comes back.
 _Avoid_: library folder (Obelisk's own data), install location
 
+**Receipt book**:
+The Installation receipts one storefront account keeps, in a file of its own. Those of installations whose disk is connected show; those whose disk is not stay in the file, hidden, until it comes back. Beside them, in a second file, it keeps the records of new installations whose Transfer has not succeeded; these are not Installation receipts. A change to it, such as a finished Transfer, a move or an uninstall, applies to the receipts as they are when it happens, never as they were when the action began.
+_Avoid_: installation list
+
+**Speed limit**:
+The most the player lets Obelisk download per second, set in Settings. Every storefront's Transfers share it, so it bounds their total rather than each connection; it applies from the next bytes on, to a Transfer under way too, and a lower choice than 625 kB/s is raised to it. It holds games only: the downloads of Obelisk's own runtime, Voile and Valve's components, are not held by it.
+_Avoid_: bandwidth cap, throttle
+
 **Account session**:
 One storefront account's signed-in connection to its storefront, from sign-in or restoration until sign-out. The account's library, Transfers, launches, friends and chat go through it. Steam's connects again by itself when its CM connection drops: six attempts over about a minute, after growing waits, then only the player's retry or the Mac's wake tries again, and never once Steam asked the account to sign in again. A Transfer whose turn comes meanwhile waits for the new connection, and the download queue waits with it. Each CM connection of a session is numbered, 0 for the first: its transport, in the code.
 _Avoid_: login, CM connection (one connection of an account session)
 
 **Library cache**:
 The last library each storefront account loaded, with everything the storefront returned for each game and the game's last launch from Obelisk. The library shows from it while the account's session connects; the session keeps it as it loads, and signing the account out forgets it. It is not the catalog of games added by hand.
-_Avoid_: library.json (the catalog's file), launch history file
+_Avoid_: launch history file
 
 **Account library**:
-One storefront account's games as Obelisk shows them, with what orders and narrows each: its name, playtime, last played (on its storefront or from Obelisk, whichever is later), date added, achievements unlocked and size installed. It shows from the Library cache while the account's session connects, becomes live once the session lists the games, and signing the account out forgets it. Every storefront searches, filters and orders it the same six ways, and its featured game, its hero, is the last one played, else the most played, equal ones by name.
-_Avoid_: catalog (the games added by hand), filtered games, Library cache (its saved copy)
+One storefront account's games as Obelisk shows them, with what orders and narrows each: its name, playtime, last played (on its storefront or from Obelisk, whichever is later), date added, achievements unlocked and size installed. It shows from the Library cache while the account's session connects, becomes live once the session lists the games, and signing the account out forgets it. Every storefront searches, filters and orders it the same six ways, and its featured game, its hero, is the last one played, else the most played, equal ones by name. A game counts as installed when the account holds an Installation receipt for it; a receipt of a game the library does not list counts for none.
+_Avoid_: filtered games, Library cache (its saved copy)
 
 **Cloud archive**:
 Obelisk's own local store of each account's save versions, together with the record of which account currently owns each physical save location. One archive serves every storefront, so two storefront copies of a game that share a save location cannot silently adopt each other's saves.
@@ -51,7 +59,7 @@ What runs a Windows game's Wine: Rosetta's Wine, Voile's Wine for macOS under Ro
 _Avoid_: backend (a Graphics backend renders), runner, bottle, Wine flavour
 
 **Launch settings**:
-How one Windows installation runs, for every account that launches it: what Obelisk knows of the game, with the player's choices over it. The player picks the arguments added after the storefront's and the game's own on its command line, its engine, then the graphics backend that renders its Direct3D there and that backend's options, each as the engine allows, and whether Metal's Performance HUD shows over the game. Only the choices that differ from what Obelisk knows of the game are kept. A change applies from the game's next launch, a game moved to the other engine runs in that engine's Wine prefix, and the settings go when the installation is uninstalled.
+How one Windows installation runs, for every account that launches it: what Obelisk knows of the game, with the player's choices over it, in the player's language. The player picks the arguments added after the storefront's and the game's own on its command line, its engine, then the graphics backend that renders its Direct3D there and that backend's options, each as the engine allows, and whether Metal's Performance HUD shows over the game. Only the choices that differ from what Obelisk knows of the game are kept. A change applies from the game's next launch, a game moved to the other engine runs in that engine's Wine prefix, and the settings go when the installation is uninstalled.
 _Avoid_: bottle, container, game settings, profile (what Obelisk itself knows of a game)
 
 **Graphics backend**:

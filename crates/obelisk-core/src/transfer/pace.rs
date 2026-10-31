@@ -6,7 +6,7 @@
 
 use std::{
     sync::{
-        Mutex, MutexGuard, PoisonError,
+        Arc, LazyLock, Mutex, MutexGuard, PoisonError,
         atomic::{AtomicU64, Ordering},
     },
     time::Duration,
@@ -15,12 +15,12 @@ use std::{
 use futures_util::{Stream, StreamExt};
 use tokio::time::{Instant, sleep_until};
 
-static PACE: Pace = Pace::new();
+static PACE: LazyLock<Arc<Pace>> = LazyLock::new(|| Arc::new(Pace::new()));
 
 /// The lowest limit that holds. The requests in flight divide a limit among
-/// them and each must still end within [`CHUNK_DEADLINE`](super::CHUNK_DEADLINE),
-/// which a lower one could not allow.
-const MIN_SPEED_LIMIT: u64 = 625_000;
+/// them and each must still end within the deadline of a CDN request, which a
+/// lower one could not allow.
+pub(super) const MIN_SPEED_LIMIT: u64 = 625_000;
 
 /// Limits what every storefront downloads, in bytes per second; zero lifts the
 /// limit and a limit below the lowest that holds is raised to it. It applies
@@ -29,14 +29,12 @@ pub fn set_speed_limit(bytes_per_second: u64) {
     PACE.limit(bytes_per_second);
 }
 
-/// `parts`, each held back until its bytes fit the speed limit.
-pub(super) fn paced<B: AsRef<[u8]>, X>(
-    parts: impl Stream<Item = Result<B, X>>,
-) -> impl Stream<Item = Result<B, X>> {
-    PACE.pace(parts)
+/// The pace of the player's speed limit.
+pub(super) fn process() -> Arc<Pace> {
+    Arc::clone(&PACE)
 }
 
-struct Pace {
+pub(super) struct Pace {
     /// Zero for no limit.
     bytes_per_second: AtomicU64,
     /// When the bytes reserved so far have all passed.
@@ -44,14 +42,14 @@ struct Pace {
 }
 
 impl Pace {
-    const fn new() -> Self {
+    pub(super) const fn new() -> Self {
         Self {
             bytes_per_second: AtomicU64::new(0),
             next: Mutex::new(None),
         }
     }
 
-    fn limit(&self, bytes_per_second: u64) {
+    pub(super) fn limit(&self, bytes_per_second: u64) {
         let bytes_per_second = match bytes_per_second {
             0 => 0,
             limit => limit.max(MIN_SPEED_LIMIT),
@@ -62,7 +60,8 @@ impl Pace {
         *self.lock() = None;
     }
 
-    fn pace<B: AsRef<[u8]>, X>(
+    /// `parts`, each held back until its bytes fit the limit.
+    pub(super) fn pace<B: AsRef<[u8]>, X>(
         &self,
         parts: impl Stream<Item = Result<B, X>>,
     ) -> impl Stream<Item = Result<B, X>> {

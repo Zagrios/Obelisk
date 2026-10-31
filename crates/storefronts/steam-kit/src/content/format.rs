@@ -49,6 +49,11 @@ impl ManifestFile {
     pub fn is_link(&self) -> bool {
         self.flags & 512 != 0 || !self.link_target.is_empty()
     }
+
+    /// Whether the manifest flags it an executable.
+    pub fn executable(&self) -> bool {
+        self.flags & 32 != 0
+    }
 }
 
 #[derive(Clone, Message)]

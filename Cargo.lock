@@ -1326,8 +1326,10 @@ dependencies = [
 name = "obelisk-core"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "futures-util",
  "md-5",
+ "reqwest",
  "rustix",
  "serde",
  "serde_json",
@@ -1335,7 +1337,6 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
- "uuid",
 ]
 
 [[package]]

@@ -201,7 +201,7 @@ where
 /// one flush of its drive, then records `files` whole for the next Transfer
 /// to skip; see [`record_verified`]. The record only saves time: a failure to
 /// write it costs none.
-pub fn complete<T: VerificationFile>(root: &Path, files: &[T]) -> std::io::Result<()> {
+pub(crate) fn complete<T: VerificationFile>(root: &Path, files: &[T]) -> std::io::Result<()> {
     install::make_durable(root)?;
     let _ = record_verified(root, files);
     Ok(())

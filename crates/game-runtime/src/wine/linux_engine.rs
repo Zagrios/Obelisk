@@ -330,9 +330,14 @@ fn installed(config: &Config) -> bool {
 /// variables the game's profile adds. Wine takes its Windows locale from the
 /// guest's `LC_ALL`, and only from it: not from `LANG`, nor from the
 /// `WINEUSERLOCALE` its own sources name. The guest holds no locale but
-/// `C.utf8`, which Wine does not need.
+/// `C.utf8`, which Wine does not need. The locale is the player's, from the
+/// launch settings: a supervisor, which builds the target of an Epic or GOG
+/// game, starts with no environment to read it from.
 fn guest_environment(config: &Config) -> Vec<(String, String)> {
-    let locale = crate::native::player_locale()
+    let locale = config
+        .settings
+        .locale
+        .as_deref()
         .map(|locale| ("LC_ALL".to_owned(), format!("{locale}.UTF-8")));
     let own = [
         ("HOME", HOME.into()),

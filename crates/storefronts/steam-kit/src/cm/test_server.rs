@@ -27,7 +27,7 @@ impl TestServer {
         packet
     }
 
-    async fn next(&mut self) -> Packet {
+    pub(super) async fn next(&mut self) -> Packet {
         loop {
             let frame = self
                 .0

@@ -1,5 +1,7 @@
 //! The records every storefront's installations share, and what each
 //! storefront adds to them.
+mod wine_prefix;
+
 use super::*;
 use crate::{
     epic::{self, Epic},
@@ -323,29 +325,6 @@ fn steam_app(app_id: u32) -> Receipt<Steam> {
         },
         ..portal
     }
-}
-
-#[test]
-fn a_windows_receipt_s_wine_prefix_is_its_launch_s() {
-    let (_directory, root) = crate::wine::tests::installation();
-    let locations = crate::wine::tests::locations(&root);
-    let launched = |receipt: &Receipt<Steam>| {
-        let windows = receipt.windows(&locations).unwrap();
-        windows.map(|windows| windows.prefix().to_owned())
-    };
-
-    for receipt in [portal(Platform::Windows), steam_app(1245620)] {
-        assert!(receipt.wine_prefix(&locations).is_some());
-        assert_eq!(receipt.wine_prefix(&locations), launched(&receipt));
-    }
-    assert_ne!(
-        portal(Platform::Windows).wine_prefix(&locations),
-        steam_app(1245620).wine_prefix(&locations),
-        "the Linux engine keeps its own prefix"
-    );
-    let mac = portal(Platform::Mac);
-    assert_eq!(mac.wine_prefix(&locations), None);
-    assert_eq!(launched(&mac), None, "a Mac build runs outside Wine");
 }
 
 #[test]

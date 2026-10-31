@@ -10,8 +10,9 @@ serde.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
-uuid.workspace = true
 tokio.workspace = true
+reqwest.workspace = true
+bytes.workspace = true
 futures-util.workspace = true
 sha1.workspace = true
 md-5.workspace = true
@@ -22,8 +23,9 @@ rustix = { version = "1", features = ["fs"] }
 tokio = { workspace = true, features = ["test-util"] }
 
 [features]
-# A detached `transfer::Chunks`, for storefront tests that play the network side.
-testing = []
+# A detached `transfer::Chunks` and the fakes of `testing`, for storefront tests
+# that play the network side.
+testing = ["tokio/test-util"]
 
 [lints]
 workspace = true

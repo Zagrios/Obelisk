@@ -19,7 +19,7 @@ pub(crate) struct Context {
 
 impl Context {
     pub fn path(config: &Configuration, account: &str) -> Result<PathBuf> {
-        config.validate(account)?;
+        crate::launch_shell::validate::<Epic>(config, account)?;
         let path = StoreScope::from(config.scope(account))
             .directory(&config.root)?
             .join(Self::FILE);
@@ -27,7 +27,7 @@ impl Context {
         Ok(path)
     }
     pub fn validate(&self, config: &Configuration, account: &str) -> Result<()> {
-        self.config.validate(account)?;
+        crate::launch_shell::validate::<Epic>(&self.config, account)?;
         // A moved installation keeps its saves: only the game's identity binds.
         if self.account_id != account
             || self.config.root != config.root

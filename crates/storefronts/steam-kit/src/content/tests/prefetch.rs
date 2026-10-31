@@ -196,7 +196,7 @@ async fn cancellation_bounds_prepared_files_and_resumes_each_verified_partial() 
         );
     }
     let route = format!("/depot/42/chunk/{}", hex(&Sha1::digest(&pieces[3][0])));
-    assert!(!fixture.requests.lock().unwrap().contains(&route));
+    assert!(!fixture.requests().contains(&route));
 }
 
 #[tokio::test]

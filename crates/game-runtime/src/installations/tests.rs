@@ -2,8 +2,10 @@
 //! test drives. Steam stands in for every storefront: the records and their
 //! rules are the same for each, and `receipt/tests.rs` covers what differs
 //! per storefront.
+use super::receipt_book::{load, save};
 use super::*;
 use crate::{
+    games_folder,
     runtimes::{Runtimes, tests::FakeRuntimes},
     sessions::{Observation, Supervised},
     steam::{Product, Steam, Store},
@@ -28,9 +30,18 @@ struct Script {
     downloads: VecDeque<Result<(), Failure>>,
     launches: VecDeque<Launched>,
     archive: Option<Failure>,
+    /// The Cloud archive of a removal waits while the test holds it, until
+    /// `release_archive` or a cancellation.
+    archive_held: bool,
+    /// The Cloud record of a removal waits while the test holds it, the
+    /// files already gone, until `release_removed` or a cancellation.
+    removed_held: bool,
     prefix: Option<Result<(), String>>,
     /// What the next move's records report.
     relocated: Option<Result<(), String>>,
+    /// The next move's records wait while the test holds them, the files
+    /// already moved, until `release_relocation` or a cancellation.
+    relocation_held: bool,
     held: bool,
     calls: Vec<String>,
     /// Each Transfer, launches' verifications included.
@@ -83,6 +94,27 @@ impl Fake {
     }
     fn release(&self) {
         self.with(|script| script.held = false);
+        self.released.notify_all();
+    }
+    fn hold_archive(&self) {
+        self.with(|script| script.archive_held = true);
+    }
+    fn release_archive(&self) {
+        self.with(|script| script.archive_held = false);
+        self.released.notify_all();
+    }
+    fn hold_removed(&self) {
+        self.with(|script| script.removed_held = true);
+    }
+    fn release_removed(&self) {
+        self.with(|script| script.removed_held = false);
+        self.released.notify_all();
+    }
+    fn hold_relocation(&self) {
+        self.with(|script| script.relocation_held = true);
+    }
+    fn release_relocation(&self) {
+        self.with(|script| script.relocation_held = false);
         self.released.notify_all();
     }
     fn release_checks(&self) {
@@ -252,16 +284,26 @@ impl super::Content<Steam> for Content {
     }
     fn archive<'a>(&'a self, receipt: &'a Receipt<Steam>) -> BoxFuture<'a, Result<(), Failure>> {
         Box::pin(async move {
-            self.0.with(|script| {
+            let held = self.0.with(|script| {
                 script.calls.push(format!("archive:{}", receipt.game()));
-                script.archive.take().map_or(Ok(()), Err)
-            })
+                script.archive_held
+            });
+            if held {
+                self.0.wait_while(|script| script.archive_held).await;
+            }
+            self.0
+                .with(|script| script.archive.take().map_or(Ok(()), Err))
         })
     }
     fn removed<'a>(&'a self, receipt: &'a Receipt<Steam>) -> BoxFuture<'a, Result<(), Failure>> {
         Box::pin(async move {
-            self.0
-                .with(|script| script.calls.push(format!("removed:{}", receipt.game())));
+            let held = self.0.with(|script| {
+                script.calls.push(format!("removed:{}", receipt.game()));
+                script.removed_held
+            });
+            if held {
+                self.0.wait_while(|script| script.removed_held).await;
+            }
             Ok(())
         })
     }
@@ -269,14 +311,16 @@ impl super::Content<Steam> for Content {
         steam_kit::client::installation_directory_name(receipt.game(), receipt.platform)
     }
     fn relocated(&self, receipt: &Receipt<Steam>, from: &Path) -> Result<(), String> {
-        self.0.with(|script| {
-            script.calls.push(format!(
-                "relocated:{}:{}",
-                receipt.game(),
-                from.file_name().unwrap().to_string_lossy()
-            ));
-            script.relocated.take().unwrap_or(Ok(()))
-        })
+        let mut script = self.0.script.lock().unwrap();
+        script.calls.push(format!(
+            "relocated:{}:{}",
+            receipt.game(),
+            from.file_name().unwrap().to_string_lossy()
+        ));
+        while script.relocation_held && !self.0.cancelled.load(Ordering::Acquire) {
+            script = self.0.released.wait(script).unwrap();
+        }
+        script.relocated.take().unwrap_or(Ok(()))
     }
     fn remove_prefix(&self, receipt: &Receipt<Steam>) -> Option<Result<(), String>> {
         (receipt.platform == Platform::Windows).then(|| {
@@ -584,6 +628,26 @@ fn portal() -> Product {
         app_id: 620,
         language: "french".into(),
     }
+}
+
+pub(crate) fn product(app_id: u32) -> Product {
+    Product {
+        app_id,
+        language: "french".into(),
+    }
+}
+
+/// `receipt` as the record of an installation whose Transfer is under way.
+pub(crate) fn half(receipt: Receipt<Steam>) -> Receipt<Steam> {
+    Receipt {
+        total_bytes: 0,
+        needs_verification: true,
+        ..receipt
+    }
+}
+
+pub(crate) fn ids(receipts: &[Receipt<Steam>]) -> Vec<String> {
+    receipts.iter().map(Receipt::id).collect()
 }
 
 fn receipt(directory: &Path, platform: Platform) -> Receipt<Steam> {
@@ -2272,32 +2336,6 @@ async fn a_move_whose_records_did_not_follow_warns_but_keeps_the_new_place() {
 }
 
 #[tokio::test]
-async fn an_installation_on_a_disconnected_disk_is_kept_but_not_shown() {
-    let fixture = Fixture::new(true).await;
-    let file = fixture.root.join("steam-installations-42.json");
-    let away = receipt(
-        Path::new(
-            "/Volumes/Obelisk Test Disk That Is Not There/Obelisk Games/Steam/steam-620-windows",
-        ),
-        Platform::Windows,
-    );
-    let mut saved = fixture.saved();
-    saved.push(away.clone());
-    save(&file, &saved).unwrap();
-    let reloaded = fixture.reload(file);
-    let state = reloaded.state();
-    assert_eq!(state.receipts.len(), 1);
-    assert_eq!(state.receipts[0].platform, Platform::Mac);
-
-    // Saving the account's receipts keeps the one of the missing disk.
-    reloaded.uninstall("620-macos");
-    eventually(|| reloaded.state().receipts.is_empty()).await;
-    eventually(|| fixture.saved() == [away.clone()]).await;
-    fixture.folder.volumes_changed();
-    assert!(reloaded.state().receipts.is_empty());
-}
-
-#[tokio::test]
 async fn a_receipt_whose_installation_moved_into_the_games_folder_names_it_there() {
     let fixture = Fixture::new(false).await;
     let file = fixture.root.join("steam-installations-42.json");
@@ -2348,3 +2386,7 @@ async fn a_move_still_waiting_goes_to_the_folder_chosen_last() {
         .join("Steam/steam-620-macos");
     eventually(|| fixture.receipt().directory == moved.to_string_lossy()).await;
 }
+
+// MARK: The receipts an account keeps
+
+mod receipt_book;

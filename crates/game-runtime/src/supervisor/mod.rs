@@ -27,39 +27,6 @@ pub(crate) fn plain_absolute(path: &Path) -> bool {
     path.is_absolute() && !path.components().any(|c| c == Component::ParentDir)
 }
 
-/// The conversions a storefront's session `Error` makes from the
-/// supervisor's errors and the launch failure, alike for Epic and GOG: its
-/// `Session`, `Busy`, `Cancelled`, `Storage`, `Unsupported`,
-/// `RosettaUnavailable` and `Launch` stand for them.
-macro_rules! session_error_conversions {
-    ($error:ty) => {
-        impl From<$crate::supervisor::Error> for $error {
-            fn from(error: $crate::supervisor::Error) -> Self {
-                use $crate::supervisor::Error as E;
-                match error {
-                    E::Storage => Self::Storage,
-                    E::NewerSession | E::Busy => Self::Busy,
-                    E::Cancelled => Self::Cancelled,
-                    E::RosettaUnavailable => Self::RosettaUnavailable,
-                    E::InvalidSession | E::Unavailable | E::StartFailed => Self::Session,
-                }
-            }
-        }
-        impl From<$crate::launch::Error> for $error {
-            fn from(error: $crate::launch::Error) -> Self {
-                use $crate::launch::Error as E;
-                match error {
-                    E::IncompatibleArchitecture | E::WineUnavailable => Self::Launch(error),
-                    E::InvalidApplication | E::NotExecutable => Self::Unsupported,
-                    // Epic's `Storage` key speaks of saves, not of readying a launch.
-                    E::Storage | E::StartFailed | E::Unavailable => Self::Session,
-                }
-            }
-        }
-    };
-}
-pub(crate) use session_error_conversions;
-
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Identity {
     pub pid: u32,

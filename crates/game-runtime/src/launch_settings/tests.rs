@@ -5,6 +5,8 @@ use crate::profile::Game;
 const OTHER: Game<'static> = Game::Steam { app_id: 42 };
 /// A game whose profile names the Linux engine and D3DMetal.
 const ELDEN_RING: Game<'static> = Game::Steam { app_id: 1245620 };
+/// A game whose profile names no engine.
+const GROUNDED: Game<'static> = Game::Steam { app_id: 962130 };
 /// A game whose profile starts another program than its publisher's.
 const ROCKET_LEAGUE: Game<'static> = Game::Epic {
     namespace: "9773aa1aa54f4f7b80e44bef04986cea",
@@ -476,6 +478,36 @@ fn a_game_that_reads_its_language_from_its_command_line_gets_the_players() {
 }
 
 #[test]
+fn the_players_locale_is_one_of_the_launch_settings_and_no_choice_of_theirs() {
+    let directory = tempfile::tempdir().unwrap();
+    let library = directory.path();
+    let install = Path::new("/library/Games/game");
+    for game in [OTHER, ELDEN_RING, ROCKET_LEAGUE] {
+        assert_eq!(
+            of(library, game, install, Some("it_IT")).settings.locale,
+            Some("it_IT".to_owned()),
+            "{game:?}"
+        );
+        assert_eq!(
+            of(library, game, install, None).settings.locale,
+            None,
+            "{game:?}"
+        );
+    }
+    let hud = Choices {
+        performance_hud: true,
+        ..Choices::default()
+    };
+
+    let chosen = choose(library, OTHER, install, Some("fr_FR"), hud).unwrap();
+
+    assert_eq!(chosen.settings.locale, Some("fr_FR".to_owned()));
+    assert!(chosen.settings.performance_hud);
+    let kept = fs::read_to_string(library.join("LaunchSettings/game.json")).unwrap();
+    assert!(!kept.contains("fr_FR"), "{kept}");
+}
+
+#[test]
 fn the_language_starts_after_the_profile_s_arguments_and_before_the_player_s() {
     let directory = tempfile::tempdir().unwrap();
     let choices = Choices {
@@ -532,18 +564,25 @@ fn the_engine_alone_is_the_launch_settings_engine() {
     let directory = tempfile::tempdir().unwrap();
     let library = directory.path().join("library");
     let protected = protected(directory.path());
-    for (game, install) in [
-        (OTHER, nowhere()),
-        (ELDEN_RING, nowhere()),
-        (ROCKET_LEAGUE, nowhere()),
-        (OTHER, protected.as_path()),
+    for (game, install, engine_without_choice) in [
+        (OTHER, nowhere(), Engine::Rosetta),
+        (ELDEN_RING, nowhere(), Engine::Linux),
+        (ROCKET_LEAGUE, nowhere(), Engine::Linux),
+        // Easy Anti-Cheat alone moves only a game the table does not name.
+        (OTHER, protected.as_path(), Engine::Linux),
+        (GROUNDED, protected.as_path(), Engine::Rosetta),
     ] {
         assert_eq!(
             engine(&library, game, install),
-            of(&library, game, install, None).settings.engine,
+            engine_without_choice,
             "{game:?} {install:?}"
         );
-        let other = match engine(&library, game, install) {
+        assert_eq!(
+            of(&library, game, install, None).settings.engine,
+            engine_without_choice,
+            "{game:?} {install:?}"
+        );
+        let other = match engine_without_choice {
             Engine::Rosetta => Engine::Linux,
             Engine::Linux => Engine::Rosetta,
         };

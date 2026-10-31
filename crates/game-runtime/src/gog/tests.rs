@@ -1,5 +1,5 @@
 use super::*;
-use crate::supervisor::Provider as _;
+use crate::{launch_shell, supervisor::Provider as _};
 
 fn configuration(platform: Platform, prefix: Option<&str>) -> Configuration {
     Configuration {
@@ -12,36 +12,6 @@ fn configuration(platform: Platform, prefix: Option<&str>) -> Configuration {
         title: "The Witcher".into(),
         prefix: prefix.map(Into::into),
     }
-}
-
-#[test]
-fn a_configuration_runs_a_mac_build_natively_and_a_windows_build_in_wine() {
-    let account = "48628349957132247";
-    configuration(Platform::Mac, None)
-        .validate(account)
-        .unwrap();
-    configuration(
-        Platform::Windows,
-        Some("/library/Prefixes/gog-1207658924-windows"),
-    )
-    .validate(account)
-    .unwrap();
-    for refused in [
-        configuration(Platform::Mac, Some("/library/Prefixes/x")),
-        configuration(Platform::Windows, None),
-        configuration(Platform::Windows, Some("relative")),
-        Configuration {
-            product_id: "../1207658924".into(),
-            ..configuration(Platform::Mac, None)
-        },
-    ] {
-        assert!(refused.validate(account).is_err(), "{refused:?}");
-    }
-    assert!(
-        configuration(Platform::Mac, None)
-            .validate("not-a-user")
-            .is_err()
-    );
 }
 
 #[test]
@@ -91,21 +61,131 @@ fn a_cancelled_gog_launch_ends_silently() {
     assert!(!Gog::cancelled(&Error::Session));
 }
 
+const ACCOUNT: &str = "48628349957132247";
+
 #[test]
-fn a_gog_launch_shows_every_launch_failure_with_a_key() {
-    use crate::launch::Error as Launch;
-    for (failure, key) in [
-        (
-            Launch::IncompatibleArchitecture,
-            "backend.runtime.macBuildNotNative",
-        ),
-        (Launch::WineUnavailable, "backend.runtime.wineUnavailable"),
-        (Launch::InvalidApplication, "backend.gog.unsupported"),
-        (Launch::NotExecutable, "backend.gog.unsupported"),
-        (Launch::Storage, "backend.gog.session"),
-        (Launch::StartFailed, "backend.gog.session"),
-        (Launch::Unavailable, "backend.gog.session"),
-    ] {
-        assert_eq!(Error::from(failure).to_string(), key, "{failure:?}");
+fn a_gog_configuration_is_unsupported_unless_its_ids_are_valid() {
+    let account = ACCOUNT;
+    let mac = || configuration(Platform::Mac, None);
+    for product_id in ["../1207658924", "", "1207658924x", &"1".repeat(21)] {
+        let refused = Configuration {
+            product_id: product_id.into(),
+            ..mac()
+        };
+        let error = launch_shell::validate::<Gog>(&refused, account).unwrap_err();
+        assert!(matches!(error, Error::Unsupported), "{refused:?}");
+        assert_eq!(error.to_string(), "backend.gog.unsupported");
     }
+    for account in [
+        "not-a-user",
+        "",
+        "48628349957132247x",
+        "-1",
+        &"4".repeat(33),
+    ] {
+        let error = launch_shell::validate::<Gog>(&mac(), account).unwrap_err();
+        assert!(matches!(error, Error::Unsupported), "{account}");
+    }
+    // The longest ids still pass.
+    let longest = Configuration {
+        product_id: "1".repeat(20),
+        ..mac()
+    };
+    launch_shell::validate::<Gog>(&longest, &"4".repeat(32)).unwrap();
+    let windows = configuration(
+        Platform::Windows,
+        Some("/library/Prefixes/gog-1207658924-windows"),
+    );
+    launch_shell::validate::<Gog>(&windows, account).unwrap();
+}
+
+fn snapshot(cloud: crate::cloud::Status) -> Snapshot {
+    Snapshot {
+        version: crate::supervisor::journal::VERSION,
+        id: uuid::Uuid::new_v4().to_string(),
+        account_id: ACCOUNT.into(),
+        store: Store {
+            product_id: "1207658924".into(),
+        },
+        phase: Phase::Finished,
+        cloud,
+        exit_code: None,
+        played: None,
+        error: None,
+        failure_reason: None,
+        revision: 1,
+        rosetta: None,
+        reconnecting: false,
+        supervisor: crate::supervisor::Identity {
+            pid: 1,
+            uid: 1,
+            birth_seconds: 0,
+            birth_microseconds: 0,
+            executable: "supervisor".into(),
+        },
+        game: None,
+        starting: None,
+        socket: "/library/GOGSessions/socket".into(),
+    }
+}
+
+#[test]
+fn a_gog_session_settles_its_cloud_as_unsupported_and_offers_no_choice() {
+    use crate::supervisor::session::Launch as _;
+    for (phase, choices) in [
+        (crate::cloud::Phase::Idle, vec![]),
+        (
+            crate::cloud::Phase::Conflict,
+            vec![crate::cloud::Choice::Local, crate::cloud::Choice::Cloud],
+        ),
+    ] {
+        let mut record = snapshot(crate::cloud::Status {
+            phase,
+            allowed_choices: choices,
+            ..Default::default()
+        });
+
+        launch::Launch::terminal(&mut record);
+
+        assert_eq!(record.cloud.phase, crate::cloud::Phase::Unsupported);
+        assert_eq!(record.cloud.allowed_choices, []);
+    }
+}
+
+#[test]
+fn a_gog_record_names_a_real_account_product_and_socket_and_an_orphan_offers_no_choice() {
+    let valid = snapshot(Default::default());
+    assert!(Gog::valid(&valid));
+    for broken in [
+        Snapshot {
+            account_id: "not-a-user".into(),
+            ..valid.clone()
+        },
+        Snapshot {
+            store: Store {
+                product_id: "../1".into(),
+            },
+            ..valid.clone()
+        },
+        Snapshot {
+            socket: "relative.sock".into(),
+            ..valid.clone()
+        },
+    ] {
+        assert!(!Gog::valid(&broken));
+    }
+
+    let mut asked = snapshot(crate::cloud::Status {
+        allowed_choices: vec![crate::cloud::Choice::Cancel],
+        ..Default::default()
+    });
+    Gog::orphaned(&mut asked, true);
+    assert!(
+        asked.reconnecting,
+        "a game that still runs is reconnected to"
+    );
+    assert_eq!(asked.cloud.allowed_choices, []);
+    let mut gone = valid;
+    Gog::orphaned(&mut gone, false);
+    assert!(!gone.reconnecting);
 }

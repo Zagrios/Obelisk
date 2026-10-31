@@ -369,6 +369,10 @@ impl From<Refusal> for ChoiceFailure {
 /// Whether `path` lies on a disk that is not connected: an external disk's
 /// folder under /Volumes whose disk is gone.
 pub fn disconnected(path: &Path) -> bool {
+    #[cfg(test)]
+    if disks::holds(path) {
+        return true;
+    }
     let mut components = path.components();
     let (Some(Component::RootDir), Some(Component::Normal(volumes)), Some(Component::Normal(disk))) =
         (components.next(), components.next(), components.next())
@@ -376,6 +380,75 @@ pub fn disconnected(path: &Path) -> bool {
         return false;
     };
     volumes == "Volumes" && !Path::new("/Volumes").join(disk).exists()
+}
+
+/// The external disks of the tests: a folder stands for each, as no test can
+/// mount one under /Volumes. A path under an unplugged disk is on a disk that
+/// is not connected, whether or not the folder is there.
+#[cfg(test)]
+pub(crate) mod disks {
+    use std::{
+        path::{Path, PathBuf},
+        sync::Mutex,
+    };
+
+    static UNPLUGGED: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+
+    pub(super) fn holds(path: &Path) -> bool {
+        UNPLUGGED
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|disk| path.starts_with(disk))
+    }
+
+    /// An external disk the test unplugs and plugs in again. Unplugged, its
+    /// folder goes aside, files and all.
+    pub(crate) struct Disk {
+        _directory: tempfile::TempDir,
+        mount: PathBuf,
+        aside: PathBuf,
+    }
+
+    impl Disk {
+        /// A new disk, plugged in.
+        pub(crate) fn plugged() -> Self {
+            let directory = tempfile::tempdir().unwrap();
+            let root = directory.path().canonicalize().unwrap();
+            let (mount, aside) = (root.join("Obelisk Disk"), root.join("Obelisk Disk Aside"));
+            std::fs::create_dir(&mount).unwrap();
+            Self {
+                _directory: directory,
+                mount,
+                aside,
+            }
+        }
+
+        /// The disk's folder: where its files are while it is plugged.
+        pub(crate) fn mount(&self) -> &Path {
+            &self.mount
+        }
+
+        pub(crate) fn plug(&self) {
+            self.forget();
+            std::fs::rename(&self.aside, &self.mount).unwrap();
+        }
+
+        pub(crate) fn unplug(&self) {
+            std::fs::rename(&self.mount, &self.aside).unwrap();
+            UNPLUGGED.lock().unwrap().push(self.mount.clone());
+        }
+
+        fn forget(&self) {
+            UNPLUGGED.lock().unwrap().retain(|kept| *kept != self.mount);
+        }
+    }
+
+    impl Drop for Disk {
+        fn drop(&mut self) {
+            self.forget();
+        }
+    }
 }
 
 #[cfg(test)]

@@ -25,6 +25,33 @@ pub struct CachedManifest {
     pub(super) archive: Option<Vec<u8>>,
 }
 
+#[cfg(test)]
+impl CachedManifest {
+    /// A depot's manifest of `files`, each a name and its bytes, such as a
+    /// pick of a Mac build would have read from the CDN. The files are
+    /// complete once the installation holds them; no chunk is listed.
+    pub(crate) fn fabricated(depot_id: u32, manifest_id: u64, files: &[(&str, &[u8])]) -> Self {
+        use sha1::{Digest, Sha1};
+        let files = files
+            .iter()
+            .map(|(name, bytes)| super::format::ManifestFile {
+                name: (*name).into(),
+                size: bytes.len() as u64,
+                sha: Sha1::digest(bytes).to_vec(),
+                ..Default::default()
+            })
+            .collect();
+        Self {
+            manifest: Arc::new(Manifest {
+                depot_id,
+                manifest_id,
+                files,
+            }),
+            archive: None,
+        }
+    }
+}
+
 pub(super) fn load(
     destination: &Path,
     depot_id: u32,

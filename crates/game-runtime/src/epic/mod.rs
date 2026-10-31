@@ -1,6 +1,5 @@
 //! Epic game ownership and EGS Cloud orchestration. The UI only observes and
 //! answers revision-bound choices; a detached process owns the entire session.
-mod client;
 pub mod content;
 pub(crate) mod launch;
 mod session;
@@ -11,7 +10,6 @@ use crate::cloud::{Control, Phase as CloudPhase, record};
 use crate::runtimes::Runtime;
 use crate::supervisor::{self, Record, Target};
 pub use crate::supervisor::{FailureReason, Phase};
-pub use client::start;
 pub use launch::serve;
 use obelisk_core::{Platform, transfer::CancelToken};
 use serde::{Deserialize, Serialize};
@@ -68,7 +66,7 @@ impl From<cloud_vault::Error> for Error {
         }
     }
 }
-supervisor::session_error_conversions!(Error);
+crate::launch_shell::session_error_conversions!(Error);
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -95,20 +93,6 @@ pub struct Configuration {
     pub prefix: Option<PathBuf>,
 }
 impl Configuration {
-    /// The game as Obelisk's profiles and logs name it.
-    pub(crate) fn profile_game(&self) -> crate::profile::Game<'_> {
-        crate::profile::Game::Epic {
-            namespace: &self.namespace,
-            app_name: &self.app_name,
-        }
-    }
-    /// The game as Wine starts a Windows build.
-    pub(crate) fn game(&self) -> crate::wine::Game<'_> {
-        crate::wine::Game {
-            install: &self.install,
-            title: &self.title,
-        }
-    }
     fn scope(&self, account: &str) -> cloud_vault::EpicScope {
         cloud_vault::EpicScope {
             account_id: account.into(),
@@ -126,37 +110,6 @@ impl Configuration {
                 home: self.home.clone(),
             },
         }
-    }
-    /// Whether `wine` runs this build in its own prefix, and only a Windows
-    /// build.
-    fn runs_in(&self, wine: Option<&crate::wine::Config>) -> bool {
-        self.prefix.as_ref() == wine.map(|wine| &wine.prefix)
-    }
-    fn validate(&self, account: &str) -> Result<()> {
-        cloud_vault::StoreScope::from(self.scope(account)).validate()?;
-        // A Mac build runs natively; a Windows build in its prefix.
-        let prefix = match (self.platform, &self.prefix) {
-            (Platform::Mac, None) => None,
-            (Platform::Windows, Some(prefix)) => Some(prefix),
-            _ => return Err(Error::Unsupported),
-        };
-        if [
-            &self.root,
-            &self.home,
-            &self.install,
-            &self.session_directory,
-            &self.helper,
-        ]
-        .into_iter()
-        .chain(prefix)
-        .any(|path| !supervisor::plain_absolute(path))
-            || self.catalog_item_id.is_empty()
-            || self.catalog_item_id.len() > 256
-            || self.language.len() > 128
-        {
-            return Err(Error::Unsupported);
-        }
-        Ok(())
     }
 }
 
@@ -228,20 +181,11 @@ impl supervisor::Provider for Epic {
     }
 }
 
-// A one-use exchange code travels solely through the private handoff pipe.
-// This request is never persisted, formatted with Debug, or put in argv.
+/// A one-use exchange code travels solely through the private handoff pipe.
+/// Never `Debug`.
 #[derive(Serialize, Deserialize)]
-struct Request {
-    config: Configuration,
-    id: String,
-    account_id: String,
-    exchange_code: String,
-    /// Built in Obelisk's process: a supervisor starts without any environment.
-    #[serde(default)]
-    environment: std::collections::HashMap<String, String>,
-    /// How a Windows build runs.
-    #[serde(default)]
-    wine: Option<crate::wine::Config>,
+pub(crate) struct ExchangeCode {
+    pub(crate) exchange_code: String,
 }
 
 /// What an Epic installation names of its game: its catalog item, in its
@@ -312,5 +256,49 @@ impl crate::installations::Storefront for Epic {
             }
             Err(_) => false,
         }
+    }
+}
+
+impl crate::launch_shell::Launchable for Epic {
+    type Configuration = Configuration;
+    type Credential = ExchangeCode;
+
+    fn build(configuration: &Configuration) -> crate::launch_shell::Build<'_> {
+        crate::launch_shell::Build {
+            home: &configuration.home,
+            install: &configuration.install,
+            session_directory: &configuration.session_directory,
+            helper: &configuration.helper,
+            platform: configuration.platform,
+            title: &configuration.title,
+            prefix: configuration.prefix.as_deref(),
+            game: crate::profile::Game::Epic {
+                namespace: &configuration.namespace,
+                app_name: &configuration.app_name,
+            },
+        }
+    }
+
+    fn store(configuration: &Configuration) -> Store {
+        Store {
+            namespace: configuration.namespace.clone(),
+            app_name: configuration.app_name.clone(),
+        }
+    }
+
+    fn check(configuration: &Configuration, account: &str) -> Result<()> {
+        cloud_vault::StoreScope::from(configuration.scope(account)).validate()?;
+        if !supervisor::plain_absolute(&configuration.root)
+            || configuration.catalog_item_id.is_empty()
+            || configuration.catalog_item_id.len() > 256
+            || configuration.language.len() > 128
+        {
+            return Err(Error::Unsupported);
+        }
+        Ok(())
+    }
+
+    fn installed(configuration: &Configuration) -> Result<crate::launch_shell::Installed> {
+        windows::installed(configuration)
     }
 }

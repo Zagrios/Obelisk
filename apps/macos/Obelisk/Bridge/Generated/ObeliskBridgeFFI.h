@@ -259,41 +259,6 @@ typedef struct UniffiVTableCallbackInterfaceCredentialSave {
 } UniffiVTableCallbackInterfaceCredentialSave;
 
 #endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_CLONE_LIBRARY
-#define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_CLONE_LIBRARY
-uint64_t uniffi_obelisk_bridge_fn_clone_library(uint64_t handle, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_FREE_LIBRARY
-#define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_FREE_LIBRARY
-void uniffi_obelisk_bridge_fn_free_library(uint64_t handle, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_CONSTRUCTOR_LIBRARY_NEW
-#define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_CONSTRUCTOR_LIBRARY_NEW
-uint64_t uniffi_obelisk_bridge_fn_constructor_library_new(RustBuffer storage_dir, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_METHOD_LIBRARY_ADD_LOCAL_GAME
-#define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_METHOD_LIBRARY_ADD_LOCAL_GAME
-RustBuffer uniffi_obelisk_bridge_fn_method_library_add_local_game(uint64_t ptr, RustBuffer path, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_METHOD_LIBRARY_GAMES
-#define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_METHOD_LIBRARY_GAMES
-RustBuffer uniffi_obelisk_bridge_fn_method_library_games(uint64_t ptr, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_METHOD_LIBRARY_RECORD_LAUNCH
-#define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_METHOD_LIBRARY_RECORD_LAUNCH
-void uniffi_obelisk_bridge_fn_method_library_record_launch(uint64_t ptr, RustBuffer id, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_METHOD_LIBRARY_REMOVE_GAME
-#define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_METHOD_LIBRARY_REMOVE_GAME
-void uniffi_obelisk_bridge_fn_method_library_remove_game(uint64_t ptr, RustBuffer id, RustCallStatus *_Nonnull out_status
-);
-#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_CLONE_CREDENTIALSAVE
 #define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_CLONE_CREDENTIALSAVE
 uint64_t uniffi_obelisk_bridge_fn_clone_credentialsave(uint64_t handle, RustCallStatus *_Nonnull out_status
@@ -1172,12 +1137,6 @@ void uniffi_obelisk_bridge_fn_method_steamfriendsfixture_retry(uint64_t ptr, Rus
 void uniffi_obelisk_bridge_fn_method_steamfriendsfixture_unreachable(uint64_t ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_FUNC_STOREFRONTS
-#define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_FUNC_STOREFRONTS
-RustBuffer uniffi_obelisk_bridge_fn_func_storefronts(RustCallStatus *_Nonnull out_status
-    
-);
-#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_FUNC_DIAGNOSTIC_FILES
 #define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_FUNC_DIAGNOSTIC_FILES
 RustBuffer uniffi_obelisk_bridge_fn_func_diagnostic_files(RustBuffer locations, RustBuffer subject, RustBuffer now, RustCallStatus *_Nonnull out_status
@@ -1520,12 +1479,6 @@ void ffi_obelisk_bridge_rust_future_free_void(uint64_t handle
 void ffi_obelisk_bridge_rust_future_complete_void(uint64_t handle, RustCallStatus *_Nonnull out_status
 );
 #endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_FUNC_STOREFRONTS
-#define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_FUNC_STOREFRONTS
-uint16_t uniffi_obelisk_bridge_checksum_func_storefronts(void
-    
-);
-#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_FUNC_DIAGNOSTIC_FILES
 #define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_FUNC_DIAGNOSTIC_FILES
 uint16_t uniffi_obelisk_bridge_checksum_func_diagnostic_files(void
@@ -1619,30 +1572,6 @@ uint16_t uniffi_obelisk_bridge_checksum_func_steam_news(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_FUNC_STEAM_CHAT_INVITE
 #define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_FUNC_STEAM_CHAT_INVITE
 uint16_t uniffi_obelisk_bridge_checksum_func_steam_chat_invite(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_METHOD_LIBRARY_ADD_LOCAL_GAME
-#define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_METHOD_LIBRARY_ADD_LOCAL_GAME
-uint16_t uniffi_obelisk_bridge_checksum_method_library_add_local_game(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_METHOD_LIBRARY_GAMES
-#define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_METHOD_LIBRARY_GAMES
-uint16_t uniffi_obelisk_bridge_checksum_method_library_games(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_METHOD_LIBRARY_RECORD_LAUNCH
-#define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_METHOD_LIBRARY_RECORD_LAUNCH
-uint16_t uniffi_obelisk_bridge_checksum_method_library_record_launch(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_METHOD_LIBRARY_REMOVE_GAME
-#define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_METHOD_LIBRARY_REMOVE_GAME
-uint16_t uniffi_obelisk_bridge_checksum_method_library_remove_game(void
     
 );
 #endif
@@ -2429,12 +2358,6 @@ uint16_t uniffi_obelisk_bridge_checksum_method_steamfriendsfixture_retry(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_METHOD_STEAMFRIENDSFIXTURE_UNREACHABLE
 #define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_METHOD_STEAMFRIENDSFIXTURE_UNREACHABLE
 uint16_t uniffi_obelisk_bridge_checksum_method_steamfriendsfixture_unreachable(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_CONSTRUCTOR_LIBRARY_NEW
-#define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_CONSTRUCTOR_LIBRARY_NEW
-uint16_t uniffi_obelisk_bridge_checksum_constructor_library_new(void
     
 );
 #endif

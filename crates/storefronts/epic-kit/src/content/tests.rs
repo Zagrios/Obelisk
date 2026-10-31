@@ -1,164 +1,96 @@
 use std::{
-    collections::HashMap,
-    net::{TcpListener, TcpStream},
-    sync::{
-        Mutex,
-        atomic::{AtomicBool, Ordering},
-    },
-    thread,
+    collections::{BTreeMap, HashMap},
+    sync::Mutex,
 };
+
+use obelisk_core::testing::{Arrival, Cdn, Reply, reaching};
 
 use super::*;
 use crate::content_manifest::ChunkPart;
 
+mod chunk_request;
 mod prefetch;
+mod publish;
 
-struct RequestGate {
-    path: String,
-    requests: usize,
-    opened: AtomicBool,
-}
-
+/// A CDN in memory that serves fixed chunks and records every request.
 struct Server {
+    cdn: Arc<Cdn>,
     base: Url,
-    requests: Arc<Mutex<Vec<String>>>,
-    headers: Arc<Mutex<Vec<String>>>,
-    stop: Arc<AtomicBool>,
-    thread: Option<thread::JoinHandle<()>>,
 }
 
 impl Server {
+    /// Serves `responses` by path and answers 404 to any other; with
+    /// `stalled`, it never answers.
     fn new(responses: HashMap<String, Vec<u8>>, stalled: bool) -> Self {
-        Self::with_gate(responses, stalled, None)
+        Self::answering(move |arrival| match responses.get(arrival.path()) {
+            _ if stalled => Reply::Silent,
+            Some(body) => Reply::ok(body.clone()),
+            None => Reply::status(404, ""),
+        })
     }
 
-    fn with_gate(
-        responses: HashMap<String, Vec<u8>>,
-        stalled: bool,
-        gate: Option<Arc<RequestGate>>,
-    ) -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let base = Url::parse(&format!("http://{}/", listener.local_addr().unwrap())).unwrap();
-        listener.set_nonblocking(true).unwrap();
-        let requests = Arc::new(Mutex::new(Vec::new()));
-        let headers = Arc::new(Mutex::new(Vec::new()));
-        let thread_headers = Arc::clone(&headers);
-        let stop = Arc::new(AtomicBool::new(false));
-        let thread_requests = Arc::clone(&requests);
-        let thread_stop = Arc::clone(&stop);
-        let responses = Arc::new(responses);
-        let thread = thread::spawn(move || {
-            let mut workers = Vec::new();
-            while !thread_stop.load(Ordering::Acquire) {
-                match listener.accept() {
-                    Ok((socket, _)) => {
-                        let requests = Arc::clone(&thread_requests);
-                        let headers = Arc::clone(&thread_headers);
-                        let stop = Arc::clone(&thread_stop);
-                        let responses = Arc::clone(&responses);
-                        let gate = gate.clone();
-                        workers.push(thread::spawn(move || {
-                            serve(socket, requests, headers, stop, responses, stalled, gate)
-                        }));
-                    }
-                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                        thread::sleep(Duration::from_millis(5))
-                    }
-                    Err(error) => panic!("accept failed: {error}"),
+    /// `new`, but the answer to a request for `path` waits until `requests`
+    /// have arrived.
+    fn gated(responses: HashMap<String, Vec<u8>>, path: String, requests: usize) -> Self {
+        Self::answering(move |arrival| {
+            let answer = responses
+                .get(arrival.path())
+                .map_or_else(|| Reply::status(404, ""), |body| Reply::ok(body.clone()));
+            if arrival.path() == path {
+                Reply::Gated {
+                    arrivals: requests,
+                    then: Box::new(answer),
                 }
+            } else {
+                answer
             }
-            for worker in workers {
-                worker.join().unwrap();
-            }
-        });
+        })
+    }
+
+    fn answering(answer: impl Fn(&Arrival) -> Reply + Send + Sync + 'static) -> Self {
+        let cdn = Cdn::in_memory(answer);
+        let base = Url::parse(&format!("{}/", cdn.base())).unwrap();
         Self {
+            cdn: Arc::new(cdn),
             base,
-            requests,
-            headers,
-            stop,
-            thread: Some(thread),
         }
     }
 
+    /// The path and query of every request taken.
     fn paths(&self) -> Vec<String> {
-        self.requests.lock().unwrap().clone()
+        self.cdn
+            .arrivals()
+            .into_iter()
+            .map(|arrival| arrival.target)
+            .collect()
     }
 }
 
-impl Drop for Server {
-    fn drop(&mut self) {
-        self.stop.store(true, Ordering::Release);
-        self.thread.take().unwrap().join().unwrap();
+/// A content client that reaches `servers`.
+fn client(servers: &[&Server]) -> ContentClient {
+    let cdns: Vec<_> = servers.iter().map(|server| &*server.cdn).collect();
+    ContentClient {
+        cdn: reaching(&cdns),
     }
 }
 
-fn serve(
-    mut socket: TcpStream,
-    requests: Arc<Mutex<Vec<String>>>,
-    headers: Arc<Mutex<Vec<String>>>,
-    stop: Arc<AtomicBool>,
-    responses: Arc<HashMap<String, Vec<u8>>>,
-    stalled: bool,
-    gate: Option<Arc<RequestGate>>,
-) {
-    // macOS accept inherits O_NONBLOCK. Wait for the HTTP request instead
-    // of treating an early WouldBlock as a disconnected client.
-    socket.set_nonblocking(false).unwrap();
-    socket
-        .set_write_timeout(Some(Duration::from_secs(2)))
-        .unwrap();
-    socket
-        .set_read_timeout(Some(Duration::from_secs(2)))
-        .unwrap();
-    let mut request = Vec::new();
-    let mut buffer = [0; 1024];
-    loop {
-        let Ok(count) = socket.read(&mut buffer) else {
-            return;
-        };
-        if count == 0 {
-            return;
-        }
-        request.extend_from_slice(&buffer[..count]);
-        if request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
-            break;
-        }
-    }
-    let request = String::from_utf8_lossy(&request);
-    let path = request.split_whitespace().nth(1).unwrap().to_owned();
-    requests.lock().unwrap().push(path.clone());
-    headers.lock().unwrap().push(request.to_string());
-    if let Some(gate) = gate
-        && gate.path == path
-    {
-        let deadline = std::time::Instant::now() + Duration::from_secs(3);
-        while requests.lock().unwrap().len() < gate.requests
-            && !stop.load(Ordering::Acquire)
-            && std::time::Instant::now() < deadline
-        {
-            thread::sleep(Duration::from_millis(2));
-        }
-        gate.opened.store(
-            requests.lock().unwrap().len() >= gate.requests,
-            Ordering::Release,
-        );
-    }
-    if stalled {
-        while !stop.load(Ordering::Acquire) {
-            thread::sleep(Duration::from_millis(5));
-        }
-        return;
-    }
-    if let Some(body) = responses.get(path.split('?').next().unwrap()) {
-        let _ = write!(
-            socket,
-            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-            body.len()
-        );
-        let _ = socket.write_all(body);
-    } else {
-        let _ = socket
-            .write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+/// A manifest of `app_name` whose `files` are cut into `chunks`, at the
+/// feature level its chunks' paths are built for, launching the first file.
+fn manifest(
+    app_name: &str,
+    files: Vec<ManifestFile>,
+    chunks: BTreeMap<ChunkGuid, Chunk>,
+) -> Manifest {
+    Manifest {
+        custom_fields: Default::default(),
+        app_name: app_name.into(),
+        build_version: "1.0".into(),
+        launch_executable: files[0].filename.clone(),
+        launch_command: String::new(),
+        files,
+        chunks,
+        feature_level: 18,
+        prerequisite: None,
     }
 }
 
@@ -226,17 +158,11 @@ fn fixture() -> (Manifest, HashMap<String, Vec<u8>>, Vec<u8>) {
         (format!("/{}", second.relative_path(18)), second_wire),
     ]
     .into();
-    let manifest = Manifest {
-        custom_fields: Default::default(),
-        app_name: "test-game".into(),
-        build_version: "1.0".into(),
-        launch_executable: files[0].filename.clone(),
-        launch_command: String::new(),
+    let manifest = manifest(
+        "test-game",
         files,
-        chunks: [(first.guid, first), (second.guid, second)].into(),
-        feature_level: 18,
-        prerequisite: None,
-    };
+        [(first.guid, first), (second.guid, second)].into(),
+    );
     (manifest, responses, output)
 }
 
@@ -247,7 +173,7 @@ async fn installs_verified_parts_and_reuses_complete_files_without_network() {
     let temporary = tempfile::tempdir().unwrap();
     let snapshots = Arc::new(Mutex::new(Vec::new()));
     let captured = Arc::clone(&snapshots);
-    let client = ContentClient::new(Client::new());
+    let client = client(&[&server]);
     let first = client
         .download(
             Arc::new(manifest.clone()),
@@ -310,7 +236,7 @@ async fn installs_verified_parts_and_reuses_complete_files_without_network() {
 async fn a_file_s_first_bytes_are_read_from_the_chunks_that_hold_them() {
     let (manifest, responses, expected) = fixture();
     let server = Server::new(responses, false);
-    let client = ContentClient::new(Client::new());
+    let client = client(&[&server]);
     let base = std::slice::from_ref(&server.base);
     let file = &manifest.files[0];
     let cancel = CancelToken::new();
@@ -337,7 +263,7 @@ async fn cancellation_keeps_existing_file_and_verified_chunks_for_resume() {
     fs::write(&target, b"previous installed game").unwrap();
     let cancel = CancelToken::new();
     let from_callback = cancel.clone();
-    let client = ContentClient::new(Client::new());
+    let client = client(&[&server]);
     let result = client
         .download(
             Arc::new(manifest.clone()),
@@ -405,16 +331,14 @@ async fn cancellation_interrupts_stalled_http_without_waiting_for_timeout() {
     let temporary = tempfile::tempdir().unwrap();
     let cancel = CancelToken::new();
     let trigger = cancel.clone();
-    let observed = Arc::clone(&server.requests);
+    let observed = Arc::clone(&server.cdn);
     let interrupter = tokio::spawn(async move {
-        while observed.lock().unwrap().is_empty() {
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
+        observed.taken(1).await;
         trigger.cancel();
     });
     let result = tokio::time::timeout(
         Duration::from_secs(2),
-        ContentClient::new(Client::new()).download(
+        client(&[&server, &alternative]).download(
             Arc::new(manifest.clone()),
             &bases,
             temporary.path(),
@@ -441,7 +365,7 @@ async fn corrupt_download_never_replaces_existing_file() {
     let target = temporary.path().join(&manifest.files[0].filename);
     fs::create_dir_all(target.parent().unwrap()).unwrap();
     fs::write(&target, b"original").unwrap();
-    let result = ContentClient::new(Client::new())
+    let result = client(&[&server])
         .download(
             Arc::new(manifest.clone()),
             std::slice::from_ref(&server.base),
@@ -473,7 +397,7 @@ async fn corrupt_cached_chunk_is_downloaded_again() {
         )
         .unwrap();
     }
-    ContentClient::new(Client::new())
+    client(&[&server])
         .download(
             Arc::new(manifest.clone()),
             std::slice::from_ref(&server.base),
@@ -505,7 +429,7 @@ async fn rejects_unsafe_manifest_paths_before_writing() {
         ".obelisk-install.json",
     ] {
         manifest.files[0].filename = name.into();
-        let result = ContentClient::new(Client::new())
+        let result = client(&[&server])
             .download(
                 Arc::new(manifest.clone()),
                 std::slice::from_ref(&server.base),
@@ -530,7 +454,7 @@ async fn refuses_symlink_parents_and_hardlinked_targets() {
     let outside = tempfile::tempdir().unwrap();
     manifest.files[0].filename = "link/game".into();
     symlink(outside.path(), temporary.path().join("link")).unwrap();
-    let client = ContentClient::new(Client::new());
+    let client = client(&[&server]);
     let result = client
         .download(
             Arc::new(manifest.clone()),
@@ -662,8 +586,9 @@ async fn dropping_download_cancels_disk_worker_and_releases_install_lock() {
     let cancel = CancelToken::new();
     let task_cancel = cancel.clone();
     let base = server.base.clone();
+    let content = client(&[&server]);
     let task = tokio::spawn(async move {
-        ContentClient::new(Client::new())
+        content
             .download(
                 Arc::new(manifest.clone()),
                 std::slice::from_ref(&base),
@@ -712,7 +637,7 @@ async fn shared_chunks_are_requested_once_and_kept_until_last_file() {
     manifest.files.push(second);
     let server = Server::new(responses, false);
     let temporary = tempfile::tempdir().unwrap();
-    let summary = ContentClient::new(Client::new())
+    let summary = client(&[&server])
         .download(
             Arc::new(manifest.clone()),
             std::slice::from_ref(&server.base),
@@ -743,7 +668,7 @@ async fn assembling_a_file_never_shows_the_download_as_verifying_again() {
     let temporary = tempfile::tempdir().unwrap();
     let snapshots = Arc::new(Mutex::new(Vec::new()));
     let captured = Arc::clone(&snapshots);
-    ContentClient::new(Client::new())
+    client(&[&server])
         .download(
             Arc::new(manifest),
             std::slice::from_ref(&server.base),
@@ -791,7 +716,7 @@ async fn repairs_corrupt_files_using_another_mirror_without_manifest_credentials
         let target = temporary.path().join(&manifest.files[0].filename);
         fs::create_dir_all(target.parent().unwrap()).unwrap();
         fs::write(&target, b"corrupt local game").unwrap();
-        let summary = ContentClient::new(Client::new())
+        let summary = client(&[&first, &second])
             .download(
                 Arc::new(manifest.clone()),
                 &bases,
@@ -807,14 +732,6 @@ async fn repairs_corrupt_files_using_another_mirror_without_manifest_credentials
         assert_eq!(second.paths().len(), 2);
         for server in [&first, &second] {
             assert!(server.paths().iter().all(|path| !path.contains('?')));
-            assert!(
-                server
-                    .headers
-                    .lock()
-                    .unwrap()
-                    .iter()
-                    .all(|request| !request.to_ascii_lowercase().contains("authorization:"))
-            );
         }
     }
 }
@@ -839,6 +756,8 @@ async fn abandoned_account_transfer_keeps_disk_admission_until_worker_exits() {
     let task_manifest = Arc::clone(&manifest);
     let filename = manifest.files[0].filename.clone();
     let base = server.base.clone();
+    let content = client(&[&server]);
+    let during = content.clone();
     let (reached, waiting) = tokio::sync::oneshot::channel();
     let (release, blocked) = std::sync::mpsc::channel();
     let gate = Mutex::new(Some((reached, blocked)));
@@ -846,7 +765,7 @@ async fn abandoned_account_transfer_keeps_disk_admission_until_worker_exits() {
         owner
             .run(initial(), |transfer| async move {
                 let progress = transfer.clone();
-                ContentClient::new(Client::new())
+                during
                     .download(
                         task_manifest,
                         &[base],
@@ -895,7 +814,7 @@ async fn abandoned_account_transfer_keeps_disk_admission_until_worker_exits() {
     assert!(install::lock_engine(temporary.path()).unwrap().is_some());
     transfers
         .run(initial(), |transfer| async move {
-            ContentClient::new(Client::new())
+            content
                 .download(
                     manifest,
                     std::slice::from_ref(&server.base),
@@ -910,31 +829,6 @@ async fn abandoned_account_transfer_keeps_disk_admission_until_worker_exits() {
         .await
         .unwrap();
     assert_eq!(transfers.snapshot().unwrap().state, TransferState::Complete);
-}
-
-#[test]
-fn unflagged_programs_are_recognised_by_their_header() {
-    let temporary = tempfile::tempdir().unwrap();
-    let file = |flags| ManifestFile {
-        filename: "file".into(),
-        symlink_target: None,
-        hash: [0; 20],
-        flags,
-        parts: Vec::new(),
-    };
-    for (contents, executable) in [
-        (&[0xcf, 0xfa, 0xed, 0xfe, 7, 0, 0, 1][..], true),
-        (&[0xca, 0xfe, 0xba, 0xbe, 0, 0, 0, 2][..], true),
-        (b"#!/bin/sh\n", true),
-        (b"{\"gameId\": 1}", false),
-        (b"#", false),
-        (b"", false),
-    ] {
-        let path = temporary.path().join("file");
-        fs::write(&path, contents).unwrap();
-        assert_eq!(is_executable(&file(0), &path).unwrap(), executable);
-        assert!(is_executable(&file(4), &path).unwrap());
-    }
 }
 
 #[test]

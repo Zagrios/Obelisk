@@ -2729,166 +2729,6 @@ public func FfiConverterTypeGogSession_lower(_ value: GogSession) -> UInt64 {
 
 
 
-public protocol LibraryProtocol: AnyObject, Sendable {
-    
-    func addLocalGame(path: String) throws  -> Game
-    
-    func games() throws  -> [Game]
-    
-    func recordLaunch(id: String) throws 
-    
-    func removeGame(id: String) throws 
-    
-}
-open class Library: LibraryProtocol, @unchecked Sendable {
-    fileprivate let handle: UInt64
-
-    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    public struct NoHandle {
-        public init() {}
-    }
-
-    // TODO: We'd like this to be `private` but for Swifty reasons,
-    // we can't implement `FfiConverter` without making this `required` and we can't
-    // make it `required` without making it `public`.
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    required public init(unsafeFromHandle handle: UInt64) {
-        self.handle = handle
-    }
-
-    // This constructor can be used to instantiate a fake object.
-    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
-    //
-    // - Warning:
-    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    public init(noHandle: NoHandle) {
-        self.handle = 0
-    }
-
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    public func uniffiCloneHandle() -> UInt64 {
-        return try! rustCall { uniffi_obelisk_bridge_fn_clone_library(self.handle, $0) }
-    }
-public convenience init(storageDir: String)throws  {
-    let handle =
-        try rustCallWithError(FfiConverterTypeCoreError_lift) {
-        uniffiCallStatus in
-    uniffi_obelisk_bridge_fn_constructor_library_new(
-        FfiConverterString.lower(storageDir),uniffiCallStatus
-    )
-}
-    self.init(unsafeFromHandle: handle)
-}
-
-    deinit {
-        if handle == 0 {
-            // Mock objects have handle=0 don't try to free them
-            return
-        }
-
-        try! rustCall { uniffi_obelisk_bridge_fn_free_library(handle, $0) }
-    }
-
-    
-
-    
-open func addLocalGame(path: String)throws  -> Game  {
-    return try  FfiConverterTypeGame_lift(try rustCallWithError(FfiConverterTypeCoreError_lift) {
-        uniffiCallStatus in
-    uniffi_obelisk_bridge_fn_method_library_add_local_game(
-            self.uniffiCloneHandle(),
-        FfiConverterString.lower(path),uniffiCallStatus
-    )
-})
-}
-    
-open func games()throws  -> [Game]  {
-    return try  FfiConverterSequenceTypeGame.lift(try rustCallWithError(FfiConverterTypeCoreError_lift) {
-        uniffiCallStatus in
-    uniffi_obelisk_bridge_fn_method_library_games(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-})
-}
-    
-open func recordLaunch(id: String)throws   {try rustCallWithError(FfiConverterTypeCoreError_lift) {
-        uniffiCallStatus in
-    uniffi_obelisk_bridge_fn_method_library_record_launch(
-            self.uniffiCloneHandle(),
-        FfiConverterString.lower(id),uniffiCallStatus
-    )
-}
-}
-    
-open func removeGame(id: String)throws   {try rustCallWithError(FfiConverterTypeCoreError_lift) {
-        uniffiCallStatus in
-    uniffi_obelisk_bridge_fn_method_library_remove_game(
-            self.uniffiCloneHandle(),
-        FfiConverterString.lower(id),uniffiCallStatus
-    )
-}
-}
-    
-
-    
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeLibrary: FfiConverter {
-    typealias FfiType = UInt64
-    typealias SwiftType = Library
-
-    public static func lift(_ handle: UInt64) throws -> Library {
-        return Library(unsafeFromHandle: handle)
-    }
-
-    public static func lower(_ value: Library) -> UInt64 {
-        return value.uniffiCloneHandle()
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Library {
-        let handle: UInt64 = try readInt(&buf)
-        return try lift(handle)
-    }
-
-    public static func write(_ value: Library, into buf: inout [UInt8]) {
-        writeInt(&buf, lower(value))
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeLibrary_lift(_ handle: UInt64) throws -> Library {
-    return try FfiConverterTypeLibrary.lift(handle)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeLibrary_lower(_ value: Library) -> UInt64 {
-    return FfiConverterTypeLibrary.lower(value)
-}
-
-
-
-
-
-
 /**
  * The last library of every storefront account, in the library directory.
  */
@@ -6426,76 +6266,6 @@ public func FfiConverterTypeEpicPlaytime_lift(_ buf: RustBuffer) throws -> EpicP
 #endif
 public func FfiConverterTypeEpicPlaytime_lower(_ value: EpicPlaytime) -> RustBuffer {
     return FfiConverterTypeEpicPlaytime.lower(value)
-}
-
-
-public struct Game: Equatable, Hashable {
-    public var id: String
-    public var title: String
-    public var path: String
-    public var addedAt: UInt64
-    public var lastPlayedAt: UInt64?
-    public var kind: GameKind
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(id: String, title: String, path: String, addedAt: UInt64, lastPlayedAt: UInt64?, kind: GameKind) {
-        self.id = id
-        self.title = title
-        self.path = path
-        self.addedAt = addedAt
-        self.lastPlayedAt = lastPlayedAt
-        self.kind = kind
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension Game: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeGame: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Game {
-        return
-            try Game(
-                id: FfiConverterString.read(from: &buf), 
-                title: FfiConverterString.read(from: &buf), 
-                path: FfiConverterString.read(from: &buf), 
-                addedAt: FfiConverterUInt64.read(from: &buf), 
-                lastPlayedAt: FfiConverterOptionUInt64.read(from: &buf), 
-                kind: FfiConverterTypeGameKind.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: Game, into buf: inout [UInt8]) {
-        FfiConverterString.write(value.id, into: &buf)
-        FfiConverterString.write(value.title, into: &buf)
-        FfiConverterString.write(value.path, into: &buf)
-        FfiConverterUInt64.write(value.addedAt, into: &buf)
-        FfiConverterOptionUInt64.write(value.lastPlayedAt, into: &buf)
-        FfiConverterTypeGameKind.write(value.kind, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeGame_lift(_ buf: RustBuffer) throws -> Game {
-    return try FfiConverterTypeGame.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeGame_lower(_ value: Game) -> RustBuffer {
-    return FfiConverterTypeGame.lower(value)
 }
 
 
@@ -10409,64 +10179,6 @@ public func FfiConverterTypeSteamWebCookie_lower(_ value: SteamWebCookie) -> Rus
 }
 
 
-public struct StorefrontInfo: Equatable, Hashable {
-    public var id: StorefrontId
-    public var displayName: String
-    public var available: Bool
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(id: StorefrontId, displayName: String, available: Bool) {
-        self.id = id
-        self.displayName = displayName
-        self.available = available
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension StorefrontInfo: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeStorefrontInfo: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> StorefrontInfo {
-        return
-            try StorefrontInfo(
-                id: FfiConverterTypeStorefrontId.read(from: &buf), 
-                displayName: FfiConverterString.read(from: &buf), 
-                available: FfiConverterBool.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: StorefrontInfo, into buf: inout [UInt8]) {
-        FfiConverterTypeStorefrontId.write(value.id, into: &buf)
-        FfiConverterString.write(value.displayName, into: &buf)
-        FfiConverterBool.write(value.available, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeStorefrontInfo_lift(_ buf: RustBuffer) throws -> StorefrontInfo {
-    return try FfiConverterTypeStorefrontInfo.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeStorefrontInfo_lower(_ value: StorefrontInfo) -> RustBuffer {
-    return FfiConverterTypeStorefrontInfo.lower(value)
-}
-
-
 /**
  * What a Voile release brings.
  */
@@ -11096,111 +10808,6 @@ public func FfiConverterTypeCloudSyncKind_lower(_ value: CloudSyncKind) -> RustB
     return FfiConverterTypeCloudSyncKind.lower(value)
 }
 
-
-
-public 
-enum CoreError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
-
-    
-    
-    case InvalidGame(reason: String
-    )
-    case Storage(reason: String
-    )
-    case CorruptLibrary(reason: String
-    )
-    case NotFound(id: String
-    )
-
-    
-
-    
-
-    
-    public var errorDescription: String? {
-        String(reflecting: self)
-    }
-    
-}
-
-#if compiler(>=6)
-extension CoreError: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeCoreError: FfiConverterRustBuffer {
-    typealias SwiftType = CoreError
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreError {
-        let variant: Int32 = try readInt(&buf)
-        switch variant {
-
-        
-
-        
-        case 1: return .InvalidGame(
-            reason: try FfiConverterString.read(from: &buf)
-            )
-        case 2: return .Storage(
-            reason: try FfiConverterString.read(from: &buf)
-            )
-        case 3: return .CorruptLibrary(
-            reason: try FfiConverterString.read(from: &buf)
-            )
-        case 4: return .NotFound(
-            id: try FfiConverterString.read(from: &buf)
-            )
-
-         default: throw UniffiInternalError.unexpectedEnumCase
-        }
-    }
-
-    public static func write(_ value: CoreError, into buf: inout [UInt8]) {
-        switch value {
-
-        
-
-        
-        
-        case let .InvalidGame(reason):
-            writeInt(&buf, Int32(1))
-            FfiConverterString.write(reason, into: &buf)
-            
-        
-        case let .Storage(reason):
-            writeInt(&buf, Int32(2))
-            FfiConverterString.write(reason, into: &buf)
-            
-        
-        case let .CorruptLibrary(reason):
-            writeInt(&buf, Int32(3))
-            FfiConverterString.write(reason, into: &buf)
-            
-        
-        case let .NotFound(id):
-            writeInt(&buf, Int32(4))
-            FfiConverterString.write(id, into: &buf)
-            
-        }
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeCoreError_lift(_ buf: RustBuffer) throws -> CoreError {
-    return try FfiConverterTypeCoreError.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeCoreError_lower(_ value: CoreError) -> RustBuffer {
-    return FfiConverterTypeCoreError.lower(value)
-}
 
 
 /**
@@ -11834,72 +11441,6 @@ public func FfiConverterTypeGameIdentity_lift(_ buf: RustBuffer) throws -> GameI
 #endif
 public func FfiConverterTypeGameIdentity_lower(_ value: GameIdentity) -> RustBuffer {
     return FfiConverterTypeGameIdentity.lower(value)
-}
-
-
-
-
-public enum GameKind: Equatable, Hashable {
-    
-    case nativeMac
-    case windowsExecutable
-
-
-
-
-
-}
-
-#if compiler(>=6)
-extension GameKind: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeGameKind: FfiConverterRustBuffer {
-    typealias SwiftType = GameKind
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GameKind {
-        let variant: Int32 = try readInt(&buf)
-        switch variant {
-        
-        case 1: return .nativeMac
-        
-        case 2: return .windowsExecutable
-        
-        default: throw UniffiInternalError.unexpectedEnumCase
-        }
-    }
-
-    public static func write(_ value: GameKind, into buf: inout [UInt8]) {
-        switch value {
-        
-        
-        case .nativeMac:
-            writeInt(&buf, Int32(1))
-        
-        
-        case .windowsExecutable:
-            writeInt(&buf, Int32(2))
-        
-        }
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeGameKind_lift(_ buf: RustBuffer) throws -> GameKind {
-    return try FfiConverterTypeGameKind.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeGameKind_lower(_ value: GameKind) -> RustBuffer {
-    return FfiConverterTypeGameKind.lower(value)
 }
 
 
@@ -13957,86 +13498,6 @@ public func FfiConverterTypeSteamStoreFlag_lower(_ value: SteamStoreFlag) -> Rus
 
 
 
-
-public enum StorefrontId: Equatable, Hashable {
-    
-    case steam
-    case epic
-    case gog
-    case other
-
-
-
-
-
-}
-
-#if compiler(>=6)
-extension StorefrontId: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeStorefrontId: FfiConverterRustBuffer {
-    typealias SwiftType = StorefrontId
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> StorefrontId {
-        let variant: Int32 = try readInt(&buf)
-        switch variant {
-        
-        case 1: return .steam
-        
-        case 2: return .epic
-        
-        case 3: return .gog
-        
-        case 4: return .other
-        
-        default: throw UniffiInternalError.unexpectedEnumCase
-        }
-    }
-
-    public static func write(_ value: StorefrontId, into buf: inout [UInt8]) {
-        switch value {
-        
-        
-        case .steam:
-            writeInt(&buf, Int32(1))
-        
-        
-        case .epic:
-            writeInt(&buf, Int32(2))
-        
-        
-        case .gog:
-            writeInt(&buf, Int32(3))
-        
-        
-        case .other:
-            writeInt(&buf, Int32(4))
-        
-        }
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeStorefrontId_lift(_ buf: RustBuffer) throws -> StorefrontId {
-    return try FfiConverterTypeStorefrontId.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeStorefrontId_lower(_ value: StorefrontId) -> RustBuffer {
-    return FfiConverterTypeStorefrontId.lower(value)
-}
-
-
-
 /**
  * Lifecycle of one storefront transfer, shared by every store's progress record.
  */
@@ -15249,31 +14710,6 @@ fileprivate struct FfiConverterSequenceTypeEpicPlaytime: FfiConverterRustBuffer 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterSequenceTypeGame: FfiConverterRustBuffer {
-    typealias SwiftType = [Game]
-
-    public static func write(_ value: [Game], into buf: inout [UInt8]) {
-        let len = Int32(value.count)
-        writeInt(&buf, len)
-        for item in value {
-            FfiConverterTypeGame.write(item, into: &buf)
-        }
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [Game] {
-        let len: Int32 = try readInt(&buf)
-        var seq = [Game]()
-        seq.reserveCapacity(Int(len))
-        for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeGame.read(from: &buf))
-        }
-        return seq
-    }
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
 fileprivate struct FfiConverterSequenceTypeGameCloudIndicator: FfiConverterRustBuffer {
     typealias SwiftType = [GameCloudIndicator]
 
@@ -15724,31 +15160,6 @@ fileprivate struct FfiConverterSequenceTypeSteamWebCookie: FfiConverterRustBuffe
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterSequenceTypeStorefrontInfo: FfiConverterRustBuffer {
-    typealias SwiftType = [StorefrontInfo]
-
-    public static func write(_ value: [StorefrontInfo], into buf: inout [UInt8]) {
-        let len = Int32(value.count)
-        writeInt(&buf, len)
-        for item in value {
-            FfiConverterTypeStorefrontInfo.write(item, into: &buf)
-        }
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [StorefrontInfo] {
-        let len: Int32 = try readInt(&buf)
-        var seq = [StorefrontInfo]()
-        seq.reserveCapacity(Int(len))
-        for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeStorefrontInfo.read(from: &buf))
-        }
-        return seq
-    }
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
 fileprivate struct FfiConverterSequenceTypeVoileReleaseNotes: FfiConverterRustBuffer {
     typealias SwiftType = [VoileReleaseNotes]
 
@@ -15971,13 +15382,6 @@ fileprivate func uniffiFutureContinuationCallback(handle: UInt64, pollResult: In
         print("uniffiFutureContinuationCallback invalid handle")
     }
 }
-public func storefronts() -> [StorefrontInfo]  {
-    return try!  FfiConverterSequenceTypeStorefrontInfo.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_obelisk_bridge_fn_func_storefronts(uniffiCallStatus
-    )
-})
-}
 /**
  * The diagnostics a bug report on `subject` attaches, most telling first.
  */
@@ -16174,9 +15578,6 @@ private let initializationResult: InitializationResult = {
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
     }
-    if (uniffi_obelisk_bridge_checksum_func_storefronts() != 5932) {
-        return InitializationResult.apiChecksumMismatch
-    }
     if (uniffi_obelisk_bridge_checksum_func_diagnostic_files() != 60320) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -16223,18 +15624,6 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_func_steam_chat_invite() != 53466) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_library_add_local_game() != 39029) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_library_games() != 59102) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_library_record_launch() != 44476) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_library_remove_game() != 9491) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_method_credentialsave_save() != 31513) {
@@ -16628,9 +16017,6 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_method_steamfriendsfixture_unreachable() != 65007) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_constructor_library_new() != 47156) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_constructor_downloads_new() != 22984) {
