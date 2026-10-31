@@ -87,6 +87,41 @@ impl sync::Failure for Error {
     }
 }
 
+impl<R: CloudRemote> Adapter<R> {
+    /// Writes in the game's diagnostics why it has no Cloud here: what the
+    /// catalog says of it, and the save folder Obelisk could not follow. A
+    /// failure to write it changes nothing.
+    async fn note_unavailable(&self, why: &str, rules: Option<&CloudRules>) {
+        let attributes = self
+            .api
+            .cloud_attributes(
+                &self.config.namespace,
+                &self.config.catalog_item_id,
+                &self.config.app_name,
+            )
+            .await
+            .unwrap_or_default();
+        let mut note = format!(
+            "Epic Cloud is unavailable for {} ({}): {why}.\nBuild: {:?}\n",
+            self.config.app_name, self.config.namespace, self.config.platform
+        );
+        if let Some(rules) = rules {
+            note.push_str(&format!("Rules: {rules:?}\n"));
+        }
+        note.push_str("Catalog attributes naming a Cloud:\n");
+        for (name, value) in &attributes {
+            note.push_str(&format!("  {name} = {value}\n"));
+        }
+        if attributes.is_empty() {
+            note.push_str("  none\n");
+        }
+        let folder = crate::diagnostics::folder(&self.config.home, crate::queue::Storefront::Epic);
+        let file = folder.join(format!("cloud-{}.log", self.config.app_name));
+        let _ = std::fs::create_dir_all(&folder);
+        let _ = std::fs::write(file, note);
+    }
+}
+
 impl<R: CloudRemote> Storefront for Adapter<R> {
     type Failure = Error;
     type Record = Context;
@@ -155,6 +190,11 @@ impl<R: CloudRemote> Storefront for Adapter<R> {
             )
             .await?;
         let Some(rules) = rules else {
+            self.note_unavailable(
+                "the catalog names no Cloud save folder for this build",
+                None,
+            )
+            .await;
             return Ok(Availability::Unavailable(UnavailableReason::Unsupported));
         };
         if !supports_rules(
@@ -164,6 +204,8 @@ impl<R: CloudRemote> Storefront for Adapter<R> {
             vault,
             self.context.is_some(),
         )? {
+            self.note_unavailable("Obelisk cannot follow the Cloud save rules", Some(&rules))
+                .await;
             return Ok(Availability::Unavailable(UnavailableReason::Unsupported));
         }
         // Reinterpreting an existing account snapshot under new save rules can
