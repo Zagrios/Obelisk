@@ -163,12 +163,12 @@ if [ "$graphics" = d3dmetal ]; then
     RENDER_SERVER_EXEC_PATH="$render" NPT_BACKEND=d3dmetal DMN_RESIDENCY_SET=0 \
         NPT_D3D11_LIBRARY_PATH="$d3dmetal" NPT_DXGI_LIBRARY_PATH="$d3dmetal" NPT_D3D12_LIBRARY_PATH="$d3dmetal" \
         D3DMETAL_FRAMEWORK_PATH="$runtime/../lib/external/D3DMetal.framework" \
-        "$server/bin/virgl_test_server" --no-virgl --no-fork --socket-path "$sockets/vtest.sock" &
+        "$server/bin/virgl_test_server" --no-virgl --no-fork --multi-clients --socket-path "$sockets/vtest.sock" &
 else
     dxmt="$runtime/graphics/dxmt-native.framework/Versions/A/dxmt-native"
     RENDER_SERVER_EXEC_PATH="$render" NPT_BACKEND=dxmt \
         NPT_D3D11_LIBRARY_PATH="$dxmt" NPT_DXGI_LIBRARY_PATH="$dxmt" NPT_D3D12_LIBRARY_PATH="$dxmt" \
-        "$runtime/graphics/bin/virgl_test_server" --no-virgl --no-fork --socket-path "$sockets/vtest.sock" &
+        "$runtime/graphics/bin/virgl_test_server" --no-virgl --no-fork --multi-clients --socket-path "$sockets/vtest.sock" &
 fi
 helpers+=($!)
 # The input service gives the Mac's gamepads to Wine's Obelisk bus. A runtime without it starts the game without

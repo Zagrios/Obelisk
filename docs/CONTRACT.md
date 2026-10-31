@@ -55,7 +55,7 @@ In the Linux engine's guest:
 
 - the `FEXDARWIN_LKD`, `FEXDARWIN_ROOT`, `FEXDARWIN_ROOT_RO`, `FEXDARWIN_SUPERVISOR_PID` and `FEXDARWIN_BIND` variables, and `fexdarwin-run --cwd`
 - `wsd --dir`, and the bundle `wsd` is copied into
-- `virgl_test_server --no-virgl --no-fork --socket-path`, with `RENDER_SERVER_EXEC_PATH`, `NPT_BACKEND`, `NPT_{D3D11,DXGI,D3D12}_LIBRARY_PATH` and `DMN_RESIDENCY_SET`
+- `virgl_test_server --no-virgl --no-fork --multi-clients --socket-path`, with `RENDER_SERVER_EXEC_PATH`, `NPT_BACKEND`, `NPT_{D3D11,DXGI,D3D12}_LIBRARY_PATH` and `DMN_RESIDENCY_SET`
 - the render server's `--obelisk-translate`
 - `obelisk-input --dir`, and the `wsd.sock`, `vtest.sock` and `input.sock` sockets it waits for
 - `wineserver -p0` and `wineserver -w`
