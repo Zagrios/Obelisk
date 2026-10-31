@@ -102,7 +102,7 @@ impl GameBuilds for LiveBuilds<'_> {
                     .map_err(|_| EpicError::Protocol)?;
             let (manifest, bytes) = match validated {
                 (Ok(manifest), bytes) => (manifest, bytes),
-                (Err(EpicError::UnsupportedContent), _) => return Ok(Inspection::NotNative),
+                (Err(EpicError::UnsupportedContent), _) => return Ok(Inspection::DoesNotRun),
                 (Err(error), _) => return Err(error),
             };
             let mut listing = mac_build::Listing::default();
@@ -113,10 +113,9 @@ impl GameBuilds for LiveBuilds<'_> {
             let read = |index: usize, bytes: u64| {
                 content.read(&manifest, &base_urls, &manifest.files[index], bytes, cancel)
             };
-            let native =
-                mac_build::runs_natively(&listing, &manifest.launch_executable, &[], read).await?;
+            let native = mac_build::runs(&listing, &manifest.launch_executable, &[], read).await?;
             Ok(match native {
-                true => Inspection::Native(FetchedManifest {
+                true => Inspection::Runs(FetchedManifest {
                     bytes,
                     base_urls,
                     deployment_id,
@@ -124,7 +123,7 @@ impl GameBuilds for LiveBuilds<'_> {
                     manifest: Some(manifest),
                     cache_key: None,
                 }),
-                false => Inspection::NotNative,
+                false => Inspection::DoesNotRun,
             })
         }
         .await;

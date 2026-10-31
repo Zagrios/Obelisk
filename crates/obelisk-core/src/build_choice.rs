@@ -1,7 +1,7 @@
 //! Which of a game's builds a download installs, and which one its page
 //! shows before any download. Only a download reads a Mac build's files, as
 //! its Transfer starts, once per build; the page shows the Mac build until
-//! one found that its game does not run natively. Each storefront answers
+//! one found that its game does not run. Each storefront answers
 //! for its builds through a [`GameBuilds`] adapter.
 use std::{
     collections::HashMap,
@@ -18,9 +18,9 @@ use crate::{
 #[cfg(test)]
 mod tests;
 
-/// The message key of a Mac-only game that does not run natively, the same
-/// on every storefront.
-pub const NOT_NATIVE: &str = "backend.install.macBuildNotNative";
+/// The message key of a Mac-only game that does not run on an Apple silicon
+/// Mac, natively or under Rosetta, the same on every storefront.
+pub const DOES_NOT_RUN: &str = "backend.install.macBuildDoesNotRun";
 
 /// The builds a storefront offers the account of one game, as it lists them.
 pub struct Offered<B> {
@@ -30,10 +30,11 @@ pub struct Offered<B> {
 
 /// What reading a Mac build's files told.
 pub enum Inspection<V> {
-    /// Its game runs natively; `V` is what the build's download starts from.
-    Native(V),
+    /// Its game runs, natively or under Rosetta; `V` is what the build's
+    /// download starts from.
+    Runs(V),
     /// Its game does not, or Obelisk cannot install the build.
-    NotNative,
+    DoesNotRun,
 }
 
 /// Why a game has no build a download can install. Storefront errors
@@ -42,8 +43,8 @@ pub enum Inspection<V> {
 pub enum Unavailable {
     /// The storefront offers the account neither build.
     NoBuild,
-    /// Only a Mac build, whose game does not run natively.
-    NotNative,
+    /// Only a Mac build, whose game does not run.
+    DoesNotRun,
 }
 
 /// One game's builds at one storefront, as the build choice asks for them.
@@ -52,7 +53,7 @@ pub trait GameBuilds: Sync {
     type Build: Send + Sync;
     /// Names one immutable Mac build; its verdict is kept by it.
     type Key: Clone + Eq + Hash + Send;
-    /// What the download of a native Mac build starts from.
+    /// What the download of a Mac build that runs starts from.
     type Kept: Send;
     type Error: From<Unavailable> + Send;
 
@@ -66,8 +67,8 @@ pub trait GameBuilds: Sync {
         mac: &Self::Build,
     ) -> impl Future<Output = Result<Option<Self::Key>, Self::Error>> + Send;
 
-    /// Reads the few files of `mac` that tell whether its game runs
-    /// natively, through `mac_build::runs_natively`.
+    /// Reads the few files of `mac` that tell whether its game runs,
+    /// through `mac_build::runs`.
     fn inspect(
         &self,
         mac: &Self::Build,
@@ -76,7 +77,7 @@ pub trait GameBuilds: Sync {
 }
 
 /// One storefront client's build choice for the session: each Mac build's
-/// verdict, what the last pick read of a native build, and the pick a
+/// verdict, what the last pick read of a build that runs, and the pick a
 /// cancellation stops.
 pub struct BuildChoice<K, V> {
     verdicts: Mutex<HashMap<K, bool>>,
@@ -116,7 +117,7 @@ impl<K: Clone + Eq + Hash, V> BuildChoice<K, V> {
 
     /// The build a game's page shows, of those `offered`, with what the
     /// storefront listed of it: the Mac build, unless a pick found that its
-    /// game does not run natively and there is a Windows build. Reads no
+    /// game does not run and there is a Windows build. Reads no
     /// build's files; a key the storefront cannot tell shows the Mac build.
     pub async fn shown<G: GameBuilds<Key = K>>(
         &self,
@@ -125,14 +126,14 @@ impl<K: Clone + Eq + Hash, V> BuildChoice<K, V> {
     ) -> Option<(Platform, G::Build)> {
         // Only with both builds can a verdict change the answer, and a key
         // may cost the storefront a request.
-        let not_native = match (&offered.mac, &offered.windows) {
+        let does_not_run = match (&offered.mac, &offered.windows) {
             (Some(mac), Some(_)) => {
                 matches!(game.key(mac).await, Ok(Some(key)) if self.verdict(&key) == Some(false))
             }
             _ => false,
         };
         match (offered.mac, offered.windows) {
-            (Some(_), Some(windows)) if not_native => Some((Platform::Windows, windows)),
+            (Some(_), Some(windows)) if does_not_run => Some((Platform::Windows, windows)),
             (Some(mac), _) => Some((Platform::Mac, mac)),
             (None, Some(windows)) => Some((Platform::Windows, windows)),
             (None, None) => None,
@@ -180,46 +181,46 @@ pub struct Pick<'a, K, V> {
 }
 
 impl<K: Clone + Eq + Hash, V> Pick<'_, K, V> {
-    /// The Mac build when its game runs natively, else the Windows build.
-    /// A Mac build is read once per key.
+    /// The Mac build when its game runs, else the Windows build. A Mac build
+    /// is read once per key.
     pub async fn of<G: GameBuilds<Key = K, Kept = V>>(
         &self,
         game: &G,
     ) -> Result<Platform, G::Error> {
         let offered = game.builds().await?;
         if let Some(mac) = &offered.mac
-            && self.runs_natively(game, mac).await?
+            && self.runs(game, mac).await?
         {
             return Ok(Platform::Mac);
         }
         match (offered.mac, offered.windows) {
             (_, Some(_)) => Ok(Platform::Windows),
-            (Some(_), None) => Err(Unavailable::NotNative.into()),
+            (Some(_), None) => Err(Unavailable::DoesNotRun.into()),
             (None, None) => Err(Unavailable::NoBuild.into()),
         }
     }
 
-    /// Whether the game of `mac` runs natively, from its verdict when one is
-    /// kept, else from its files. What a native build's read is kept for its
-    /// download, in place of any other build's.
-    async fn runs_natively<G: GameBuilds<Key = K, Kept = V>>(
+    /// Whether the game of `mac` runs, from its verdict when one is kept,
+    /// else from its files. What the read of a build that runs is kept for
+    /// its download, in place of any other build's.
+    async fn runs<G: GameBuilds<Key = K, Kept = V>>(
         &self,
         game: &G,
         mac: &G::Build,
     ) -> Result<bool, G::Error> {
         let key = game.key(mac).await?;
-        if let Some(native) = key.as_ref().and_then(|key| self.choice.verdict(key)) {
-            return Ok(native);
+        if let Some(runs) = key.as_ref().and_then(|key| self.choice.verdict(key)) {
+            return Ok(runs);
         }
         let inspection = game.inspect(mac, &self.cancel).await?;
-        let native = matches!(inspection, Inspection::Native(_));
+        let runs = matches!(inspection, Inspection::Runs(_));
         if let Some(key) = key {
-            self.choice.lock_verdicts().insert(key.clone(), native);
+            self.choice.lock_verdicts().insert(key.clone(), runs);
             *self.choice.lock_kept() = match inspection {
-                Inspection::Native(kept) => Some((key, kept)),
-                Inspection::NotNative => None,
+                Inspection::Runs(kept) => Some((key, kept)),
+                Inspection::DoesNotRun => None,
             };
         }
-        Ok(native)
+        Ok(runs)
     }
 }

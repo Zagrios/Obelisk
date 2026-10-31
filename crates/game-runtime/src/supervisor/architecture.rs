@@ -21,11 +21,14 @@ impl Architecture {
     pub fn preferred(binary: &Path) -> Result<Self, Error> {
         Self::from_slices(slices(binary)?)
     }
-    /// A Mac game runs only natively: Obelisk installs the Windows build of a
-    /// game whose Mac build has no arm64 slice, and Rosetta runs Wine alone.
+    /// arm64 runs natively; a 64-bit Intel slice runs under Rosetta, when no
+    /// arm64 slice is there to take its place. A 32-bit Mac build runs
+    /// nowhere: Obelisk installs the Windows build of such a game.
     fn from_slices(mask: u8) -> Result<Self, Error> {
         if mask & 1 != 0 {
             Ok(Self::Arm64)
+        } else if mask & 2 != 0 {
+            Ok(Self::Intel)
         } else {
             Err(Error::IncompatibleArchitecture)
         }

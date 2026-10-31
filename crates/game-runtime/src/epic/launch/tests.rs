@@ -3,10 +3,11 @@
 //! launch plan's target checks and the handoff are the adapter's own.
 use super::*;
 use crate::launch_shell::{tests::fields, validate};
-use crate::supervisor::architecture::tests::{ARM64, thin};
+use crate::supervisor::architecture::tests::{ARM64, INTEL, thin};
 use crate::supervisor::session::tests::{
     HELD, Harness, Script, begin_opens_the_start_gate_once_and_only_for_its_account,
-    fixture_directory, hold, inspect, launch, lifecycle_suite, record, script, write_helper,
+    fixture_directory, hold, inspect, launch, lifecycle_suite, record, rosetta_suite, script,
+    write_helper,
 };
 use crate::supervisor::storage;
 use crate::supervisor::{client::SessionAlive, session::Operation};
@@ -111,7 +112,8 @@ impl Services for FakeEpic {
         fs::create_dir_all(&config.install).unwrap();
         let executable = config.install.join("game");
         if !script.missing {
-            fs::write(&executable, thin(ARM64, true)).unwrap();
+            let cpu = if script.intel { INTEL } else { ARM64 };
+            fs::write(&executable, thin(cpu, true)).unwrap();
         }
         Ok(LaunchPlan {
             app_name: config.app_name.clone(),
@@ -201,6 +203,7 @@ impl LaunchCloud<Error> for FakeCloud {
 
 mod lifecycle_of_epic {
     super::lifecycle_suite!(super::EpicHarness);
+    super::rosetta_suite!(super::EpicHarness);
 }
 
 #[test]

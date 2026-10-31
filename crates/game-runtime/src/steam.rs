@@ -458,7 +458,7 @@ mod error_tests {
         for (failure, key) in [
             (
                 Launch::IncompatibleArchitecture,
-                "backend.runtime.macBuildNotNative",
+                "backend.runtime.macBuildDoesNotRun",
             ),
             (
                 Launch::InvalidApplication,

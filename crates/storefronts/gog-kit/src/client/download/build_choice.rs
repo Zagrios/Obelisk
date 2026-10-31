@@ -64,15 +64,15 @@ impl GameBuilds for CurrentBuilds<'_> {
             .map(|depot| (depot.manifest.as_str(), depot.product_id.as_str()));
         add_depots(api, &mut installed, &content_root, "meta", depots).await?;
         if installed.validate().is_err() {
-            return Ok(Inspection::NotNative);
+            return Ok(Inspection::DoesNotRun);
         }
         Ok(
             match client
-                .plays_natively(product_id, &installed, &content_root, cancel)
+                .plays(product_id, &installed, &content_root, cancel)
                 .await?
             {
-                true => Inspection::Native(installed),
-                false => Inspection::NotNative,
+                true => Inspection::Runs(installed),
+                false => Inspection::DoesNotRun,
             },
         )
     }
@@ -83,7 +83,7 @@ mod tests {
     use std::sync::Arc;
 
     use obelisk_core::{
-        build_choice::{NOT_NATIVE, Unavailable},
+        build_choice::{DOES_NOT_RUN, Unavailable},
         watch::Revisions,
     };
     use tokio::sync::Mutex;
@@ -134,9 +134,9 @@ mod tests {
             GogError::NoBuild
         ));
         assert!(matches!(
-            GogError::from(Unavailable::NotNative),
-            GogError::Service { message } if message == NOT_NATIVE
+            GogError::from(Unavailable::DoesNotRun),
+            GogError::Service { message } if message == DOES_NOT_RUN
         ));
-        assert_eq!(NOT_NATIVE, "backend.install.macBuildNotNative");
+        assert_eq!(DOES_NOT_RUN, "backend.install.macBuildDoesNotRun");
     }
 }

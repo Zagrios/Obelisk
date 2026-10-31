@@ -21,7 +21,7 @@ use steam_kit::cloud::{CloudListing, CloudMetadata};
 /// wait on it.
 pub trait Network: Send + Sync + 'static {
     /// The build a Transfer without a platform installs, of those the
-    /// account's licenses grant: the Mac build when its game runs natively
+    /// account's licenses grant: the Mac build when its game runs
     /// on Apple silicon, else the Windows build.
     fn platform<'a>(
         &'a self,

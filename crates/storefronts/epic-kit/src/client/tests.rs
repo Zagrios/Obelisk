@@ -427,7 +427,7 @@ fn mac_build_without_program() -> Vec<Reply> {
 }
 
 #[tokio::test]
-async fn a_game_s_page_shows_its_mac_build_until_a_download_found_it_is_not_native() {
+async fn a_game_s_page_shows_its_mac_build_until_a_download_found_it_does_not_run() {
     use sha1::{Digest, Sha1};
     // A Mac build without its program, whose manifest the asset's hash names.
     let manifest = mac_build_without_program().remove(1).body;
@@ -466,7 +466,7 @@ async fn a_game_s_page_shows_its_mac_build_until_a_download_found_it_is_not_nati
 }
 
 #[tokio::test]
-async fn a_mac_build_that_does_not_run_natively_leaves_the_download_to_the_windows_build() {
+async fn a_mac_build_that_does_not_run_leaves_the_download_to_the_windows_build() {
     let mut replies = mac_build_without_program();
     replies.push(reply(
         WINDOWS_MANIFEST_PATH,
@@ -486,7 +486,7 @@ async fn a_mac_build_that_does_not_run_natively_leaves_the_download_to_the_windo
     let client = mock.client(false);
     assert!(matches!(
         client.platform("space", "base", "game").await,
-        Err(EpicError::Service { message }) if message == "backend.install.macBuildNotNative"
+        Err(EpicError::Service { message }) if message == "backend.install.macBuildDoesNotRun"
     ));
 }
 

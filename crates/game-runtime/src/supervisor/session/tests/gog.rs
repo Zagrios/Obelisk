@@ -149,28 +149,6 @@ fn a_running_gog_game_shows_no_cloud_until_its_session_ends_and_publishes_no_pre
 }
 
 #[test]
-fn an_intel_gog_mac_build_never_runs_and_its_session_fails_with_the_launch_key() {
-    let run = launch::<GogHarness>(Script {
-        intel: true,
-        ..script(QUICK)
-    });
-
-    let failed = run.until(Record::finished);
-
-    assert_eq!(failed.phase, Phase::Failed);
-    assert_eq!(
-        failed.error.as_deref(),
-        Some("backend.runtime.macBuildNotNative")
-    );
-    assert_eq!(
-        failed.failure_reason(),
-        Some(crate::supervisor::FailureReason::Failed)
-    );
-    assert!(!install(&run.directory).join("ran").exists());
-    assert_eq!(failed.cloud.phase, crate::cloud::Phase::Unsupported);
-}
-
-#[test]
 fn a_gog_game_whose_program_is_gone_fails_its_session_with_the_gog_key_and_runs_nothing() {
     let run = launch::<GogHarness>(Script {
         missing: true,

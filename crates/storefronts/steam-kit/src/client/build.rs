@@ -33,7 +33,7 @@ const COMMON_REDISTRIBUTABLES: u32 = 228_980;
 /// as Steam installs them under Proton.
 const SKIPPED_REDISTRIBUTABLES: RangeInclusive<u32> = 229_000..=229_012;
 
-/// What a pick of a native Mac build read, by depot and manifest.
+/// What a pick of a Mac build that runs read, by depot and manifest.
 pub(super) type Kept = HashMap<(u32, u64), CachedManifest>;
 
 /// Names one immutable build: its app, and the public manifest of each depot a

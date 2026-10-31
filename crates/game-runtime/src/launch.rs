@@ -8,9 +8,10 @@
 /// own keys, as it does `supervisor::Error`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum Error {
-    /// A Mac build without an arm64 slice, installed before Obelisk
-    /// installed such a game's Windows build instead.
-    #[error("backend.runtime.macBuildNotNative")]
+    /// A Mac build with neither an arm64 slice nor a 64-bit Intel one, a
+    /// 32-bit build for instance, installed before Obelisk installed such a
+    /// game's Windows build instead.
+    #[error("backend.runtime.macBuildDoesNotRun")]
     IncompatibleArchitecture,
     #[error("backend.runtime.invalidApplication")]
     InvalidApplication,

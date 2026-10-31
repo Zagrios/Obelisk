@@ -2,6 +2,8 @@ use super::*;
 
 pub(crate) const ARM64: u32 = 0x0100_000c;
 pub(crate) const INTEL: u32 = 0x0100_0007;
+/// A 32-bit Intel program, which no launch runs.
+pub(crate) const I386: u32 = 7;
 
 fn word(value: u32, little: bool) -> [u8; 4] {
     if little {
@@ -57,7 +59,7 @@ fn parse(bytes: &[u8]) -> Result<u8, Error> {
 }
 
 #[test]
-fn selects_the_shared_arm64_slice_only() {
+fn selects_shared_slice_and_preserves_native_universal_launches() {
     let root = tempfile::tempdir().unwrap();
     let game = root.path().join("game");
     let sdk = root.path().join("sdk");
@@ -67,11 +69,10 @@ fn selects_the_shared_arm64_slice_only() {
             thin(ARM64, true),
             Some(Architecture::Arm64),
         ),
-        // An Intel game never runs natively, whatever its library holds.
         (
             thin(INTEL, true),
             universal(&[INTEL, ARM64], false, false),
-            None,
+            Some(Architecture::Intel),
         ),
         (
             universal(&[INTEL, ARM64], false, false),
@@ -81,10 +82,10 @@ fn selects_the_shared_arm64_slice_only() {
         (
             universal(&[INTEL, ARM64], true, true),
             thin(INTEL, true),
-            None,
+            Some(Architecture::Intel),
         ),
         (thin(ARM64, true), thin(INTEL, true), None),
-        (thin(7, true), thin(7, true), None),
+        (thin(I386, true), thin(I386, true), None),
     ] {
         std::fs::write(&game, game_bytes).unwrap();
         std::fs::write(&sdk, sdk_bytes).unwrap();
@@ -93,11 +94,12 @@ fn selects_the_shared_arm64_slice_only() {
 }
 
 #[test]
-fn standalone_executable_runs_its_arm64_slice_without_an_sdk_dependency() {
+fn standalone_executable_prefers_arm64_without_an_sdk_dependency() {
     let root = tempfile::tempdir().unwrap();
     let game = root.path().join("game");
     for (bytes, expected) in [
         (thin(ARM64, true), Architecture::Arm64),
+        (thin(INTEL, true), Architecture::Intel),
         (
             universal(&[INTEL, ARM64], false, false),
             Architecture::Arm64,
@@ -107,13 +109,11 @@ fn standalone_executable_runs_its_arm64_slice_without_an_sdk_dependency() {
         std::fs::write(&game, bytes).unwrap();
         assert_eq!(Architecture::preferred(&game).unwrap(), expected);
     }
-    for bytes in [thin(INTEL, true), b"\xcf\xfa\xed\xfe".to_vec()] {
-        std::fs::write(&game, bytes).unwrap();
-        assert!(matches!(
-            Architecture::preferred(&game),
-            Err(Error::IncompatibleArchitecture)
-        ));
-    }
+    std::fs::write(&game, b"\xcf\xfa\xed\xfe").unwrap();
+    assert!(matches!(
+        Architecture::preferred(&game),
+        Err(Error::IncompatibleArchitecture)
+    ));
 }
 
 #[test]

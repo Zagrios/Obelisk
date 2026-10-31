@@ -11454,7 +11454,7 @@ public enum GameOffer: Equatable, Hashable {
     /**
      * With the depots of `language`. Steam picks the build the account can
      * install as the Transfer starts: the Mac build when its game runs
-     * natively on Apple silicon, else the Windows build.
+     * on Apple silicon, else the Windows build.
      */
     case steam(appId: UInt32, name: String, language: String
     )

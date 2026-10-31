@@ -91,7 +91,7 @@ fn build_key(product_id: &str, build_id: &str, language: &str) -> Option<BuildKe
     })
 }
 
-/// Each Mac build's verdict, and the depot items of the last native one,
+/// Each Mac build's verdict, and the depot items of the last one that runs,
 /// which its download starts from.
 pub(super) type BuildChoice = obelisk_core::build_choice::BuildChoice<BuildKey, Installed>;
 
@@ -335,7 +335,7 @@ impl Client {
     }
 
     /// The build a download of the game installs, with the depots of
-    /// `language`: the Mac build when its game runs natively on Apple
+    /// `language`: the Mac build when its game runs on Apple
     /// silicon, else the Windows build. `cancel_download` stops it.
     pub async fn platform(&self, product_id: &str, language: &str) -> Result<Platform, GogError> {
         self.build_choice
@@ -355,7 +355,7 @@ impl Client {
 
     /// The build the game's page shows before any download, and its size
     /// with the depots of `language`: the Mac build, unless a download found
-    /// that its game does not run natively and GOG has a Windows build of
+    /// that its game does not run and GOG has a Windows build of
     /// it. None of the build's files is read.
     pub(super) async fn shown_build(
         &self,
@@ -387,7 +387,7 @@ impl Client {
 
     /// Whether the program the primary play task of `installed` starts holds
     /// an arm64 slice.
-    async fn plays_natively(
+    async fn plays(
         &self,
         product_id: &str,
         installed: &Installed,
@@ -423,7 +423,7 @@ impl Client {
         let Some(program) = program else {
             return Ok(false);
         };
-        mac_build::runs_natively(&listing, &from_root(&program), &[], read).await
+        mac_build::runs(&listing, &from_root(&program), &[], read).await
     }
 
     /// The size of the listed `build` an installation in `language` holds.

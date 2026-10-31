@@ -26,7 +26,7 @@ impl From<Unavailable> for FakeError {
 struct FakeGame {
     offered: (Option<&'static str>, Option<&'static str>),
     key: Result<Option<u8>, ()>,
-    /// What reading the Mac build tells: what it keeps when native, `None`
+    /// What reading the Mac build tells: what it keeps when its game runs, `None`
     /// when not.
     inspection: Result<Option<&'static str>, ()>,
     /// Holds `inspect` until notified.
@@ -45,7 +45,7 @@ impl FakeGame {
         }
     }
 
-    fn native(key: u8, kept: &'static str) -> Self {
+    fn runs(key: u8, kept: &'static str) -> Self {
         Self {
             key: Ok(Some(key)),
             inspection: Ok(Some(kept)),
@@ -53,7 +53,7 @@ impl FakeGame {
         }
     }
 
-    fn not_native(key: u8) -> Self {
+    fn does_not_run(key: u8) -> Self {
         Self {
             key: Ok(Some(key)),
             inspection: Ok(None),
@@ -106,8 +106,8 @@ impl GameBuilds for FakeGame {
             gate.notified().await;
         }
         match self.inspection.map_err(|()| FakeError::Failed)? {
-            Some(kept) => Ok(Inspection::Native(kept)),
-            None => Ok(Inspection::NotNative),
+            Some(kept) => Ok(Inspection::Runs(kept)),
+            None => Ok(Inspection::DoesNotRun),
         }
     }
 }
@@ -123,21 +123,21 @@ async fn shown(choice: &Choice, game: &FakeGame) -> Option<(Platform, &'static s
     choice.shown(game, offered).await
 }
 
-/// Keeps the verdict `native` for key 1, as a pick of its build finds it.
-async fn judge(choice: &Choice, native: bool) {
-    let game = match native {
-        true => FakeGame::native(1, "one"),
-        false => FakeGame::not_native(1),
+/// Keeps the verdict `runs` for key 1, as a pick of its build finds it.
+async fn judge(choice: &Choice, runs: bool) {
+    let game = match runs {
+        true => FakeGame::runs(1, "one"),
+        false => FakeGame::does_not_run(1),
     };
     pick(choice, &game).await.unwrap();
 }
 
 /// Whether a pick of a build keyed `key` reads it, which leaves its
-/// verdict as `native` when it does.
-async fn reads(choice: &Choice, key: u8, native: bool) -> bool {
-    let game = match native {
-        true => FakeGame::native(key, "again"),
-        false => FakeGame::not_native(key),
+/// verdict as `runs` when it does.
+async fn reads(choice: &Choice, key: u8, runs: bool) -> bool {
+    let game = match runs {
+        true => FakeGame::runs(key, "again"),
+        false => FakeGame::does_not_run(key),
     };
     pick(choice, &game).await.unwrap();
     game.asked("inspect") == 1
@@ -145,23 +145,23 @@ async fn reads(choice: &Choice, key: u8, native: bool) -> bool {
 
 const MAC: Option<&str> = Some("mac");
 const WINDOWS: Option<&str> = Some("windows");
-/// What reading a native Mac build keeps.
-const NATIVE: Option<&str> = Some("read");
-const NOT_NATIVE: Option<&str> = None;
+/// What reading a Mac build that runs keeps.
+const RUNS: Option<&str> = Some("read");
+const DOES_NOT_RUN: Option<&str> = None;
 
 #[tokio::test]
-async fn a_download_installs_the_mac_build_when_its_game_runs_natively_else_the_windows_build() {
+async fn a_download_installs_the_mac_build_when_its_game_runs_else_the_windows_build() {
     use Platform::{Mac, Windows};
     let no_build = Err(FakeError::Unavailable(Unavailable::NoBuild));
-    let not_native = Err(FakeError::Unavailable(Unavailable::NotNative));
+    let does_not_run = Err(FakeError::Unavailable(Unavailable::DoesNotRun));
     // (mac, windows, what reading the Mac build tells, picked, whether it was read)
     let cases = [
-        (None, None, NATIVE, no_build, false),
-        (None, WINDOWS, NATIVE, Ok(Windows), false),
-        (MAC, None, NATIVE, Ok(Mac), true),
-        (MAC, WINDOWS, NATIVE, Ok(Mac), true),
-        (MAC, WINDOWS, NOT_NATIVE, Ok(Windows), true),
-        (MAC, None, NOT_NATIVE, not_native, true),
+        (None, None, RUNS, no_build, false),
+        (None, WINDOWS, RUNS, Ok(Windows), false),
+        (MAC, None, RUNS, Ok(Mac), true),
+        (MAC, WINDOWS, RUNS, Ok(Mac), true),
+        (MAC, WINDOWS, DOES_NOT_RUN, Ok(Windows), true),
+        (MAC, None, DOES_NOT_RUN, does_not_run, true),
     ];
     for (mac, windows, inspection, expected, inspected) in cases {
         let game = FakeGame {
@@ -179,7 +179,7 @@ async fn a_download_installs_the_mac_build_when_its_game_runs_natively_else_the_
 }
 
 #[tokio::test]
-async fn a_page_shows_the_mac_build_until_a_pick_found_its_game_is_not_native() {
+async fn a_page_shows_the_mac_build_until_a_pick_found_its_game_does_not_run() {
     use Platform::{Mac, Windows};
     let (shows_mac, shows_windows) = (Some((Mac, "mac")), Some((Windows, "windows")));
     // (mac, windows, the verdict kept for key 1, the key the page gets, shown)
@@ -198,8 +198,8 @@ async fn a_page_shows_the_mac_build_until_a_pick_found_its_game_is_not_native() 
     ];
     for (mac, windows, verdict, key, expected) in cases {
         let choice = Choice::default();
-        if let Some(native) = verdict {
-            judge(&choice, native).await;
+        if let Some(runs) = verdict {
+            judge(&choice, runs).await;
         }
         let game = FakeGame {
             key,
@@ -216,20 +216,20 @@ async fn a_page_shows_the_mac_build_until_a_pick_found_its_game_is_not_native() 
 #[tokio::test]
 async fn a_mac_build_is_read_once_per_key() {
     let choice = Choice::default();
-    let first = FakeGame::not_native(1);
+    let first = FakeGame::does_not_run(1);
     assert_eq!(pick(&choice, &first).await, Ok(Platform::Windows));
     assert_eq!(pick(&choice, &first).await, Ok(Platform::Windows));
     assert_eq!(first.asked("inspect"), 1, "the verdict of key 1 is kept");
     assert_eq!(first.asked("key"), 2);
 
-    let other = FakeGame::native(2, "two");
+    let other = FakeGame::runs(2, "two");
     assert_eq!(pick(&choice, &other).await, Ok(Platform::Mac));
     assert_eq!(other.asked("inspect"), 1, "another key reads its build");
 
     // A build without a key is read each time and changes nothing kept.
     let unkeyed = FakeGame {
         key: Ok(None),
-        ..FakeGame::not_native(0)
+        ..FakeGame::does_not_run(0)
     };
     assert_eq!(pick(&choice, &unkeyed).await, Ok(Platform::Windows));
     assert_eq!(pick(&choice, &unkeyed).await, Ok(Platform::Windows));
@@ -240,16 +240,16 @@ async fn a_mac_build_is_read_once_per_key() {
     // A failed key or read remembers nothing.
     let failing_key = FakeGame {
         key: Err(()),
-        ..FakeGame::not_native(3)
+        ..FakeGame::does_not_run(3)
     };
     assert_eq!(pick(&choice, &failing_key).await, Err(FakeError::Failed));
     assert_eq!(failing_key.asked("inspect"), 0);
     let failing_read = FakeGame {
         inspection: Err(()),
-        ..FakeGame::not_native(3)
+        ..FakeGame::does_not_run(3)
     };
     assert_eq!(pick(&choice, &failing_read).await, Err(FakeError::Failed));
-    let read_again = FakeGame::not_native(3);
+    let read_again = FakeGame::does_not_run(3);
     assert_eq!(pick(&choice, &read_again).await, Ok(Platform::Windows));
     assert_eq!(
         read_again.asked("inspect"),
@@ -259,9 +259,9 @@ async fn a_mac_build_is_read_once_per_key() {
 }
 
 #[tokio::test]
-async fn a_native_pick_hands_what_it_read_to_that_build_s_download_once() {
+async fn a_pick_of_a_build_that_runs_hands_what_it_read_to_that_build_s_download_once() {
     let choice = Choice::default();
-    let one = FakeGame::native(1, "one");
+    let one = FakeGame::runs(1, "one");
     assert_eq!(pick(&choice, &one).await, Ok(Platform::Mac));
     assert_eq!(
         choice.take(&2),
@@ -272,37 +272,37 @@ async fn a_native_pick_hands_what_it_read_to_that_build_s_download_once() {
     assert_eq!(choice.take(&1), None, "a manifest starts one download");
 
     // A cache hit leaves what is kept alone.
-    let two = FakeGame::native(2, "two");
+    let two = FakeGame::runs(2, "two");
     assert_eq!(pick(&choice, &two).await, Ok(Platform::Mac));
     assert_eq!(pick(&choice, &one).await, Ok(Platform::Mac));
     assert_eq!(one.asked("inspect"), 1);
     // So does a build without a key.
     let unkeyed = FakeGame {
         key: Ok(None),
-        ..FakeGame::native(0, "unkeyed")
+        ..FakeGame::runs(0, "unkeyed")
     };
     assert_eq!(pick(&choice, &unkeyed).await, Ok(Platform::Mac));
     assert_eq!(choice.take(&2), Some("two"));
 
-    // A native pick of another build replaces it.
+    // A pick of another build that runs replaces it.
     assert_eq!(
-        pick(&choice, &FakeGame::native(3, "three")).await,
+        pick(&choice, &FakeGame::runs(3, "three")).await,
         Ok(Platform::Mac)
     );
     assert_eq!(
-        pick(&choice, &FakeGame::native(4, "four")).await,
+        pick(&choice, &FakeGame::runs(4, "four")).await,
         Ok(Platform::Mac)
     );
     assert_eq!(choice.take(&3), None);
     assert_eq!(choice.take(&4), Some("four"));
 
-    // A keyed pick found not native clears it.
+    // A keyed pick that found its game does not run clears it.
     assert_eq!(
-        pick(&choice, &FakeGame::native(5, "five")).await,
+        pick(&choice, &FakeGame::runs(5, "five")).await,
         Ok(Platform::Mac)
     );
     assert_eq!(
-        pick(&choice, &FakeGame::not_native(6)).await,
+        pick(&choice, &FakeGame::does_not_run(6)).await,
         Ok(Platform::Windows)
     );
     assert_eq!(choice.take(&5), None);
@@ -315,17 +315,17 @@ async fn cancel_stops_a_pick_and_forgets_what_it_read() {
     choice.cancel();
 
     assert_eq!(
-        pick(&choice, &FakeGame::not_native(1)).await,
+        pick(&choice, &FakeGame::does_not_run(1)).await,
         Ok(Platform::Windows)
     );
     assert_eq!(
-        pick(&choice, &FakeGame::native(2, "two")).await,
+        pick(&choice, &FakeGame::runs(2, "two")).await,
         Ok(Platform::Mac)
     );
 
     let gated = FakeGame {
         gate: Some(Arc::new(Notify::new())),
-        ..FakeGame::native(3, "three")
+        ..FakeGame::runs(3, "three")
     };
     let cancelling = async {
         while gated.asked("inspect") == 0 {
@@ -340,7 +340,7 @@ async fn cancel_stops_a_pick_and_forgets_what_it_read() {
     assert!(!reads(&choice, 2, true).await);
 
     // The next pick runs on a fresh token, and reads the stopped build again.
-    let again = FakeGame::native(3, "three");
+    let again = FakeGame::runs(3, "three");
     assert_eq!(pick(&choice, &again).await, Ok(Platform::Mac));
     assert_eq!(again.asked("inspect"), 1, "a stopped read keeps no verdict");
     assert_eq!(choice.take(&3), Some("three"));
@@ -351,11 +351,11 @@ async fn a_pick_runs_inside_what_the_storefront_wraps_around_it() {
     let choice = Choice::default();
     let failing = FakeGame {
         inspection: Err(()),
-        ..FakeGame::native(1, "one")
+        ..FakeGame::runs(1, "one")
     };
     let gated = FakeGame {
         gate: Some(Arc::new(Notify::new())),
-        ..FakeGame::native(1, "one")
+        ..FakeGame::runs(1, "one")
     };
     // As a token funnel retries its call: the second attempt runs under the
     // same pick, which a cancel still stops.

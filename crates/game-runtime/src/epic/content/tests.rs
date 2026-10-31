@@ -628,7 +628,7 @@ impl Setup for Fixture {
         [
             (
                 Launch::IncompatibleArchitecture,
-                "backend.runtime.macBuildNotNative",
+                "backend.runtime.macBuildDoesNotRun",
             ),
             (Launch::WineUnavailable, "backend.runtime.wineUnavailable"),
             (Launch::InvalidApplication, "backend.epic.cloud.unsupported"),

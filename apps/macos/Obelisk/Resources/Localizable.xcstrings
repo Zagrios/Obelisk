@@ -13194,19 +13194,19 @@
         }
       }
     },
-    "backend.runtime.macBuildNotNative": {
+    "backend.runtime.macBuildDoesNotRun": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This Mac build does not run natively on Apple silicon. Uninstall the game, then install it again: Obelisk will install its Windows build if the store has one."
+            "value": "This Mac build does not run on Apple silicon, not even with Rosetta. Uninstall the game, then install it again: Obelisk will install its Windows build if the store has one."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cette version Mac ne fonctionne pas nativement sur Apple silicon. Désinstallez le jeu, puis installez-le de nouveau : Obelisk installera sa version Windows si la boutique en propose une."
+            "value": "Cette version Mac ne fonctionne pas sur Apple silicon, pas même avec Rosetta. Désinstallez le jeu, puis installez-le de nouveau : Obelisk installera sa version Windows si la boutique en propose une."
           }
         },
         "it": {
@@ -13217,19 +13217,19 @@
         }
       }
     },
-    "backend.install.macBuildNotNative": {
+    "backend.install.macBuildDoesNotRun": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This game’s Mac build does not run natively on Apple silicon, and the store has no Windows build of it."
+            "value": "This game’s Mac build does not run on Apple silicon, not even with Rosetta, and the store has no Windows build of it."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "La version Mac de ce jeu ne fonctionne pas nativement sur Apple silicon, et la boutique n’en propose aucune version Windows."
+            "value": "La version Mac de ce jeu ne fonctionne pas sur Apple silicon, pas même avec Rosetta, et la boutique n’en propose aucune version Windows."
           }
         },
         "it": {
