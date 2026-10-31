@@ -1,6 +1,10 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "ui.overlay.epicSocial.invite": {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Invite friends…"}},"fr":{"stringUnit":{"state":"translated","value":"Inviter des amis…"}},"it":{"stringUnit":{"state":"translated","value":"Invita amici…"}}}},
+    "ui.overlay.epicSocial.detail": {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Use Epic’s social panel to add friends and send or accept party invitations."}},"fr":{"stringUnit":{"state":"translated","value":"Utilisez le panneau social Epic pour ajouter des amis et envoyer ou accepter des invitations à un groupe."}},"it":{"stringUnit":{"state":"translated","value":"Usa il pannello social di Epic per aggiungere amici e inviare o accettare inviti al gruppo."}}}},
+    "ui.overlay.epicSocial.shortcut": {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"You can also open it in the game with Shift+F3."}},"fr":{"stringUnit":{"state":"translated","value":"Vous pouvez aussi l’ouvrir dans le jeu avec Maj+F3."}},"it":{"stringUnit":{"state":"translated","value":"Puoi aprirlo anche nel gioco con Maiusc+F3."}}}},
+    "ui.overlay.epicSocial.return": {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Return to game"}},"fr":{"stringUnit":{"state":"translated","value":"Revenir au jeu"}},"it":{"stringUnit":{"state":"translated","value":"Torna al gioco"}}}},
     "backend.steam.chat.emptyMessage": {
       "extractionState": "manual",
       "localizations": {

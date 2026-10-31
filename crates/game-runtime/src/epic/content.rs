@@ -27,6 +27,9 @@ pub trait Network: Send + Sync + 'static {
     fn account_id(&self) -> BoxFuture<'_, Result<String, Failure>>;
     /// A short-lived code the game signs in with.
     fn exchange_code(&self) -> BoxFuture<'_, Result<String, Failure>>;
+    /// Downloads Epic's verified overlay into the prepared Wine prefix.
+    fn install_social_overlay<'a>(&'a self, parent: &'a Path)
+    -> BoxFuture<'a, Result<(), Failure>>;
     /// The build a Transfer without a platform installs: the Mac build when
     /// its game runs natively on Apple silicon, else the Windows build.
     fn platform<'a>(&'a self, product: &'a Product) -> BoxFuture<'a, Result<Platform, Failure>>;
@@ -55,6 +58,17 @@ pub trait Network: Send + Sync + 'static {
 }
 
 impl Network for EpicClient {
+    fn install_social_overlay<'a>(
+        &'a self,
+        parent: &'a Path,
+    ) -> BoxFuture<'a, Result<(), Failure>> {
+        Box::pin(async move {
+            EpicClient::install_social_overlay(self, parent)
+                .await
+                .map(|_| ())
+                .map_err(failed)
+        })
+    }
     fn prepare(&self) -> BoxFuture<'_, Result<(), Failure>> {
         Box::pin(async move { EpicClient::prepare(self).await.map(|_| ()).map_err(failed) })
     }
@@ -434,6 +448,18 @@ impl<N: Network> sessions::Handover<Epic> for Handover<N> {
                     )
                 }
             };
+            if super::social_overlay::required(&self.configuration)
+                && let Some(wine) = &wine
+            {
+                let parent = super::social_overlay::parent(wine);
+                self.network.install_social_overlay(&parent).await?;
+                let wine = wine.clone();
+                blocking(Error::Session.to_string(), move || {
+                    super::social_overlay::register(&wine)
+                })
+                .await?
+                .map_err(failed)?;
+            }
             let account = self.network.account_id().await?;
             let exchange = self.network.exchange_code().await?;
             // The code must belong to the account the game is launched for.

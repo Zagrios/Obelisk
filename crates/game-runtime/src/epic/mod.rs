@@ -4,6 +4,7 @@ mod client;
 pub mod content;
 pub(crate) mod launch;
 mod session;
+mod social_overlay;
 mod windows;
 
 // A Game session's phase is `Phase`; its Cloud sync's phase is `CloudPhase`.

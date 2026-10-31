@@ -1016,6 +1016,91 @@ fn download_replies(app_name: &str) -> Vec<Reply> {
 }
 
 #[tokio::test]
+async fn social_overlay_uses_the_public_windows_asset_and_verified_existing_files() {
+    use sha1::{Digest, Sha1};
+    let blob = |bytes: &[u8]| {
+        bytes
+            .iter()
+            .map(|byte| format!("{byte:03}"))
+            .collect::<String>()
+    };
+    let data = b"overlay fixture";
+    let guid = "1122AABB3344CCDD5566EEFF77880099";
+    let files = [
+        "EOSOVH-Win64-Shipping.dll",
+        "EOSOverlayRenderer-Win64-Shipping.exe",
+    ];
+    let path = "/launcher/api/public/assets/v2/platform/Windows/namespace/302e5ede476149b1bc3e4fe6ae45e50e/catalogItem/cc15684f44d849e89e9bf4cec0508b68/app/98bc04bc842e4906993fd6d6644ffb8d/label/Live";
+    let mock = Mock::new(vec![
+        reply(
+            path,
+            200,
+            json!({"elements":[{"manifests":[{"uri":"FIXTURE_BASE/overlay.manifest"}]}]}),
+        ),
+        reply(
+            "/overlay.manifest",
+            200,
+            json!({
+                "AppNameString":"EOSOverlay", "BuildVersionString":"1", "LaunchExeString":files[1],
+                "FileManifestList": files.iter().map(|name| json!({
+                    "Filename":name, "FileHash":blob(&Sha1::digest(data)),
+                    "FileChunkParts":[{"Guid":guid,"Offset":blob(&0_u32.to_le_bytes()),"Size":blob(&(data.len() as u32).to_le_bytes())}]
+                })).collect::<Vec<_>>(),
+                "ChunkFilesizeList":{guid:blob(&100_u64.to_le_bytes())},
+                "ChunkHashList":{guid:blob(&1_u64.to_le_bytes())},
+            "ChunkShaList":{guid:obelisk_core::install::hex(&Sha1::digest(data))}, "DataGroupList":{guid:"000"}
+            }),
+        ),
+    ]);
+    let parent = tempfile::tempdir().unwrap();
+    let overlay = parent.path().join("EOSOverlay");
+    std::fs::create_dir(&overlay).unwrap();
+    for file in files {
+        std::fs::write(overlay.join(file), data).unwrap();
+    }
+    let installed = mock
+        .client(false)
+        .install_social_overlay(parent.path())
+        .await
+        .unwrap();
+    assert_eq!(installed, overlay.canonicalize().unwrap());
+    assert!(installed.join(".obelisk-install.json").is_file());
+    let requests = mock.requests();
+    assert_eq!(
+        requests.len(),
+        2,
+        "Verified files need neither a library entitlement nor chunk downloads"
+    );
+    assert!(
+        requests[0]
+            .to_ascii_lowercase()
+            .contains("authorization: bearer access-old")
+    );
+    assert!(!requests[1].to_ascii_lowercase().contains("authorization:"));
+}
+
+#[tokio::test]
+async fn an_incomplete_social_overlay_is_never_published_as_installed() {
+    let mut replies = download_replies("EOSOverlay");
+    replies.remove(0); // A launcher component has no library entitlement.
+    replies[0].path = "/launcher/api/public/assets/v2/platform/Windows/namespace/302e5ede476149b1bc3e4fe6ae45e50e/catalogItem/cc15684f44d849e89e9bf4cec0508b68/app/98bc04bc842e4906993fd6d6644ffb8d/label/Live".into();
+    let mock = Mock::new(replies);
+    let parent = tempfile::tempdir().unwrap();
+    assert!(matches!(
+        mock.client(false)
+            .install_social_overlay(parent.path())
+            .await,
+        Err(EpicError::UnsupportedContent)
+    ));
+    assert!(
+        !parent
+            .path()
+            .join("EOSOverlay/.obelisk-install.json")
+            .exists()
+    );
+}
+
+#[tokio::test]
 async fn download_checks_ownership_fetches_manifest_without_bearer_and_writes_receipt_only_on_success()
  {
     let mock = Mock::new(download_replies("game"));

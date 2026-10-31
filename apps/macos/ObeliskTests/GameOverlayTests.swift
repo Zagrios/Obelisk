@@ -4,6 +4,42 @@ import XCTest
 @testable import Obelisk
 
 final class GameOverlayTests: XCTestCase {
+    @MainActor
+    func testEpicSocialPanelReturnsFocusBeforePostingItsShortcut() async throws {
+        var posted: [OverlayApplication] = []
+        let fixture = OverlayFixture(postEpicSocialShortcut: { application in posted.append(application); return true })
+        let overlay = fixture.overlay
+        fixture.frontmost = Self.game
+        fixture.epicSessions.fake.show(.epic(account: "epic-account", namespace: "50118b7f954e450f8823df1614b24e80",
+            appName: "0a2d9f6403244d12969e11da6713137b", id: "fall-guys"))
+        try await eventually { overlay.hasEpicSocialOverlay }
+        overlay.present(.friends)
+        overlay.openEpicSocialOverlay()
+        XCTAssertFalse(overlay.isPresented)
+        XCTAssertEqual(fixture.presenter.hidden.last!, Self.game)
+        XCTAssertTrue(posted.isEmpty)
+        try await eventually { posted == [Self.game] }
+        XCTAssertFalse(overlay.epicSocialNeedsShortcut)
+        overlay.present(.friends)
+        overlay.openEpicSocialOverlay()
+        fixture.epicSessions.fake.show(nil)
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertEqual(posted, [Self.game], "A game ending cancels pending input")
+    }
+
+    @MainActor
+    func testEpicSocialPanelOffersTheManualShortcutWhenPostingIsUnavailable() async throws {
+        let fixture = OverlayFixture()
+        let overlay = fixture.overlay
+        fixture.frontmost = Self.game
+        fixture.epicSessions.fake.show(.epic(account: "epic-account", namespace: "50118b7f954e450f8823df1614b24e80",
+            appName: "0a2d9f6403244d12969e11da6713137b", id: "fall-guys"))
+        try await eventually { overlay.hasEpicSocialOverlay }
+        overlay.present(.friends)
+        overlay.openEpicSocialOverlay()
+        try await eventually { overlay.isPresented && overlay.epicSocialNeedsShortcut }
+        overlay.hide()
+    }
     private static let game = OverlayApplication(pid: 4_242, bundleIdentifier: "com.zagrios.obelisk.game.620")
     private static let finder = OverlayApplication(pid: 4_343, bundleIdentifier: "com.apple.finder",
                                                    executable: URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app/Contents/MacOS/Finder"))
@@ -279,7 +315,8 @@ final class OverlayFixture {
         var application: OverlayApplication?
     }
 
-    init(steam: SteamModel? = nil, showsPanel: Bool = false) {
+    init(steam: SteamModel? = nil, showsPanel: Bool = false,
+         postEpicSocialShortcut: @escaping @MainActor (OverlayApplication) -> Bool = { _ in false }) {
         let directory = FileManager.default.temporaryDirectory.appending(path: "ObeliskOverlay-\(UUID().uuidString)")
         let voile = directory.appending(path: "Voile")
         try? FileManager.default.createDirectory(at: voile.appending(path: "current/bin"), withIntermediateDirectories: true)
@@ -295,7 +332,7 @@ final class OverlayFixture {
             gog: GogModel(directory: directory, keychain: MemoryStore<GogCredentials>(nil), gameSessions: gogSessions),
             overlay: GameOverlayEnvironment(hotKey: hotKey, presenter: presenter, toaster: toaster,
                                             frontmost: { front.application }, voile: voile.path,
-                                            observesActivations: false)
+                                            observesActivations: false, postEpicSocialShortcut: postEpicSocialShortcut)
         )
     }
 }

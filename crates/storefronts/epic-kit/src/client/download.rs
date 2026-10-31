@@ -1,6 +1,9 @@
 //! Epic's side of an installation Transfer: obelisk-core runs the order around
 //! it, this module prepares Epic's manifest and runs its content engine.
-use std::{path::Path, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use obelisk_core::{
     install::hex,
@@ -77,6 +80,77 @@ struct PreparedDownload {
 }
 
 impl Client {
+    /// Epic's public EOS overlay asset, installed separately from the game's
+    /// files. This deliberately does not require an account-library entry:
+    /// the overlay is a launcher component, not an owned game.
+    pub async fn install_social_overlay(&self, parent: &Path) -> Result<PathBuf, EpicError> {
+        const NAMESPACE: &str = "302e5ede476149b1bc3e4fe6ae45e50e";
+        const ITEM: &str = "cc15684f44d849e89e9bf4cec0508b68";
+        const APP: &str = "98bc04bc842e4906993fd6d6644ffb8d";
+        let transfers = Downloads::default();
+        let installed: Installation = installation::install(
+            &transfers,
+            APP,
+            Destination {
+                parent,
+                directory: "EOSOverlay",
+            },
+            |destination, cancel| async move {
+                let fetched = cancel
+                    .race(self.with_access_token(|token| {
+                        let destination = destination.clone();
+                        async move {
+                            details::fetch_manifest(
+                                &self.api,
+                                &token,
+                                NAMESPACE,
+                                ITEM,
+                                APP,
+                                Platform::Windows,
+                                Some(&destination),
+                                |_| None,
+                            )
+                            .await
+                        }
+                    }))
+                    .await??;
+                let manifest = fetched.manifest.as_ref().ok_or(EpicError::Protocol)?;
+                // Registering an incomplete or incompatible overlay must never
+                // turn a successful download into a silent no-op in the game.
+                for name in [
+                    "EOSOVH-Win64-Shipping.dll",
+                    "EOSOverlayRenderer-Win64-Shipping.exe",
+                ] {
+                    if !manifest
+                        .files
+                        .iter()
+                        .any(|file| file.filename == name && file.size() > 0)
+                    {
+                        return Err(EpicError::UnsupportedContent);
+                    }
+                }
+                Ok(PreparedDownload {
+                    fetched,
+                    account_id: self.credentials().await?.account_id,
+                })
+            },
+            |prepared, destination, transfer| async move {
+                self.install_files(
+                    NAMESPACE,
+                    ITEM,
+                    APP,
+                    Platform::Windows,
+                    prepared,
+                    &destination,
+                    &transfer,
+                )
+                .await
+            },
+        )
+        .await?;
+        Ok(installed.directory.into())
+    }
+
     pub fn progress(&self) -> Option<TransferProgress> {
         self.downloads.snapshot()
     }

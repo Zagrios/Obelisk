@@ -1,6 +1,33 @@
 import AppKit
 import Carbon.HIToolbox
 
+/// EOS receives the same Shift-F3 as the player's keyboard. Posting is optional:
+/// when macOS has not granted access the UI supplies the manual shortcut.
+@MainActor
+enum EpicSocialShortcut {
+    static func post(_ application: OverlayApplication) -> Bool {
+        guard CGPreflightPostEventAccess(),
+              let running = NSRunningApplication(processIdentifier: application.pid),
+              !running.isTerminated, running.isActive,
+              let source = CGEventSource(stateID: .privateState) else { return false }
+        let keys: [(CGKeyCode, Bool, CGEventFlags, CGEventType)] = [
+            (CGKeyCode(kVK_Shift), true, .maskShift, .flagsChanged),
+            (CGKeyCode(kVK_F3), true, .maskShift, .keyDown),
+            (CGKeyCode(kVK_F3), false, .maskShift, .keyUp),
+            (CGKeyCode(kVK_Shift), false, [], .flagsChanged)
+        ]
+        let events = keys.compactMap { key, down, flags, type -> CGEvent? in
+            guard let event = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: down) else { return nil }
+            event.flags = flags
+            event.type = type
+            return event
+        }
+        guard events.count == keys.count else { return false }
+        for event in events { event.postToPid(application.pid) }
+        return true
+    }
+}
+
 /// The overlay's Shift-Tab, as Steam's own overlay takes it. Registering it
 /// takes the key from every application until it is unregistered.
 @MainActor

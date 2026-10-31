@@ -71,6 +71,8 @@ What Obelisk tells players about particular games is in `crates/game-runtime/not
 
 Logs are in `~/Library/Logs/Obelisk`, one folder per store. A file named `winedebug` at the root of an installed Voile runtime replaces Obelisk's default Wine debug channels, for example `err+all,+steamclient`.
 
+Fall Guys' Epic build also needs Epic's EOS social overlay for friend requests and party invitations. Before launching it, Obelisk downloads and verifies Epic's standalone Windows overlay asset into `drive_c/obelisk/EOSOverlay` in the selected engine's Wine prefix and registers its C: path in that prefix's user registry. This replaces the overlay setup its 32-bit EOS bootstrapper would perform; the game still starts through its 64-bit anti-cheat bootstrapper. The in-game overlay's **Invite friends…** action returns to the game and sends EOS's Shift+F3 shortcut. If macOS does not allow posting keyboard input, it shows the shortcut to press manually. A successful build or download does not confirm that the EOS UI renders or that a remote player receives an invitation; check those in a live game.
+
 ## Project layout
 
 ```text

@@ -28,6 +28,7 @@ struct Fake {
     /// start meanwhile.
     maintained: Mutex<Vec<(Configuration, bool)>>,
     maintenance: Mutex<Option<Error>>,
+    overlay_failure: Mutex<bool>,
 }
 
 impl Fake {
@@ -40,6 +41,16 @@ impl Fake {
 }
 
 impl Network for Fake {
+    fn install_social_overlay<'a>(&'a self, _: &'a Path) -> BoxFuture<'a, Result<(), Failure>> {
+        Box::pin(async move {
+            self.call("overlay");
+            if *self.overlay_failure.lock().unwrap() {
+                Err(Failure::Failed("overlay fixture failure".into()))
+            } else {
+                Ok(())
+            }
+        })
+    }
     fn prepare(&self) -> BoxFuture<'_, Result<(), Failure>> {
         Box::pin(async move {
             self.call("prepare");
@@ -138,6 +149,81 @@ impl Network for Fake {
             }
         })
     }
+}
+
+#[tokio::test]
+async fn fall_guys_prepares_its_linux_overlay_before_minting_a_game_login_code() {
+    let fixture = Fixture::new();
+    crate::wine::tests::engine_runtime(&fixture.locations);
+    let mut receipt = fixture.installed(Platform::Windows);
+    receipt.product.namespace = "50118b7f954e450f8823df1614b24e80".into();
+    receipt.product.app_name = "0a2d9f6403244d12969e11da6713137b".into();
+    let install = Path::new(&receipt.directory);
+    std::fs::write(
+        install.join("start_protected_game.exe"),
+        crate::wine::tests::pe(),
+    )
+    .unwrap();
+    let installed = epic_kit::client::Installation {
+        app_name: receipt.product.app_name.clone(),
+        namespace: receipt.product.namespace.clone(),
+        catalog_item_id: receipt.product.catalog_item_id.clone(),
+        account_id: ACCOUNT.into(),
+        directory: receipt.directory.clone(),
+        platform: Platform::Windows,
+        total_bytes: 1,
+        build_version: "1".into(),
+        launch_executable: "start_protected_game.exe".into(),
+        launch_command: String::new(),
+        deployment_id: None,
+        prerequisite: None,
+    };
+    std::fs::write(
+        install.join(obelisk_core::install::RECEIPT_FILE),
+        serde_json::to_vec(&installed).unwrap(),
+    )
+    .unwrap();
+    let windows = crate::wine::tests::windows_of(
+        &fixture.locations,
+        <Epic as installations::Storefront>::profile_game(&receipt.product),
+        install,
+    );
+    std::fs::create_dir_all(windows.prefix().join("drive_c/windows/system32")).unwrap();
+    std::fs::write(windows.prefix().join("system.reg"), "registry").unwrap();
+    std::fs::write(
+        windows.prefix().join("user.reg"),
+        "WINE REGISTRY Version 2\n",
+    )
+    .unwrap();
+    let handover = Handover {
+        network: fixture.fake.clone(),
+        configuration: fixture
+            .content
+            .configuration(&receipt, Some(windows.prefix().to_owned())),
+        windows: Some(windows.clone()),
+        locations: fixture.locations.clone(),
+        saved: Arc::new(|| {}),
+    };
+    let (_, _, wine) = sessions::Handover::prepare(&handover).await.unwrap();
+    let wine = wine.unwrap();
+    assert_eq!(wine.settings.engine, crate::wine::Engine::Linux);
+    assert_eq!(
+        fixture.fake.calls(),
+        ["overlay", "account", "exchange", "account"]
+    );
+    assert!(
+        std::fs::read_to_string(windows.prefix().join("user.reg"))
+            .unwrap()
+            .contains("C:/obelisk/EOSOverlay")
+    );
+    fixture.fake.calls.lock().unwrap().clear();
+    *fixture.fake.overlay_failure.lock().unwrap() = true;
+    assert!(sessions::Handover::prepare(&handover).await.is_err());
+    assert_eq!(
+        fixture.fake.calls(),
+        ["overlay"],
+        "A failed setup never spends a game login code"
+    );
 }
 
 struct Fixture {

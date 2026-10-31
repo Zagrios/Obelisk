@@ -9,6 +9,23 @@ struct OverlayInvitations: View {
 
     var body: some View {
         let invites = overlay.receivedInvites
+        if overlay.hasEpicSocialOverlay {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(L10n.string("ui.overlay.epicSocial.detail"))
+                    .font(.caption).foregroundStyle(.secondary)
+                Text(L10n.string("ui.overlay.epicSocial.shortcut"))
+                    .font(.caption)
+                    .foregroundStyle(overlay.epicSocialNeedsShortcut ? Color.orange : Color.secondary)
+                if overlay.epicSocialNeedsShortcut {
+                    Button(L10n.string("ui.overlay.epicSocial.return"), action: overlay.hide)
+                        .buttonStyle(.bordered)
+                } else {
+                    Button(L10n.string("ui.overlay.epicSocial.invite"), action: overlay.openEpicSocialOverlay)
+                        .buttonStyle(.borderedProminent)
+                }
+            }
+            .accessibilityIdentifier("epic-social-invitations")
+        }
         if !invites.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 Text(L10n.string("ui.overlay.invites.title"))

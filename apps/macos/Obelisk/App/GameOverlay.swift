@@ -99,13 +99,17 @@ struct GameOverlayEnvironment {
     var voile: String
     /// Follows the applications macOS activates; tests tell them instead.
     var observesActivations: Bool
+    /// Opens the game's EOS UI using its normal shortcut, targeted at that
+    /// game only. Tests never post input into another application.
+    var postEpicSocialShortcut: @MainActor (OverlayApplication) -> Bool = { _ in false }
 
     static var live: GameOverlayEnvironment {
         GameOverlayEnvironment(
             hotKey: CarbonOverlayHotKey(), presenter: GameOverlayPanelPresenter(),
             toaster: OverlayToastPanelPresenter(), notifier: SteamInviteNotifier(),
             frontmost: { NSWorkspace.shared.frontmostApplication.map(OverlayApplication.init) },
-            voile: ObeliskLocations.live.voile, observesActivations: true
+            voile: ObeliskLocations.live.voile, observesActivations: true,
+            postEpicSocialShortcut: EpicSocialShortcut.post
         )
     }
 
@@ -142,6 +146,8 @@ final class GameOverlayController {
     @ObservationIgnored var showLibrary: @MainActor () -> Void = {}
 
     @ObservationIgnored private let environment: GameOverlayEnvironment
+    private(set) var epicSocialNeedsShortcut = false
+    @ObservationIgnored private var epicSocialTask: Task<Void, Never>?
     @ObservationIgnored private var voileMatch: GameApplicationMatch?
     /// The game's application last in front, whose screen the overlay covers.
     @ObservationIgnored private var gameApplication: OverlayApplication?
@@ -266,6 +272,30 @@ final class GameOverlayController {
     /// Closes the overlay, and the game comes back in front.
     func hide() {
         hide(returningFocus: true)
+    }
+
+    /// This game's prefix is furnished with Epic's own overlay before launch.
+    var hasEpicSocialOverlay: Bool {
+        session?.game == .epic("50118b7f954e450f8823df1614b24e80:0a2d9f6403244d12969e11da6713137b")
+    }
+
+    func openEpicSocialOverlay() {
+        guard hasEpicSocialOverlay, isPresented, let session, let gameApplication else { return }
+        let id = session.id
+        epicSocialNeedsShortcut = false
+        hide()
+        epicSocialTask?.cancel()
+        epicSocialTask = Task { [weak self] in
+            // Give the panel's focus handoff time to finish before the game
+            // receives its shortcut. Reopening or switching games cancels it.
+            do { try await Task.sleep(for: .milliseconds(180)) } catch { return }
+            guard let self, self.session?.id == id, !self.isPresented,
+                  self.environment.frontmost()?.pid == gameApplication.pid else { return }
+            if !self.environment.postEpicSocialShortcut(gameApplication) {
+                self.epicSocialNeedsShortcut = true
+                self.present(.friends, userInitiated: true)
+            }
+        }
     }
 
     /// The player's Shift-Tab.
@@ -515,6 +545,9 @@ final class GameOverlayController {
             return
         }
         hide(returningFocus: false, gameEnded: true)
+        epicSocialTask?.cancel()
+        epicSocialTask = nil
+        epicSocialNeedsShortcut = false
         environment.toaster.hide()
         session = running
         achievements = nil

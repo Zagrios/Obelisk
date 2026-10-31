@@ -24,7 +24,11 @@ pub(super) fn ready(
         install: &config.install,
         prerequisite: installed.prerequisite.as_ref(),
     };
-    Ok(windows.ready(locations, &installed.target, &prefix)?)
+    let wine = windows.ready(locations, &installed.target, &prefix)?;
+    if super::social_overlay::required(config) {
+        crate::files::private_directory(&super::social_overlay::parent(&wine))?;
+    }
+    Ok(wine)
 }
 
 /// What Epic adds to the prefix of the installation in `install`.
