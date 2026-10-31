@@ -345,17 +345,20 @@ final class DeveloperModals {
             LaunchEngineOffer(engine: .rosetta, translator: .rosetta, defaultGraphics: .d3dMetal, graphics: [
                 LaunchGraphicsOffer(graphics: .d3dMetal, options: [.rayTracing]),
                 LaunchGraphicsOffer(graphics: .dxmt, options: []),
-            ]),
+            ], lowestRenderPercent: nil),
             LaunchEngineOffer(engine: .linux, translator: .fex, defaultGraphics: .dxmt,
-                              graphics: [LaunchGraphicsOffer(graphics: .dxmt, options: [])]),
+                              graphics: [LaunchGraphicsOffer(graphics: .dxmt, options: [])],
+                              lowestRenderPercent: 1),
         ]
         let engine = choices.engine ?? .rosetta
         let offer = engines.first { $0.engine == engine } ?? engines[0]
         let graphics = choices.graphics.flatMap { chosen in offer.graphics.contains { $0.graphics == chosen } ? chosen : nil }
             ?? offer.defaultGraphics
+        let renderPercent = offer.lowestRenderPercent == nil
+            ? RenderPercent.native : (choices.renderPercent ?? RenderPercent.native)
         return LaunchSettings(engine: engine, graphics: graphics, rayTracing: choices.rayTracing ?? false,
-                              performanceHud: choices.performanceHud, choices: choices, defaultEngine: .rosetta,
-                              engines: engines)
+                              renderPercent: renderPercent, performanceHud: choices.performanceHud,
+                              choices: choices, defaultEngine: .rosetta, engines: engines)
     }
 
     func achievements(_ fetch: @escaping @MainActor @Sendable () async throws -> [GameAchievement]) {

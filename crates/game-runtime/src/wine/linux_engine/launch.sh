@@ -12,6 +12,8 @@
 #   EXECUTABLE  the guest path of the Windows program, which Wine starts with its arguments
 # Options:
 #   --graphics dxmt|d3dmetal  what renders the game's Direct3D (default dxmt)
+#   --render-percent N        the share of the screen's pixels per axis that the game sees (default 100, all of them;
+#                             wsd keeps it from 1 to 100): macOS scales the picture up to the screen
 #   --bind GUEST=HOST[:ro]    a folder the guest also sees, at GUEST, whose parent exists in the root
 #   --env NAME=VALUE          a variable of the guest
 #   --pass NAME               this script's variable NAME, when set, as a variable of the guest
@@ -22,11 +24,12 @@ set -u
 unset DYLD_INSERT_LIBRARIES
 runtime=$1 home=$2 install=$3 cwd=$4
 shift 4
-graphics=dxmt binds= guest_env=()
+graphics=dxmt render_percent= binds= guest_env=()
 while [ $# -gt 0 ] && [ "$1" != "--" ]; do
     [ $# -ge 2 ] || exit 2
     case $1 in
     --graphics) graphics=$2 ;;
+    --render-percent) render_percent=$2 ;;
     --bind) binds="$binds;$2" ;;
     --env) guest_env+=(--env "$2") ;;
     --pass)
@@ -150,7 +153,7 @@ else
     render=$(render_server "$runtime/graphics/libexec/virgl_render_server" dxmt) || exit 1
 fi
 
-"$app/Contents/MacOS/wsd" --dir "$sockets" &
+"$app/Contents/MacOS/wsd" --dir "$sockets" ${render_percent:+--render-percent "$render_percent"} &
 helpers+=($!)
 if [ "$graphics" = d3dmetal ]; then
     # D3DMetal is an Intel library: the Intel render server runs it under Rosetta. d3dmetal-native loads the

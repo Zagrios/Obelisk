@@ -19787,6 +19787,75 @@
         }
       }
     },
+    "ui.launch_settings.render_percent": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Render resolution"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Résolution de rendu"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Risoluzione di rendering"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.render_percent_detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fewer pixels, more FPS. macOS scales the picture up."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moins de pixels, plus de FPS. macOS agrandit l'image."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meno pixel, più FPS. macOS ingrandisce l'immagine."
+          }
+        }
+      }
+    },
+    "ui.launch_settings.render_percent.native": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Native"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Natif"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nativa"
+          }
+        }
+      }
+    },
     "ui.launch_settings.performance_hud": {
       "extractionState": "manual",
       "localizations": {

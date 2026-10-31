@@ -164,7 +164,7 @@ When a game has no Mac version, Obelisk installs its Windows version and runs it
 - Each Windows game gets its own Windows environment. Uninstalling the game deletes it, after its Cloud saves are safe.
 - The software a game needs, such as DirectX or Visual C++, installs by itself before its first launch.
 - Direct3D 10, 11 and 12 games draw with Metal: 64-bit games through Apple's D3DMetal, 32-bit games through DXMT.
-- A Windows game's **Launch Settings**, in the gear menu of its page, add arguments to its command line and choose the engine that runs it and what draws its Direct3D: D3DMetal or DXMT. On D3DMetal, ray tracing can be turned off for a game that renders wrongly with it. Metal's performance HUD can show the frame rate over the game. DLSS is not supported yet.
+- A Windows game's **Launch Settings**, in the gear menu of its page, add arguments to its command line and choose the engine that runs it and what draws its Direct3D: D3DMetal or DXMT. On D3DMetal, ray tracing can be turned off for a game that renders wrongly with it. Metal's performance HUD can show the frame rate over the game. On the Linux engine, a game can render at any share of the Retina screen's pixels, from 1 % to Native: fewer pixels, more FPS, and macOS scales the picture up. DLSS is not supported yet.
 
 
 **Anti-cheat:** We already run games whose anti-cheat supports Linux, such as **Rocket League** and **ELDEN RING**, and more are coming. We are currently working on BattlEye support, and still studying how to run games whose anti-cheat only supports Windows, such as Easy Anti-Cheat on Windows, or works at a lower level of the system. We never modify or bypass an anti-cheat, so every game runs fully legitimately.

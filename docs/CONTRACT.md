@@ -11,6 +11,8 @@ Obelisk runs only the releases whose contract equals its own. A release older th
 
 Raise both numbers in the change that alters anything below, whichever repository it starts in. A fix inside the runtime that keeps all of it, such as a Wine, Linux engine, DXMT or Neptune fix, keeps the contract: players get it with the next published release.
 
+An addition that Obelisk makes only when the player asked for it, and that a runtime without it ignores, keeps the contract too. `wsd --render-percent` is one: a Voile release that predates it ignores the argument and the game renders at all of the screen's pixels.
+
 A release of a new contract reaches only the Obelisk builds of that contract. Older builds stay on the last release of theirs until Sparkle updates them.
 
 ## What it covers

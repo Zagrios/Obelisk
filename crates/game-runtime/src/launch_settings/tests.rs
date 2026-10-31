@@ -30,6 +30,12 @@ fn nowhere() -> &'static Path {
     Path::new("/nowhere")
 }
 
+/// Keeps `contents` as the choices file of the installation `/games/game`.
+fn write_choices_file(library: &Path, contents: &str) {
+    fs::create_dir_all(library.join("LaunchSettings")).unwrap();
+    fs::write(library.join("LaunchSettings/game.json"), contents).unwrap();
+}
+
 /// The launch settings `choices` give `game`, kept in an empty library.
 fn chosen(game: Game<'_>, choices: Choices) -> View {
     let directory = tempfile::tempdir().unwrap();
@@ -64,10 +70,12 @@ fn a_game_without_choices_runs_as_its_profile_says() {
     assert_eq!(settings.engine, Engine::Rosetta);
     assert_eq!(settings.graphics, Graphics::D3DMetal);
     assert!(settings.options.ray_tracing);
+    assert_eq!(settings.render_percent, 100);
 
     let settings = of(library, ELDEN_RING, nowhere(), None).settings;
     assert_eq!(settings.engine, Engine::Linux);
     assert_eq!(settings.graphics, Graphics::D3DMetal);
+    assert_eq!(settings.render_percent, 100);
 }
 
 #[test]
@@ -105,6 +113,7 @@ fn every_kind_of_choices() -> [Choices; 5] {
             engine: Some(Engine::Rosetta),
             graphics: Some(Graphics::D3DMetal),
             ray_tracing: Some(true),
+            render_percent: Some(100),
             performance_hud: false,
         },
         Choices {
@@ -194,6 +203,7 @@ fn choices_are_kept_per_installation_folder_and_none_leaves_no_file() {
         arguments: Some("-windowed".into()),
         engine: Some(Engine::Linux),
         ray_tracing: Some(false),
+        render_percent: Some(73),
         ..Choices::default()
     };
 
@@ -202,7 +212,12 @@ fn choices_are_kept_per_installation_folder_and_none_leaves_no_file() {
     assert!(file.is_file());
     assert_eq!(
         serde_json::from_slice::<serde_json::Value>(&fs::read(&file).unwrap()).unwrap(),
-        serde_json::json!({"arguments": "-windowed", "engine": "Linux", "ray_tracing": false})
+        serde_json::json!({
+            "arguments": "-windowed",
+            "engine": "Linux",
+            "ray_tracing": false,
+            "render_percent": 73
+        })
     );
     assert_eq!(of(library, OTHER, install, None).choices, choices);
     assert_eq!(
@@ -224,13 +239,20 @@ fn choices_are_kept_per_installation_folder_and_none_leaves_no_file() {
 fn an_unreadable_file_means_no_choices() {
     let directory = tempfile::tempdir().unwrap();
     let library = directory.path();
-    fs::create_dir_all(library.join("LaunchSettings")).unwrap();
-    fs::write(library.join("LaunchSettings/game.json"), "not json").unwrap();
+    for contents in [
+        "not json",
+        // A render resolution that is no whole number spoils the file, as any malformed field does.
+        r#"{"arguments": "-windowed", "render_percent": "50"}"#,
+        r#"{"arguments": "-windowed", "render_percent": 50.5}"#,
+    ] {
+        write_choices_file(library, contents);
 
-    assert_eq!(
-        of(library, OTHER, Path::new("/games/game"), None).choices,
-        Choices::default()
-    );
+        assert_eq!(
+            of(library, OTHER, Path::new("/games/game"), None).choices,
+            Choices::default(),
+            "{contents}"
+        );
+    }
 }
 
 #[test]
@@ -248,6 +270,101 @@ fn the_view_shows_each_engine_s_defaults_and_the_player_s_choices() {
         view.default_graphics,
         [Graphics::D3DMetal, Graphics::D3DMetal]
     );
+}
+
+#[test]
+fn only_the_linux_engine_offers_a_render_resolution_from_its_lowest_to_all_pixels() {
+    let linux = offer(Engine::Linux);
+    assert_eq!(linux.lowest_render_percent, Some(1));
+    for percent in [1, 2, 50, 73, 99, 100] {
+        assert!(linux.offers_render_percent(percent), "{percent}");
+    }
+    for percent in [0, 101, u32::MAX] {
+        assert!(!linux.offers_render_percent(percent), "{percent}");
+    }
+
+    let rosetta = offer(Engine::Rosetta);
+    assert_eq!(rosetta.lowest_render_percent, None);
+    for percent in [0, 1, 50, 100, u32::MAX] {
+        assert!(!rosetta.offers_render_percent(percent), "{percent}");
+    }
+}
+
+#[test]
+fn a_render_resolution_the_linux_engine_offers_applies_and_is_kept_but_all_pixels() {
+    let linux = |render_percent| Choices {
+        engine: Some(Engine::Linux),
+        render_percent: Some(render_percent),
+        ..Choices::default()
+    };
+
+    for percent in [1, 50, 73, 99] {
+        let view = chosen(OTHER, linux(percent));
+
+        assert_eq!(view.settings.render_percent, percent);
+        assert_eq!(view.choices, linux(percent));
+    }
+
+    // A game whose profile names the Linux engine needs no engine choice.
+    let on_profile = Choices {
+        engine: None,
+        ..linux(50)
+    };
+    let view = chosen(ELDEN_RING, on_profile.clone());
+    assert_eq!(view.settings.render_percent, 50);
+    assert_eq!(view.choices, on_profile);
+
+    let view = chosen(OTHER, linux(100));
+    assert_eq!(view.settings.render_percent, 100);
+    assert_eq!(view.choices.render_percent, None);
+}
+
+#[test]
+fn a_render_resolution_the_engine_does_not_offer_falls_back_to_all_pixels_and_is_not_kept() {
+    for (engine, percent) in [
+        (Engine::Rosetta, 50),
+        (Engine::Linux, 0),
+        (Engine::Linux, 101),
+    ] {
+        let view = chosen(
+            OTHER,
+            Choices {
+                engine: Some(engine),
+                render_percent: Some(percent),
+                ..Choices::default()
+            },
+        );
+
+        assert_eq!(view.settings.render_percent, 100, "{engine:?} {percent}");
+        assert_eq!(view.choices.render_percent, None, "{engine:?} {percent}");
+    }
+}
+
+#[test]
+fn an_unoffered_render_resolution_on_disk_runs_at_all_pixels_and_loses_no_other_choice() {
+    let directory = tempfile::tempdir().unwrap();
+    let library = directory.path();
+    for percent in ["0", "101", "4294967295"] {
+        write_choices_file(
+            library,
+            &format!(
+                r#"{{"arguments": "-windowed", "engine": "Linux", "performance_hud": true, "render_percent": {percent}}}"#
+            ),
+        );
+
+        let settings = of(library, OTHER, Path::new("/games/game"), None).settings;
+
+        assert_eq!(settings.engine, Engine::Linux, "{percent}");
+        assert_eq!(settings.arguments, ["-windowed"], "{percent}");
+        assert!(settings.performance_hud, "{percent}");
+        assert_eq!(settings.render_percent, 100, "{percent}");
+    }
+
+    // A file from before the option has none.
+    write_choices_file(library, r#"{"engine": "Linux"}"#);
+    let view = of(library, OTHER, Path::new("/games/game"), None);
+    assert_eq!(view.settings.render_percent, 100);
+    assert_eq!(view.choices.render_percent, None);
 }
 
 #[test]

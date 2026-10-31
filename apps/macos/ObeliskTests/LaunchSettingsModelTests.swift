@@ -6,6 +6,7 @@ final class LaunchSettingsModelTests: XCTestCase {
                                  engine: LaunchEngine = .rosetta) -> LaunchSettings {
         LaunchSettings(
             engine: engine, graphics: engine == .rosetta ? .d3dMetal : .dxmt, rayTracing: true,
+            renderPercent: engine == .linux ? choices.renderPercent ?? RenderPercent.native : RenderPercent.native,
             performanceHud: choices.performanceHud, choices: choices, defaultEngine: .rosetta,
             engines: [
                 LaunchEngineOffer(
@@ -13,11 +14,13 @@ final class LaunchSettingsModelTests: XCTestCase {
                     graphics: [
                         LaunchGraphicsOffer(graphics: .d3dMetal, options: [.rayTracing]),
                         LaunchGraphicsOffer(graphics: .dxmt, options: []),
-                    ]
+                    ],
+                    lowestRenderPercent: nil
                 ),
                 LaunchEngineOffer(
                     engine: .linux, translator: .fex, defaultGraphics: .dxmt,
-                    graphics: [LaunchGraphicsOffer(graphics: .dxmt, options: [])]
+                    graphics: [LaunchGraphicsOffer(graphics: .dxmt, options: [])],
+                    lowestRenderPercent: 1
                 ),
             ]
         )
@@ -51,11 +54,69 @@ final class LaunchSettingsModelTests: XCTestCase {
     }
 
     @MainActor
+    func testARenderResolutionIsOfferedByTheLinuxEngineOnlyAndIsKeptThenForgotten() async throws {
+        var saved: [LaunchChoices] = []
+        let model = LaunchSettingsModel(
+            load: { Self.settings() },
+            save: { choices in
+                saved.append(choices)
+                return Self.settings(choices: choices, engine: choices.engine ?? .rosetta)
+            }
+        )
+        await model.appear()
+        XCTAssertNil(model.engineOffer?.lowestRenderPercent)
+        XCTAssertEqual(model.settings?.renderPercent, RenderPercent.native)
+
+        model.choose { $0.engine = .linux }
+        try await waitUntil { model.settings?.engine == .linux }
+        XCTAssertEqual(model.engineOffer?.lowestRenderPercent, 1)
+
+        model.choose { $0.renderPercent = 50 }
+        try await waitUntil { model.settings?.renderPercent == 50 }
+        XCTAssertEqual(saved.last, LaunchChoices(engine: .linux, renderPercent: 50))
+        XCTAssertTrue(model.isCustomized)
+
+        model.reset()
+        try await waitUntil { !model.isCustomized }
+        XCTAssertEqual(saved.last, LaunchChoices())
+        XCTAssertEqual(model.settings?.renderPercent, RenderPercent.native)
+        XCTAssertNil(model.engineOffer?.lowestRenderPercent)
+    }
+
+    @MainActor
+    func testTheRenderResolutionIsNamedByItsShareAndAllThePixelsAreNative() {
+        let share = RenderPercent.name(of: 50)
+
+        XCTAssertEqual(RenderPercent.name(of: RenderPercent.native),
+                       L10n.string("ui.launch_settings.render_percent.native"))
+        XCTAssertEqual(share, DownloadFormatting.percent(0.5), "the percent is written the way the app writes any")
+        XCTAssertTrue(share.contains("50"))
+        XCTAssertTrue(share.contains("%"))
+    }
+
+    @MainActor
+    func testTheRenderResolutionSnapsToARoundShareWithinTwoPoints() {
+        XCTAssertEqual(RenderPercent.stops, [25, 50, 75, RenderPercent.native])
+
+        for stop in RenderPercent.stops {
+            for offset in -2...2 {
+                let percent = UInt32(Int(stop) + offset)
+                XCTAssertEqual(RenderPercent.snapped(percent), stop, "\(percent) %")
+            }
+            for offset in [-3, 3] {
+                let percent = UInt32(Int(stop) + offset)
+                XCTAssertEqual(RenderPercent.snapped(percent), percent, "\(percent) %")
+            }
+        }
+        XCTAssertEqual(RenderPercent.snapped(1), 1)
+    }
+
+    @MainActor
     func testRestoringDefaultsForgetsEveryChoice() async throws {
         var saved: [LaunchChoices] = []
         let model = LaunchSettingsModel(
             load: { Self.settings(choices: LaunchChoices(arguments: "-windowed", engine: .linux, rayTracing: false,
-                                                                 performanceHud: true),
+                                                                 renderPercent: 50, performanceHud: true),
                                   engine: .linux) },
             save: { choices in
                 saved.append(choices)

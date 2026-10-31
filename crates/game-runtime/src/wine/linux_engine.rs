@@ -203,6 +203,11 @@ impl Adapter for LinuxEngine {
             "--graphics".to_owned(),
             config.settings.graphics.name().to_owned(),
         ];
+        // Without it, the window server shows all of the screen's pixels.
+        if config.settings.render_percent != crate::launch_settings::FULL_RENDER_PERCENT {
+            arguments.push("--render-percent".to_owned());
+            arguments.push(config.settings.render_percent.to_string());
+        }
         for (path, folder) in &guest.binds {
             arguments.push("--bind".to_owned());
             arguments.push(format!("{path}={}:ro", folder.display()));

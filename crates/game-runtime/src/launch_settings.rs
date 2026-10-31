@@ -3,11 +3,19 @@
 //! picks the arguments added to its command line, its engine, then the CPU
 //! translator that engine has, then the graphics backend that renders its
 //! Direct3D there and that backend's options, each offered as the engine
-//! allows, and Metal's Performance HUD over the game. Only what differs from the profile is kept,
+//! allows, the render resolution on the engines that offer one, and Metal's
+//! Performance HUD over the game. Only what differs from the profile is kept,
 //! one file per installation in Obelisk's library, named after the
 //! installation's folder as its Wine prefix is. It goes when the
 //! installation is uninstalled, and a change applies from the game's next
 //! launch.
+//!
+//! The render resolution is the share of the screen's pixels, per axis and in
+//! whole percent, that the game sees and renders at: the engine's window
+//! server applies it for the whole session, and macOS scales the picture up.
+//! It is no profile field, since a build that reads the profile table from
+//! `main` refuses an entry with a field it does not know. A Voile release that
+//! predates `--render-percent` ignores it.
 use crate::{
     profile::{self, Profile},
     wine::{Engine, Graphics, GraphicsOptions},
@@ -50,6 +58,9 @@ pub struct Settings {
     pub dll_overrides: BTreeMap<String, String>,
     /// Metal's Performance HUD shows over the game.
     pub performance_hud: bool,
+    /// The share of the screen's pixels the game renders at; always one `engine` offers.
+    #[serde(default = "full_render_percent")]
+    pub render_percent: u32,
     /// The player's locale, such as `it_IT`, as `of` and `choose` were given
     /// it. The Linux engine's guest takes its Windows locale from it: the
     /// supervisor that builds an Epic or GOG target has no environment of
@@ -102,6 +113,15 @@ impl Settings {
         started.arguments.extend(self.arguments.iter().cloned());
         started
     }
+}
+
+/// All of the screen's pixels, which a game renders at without a choice.
+pub const FULL_RENDER_PERCENT: u32 = 100;
+
+/// The serde default of `Settings::render_percent`, which a handoff that
+/// predates it lacks: a derived default would be 0.
+fn full_render_percent() -> u32 {
+    FULL_RENDER_PERCENT
 }
 
 /// The launch settings of the Windows installation of `game` in `install`,
@@ -190,6 +210,9 @@ pub struct Choices {
     pub graphics: Option<Graphics>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ray_tracing: Option<bool>,
+    /// A plain integer, so an older build still reads the file.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub render_percent: Option<u32>,
     /// Metal's Performance HUD shows over the game, whatever renders it.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub performance_hud: bool,
@@ -214,6 +237,9 @@ pub struct EngineOffer {
     pub engine: Engine,
     pub translator: Translator,
     pub graphics: &'static [GraphicsOffer],
+    /// The lowest render resolution it offers, up to all of the pixels; None
+    /// when it offers none.
+    pub lowest_render_percent: Option<u32>,
 }
 
 /// What one graphics backend offers on one engine.
@@ -224,8 +250,8 @@ pub struct GraphicsOffer {
 }
 
 /// Every engine, the translator it has and the backends it renders with.
-/// Rosetta's Wine takes D3DMetal's options; the Linux engine's render
-/// servers take none yet.
+/// Rosetta's Wine takes D3DMetal's options and no render resolution; the Linux
+/// engine's render servers take no options yet.
 pub const ENGINES: [EngineOffer; 2] = [
     EngineOffer {
         engine: Engine::Rosetta,
@@ -240,6 +266,7 @@ pub const ENGINES: [EngineOffer; 2] = [
                 options: &[],
             },
         ],
+        lowest_render_percent: None,
     },
     EngineOffer {
         engine: Engine::Linux,
@@ -254,6 +281,8 @@ pub const ENGINES: [EngineOffer; 2] = [
                 options: &[],
             },
         ],
+        // wsd keeps the desktop at 640x480 pixels or more: on a Retina MacBook, below about 25 gives the same one.
+        lowest_render_percent: Some(1),
     },
 ];
 
@@ -272,16 +301,25 @@ impl EngineOffer {
             .iter()
             .find(|offer| offer.graphics == graphics)
     }
+
+    /// Whether this engine renders at `percent` of the screen's pixels: a
+    /// whole percent from its lowest share to all of them.
+    pub fn offers_render_percent(&self, percent: u32) -> bool {
+        self.lowest_render_percent
+            .is_some_and(|lowest| (lowest..=FULL_RENDER_PERCENT).contains(&percent))
+    }
 }
 
 impl Choices {
-    /// How the game of `profile` runs with these choices. A backend its
-    /// engine does not offer falls back to the default one.
+    /// How the game of `profile` runs with these choices. A backend or a
+    /// render resolution its engine does not offer falls back to the default
+    /// one.
     fn apply(&self, profile: &Profile) -> Settings {
         let engine = self.engine.unwrap_or(profile.engine);
+        let offered = offer(engine);
         let graphics = self
             .graphics
-            .filter(|graphics| offer(engine).graphics(*graphics).is_some())
+            .filter(|graphics| offered.graphics(*graphics).is_some())
             .unwrap_or(default_graphics(profile, engine));
         let options = default_options(profile, engine, graphics);
         Settings {
@@ -297,6 +335,10 @@ impl Choices {
             variables: profile.variables.clone(),
             dll_overrides: profile.dll_overrides.clone(),
             performance_hud: self.performance_hud,
+            render_percent: self
+                .render_percent
+                .filter(|percent| offered.offers_render_percent(*percent))
+                .unwrap_or(FULL_RENDER_PERCENT),
             locale: None,
         }
     }
@@ -318,6 +360,8 @@ impl Choices {
             graphics: (applied.graphics != graphics).then_some(applied.graphics),
             ray_tracing: (applied.options.ray_tracing != options.ray_tracing)
                 .then_some(applied.options.ray_tracing),
+            render_percent: (applied.render_percent != FULL_RENDER_PERCENT)
+                .then_some(applied.render_percent),
             performance_hud: self.performance_hud,
         }
     }

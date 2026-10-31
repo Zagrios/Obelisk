@@ -74,7 +74,8 @@ final class LaunchSettingsModel: Identifiable {
 /// The sheet behind a Windows game's Launch Settings: the arguments added to
 /// its command line, its engine, then the CPU translator that engine has,
 /// then the graphics backend and its options, each as the chosen engine
-/// allows, and Metal's Performance HUD, every one said in a sentence.
+/// allows, the render resolution where the engine offers one, and Metal's
+/// Performance HUD, every one said in a sentence.
 struct LaunchSettingsSheet: View {
     let model: LaunchSettingsModel
     let gameName: String
@@ -137,6 +138,10 @@ struct LaunchSettingsSheet: View {
                                 ObeliskCardDivider()
                                 rayTracingRow(settings)
                             }
+                            if let lowest = model.engineOffer?.lowestRenderPercent {
+                                ObeliskCardDivider()
+                                renderPercentRow(settings, lowest: lowest)
+                            }
                             ObeliskCardDivider()
                             performanceHudRow(settings)
                         }
@@ -151,16 +156,29 @@ struct LaunchSettingsSheet: View {
         }
     }
 
-    /// A whole command line: a field across the card, under its row.
-    private var argumentsRow: some View {
+    /// A row whose control spans the card, under it.
+    private func wideRow<Icon: View, Detail: View, Control: View>(
+        title: String,
+        @ViewBuilder icon: () -> Icon,
+        @ViewBuilder detail: () -> Detail,
+        @ViewBuilder control: () -> Control
+    ) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            ObeliskRow(title: L10n.string("ui.launch_settings.arguments")) {
-                SymbolTile(name: "terminal.fill", colors: TileColors.graphite)
-            } detail: {
-                Text(L10n.string("ui.launch_settings.arguments_detail"))
-            } accessory: {
-                EmptyView()
-            }
+            ObeliskRow(title: title, icon: icon, detail: detail) { EmptyView() }
+            control()
+                .padding(.leading, 64)
+                .padding(.trailing, 18)
+                .padding(.bottom, 16)
+        }
+    }
+
+    /// A whole command line.
+    private var argumentsRow: some View {
+        wideRow(title: L10n.string("ui.launch_settings.arguments")) {
+            SymbolTile(name: "terminal.fill", colors: TileColors.graphite)
+        } detail: {
+            Text(L10n.string("ui.launch_settings.arguments_detail"))
+        } control: {
             TextField(L10n.string("ui.launch_settings.arguments"), text: $arguments,
                       prompt: Text(L10n.string("ui.launch_settings.arguments_placeholder")))
                 .textFieldStyle(.plain)
@@ -172,9 +190,6 @@ struct LaunchSettingsSheet: View {
                 .frame(height: 36)
                 .modifier(SignInWell(isFocused: editsArguments))
                 .accessibilityIdentifier("launch-settings-arguments")
-                .padding(.leading, 64)
-                .padding(.trailing, 18)
-                .padding(.bottom, 16)
         }
     }
 
@@ -247,6 +262,18 @@ struct LaunchSettingsSheet: View {
                 .labelsHidden()
                 .pointerCursor()
                 .accessibilityIdentifier("launch-settings-ray-tracing")
+        }
+    }
+
+    private func renderPercentRow(_ settings: LaunchSettings, lowest: UInt32) -> some View {
+        wideRow(title: L10n.string("ui.launch_settings.render_percent")) {
+            SymbolTile(name: "display", colors: TileColors.blue)
+        } detail: {
+            Text(L10n.string("ui.launch_settings.render_percent_detail"))
+        } control: {
+            RenderPercentSlider(percent: settings.renderPercent, lowest: lowest) { percent in
+                model.choose { $0.renderPercent = percent }
+            }
         }
     }
 
@@ -325,5 +352,92 @@ struct LaunchSettingsSheet: View {
         case .d3dMetal: L10n.string("ui.launch_settings.graphics.d3dmetal_detail")
         case .dxmt: L10n.string("ui.launch_settings.graphics.dxmt_detail")
         }
+    }
+}
+
+/// The render resolution's shares, in whole percent of the screen's pixels.
+enum RenderPercent {
+    /// All of the pixels.
+    static let native: UInt32 = 100
+    /// The shares the slider snaps to: three round ones and Native.
+    static let stops: [UInt32] = [25, 50, 75, native]
+
+    /// `percent`, or the stop within two points of it.
+    static func snapped(_ percent: UInt32) -> UInt32 {
+        stops.first { abs($0.distance(to: percent)) <= 2 } ?? percent
+    }
+
+    static func name(of percent: UInt32) -> String {
+        percent >= native ? L10n.string("ui.launch_settings.render_percent.native")
+                          : DownloadFormatting.percent(Double(percent) / 100)
+    }
+}
+
+/// A slider from the lowest share to Native, with the share beside it. It
+/// snaps to the stops and saves when the thumb is let go, or at once for a
+/// keyboard or VoiceOver step.
+private struct RenderPercentSlider: View {
+    /// The share kept for the game.
+    let percent: UInt32
+    let lowest: UInt32
+    let keep: (UInt32) -> Void
+    /// The snapped share the thumb was last moved to, until the kept share follows it.
+    @State private var draft: UInt32?
+    @State private var isDragging = false
+
+    /// The stops, as the slider's own type has them.
+    private static let ticks = RenderPercent.stops.map { Double($0) }
+
+    private var shown: UInt32 { draft ?? percent }
+
+    var body: some View {
+        let title = L10n.string("ui.launch_settings.render_percent")
+        let value = RenderPercent.name(of: shown)
+        let position = Binding<Double>(get: { Double(shown) }, set: { move(to: UInt32($0.rounded())) })
+        let range = Double(lowest)...Double(RenderPercent.native)
+        HStack(spacing: 12) {
+            Slider(value: position,
+                   in: range,
+                   label: { Text(title) },
+                   ticks: {
+                       SliderTickContentForEach(Self.ticks, id: \.self) { stop in SliderTick(stop) }
+                   },
+                   onEditingChanged: { editing in
+                       if editing { isDragging = true } else { letGo() }
+                   })
+                .labelsHidden()
+                .accessibilityLabel(title)
+                .accessibilityValue(value)
+                .accessibilityIdentifier("launch-settings-render-percent")
+            Text(value)
+                .font(.system(size: 13, weight: .medium))
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .frame(width: 56, alignment: .trailing)
+                .accessibilityHidden(true)
+        }
+        // The draft goes once the kept share has caught up with it, or when the
+        // share changes by itself (Reset) from where the draft was. An earlier save
+        // that comes back while a newer step is pending leaves it, or the thumb
+        // would jump back and the next step start from the old share.
+        .onChange(of: percent) { old, new in
+            if !isDragging, draft == new || draft == old { draft = nil }
+        }
+    }
+
+    private func move(to position: UInt32) {
+        let snapped = RenderPercent.snapped(position)
+        let before = shown
+        draft = snapped
+        if !isDragging {
+            keep(snapped)
+        } else if snapped != before, RenderPercent.stops.contains(snapped) {
+            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+        }
+    }
+
+    private func letGo() {
+        if let draft { keep(draft) }
+        isDragging = false
     }
 }

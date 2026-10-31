@@ -908,6 +908,28 @@ fn the_game_s_log_starts_with_how_obelisk_runs_it_and_only_the_player_s_argument
 }
 
 #[test]
+fn the_game_s_log_names_a_render_resolution_below_all_pixels() {
+    let (_directory, root) = installation();
+    let linux = linux_config(&root);
+    let with = |render_percent| Config {
+        settings: Settings {
+            render_percent,
+            ..linux.settings.clone()
+        },
+        ..linux.clone()
+    };
+
+    assert_eq!(
+        with(100).log_header(),
+        "obelisk: engine=wine-linux graphics=d3dmetal voile=development\n"
+    );
+    assert_eq!(
+        with(50).log_header(),
+        "obelisk: engine=wine-linux graphics=d3dmetal render_percent=50 voile=development\n"
+    );
+}
+
+#[test]
 fn wine_reports_its_errors_unless_the_runtime_names_other_channels() {
     let (_directory, root) = installation();
     let config = config(&root);
@@ -1207,6 +1229,7 @@ fn a_configuration_reaches_its_game_session_whole() {
             variables: BTreeMap::from([("SteamDeck".to_owned(), "1".to_owned())]),
             dll_overrides: BTreeMap::from([("xaudio2_7".to_owned(), "n,b".to_owned())]),
             performance_hud: true,
+            render_percent: 50,
             locale: Some("it_IT".into()),
         },
     };
@@ -1214,11 +1237,29 @@ fn a_configuration_reaches_its_game_session_whole() {
     let again: Config = serde_json::from_slice(&serde_json::to_vec(&config).unwrap()).unwrap();
 
     assert_eq!(again, config);
-    // A handoff that predates the locale still opens, without one.
-    let mut older = serde_json::to_value(&config).unwrap();
-    older["settings"].as_object_mut().unwrap().remove("locale");
-    let older: Config = serde_json::from_value(older).unwrap();
-    assert_eq!(older.settings.locale, None);
+    // A handoff that predates the locale or the render resolution still opens,
+    // without one.
+    for (field, expected) in [
+        (
+            "locale",
+            Settings {
+                locale: None,
+                ..config.settings.clone()
+            },
+        ),
+        (
+            "render_percent",
+            Settings {
+                render_percent: 100,
+                ..config.settings.clone()
+            },
+        ),
+    ] {
+        let mut older = serde_json::to_value(&config).unwrap();
+        older["settings"].as_object_mut().unwrap().remove(field);
+        let older: Config = serde_json::from_value(older).unwrap();
+        assert_eq!(older.settings, expected, "{field}");
+    }
 }
 
 #[test]

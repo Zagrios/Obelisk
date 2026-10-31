@@ -59,12 +59,16 @@ What runs a Windows game's Wine: Rosetta's Wine, Voile's Wine for macOS under Ro
 _Avoid_: backend (a Graphics backend renders), runner, bottle, Wine flavour
 
 **Launch settings**:
-How one Windows installation runs, for every account that launches it: what Obelisk knows of the game, with the player's choices over it, in the player's language. The player picks the arguments added after the storefront's and the game's own on its command line, its engine, then the graphics backend that renders its Direct3D there and that backend's options, each as the engine allows, and whether Metal's Performance HUD shows over the game. Only the choices that differ from what Obelisk knows of the game are kept. A change applies from the game's next launch, a game moved to the other engine runs in that engine's Wine prefix, and the settings go when the installation is uninstalled.
+How one Windows installation runs, for every account that launches it: what Obelisk knows of the game, with the player's choices over it, in the player's language. The player picks the arguments added after the storefront's and the game's own on its command line, its engine, then the graphics backend that renders its Direct3D there and that backend's options, each as the engine allows, the render resolution on the engines that offer one, and whether Metal's Performance HUD shows over the game. Only the choices that differ from what Obelisk knows of the game are kept. A change applies from the game's next launch, a game moved to the other engine runs in that engine's Wine prefix, and the settings go when the installation is uninstalled.
 _Avoid_: bottle, container, game settings, profile (what Obelisk itself knows of a game)
 
 **Graphics backend**:
 What renders a Windows game's Direct3D through Metal: D3DMetal, for Direct3D 11 and 12 in 64-bit programs, or DXMT, for Direct3D 10 and 11. A game has one, as Windows has one dxgi per process: on DXMT it has no Direct3D 12. On Rosetta's Wine, a 32-bit program of a game on D3DMetal renders through DXMT.
 _Avoid_: renderer, translation layer
+
+**Render resolution**:
+The share of the screen's backing pixels, per axis and in whole percent, that a Windows game sees and renders at, picked in Launch settings: Native, all of them, by default, and offered by the Linux engine.
+_Avoid_: resolution (the game's own, which it picks in its settings), scale, Retina mode
 
 **Prerequisite**:
 A program a storefront names to run once in a Wine prefix before its game first starts, such as a DirectX or Visual C++ installer. One that fails runs again on the next launch; the game starts anyway.

@@ -156,6 +156,44 @@ fn a_d3dmetal_game_asks_the_launcher_for_the_d3dmetal_render_server() {
     assert_eq!(options(&target, "--graphics"), ["d3dmetal"]);
 }
 
+#[test]
+fn a_render_resolution_below_all_pixels_follows_the_graphics_pair_to_the_launcher() {
+    let (_directory, root) = installation();
+    let install = root.join("install");
+    fs::create_dir_all(&install).unwrap();
+    fs::write(install.join("Game.exe"), pe()).unwrap();
+    let config = linux_config(&root);
+    let started = |render_percent| {
+        let config = wine::Config {
+            settings: Settings {
+                render_percent,
+                ..config.settings.clone()
+            },
+            ..config.clone()
+        };
+        wine::target::<Plain>(
+            &config,
+            &game(&install),
+            &launch_target(&install.join("Game.exe"), &[]),
+            HashMap::new(),
+        )
+        .unwrap()
+    };
+
+    let (full, half) = (started(100), started(50));
+
+    // A launch without a choice is the launcher's arguments of before.
+    assert!(options(&full, "--render-percent").is_empty());
+    assert_eq!(options(&half, "--render-percent"), ["50"]);
+    assert_eq!(
+        half.arguments[7..11],
+        ["--graphics", "dxmt", "--render-percent", "50"]
+    );
+    let mut without = half.arguments.clone();
+    without.drain(9..11);
+    assert_eq!(without, full.arguments);
+}
+
 /// A Steam game whose program is `Game/start_protected_game.exe`, in a
 /// runtime that carries steam-hostpid.so when `host_pid`.
 fn steam_target(root: &Path, host_pid: bool) -> (wine::Config, Target) {
@@ -253,7 +291,8 @@ fn the_guest_home_leads_lsteamclient_to_the_runtime_s_linux_steamclient() {
 }
 
 /// A runtime whose window server and render servers only listen, and whose
-/// engine records what it was asked to run into `engine.txt`.
+/// engine records what it was asked to run into `engine.txt`. The window
+/// server records its arguments into `wsd.txt` before it listens.
 fn recording_runtime(root: &Path) -> PathBuf {
     use std::os::unix::fs::PermissionsExt;
     let runtime = root.join("runtime");
@@ -263,7 +302,11 @@ fn recording_runtime(root: &Path) -> PathBuf {
         fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
         fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
     };
-    script("engine/wsd", r#"exec /usr/bin/nc -lU "$2/wsd.sock""#);
+    script(
+        "engine/wsd",
+        r#"printf '%s\n' "$@" > "$OBELISK_TEST_ROOT/wsd.txt"
+exec /usr/bin/nc -lU "$2/wsd.sock""#,
+    );
     let server = r#"printf '%s\n' "$NPT_BACKEND $NPT_D3D12_LIBRARY_PATH" "$RENDER_SERVER_EXEC_PATH" "residency set ${DMN_RESIDENCY_SET-default}" > "$OBELISK_TEST_ROOT/server.txt"
 exec /usr/bin/nc -lU "$4""#;
     script("graphics/bin/virgl_test_server", server);
@@ -372,6 +415,25 @@ fn the_launcher_hands_the_guest_its_binds_its_variables_and_the_session_s_values
         format!("dxmt {}", dxmt.display())
     );
     assert_eq!(server.lines().nth(2).unwrap(), "residency set default");
+}
+
+#[test]
+fn the_launcher_starts_the_window_server_with_the_render_resolution_it_was_given() {
+    for options in [&[][..], &["--render-percent", "50"]] {
+        let (_directory, root) = installation();
+
+        let (engine, _) = run_launcher(&root, options, &[]);
+
+        // Its folder is the launcher's own, named after its pid.
+        let recorded = fs::read_to_string(root.join("wsd.txt")).unwrap();
+        let lines: Vec<&str> = recorded.lines().collect();
+        assert_eq!(lines[0], "--dir", "{options:?}");
+        assert!(lines[1].starts_with("obelisk-engine-"), "{options:?}");
+        assert_eq!(lines[2..], *options, "{options:?}");
+        // The render resolution is the window server's alone: the guest and
+        // its Wine never see it.
+        assert!(!engine.contains("--render-percent"), "{engine}");
+    }
 }
 
 #[test]
