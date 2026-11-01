@@ -137,6 +137,17 @@ impl GamesFolder {
         self.published.borrow().path.clone()
     }
 
+    /// Whether `path` lies inside the games folder or inside a connected
+    /// installation, which an uninstall or a move takes along.
+    pub fn holds(&self, path: &Path) -> bool {
+        path.starts_with(self.path())
+            || self
+                .residents()
+                .iter()
+                .flat_map(|resident| resident.installations())
+                .any(|(installation, _)| path.starts_with(installation))
+    }
+
     /// Whether new installations can go there now: Obelisk's own folder is
     /// made when needed, the player's must be there.
     pub fn connected(&self) -> bool {

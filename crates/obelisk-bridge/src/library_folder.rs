@@ -8,7 +8,10 @@ use std::{
     },
 };
 
-use game_runtime::library_folder::{self, Candidate, MoveFailure, Refusal};
+use game_runtime::{
+    games_folder::GamesFolder,
+    library_folder::{self, Candidate, MoveFailure, Refusal},
+};
 use obelisk_core::transfer::CancelToken;
 
 use crate::GameSessionError;
@@ -26,6 +29,10 @@ pub enum LibraryFolderInspection {
     Occupied,
     /// Games are installed in Obelisk's own games folder, inside the library.
     HoldsGames,
+    /// The folder is inside the games folder or a game's installation.
+    Games,
+    /// Obelisk cannot write to the folder.
+    Unwritable,
 }
 
 impl From<Result<Candidate, Refusal>> for LibraryFolderInspection {
@@ -39,6 +46,8 @@ impl From<Result<Candidate, Refusal>> for LibraryFolderInspection {
             Err(Refusal::Inside) => Self::Inside,
             Err(Refusal::Occupied) => Self::Occupied,
             Err(Refusal::HoldsGames) => Self::HoldsGames,
+            Err(Refusal::Games) => Self::Games,
+            Err(Refusal::Unwritable) => Self::Unwritable,
         }
     }
 }
@@ -54,6 +63,8 @@ pub struct LibraryMoveProgress {
 #[derive(uniffi::Object)]
 pub struct LibraryFolder {
     library: PathBuf,
+    /// The games folder of the same library, which the library may not go into.
+    games: Arc<GamesFolder>,
     cancel: CancelToken,
     copied: Arc<AtomicU64>,
     total: Arc<AtomicU64>,
@@ -65,6 +76,7 @@ impl LibraryFolder {
     #[uniffi::constructor]
     pub fn new(library: String) -> Arc<Self> {
         Arc::new(Self {
+            games: crate::games_folder::shared(Path::new(&library)),
             library: PathBuf::from(library),
             cancel: CancelToken::new(),
             copied: Arc::default(),
@@ -76,26 +88,36 @@ impl LibraryFolder {
     /// It reads the disk.
     pub fn inspect(&self, chosen: String) -> LibraryFolderInspection {
         let destination = library_folder::chosen(Path::new(&chosen));
-        library_folder::inspect(&self.library, &destination).into()
+        library_folder::inspect(&self.library, &destination, Some(&self.games)).into()
     }
 
     /// What moving the library to exactly `destination`, such as Obelisk's
     /// own folder on this Mac, would do. It reads the disk.
     pub fn inspect_destination(&self, destination: String) -> LibraryFolderInspection {
-        library_folder::inspect(&self.library, Path::new(&destination)).into()
+        library_folder::inspect(&self.library, Path::new(&destination), Some(&self.games)).into()
     }
 
     /// Moves the library to `destination`, a path an inspection gave, and
     /// returns where it went. No game may run, and no Transfer go,
     /// meanwhile; Obelisk then restarts there.
     pub async fn move_to(&self, destination: String) -> Result<String, GameSessionError> {
-        let (library, cancel) = (self.library.clone(), self.cancel.clone());
+        let (library, games, cancel) = (
+            self.library.clone(),
+            self.games.clone(),
+            self.cancel.clone(),
+        );
         let (copied, total) = (self.copied.clone(), self.total.clone());
         let moved = tokio::task::spawn_blocking(move || {
-            library_folder::move_library(&library, Path::new(&destination), &cancel, |done, all| {
-                copied.store(done, Ordering::Relaxed);
-                total.store(all, Ordering::Relaxed);
-            })
+            library_folder::move_library(
+                &library,
+                Path::new(&destination),
+                Some(&games),
+                &cancel,
+                |done, all| {
+                    copied.store(done, Ordering::Relaxed);
+                    total.store(all, Ordering::Relaxed);
+                },
+            )
         })
         .await
         .map_err(|_| GameSessionError::new("model.libraryFolder.failed_unknown"))?;
@@ -128,4 +150,11 @@ impl LibraryFolder {
 #[uniffi::export]
 pub fn remove_left_library(left: String, library: String) -> bool {
     library_folder::remove_left(Path::new(&left), Path::new(&library)).is_ok()
+}
+
+/// Whether `folder` looks like an Obelisk library, such as one the player
+/// moved and points Obelisk to again. It reads the disk.
+#[uniffi::export]
+pub fn is_obelisk_library(folder: String) -> bool {
+    library_folder::is_library(Path::new(&folder))
 }

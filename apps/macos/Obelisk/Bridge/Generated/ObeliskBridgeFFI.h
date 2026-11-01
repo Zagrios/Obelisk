@@ -1229,6 +1229,11 @@ RustBuffer uniffi_obelisk_bridge_fn_func_gog_login_url(RustCallStatus *_Nonnull 
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_FUNC_IS_OBELISK_LIBRARY
+#define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_FUNC_IS_OBELISK_LIBRARY
+int8_t uniffi_obelisk_bridge_fn_func_is_obelisk_library(RustBuffer folder, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_FUNC_REMOVE_LEFT_LIBRARY
 #define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_FUNC_REMOVE_LEFT_LIBRARY
 int8_t uniffi_obelisk_bridge_fn_func_remove_left_library(RustBuffer left, RustBuffer library, RustCallStatus *_Nonnull out_status
@@ -1581,6 +1586,12 @@ uint16_t uniffi_obelisk_bridge_checksum_func_gog_is_login_redirect(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_FUNC_GOG_LOGIN_URL
 #define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_FUNC_GOG_LOGIN_URL
 uint16_t uniffi_obelisk_bridge_checksum_func_gog_login_url(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_FUNC_IS_OBELISK_LIBRARY
+#define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_FUNC_IS_OBELISK_LIBRARY
+uint16_t uniffi_obelisk_bridge_checksum_func_is_obelisk_library(void
     
 );
 #endif

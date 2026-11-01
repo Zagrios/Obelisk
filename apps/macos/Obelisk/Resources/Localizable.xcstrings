@@ -15056,6 +15056,121 @@
         }
       }
     },
+    "app.library.missing.locate": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Locate…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Localiser…"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Individua…"
+          }
+        }
+      }
+    },
+    "app.library.gone.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ can’t find its library"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ ne trouve pas sa bibliothèque"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ non trova la sua libreria"
+          }
+        }
+      }
+    },
+    "app.library.gone.message": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ keeps its library in a folder that isn’t there anymore:\n%2$@\n\nIf you moved or renamed it, choose Locate… to show %1$@ where it is."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ garde sa bibliothèque dans un dossier qui n’existe plus :\n%2$@\n\nSi vous l’avez déplacé ou renommé, choisissez Localiser… pour indiquer à %1$@ où il se trouve."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ tiene la sua libreria in una cartella che non esiste più:\n%2$@\n\nSe l’hai spostata o rinominata, scegli Individua… per mostrare a %1$@ dove si trova."
+          }
+        }
+      }
+    },
+    "app.library.locate.message": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose the folder that holds %1$@’s library, such as “Obelisk Library” on your external disk."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choisissez le dossier qui contient la bibliothèque d’%1$@, par exemple « Obelisk Library » sur votre disque externe."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scegli la cartella che contiene la libreria di %1$@, per esempio «Obelisk Library» sul tuo disco esterno."
+          }
+        }
+      }
+    },
+    "app.library.locate.invalid": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This folder doesn’t hold a library of %1$@."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce dossier ne contient pas de bibliothèque d’%1$@."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Questa cartella non contiene una libreria di %1$@."
+          }
+        }
+      }
+    },
     "model.gogWeb.title": {
       "extractionState": "manual",
       "localizations": {
@@ -20661,6 +20776,52 @@
         }
       }
     },
+    "model.libraryFolder.games": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose a folder outside your games folder and outside your games: uninstalling or moving a game would take the library along."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choisissez un dossier hors du dossier des jeux et hors de vos jeux : désinstaller ou déplacer un jeu emporterait la bibliothèque."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scegli una cartella fuori dalla cartella dei giochi e fuori dai tuoi giochi: disinstallare o spostare un gioco porterebbe via la libreria."
+          }
+        }
+      }
+    },
+    "model.libraryFolder.unwritable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ can’t write to this folder. Choose another one, or change its permissions in Finder."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ ne peut pas écrire dans ce dossier. Choisissez-en un autre, ou modifiez ses autorisations dans le Finder."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ non può scrivere in questa cartella. Scegline un’altra, o cambia i suoi permessi nel Finder."
+          }
+        }
+      }
+    },
     "ui.transfer.moving": {
       "extractionState": "manual",
       "localizations": {
@@ -21685,6 +21846,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "Spostamento…"
+          }
+        }
+      }
+    },
+    "ui.library_folder.synced": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This folder is kept in sync by iCloud Drive or another cloud service, which can remove its files from the Mac and damage your Windows games’ environments while they run. Choose a folder that %1$@ keeps only on a disk."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce dossier est synchronisé par iCloud Drive ou un autre service cloud, qui peut retirer ses fichiers du Mac et abîmer les environnements de vos jeux Windows pendant qu’ils tournent. Choisissez un dossier qu’%1$@ garde seulement sur un disque."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Questa cartella è sincronizzata da iCloud Drive o da un altro servizio cloud, che può togliere i suoi file dal Mac e danneggiare gli ambienti dei tuoi giochi Windows mentre sono in esecuzione. Scegli una cartella che %1$@ tiene solo su un disco."
+          }
+        }
+      }
+    },
+    "ui.library_folder.case_sensitive": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“%1$@” tells file names apart by case. Some Windows games expect it not to and may not start from there. A disk formatted as APFS without case sensitivity suits them best."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "« %1$@ » distingue les majuscules des minuscules dans les noms de fichiers. Certains jeux Windows ne s’y attendent pas et peuvent ne pas démarrer. Un disque formaté en APFS sans respect de la casse leur convient mieux."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "«%1$@» distingue maiuscole e minuscole nei nomi dei file. Alcuni giochi Windows non se lo aspettano e potrebbero non avviarsi. Un disco formattato in APFS senza distinzione tra maiuscole e minuscole è il più adatto."
           }
         }
       }

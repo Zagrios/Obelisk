@@ -34,7 +34,8 @@ mod games_folder;
 pub use games_folder::{GamesFolder, GamesFolderInspection, GamesFolderState};
 mod library_folder;
 pub use library_folder::{
-    LibraryFolder, LibraryFolderInspection, LibraryMoveProgress, remove_left_library,
+    LibraryFolder, LibraryFolderInspection, LibraryMoveProgress, is_obelisk_library,
+    remove_left_library,
 };
 mod launch_settings;
 pub use launch_settings::*;

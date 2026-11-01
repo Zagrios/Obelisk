@@ -74,12 +74,13 @@ fn a_chosen_folder_gets_obelisk_s_library_folder_inside_it() {
 fn the_library_moves_whole_on_its_own_disk_and_its_saves_follow() {
     let places = places();
     let destination = chosen(&places.disk);
-    let candidate = inspect(&places.library, &destination).unwrap();
+    let candidate = inspect(&places.library, &destination, None).unwrap();
     assert_eq!(candidate.path, destination);
     assert_eq!(candidate.copied_bytes, 0, "nothing copies on one disk");
     let moved = move_library(
         &places.library,
         &destination,
+        None,
         &CancelToken::new(),
         |_, _| {},
     )
@@ -100,6 +101,7 @@ fn a_library_copied_to_another_disk_keeps_its_links_and_the_original() {
     let moved = move_with(
         &places.library,
         &destination,
+        None,
         &CancelToken::new(),
         |copied, total| heard.push((copied, total)),
         other_disk,
@@ -132,6 +134,7 @@ fn a_cancelled_copy_leaves_nothing_on_the_disk() {
     let failure = move_with(
         &places.library,
         &chosen(&places.disk),
+        None,
         &cancel,
         |_, _| {},
         |_, _| Err(io::Error::from(io::ErrorKind::CrossesDevices)),
@@ -145,7 +148,7 @@ fn a_cancelled_copy_leaves_nothing_on_the_disk() {
 #[test]
 fn a_folder_missing_inside_the_library_or_taken_is_refused() {
     let places = places();
-    let refused = |destination: &Path| inspect(&places.library, destination).unwrap_err();
+    let refused = |destination: &Path| inspect(&places.library, destination, None).unwrap_err();
     assert_eq!(
         refused(&places.disk.join("Gone/Obelisk Library")),
         Refusal::Missing
@@ -165,7 +168,16 @@ fn a_folder_missing_inside_the_library_or_taken_is_refused() {
     // An empty folder, as Finder leaves it, takes the library.
     fs::remove_dir(taken.join("Something")).unwrap();
     fs::write(taken.join(".DS_Store"), b"").unwrap();
-    assert!(move_library(&places.library, &taken, &CancelToken::new(), |_, _| {}).is_ok());
+    assert!(
+        move_library(
+            &places.library,
+            &taken,
+            None,
+            &CancelToken::new(),
+            |_, _| {}
+        )
+        .is_ok()
+    );
 }
 
 #[test]
@@ -174,10 +186,10 @@ fn games_in_obelisk_s_own_games_folder_keep_the_library_in_place() {
     let storefront = places.library.join("Games/steam");
     fs::create_dir_all(&storefront).unwrap();
     // An empty storefront folder holds no game.
-    assert!(inspect(&places.library, &chosen(&places.disk)).is_ok());
+    assert!(inspect(&places.library, &chosen(&places.disk), None).is_ok());
     fs::create_dir(storefront.join("steam-620-macos")).unwrap();
     assert_eq!(
-        inspect(&places.library, &chosen(&places.disk)).unwrap_err(),
+        inspect(&places.library, &chosen(&places.disk), None).unwrap_err(),
         Refusal::HoldsGames
     );
 }
@@ -189,7 +201,7 @@ fn a_library_reached_through_a_link_goes_to_the_real_folder() {
     fs::create_dir(&real).unwrap();
     let link = places.disk.join("Link");
     std::os::unix::fs::symlink(&real, &link).unwrap();
-    let candidate = inspect(&places.library, &link.join(CHOSEN_DIRECTORY)).unwrap();
+    let candidate = inspect(&places.library, &link.join(CHOSEN_DIRECTORY), None).unwrap();
     assert_eq!(candidate.path, real.join(CHOSEN_DIRECTORY));
 }
 
@@ -200,4 +212,45 @@ fn only_a_library_apart_from_the_new_one_is_removed() {
     assert!(remove_left(places.library.parent().unwrap(), &places.library).is_err());
     assert!(places.library.join("SteamCloud").is_dir());
     remove_left(&places.disk.join("Gone"), &places.library).unwrap();
+}
+
+#[test]
+fn a_folder_inside_the_games_folder_or_a_game_is_refused() {
+    let places = places();
+    let games = GamesFolder::new(&places.library);
+    let folder = places.disk.join("Games");
+    fs::create_dir(&folder).unwrap();
+    games.choose(&folder).unwrap();
+    let inside = games.path().join(CHOSEN_DIRECTORY);
+    assert_eq!(
+        inspect(&places.library, &inside, Some(&games)).unwrap_err(),
+        Refusal::Games
+    );
+    // Beside the games folder is fine.
+    assert!(inspect(&places.library, &chosen(&places.disk), Some(&games)).is_ok());
+}
+
+#[test]
+fn a_folder_obelisk_cannot_write_to_is_refused() {
+    use std::os::unix::fs::PermissionsExt;
+    let places = places();
+    let locked = places.disk.join("Locked");
+    fs::create_dir(&locked).unwrap();
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o555)).unwrap();
+    let refusal = inspect(&places.library, &chosen(&locked), None).unwrap_err();
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
+    assert_eq!(refusal, Refusal::Unwritable);
+    assert_eq!(
+        fs::read_dir(&locked).unwrap().count(),
+        0,
+        "the check leaves nothing"
+    );
+}
+
+#[test]
+fn a_library_is_told_from_any_other_folder() {
+    let places = places();
+    assert!(is_library(&places.library));
+    assert!(!is_library(&places.disk));
+    assert!(!is_library(&places.disk.join("Gone")));
 }

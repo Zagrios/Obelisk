@@ -4,7 +4,10 @@
 //! link, which Steam and the Cloud archive refuse. Obelisk then restarts in
 //! it, and removes the library it left at its next start. The app keeps
 //! where the library is outside the library itself.
-use crate::{games_folder, supervisor::plain_absolute};
+use crate::{
+    games_folder::{self, GamesFolder},
+    supervisor::plain_absolute,
+};
 use obelisk_core::{
     installation::{self, RelocationFailure},
     transfer::CancelToken,
@@ -41,6 +44,11 @@ pub enum Refusal {
     /// and their installations name it: they move to another games folder
     /// first.
     HoldsGames,
+    /// It is inside the games folder or a game's installation, which an
+    /// uninstall or a move would take along.
+    Games,
+    /// Obelisk cannot write there.
+    Unwritable,
 }
 
 /// Why the move failed. The library stays where it was.
@@ -76,8 +84,13 @@ pub fn chosen(chosen: &Path) -> PathBuf {
 }
 
 /// What moving `library` to `destination` would do: `destination` is the
-/// folder the library becomes, absent or empty, inside an existing folder.
-pub fn inspect(library: &Path, destination: &Path) -> Result<Candidate, Refusal> {
+/// folder the library becomes, absent or empty, inside an existing folder
+/// Obelisk can write to, and outside `games`' folder and installations.
+pub fn inspect(
+    library: &Path,
+    destination: &Path,
+    games: Option<&GamesFolder>,
+) -> Result<Candidate, Refusal> {
     let (Some(parent), Some(name)) = (destination.parent(), destination.file_name()) else {
         return Err(Refusal::Missing);
     };
@@ -97,6 +110,9 @@ pub fn inspect(library: &Path, destination: &Path) -> Result<Candidate, Refusal>
     if path.starts_with(&library) || library.starts_with(&path) {
         return Err(Refusal::Inside);
     }
+    if games.is_some_and(|games| games.holds(&path)) {
+        return Err(Refusal::Games);
+    }
     match fs::symlink_metadata(&path) {
         Err(error) if error.kind() == io::ErrorKind::NotFound => {}
         Ok(metadata) if metadata.is_dir() && empty(&path) => {}
@@ -104,6 +120,9 @@ pub fn inspect(library: &Path, destination: &Path) -> Result<Candidate, Refusal>
     }
     if holds_games(&library) {
         return Err(Refusal::HoldsGames);
+    }
+    if !writable(&parent) {
+        return Err(Refusal::Unwritable);
     }
     let device = |path: &Path| fs::metadata(path).map(|metadata| metadata.dev()).ok();
     let copied_bytes = if device(&parent) == device(&library) {
@@ -124,10 +143,11 @@ pub fn inspect(library: &Path, destination: &Path) -> Result<Candidate, Refusal>
 pub fn move_library(
     library: &Path,
     destination: &Path,
+    games: Option<&GamesFolder>,
     cancel: &CancelToken,
     progress: impl FnMut(u64, u64),
 ) -> Result<PathBuf, MoveFailure> {
-    move_with(library, destination, cancel, progress, |from, to| {
+    move_with(library, destination, games, cancel, progress, |from, to| {
         fs::rename(from, to)
     })
 }
@@ -137,11 +157,12 @@ pub fn move_library(
 fn move_with(
     library: &Path,
     destination: &Path,
+    games: Option<&GamesFolder>,
     cancel: &CancelToken,
     mut progress: impl FnMut(u64, u64),
     rename: impl Fn(&Path, &Path) -> io::Result<()>,
 ) -> Result<PathBuf, MoveFailure> {
-    let candidate = inspect(library, destination)?;
+    let candidate = inspect(library, destination, games)?;
     let library = library.canonicalize()?;
     let path = candidate.path;
     if path.exists() {
@@ -195,6 +216,30 @@ pub fn remove_left(left: &Path, library: &Path) -> io::Result<()> {
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(error),
     }
+}
+
+/// Whether `folder` looks like an Obelisk library, such as one the player
+/// moved and Obelisk lost track of: it holds one of the folders every
+/// library has once used.
+pub fn is_library(folder: &Path) -> bool {
+    let locations = crate::Locations::new(folder, Path::new("/"), Path::new("/"));
+    fs::symlink_metadata(folder).is_ok_and(|metadata| metadata.is_dir())
+        && [
+            locations.cloud_archive,
+            locations.steam_sessions,
+            locations.epic_sessions,
+            locations.gog_sessions,
+            locations.voile,
+            locations.wine_prefixes,
+        ]
+        .iter()
+        .any(|path| fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_dir()))
+}
+
+/// Whether Obelisk can make a folder in `folder`, as the move will.
+fn writable(folder: &Path) -> bool {
+    let probe = folder.join(format!(".obelisk-library-check-{}", std::process::id()));
+    fs::create_dir(&probe).is_ok_and(|()| fs::remove_dir(&probe).is_ok())
 }
 
 /// Whether `folder` holds nothing but Finder's own files.

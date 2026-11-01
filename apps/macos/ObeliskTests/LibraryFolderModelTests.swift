@@ -126,7 +126,7 @@ final class LibraryFolderModelTests: XCTestCase {
     func testAFolderThatCannotHoldTheLibrarySaysWhyAndAsksNothing() {
         let backend = FakeLibraryFolder()
         let model = model(backend)
-        for inspection: LibraryFolderInspection in [.missing, .inside, .occupied, .holdsGames] {
+        for inspection: LibraryFolderInspection in [.missing, .inside, .occupied, .holdsGames, .games, .unwritable] {
             backend.inspection = inspection
             model.propose(URL(filePath: "/Volumes/Disk", directoryHint: .isDirectory))
             XCTAssertNil(model.proposal)
@@ -143,5 +143,32 @@ final class LibraryFolderModelTests: XCTestCase {
         XCTAssertFalse(model.proposal!.canChoose)
         await model.confirm()
         XCTAssertTrue(backend.moved.isEmpty)
+    }
+
+    func testACloudSyncedFolderIsNotOfferedAndAnExternalDisksLibraryIsToldApartFromAMissingDisk() async {
+        let home = URL(filePath: "/Users/player", directoryHint: .isDirectory)
+        for synced in ["Library/Mobile Documents/com~apple~CloudDocs/Games", "Library/CloudStorage/Dropbox"] {
+            XCTAssertTrue(LibraryFolderProposal.sync(of: home.appending(path: synced), home: home).synced, synced)
+        }
+        XCTAssertFalse(LibraryFolderProposal.sync(of: URL(filePath: "/Volumes/Disk"), home: home).synced)
+        XCTAssertFalse(LibraryFolderProposal.sync(of: home.appending(path: "Library/CloudStorageNotes"), home: home).synced)
+
+        let backend = FakeLibraryFolder()
+        let model = model(backend)
+        model.proposal = LibraryFolderProposal(chosen: home.appending(path: "Library/CloudStorage/Dropbox"),
+                                               path: "/Users/player/Library/CloudStorage/Dropbox/Obelisk Library",
+                                               copiedBytes: 0, volume: "Macintosh HD", availableBytes: nil,
+                                               format: nil, isReadOnly: false, isSynced: true)
+        XCTAssertFalse(model.proposal!.canChoose)
+        await model.confirm()
+        XCTAssertTrue(backend.moved.isEmpty)
+
+        XCTAssertFalse(LibraryStartup.isDiskConnected(URL(filePath: "/Volumes/NoSuchDisk/Obelisk Library")))
+        XCTAssertTrue(LibraryStartup.isDiskConnected(URL(filePath: "/Users/player/Obelisk Library")))
+        // A disk that is there, whose library folder is not.
+        let mounted = try? FileManager.default.contentsOfDirectory(atPath: "/Volumes").first
+        if let mounted {
+            XCTAssertTrue(LibraryStartup.isDiskConnected(URL(filePath: "/Volumes/\(mounted)/No Obelisk Library")))
+        }
     }
 }

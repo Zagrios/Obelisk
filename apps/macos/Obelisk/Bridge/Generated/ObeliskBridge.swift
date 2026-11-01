@@ -12783,6 +12783,14 @@ public enum LibraryFolderInspection: Equatable, Hashable {
      * Games are installed in Obelisk's own games folder, inside the library.
      */
     case holdsGames
+    /**
+     * The folder is inside the games folder or a game's installation.
+     */
+    case games
+    /**
+     * Obelisk cannot write to the folder.
+     */
+    case unwritable
 
 
 
@@ -12815,6 +12823,10 @@ public struct FfiConverterTypeLibraryFolderInspection: FfiConverterRustBuffer {
         
         case 5: return .holdsGames
         
+        case 6: return .games
+        
+        case 7: return .unwritable
+        
         default: throw UniffiInternalError.unexpectedEnumCase
         }
     }
@@ -12843,6 +12855,14 @@ public struct FfiConverterTypeLibraryFolderInspection: FfiConverterRustBuffer {
         
         case .holdsGames:
             writeInt(&buf, Int32(5))
+        
+        
+        case .games:
+            writeInt(&buf, Int32(6))
+        
+        
+        case .unwritable:
+            writeInt(&buf, Int32(7))
         
         }
     }
@@ -15912,6 +15932,18 @@ public func gogLoginUrl() -> String  {
 })
 }
 /**
+ * Whether `folder` looks like an Obelisk library, such as one the player
+ * moved and points Obelisk to again. It reads the disk.
+ */
+public func isObeliskLibrary(folder: String) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_obelisk_bridge_fn_func_is_obelisk_library(
+        FfiConverterString.lower(folder),uniffiCallStatus
+    )
+})
+}
+/**
  * Removes the library Obelisk left at `left` once it started in `library`,
  * its new place. It blocks on the disk; false when something stayed.
  */
@@ -16036,6 +16068,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_func_gog_login_url() != 21271) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_func_is_obelisk_library() != 15630) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_func_remove_left_library() != 12604) {

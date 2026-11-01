@@ -38,8 +38,13 @@ struct LibraryFolderSheet: View {
             } else if let format = proposal.format {
                 SheetNotice(kind: .failure, text: L10n.string("ui.library_folder.format", proposal.volume, format,
                                                               AppIdentity.name))
+            } else if proposal.isSynced {
+                SheetNotice(kind: .failure, text: L10n.string("ui.library_folder.synced", AppIdentity.name))
             } else if proposal.chosen != nil {
                 SheetNotice(kind: .warning, text: L10n.string("ui.library_folder.connected", AppIdentity.name))
+            }
+            if proposal.isCaseSensitive, proposal.canChoose {
+                SheetNotice(kind: .warning, text: L10n.string("ui.library_folder.case_sensitive", proposal.volume))
             }
             if let moving = model.moving {
                 progress(moving)
