@@ -62,6 +62,9 @@ final class LibraryFolderModel {
     let path: String
     /// Obelisk's own folder on this Mac.
     let isDefault: Bool
+    /// Whether the player may move it: not while `OBELISK_LIBRARY_DIRECTORY`
+    /// names the library, which wins over the folder a move keeps.
+    let isMovable: Bool
     /// The folder the player picked, waiting for them to agree, then moving.
     var proposal: LibraryFolderProposal?
     /// The bytes copied of the total while the library moves.
@@ -77,12 +80,14 @@ final class LibraryFolderModel {
 
     init(library: URL, defaults: UserDefaults = .standard,
          defaultDirectory: URL = AppIdentity.defaultLibraryDirectory,
+         environment: [String: String] = ProcessInfo.processInfo.environment,
          backend: (any LibraryFolderBackend)? = nil) {
         self.backend = backend ?? RustLibraryFolder(library: library)
         self.defaults = defaults
         self.defaultDirectory = defaultDirectory
         path = library.path
         isDefault = library.standardizedFileURL.path == defaultDirectory.standardizedFileURL.path
+        isMovable = (environment["OBELISK_LIBRARY_DIRECTORY"] ?? "").isEmpty
     }
 
     /// Asks the player to move the library into the folder they picked.
@@ -118,7 +123,7 @@ final class LibraryFolderModel {
     /// there. The library stays where it was if the move fails or is
     /// cancelled.
     func confirm() async {
-        guard let proposal, proposal.canChoose, moving == nil else { return }
+        guard isMovable, let proposal, proposal.canChoose, moving == nil else { return }
         moving = LibraryMoveProgress(copiedBytes: 0, totalBytes: proposal.copiedBytes)
         let polling = Task { [weak self, backend] in
             while (try? await Task.sleep(for: .milliseconds(250))) != nil {

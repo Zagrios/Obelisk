@@ -364,19 +364,21 @@ struct SettingsView: View {
                     NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: library.path)
                 }
                 .help(L10n.string("ui.settings.show_in_finder"))
-                Group {
-                    if library.isDefault {
-                        GlassCapsuleButton(title: L10n.string("ui.settings.library_folder_move"),
-                                           identifier: "settings-move-library-folder") { picksLibraryFolder = true }
-                    } else {
-                        GlassCapsuleMenu(title: L10n.string("ui.settings.library_folder_move"),
-                                         identifier: "settings-move-library-folder") {
-                            Button(L10n.string("ui.settings.games_folder_choose")) { picksLibraryFolder = true }
-                            Button(L10n.string("ui.settings.library_folder_back")) { library.proposeDefault() }
+                if library.isMovable {
+                    Group {
+                        if library.isDefault {
+                            GlassCapsuleButton(title: L10n.string("ui.settings.library_folder_move"),
+                                               identifier: "settings-move-library-folder") { picksLibraryFolder = true }
+                        } else {
+                            GlassCapsuleMenu(title: L10n.string("ui.settings.library_folder_move"),
+                                             identifier: "settings-move-library-folder") {
+                                Button(L10n.string("ui.settings.games_folder_choose")) { picksLibraryFolder = true }
+                                Button(L10n.string("ui.settings.library_folder_back")) { library.proposeDefault() }
+                            }
                         }
                     }
+                    .disabled(!canMove)
                 }
-                .disabled(!canMove)
             }
         }
         .fileImporter(isPresented: $picksLibraryFolder, allowedContentTypes: [.folder]) { result in

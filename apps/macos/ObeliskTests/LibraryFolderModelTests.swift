@@ -39,7 +39,21 @@ final class LibraryFolderModelTests: XCTestCase {
     }
 
     private func model(_ backend: FakeLibraryFolder, library: URL? = nil) -> LibraryFolderModel {
-        LibraryFolderModel(library: library ?? mac, defaults: defaults, defaultDirectory: mac, backend: backend)
+        LibraryFolderModel(library: library ?? mac, defaults: defaults, defaultDirectory: mac, environment: [:],
+                           backend: backend)
+    }
+
+    func testALibraryTheDevelopmentOverrideNamesDoesNotMove() async {
+        let backend = FakeLibraryFolder()
+        let model = LibraryFolderModel(library: mac, defaults: defaults, defaultDirectory: mac,
+                                       environment: ["OBELISK_LIBRARY_DIRECTORY": mac.path], backend: backend)
+        XCTAssertFalse(model.isMovable)
+        model.proposal = LibraryFolderProposal(chosen: URL(filePath: "/Volumes/Disk"), path: "/Volumes/Disk/Obelisk Library",
+                                               copiedBytes: 0, volume: "Disk", availableBytes: nil, format: nil,
+                                               isReadOnly: false)
+        await model.confirm()
+        XCTAssertTrue(backend.moved.isEmpty)
+        XCTAssertNil(defaults.string(forKey: AppIdentity.libraryDirectoryKey))
     }
 
     func testTheLibraryIsObelisksOwnUntilThePlayerMovesItAndTheOverrideWinsOverBoth() {
