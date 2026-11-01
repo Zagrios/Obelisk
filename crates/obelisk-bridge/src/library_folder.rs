@@ -19,8 +19,13 @@ use crate::GameSessionError;
 /// What moving the library would do.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum LibraryFolderInspection {
-    /// The library goes to `path`, copying `copied_bytes` to another disk.
-    Ready { path: String, copied_bytes: u64 },
+    /// The library goes to `path`: it `copies` `copied_bytes` to another
+    /// disk, or only changes its place on its own.
+    Ready {
+        path: String,
+        copied_bytes: u64,
+        copies: bool,
+    },
     /// The folder is gone.
     Missing,
     /// The folder is the library, inside it or holds it.
@@ -41,6 +46,7 @@ impl From<Result<Candidate, Refusal>> for LibraryFolderInspection {
             Ok(candidate) => Self::Ready {
                 path: candidate.path.to_string_lossy().into_owned(),
                 copied_bytes: candidate.copied_bytes,
+                copies: candidate.copies,
             },
             Err(Refusal::Missing) => Self::Missing,
             Err(Refusal::Inside) => Self::Inside,

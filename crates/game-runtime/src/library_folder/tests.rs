@@ -77,6 +77,7 @@ fn the_library_moves_whole_on_its_own_disk_and_its_saves_follow() {
     let candidate = inspect(&places.library, &destination, None).unwrap();
     assert_eq!(candidate.path, destination);
     assert_eq!(candidate.copied_bytes, 0, "nothing copies on one disk");
+    assert!(!candidate.copies);
     let moved = move_library(
         &places.library,
         &destination,

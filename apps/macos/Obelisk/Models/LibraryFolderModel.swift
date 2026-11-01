@@ -42,6 +42,8 @@ struct LibraryFolderProposal: Identifiable, Equatable {
     let path: String
     /// What the move copies to another disk.
     let copiedBytes: UInt64
+    /// Whether the library goes to another disk, and is copied there.
+    var copies = true
     let volume: String
     let availableBytes: UInt64?
     /// The disk's format when it may not keep everything the library holds, such as ExFAT.
@@ -121,12 +123,12 @@ final class LibraryFolderModel {
     private func propose(chosen: URL?, _ inspection: LibraryFolderInspection) {
         failure = nil
         switch inspection {
-        case let .ready(path, copiedBytes):
+        case let .ready(path, copiedBytes, copies):
             let folder = chosen ?? defaultDirectory.deletingLastPathComponent()
             let volume = GamesFolderProposal.volume(of: folder)
             let sync = LibraryFolderProposal.sync(of: folder)
             proposal = LibraryFolderProposal(
-                chosen: chosen, path: path, copiedBytes: copiedBytes, volume: volume.name,
+                chosen: chosen, path: path, copiedBytes: copiedBytes, copies: copies, volume: volume.name,
                 availableBytes: volume.available, format: volume.format, isReadOnly: volume.readOnly,
                 isSynced: sync.synced, isCaseSensitive: sync.caseSensitive)
         case .missing:

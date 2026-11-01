@@ -75,10 +75,11 @@ final class LibraryFolderModelTests: XCTestCase {
         XCTAssertTrue(model.isDefault)
         var restarts = 0
         model.restart = { restarts += 1 }
-        backend.inspection = .ready(path: "/Volumes/Disk/Obelisk Library", copiedBytes: 1_000)
+        backend.inspection = .ready(path: "/Volumes/Disk/Obelisk Library", copiedBytes: 1_000, copies: true)
         model.propose(URL(filePath: "/Volumes/Disk", directoryHint: .isDirectory))
         XCTAssertEqual(model.proposal?.path, "/Volumes/Disk/Obelisk Library")
         XCTAssertEqual(model.proposal?.copiedBytes, 1_000)
+        XCTAssertEqual(model.proposal?.copies, true)
         await model.confirm()
         XCTAssertEqual(backend.moved, ["/Volumes/Disk/Obelisk Library"])
         XCTAssertEqual(defaults.string(forKey: AppIdentity.libraryDirectoryKey), "/Volumes/Disk/Obelisk Library")
@@ -94,7 +95,7 @@ final class LibraryFolderModelTests: XCTestCase {
         defaults.set(disk.path, forKey: AppIdentity.libraryDirectoryKey)
         let model = model(backend, library: disk)
         XCTAssertFalse(model.isDefault)
-        backend.inspection = .ready(path: mac.path, copiedBytes: 1_000)
+        backend.inspection = .ready(path: mac.path, copiedBytes: 1_000, copies: true)
         model.proposeDefault()
         XCTAssertNil(model.proposal?.chosen)
         await model.confirm()
@@ -107,7 +108,7 @@ final class LibraryFolderModelTests: XCTestCase {
         let model = model(backend)
         var restarts = 0
         model.restart = { restarts += 1 }
-        backend.inspection = .ready(path: "/Volumes/Disk/Obelisk Library", copiedBytes: 0)
+        backend.inspection = .ready(path: "/Volumes/Disk/Obelisk Library", copiedBytes: 0, copies: false)
         backend.failure = GameSessionError.Failure(reason: "model.libraryFolder.refused")
         model.propose(URL(filePath: "/Volumes/Disk", directoryHint: .isDirectory))
         await model.confirm()

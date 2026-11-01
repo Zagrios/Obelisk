@@ -29,6 +29,8 @@ pub struct Candidate {
     /// What the move copies to another disk; nothing when the library only
     /// changes its place on its own disk.
     pub copied_bytes: u64,
+    /// Whether the library goes to another disk, and is copied there.
+    pub copies: bool,
 }
 
 /// Why the library cannot go to a folder.
@@ -125,12 +127,17 @@ pub fn inspect(
         return Err(Refusal::Unwritable);
     }
     let device = |path: &Path| fs::metadata(path).map(|metadata| metadata.dev()).ok();
-    let copied_bytes = if device(&parent) == device(&library) {
-        0
-    } else {
+    let copies = device(&parent) != device(&library);
+    let copied_bytes = if copies {
         installation::size(&library).unwrap_or(0)
+    } else {
+        0
     };
-    Ok(Candidate { path, copied_bytes })
+    Ok(Candidate {
+        path,
+        copied_bytes,
+        copies,
+    })
 }
 
 /// Moves `library` to `destination`, as `inspect` allows. On its own disk

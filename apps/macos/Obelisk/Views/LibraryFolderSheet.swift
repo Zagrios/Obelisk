@@ -17,9 +17,9 @@ struct LibraryFolderSheet: View {
                         symbol: proposal.chosen == nil ? "laptopcomputer" : "externaldrive.fill",
                         colors: TileColors.blue)
             VStack(alignment: .leading, spacing: 8) {
-                Text(L10n.string(proposal.copiedBytes > 0 ? "ui.library_folder.copies" : "ui.library_folder.moves",
+                Text(L10n.string(proposal.copies ? "ui.library_folder.copies" : "ui.library_folder.moves",
                                  AppIdentity.name))
-                if proposal.copiedBytes > 0, let available = proposal.availableBytes {
+                if proposal.copies, let available = proposal.availableBytes {
                     Text(L10n.string("ui.games_folder.space", GameFormatting.bytes(proposal.copiedBytes),
                                      GameFormatting.bytes(available)))
                         .monospacedDigit()

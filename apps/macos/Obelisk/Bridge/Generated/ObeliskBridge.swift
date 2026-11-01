@@ -12763,9 +12763,10 @@ public func FfiConverterTypeLaunchTranslator_lower(_ value: LaunchTranslator) ->
 public enum LibraryFolderInspection: Equatable, Hashable {
     
     /**
-     * The library goes to `path`, copying `copied_bytes` to another disk.
+     * The library goes to `path`: it `copies` `copied_bytes` to another
+     * disk, or only changes its place on its own.
      */
-    case ready(path: String, copiedBytes: UInt64
+    case ready(path: String, copiedBytes: UInt64, copies: Bool
     )
     /**
      * The folder is gone.
@@ -12812,7 +12813,7 @@ public struct FfiConverterTypeLibraryFolderInspection: FfiConverterRustBuffer {
         let variant: Int32 = try readInt(&buf)
         switch variant {
         
-        case 1: return .ready(path: try FfiConverterString.read(from: &buf), copiedBytes: try FfiConverterUInt64.read(from: &buf)
+        case 1: return .ready(path: try FfiConverterString.read(from: &buf), copiedBytes: try FfiConverterUInt64.read(from: &buf), copies: try FfiConverterBool.read(from: &buf)
         )
         
         case 2: return .missing
@@ -12835,10 +12836,11 @@ public struct FfiConverterTypeLibraryFolderInspection: FfiConverterRustBuffer {
         switch value {
         
         
-        case let .ready(path,copiedBytes):
+        case let .ready(path,copiedBytes,copies):
             writeInt(&buf, Int32(1))
             FfiConverterString.write(path, into: &buf)
             FfiConverterUInt64.write(copiedBytes, into: &buf)
+            FfiConverterBool.write(copies, into: &buf)
             
         
         case .missing:
