@@ -9,7 +9,7 @@ use std::{
 
 use futures_util::future::BoxFuture;
 use obelisk_core::{
-    build_choice::{BuildChoice, DOES_NOT_RUN, Unavailable},
+    build_choice::{BuildChoice, NOT_NATIVE, Unavailable},
     installation::{self, Destination, InstallFailure, InstalledFiles, TransferError},
     platform::{Platform, Spelling},
     transfer::{
@@ -123,7 +123,7 @@ pub struct GameDetails {
     pub app_id: u32,
     pub name: String,
     /// The build the game's page shows: the Mac build, unless a download
-    /// found that its game does not run while it has a Windows
+    /// found that its game does not run natively while it has a Windows
     /// build. None when the account can install neither.
     pub platform: Option<Platform>,
     pub windows_bytes: u64,
@@ -198,7 +198,7 @@ pub struct Client {
     /// App and depot IDs expanded through PICS licenses, filled on first content query.
     catalog: AsyncMutex<Option<Arc<ContentLicenses>>>,
     app_infos: Mutex<HashMap<u32, (Instant, Arc<AppInfo>)>>,
-    /// Each Mac build's verdict, and the depot manifests the last one that runs
+    /// Each Mac build's verdict, and the depot manifests the last native one
     /// read, by depot and manifest, which its installation starts from.
     build_choice: BuildChoice<Revision, Kept>,
     downloads: Transfers<TransferProgress>,
@@ -677,7 +677,7 @@ impl Client {
         }
         .offered(!macos.is_empty(), !windows.is_empty());
         // Only a download reads the Mac build's files: the page shows the Mac
-        // build until one found that its game does not run.
+        // build until one found that its game does not run natively.
         let game = OwnedApp {
             client: self,
             app_id,
@@ -736,7 +736,7 @@ impl Client {
     }
 
     /// The build a download of the game installs: of those the account's
-    /// licenses grant, the Mac build when its game runs on Apple
+    /// licenses grant, the Mac build when its game runs natively on Apple
     /// silicon, else the Windows build. It asks Steam for the licenses, then
     /// reads a few of the Mac build's files; `cancel_download` stops it.
     pub async fn platform(&self, app_id: u32, language: &str) -> Result<Platform, ClientError> {
@@ -1050,7 +1050,7 @@ impl From<Unavailable> for ClientError {
         ClientError::Failure(
             match unavailable {
                 Unavailable::NoBuild => "backend.steam.client.noCompatibleDepot",
-                Unavailable::DoesNotRun => DOES_NOT_RUN,
+                Unavailable::NotNative => NOT_NATIVE,
             }
             .into(),
         )
@@ -1165,8 +1165,8 @@ mod tests {
             "backend.steam.client.noCompatibleDepot"
         );
         assert_eq!(
-            message(Unavailable::DoesNotRun),
-            "backend.install.macBuildDoesNotRun"
+            message(Unavailable::NotNative),
+            "backend.install.macBuildNotNative"
         );
     }
 }

@@ -21,7 +21,7 @@ use crate::{
         Provider,
         architecture::{
             Architecture,
-            tests::{ARM64, I386, INTEL, thin},
+            tests::{ARM64, INTEL, thin},
         },
         session::{
             Opening,
@@ -485,33 +485,28 @@ pub(crate) fn a_mac_target_checks_the_full_macho_before_repairing_its_permission
     fs::write(&executable, b"\xcf\xfa\xed\xfe").unwrap();
     fs::set_permissions(&executable, fs::Permissions::from_mode(0o600)).unwrap();
 
-    // A truncated header, and a 32-bit Intel program, run nowhere.
-    for bytes in [b"\xcf\xfa\xed\xfe".to_vec(), thin(I386, true)] {
+    for bytes in [b"\xcf\xfa\xed\xfe".to_vec(), thin(INTEL, true)] {
         fs::write(&executable, bytes).unwrap();
         assert_eq!(
             key(request.target(&launched, None)).as_deref(),
-            Some("backend.runtime.macBuildDoesNotRun")
+            Some("backend.runtime.macBuildNotNative")
         );
         assert_eq!(mode(), 0, "a build that cannot run is left as it is");
     }
 
-    // A 64-bit Intel program runs under Rosetta, an arm64 one natively.
-    for (cpu, expected) in [(INTEL, Architecture::Intel), (ARM64, Architecture::Arm64)] {
-        fs::set_permissions(&executable, fs::Permissions::from_mode(0o600)).unwrap();
-        fs::write(&executable, thin(cpu, true)).unwrap();
-        let started = request.target(&launched, None).unwrap();
-        assert_eq!(started.architecture, expected);
-        assert_eq!(
-            started.target.executable,
-            executable.canonicalize().unwrap()
-        );
-        assert!(started.kept.is_none());
-        assert_ne!(
-            mode(),
-            0,
-            "an installer that dropped the permission is repaired"
-        );
-    }
+    fs::write(&executable, thin(ARM64, true)).unwrap();
+    let started = request.target(&launched, None).unwrap();
+    assert_eq!(started.architecture, Architecture::Arm64);
+    assert_eq!(
+        started.target.executable,
+        executable.canonicalize().unwrap()
+    );
+    assert!(started.kept.is_none());
+    assert_ne!(
+        mode(),
+        0,
+        "an installer that dropped the permission is repaired"
+    );
 
     // Nothing outside the installation is ever a target, nor a missing file.
     fs::write(root.join("Other"), thin(ARM64, true)).unwrap();

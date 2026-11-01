@@ -57,7 +57,7 @@ impl From<Platform> for GamePlatform {
 pub enum GameOffer {
     /// With the depots of `language`. Steam picks the build the account can
     /// install as the Transfer starts: the Mac build when its game runs
-    /// on Apple silicon, else the Windows build.
+    /// natively on Apple silicon, else the Windows build.
     Steam {
         app_id: u32,
         name: String,

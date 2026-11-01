@@ -80,7 +80,7 @@ impl GameBuilds for OwnedApp<'_> {
         let Some(executable) = crate::launch::configuration(&mac.app, Platform::Mac)
             .map(|config| config.executable.clone())
         else {
-            return Ok(Inspection::DoesNotRun);
+            return Ok(Inspection::NotNative);
         };
         let (client, app) = (self.client, &*mac.app);
         let selection = Selection::of(app, &mac.owned, Platform::Mac, self.language);
@@ -118,10 +118,11 @@ impl GameBuilds for OwnedApp<'_> {
             let files: &Vec<_> = &files;
             files[depot].read(file, bytes, cancel)
         };
-        let native = mac_build::runs(&listing, &executable, &["libsteam_api.dylib"], read).await?;
+        let native =
+            mac_build::runs_natively(&listing, &executable, &["libsteam_api.dylib"], read).await?;
         Ok(match native {
-            true => Inspection::Runs(files.into_iter().map(DepotFiles::into_manifest).collect()),
-            false => Inspection::DoesNotRun,
+            true => Inspection::Native(files.into_iter().map(DepotFiles::into_manifest).collect()),
+            false => Inspection::NotNative,
         })
     }
 }

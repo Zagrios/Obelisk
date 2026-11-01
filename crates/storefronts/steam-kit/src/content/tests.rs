@@ -685,10 +685,14 @@ async fn a_depot_s_files_are_listed_and_read_from_their_first_chunks_only() {
     let mut listing = Listing::default();
     depot.list(&mut listing, 0);
     let read = |(_, file): (usize, usize), bytes: u64| depot.read(file, bytes, &cancel);
-    let native =
-        obelisk_core::mac_build::runs(&listing, "Game.app/Contents/MacOS/Launcher", &[], read)
-            .await
-            .unwrap();
+    let native = obelisk_core::mac_build::runs_natively(
+        &listing,
+        "Game.app/Contents/MacOS/Launcher",
+        &[],
+        read,
+    )
+    .await
+    .unwrap();
     assert!(native);
     assert_eq!(fixture.chunk_requests(), 1);
     let whole = depot.read(1, 10_000, &cancel).await.unwrap();

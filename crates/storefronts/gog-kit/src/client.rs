@@ -52,7 +52,7 @@ pub struct Client {
     tokens: TokenSource,
     avatar_url: Option<String>,
     /// Each Mac build's verdict, by product, build and language, and the
-    /// depot items the last one that runs read, for its download.
+    /// depot items the last native one read, for its download.
     build_choice: download::BuildChoice,
 }
 
@@ -122,8 +122,8 @@ impl Client {
 
     /// What a game's page adds to its library entry, with the depots of
     /// `language`, such as `fr-FR`: the build it shows before any download,
-    /// the Mac build unless a download found that its game does not run, and
-    /// its size. Only `platform` reads the build's files.
+    /// the Mac build unless a download found that its game does not run
+    /// natively, and its size. Only `platform` reads the build's files.
     pub async fn game_details(
         &self,
         product_id: &str,

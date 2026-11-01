@@ -1,10 +1,8 @@
-//! Whether a Mac build's game runs on an Apple silicon Mac, told from the
-//! build's own files before it is installed: natively when its program holds
-//! an arm64 slice, under Rosetta when it holds a 64-bit Intel one. A
-//! storefront lists the files its manifest names and reads the first bytes of
-//! the few asked for; nothing here reaches the network or the disk. Obelisk
-//! installs a Mac build only when its game runs: a 32-bit one goes through Wine
-//! as its Windows build.
+//! Whether a Mac build's game runs natively on Apple silicon, told from the
+//! build's own files before it is installed. A storefront lists the files its
+//! manifest names and reads the first bytes of the few asked for; nothing here
+//! reaches the network or the disk. Obelisk installs a Mac build only when it
+//! does: an Intel or 32-bit one goes through Wine as its Windows build.
 use std::{
     collections::{BTreeMap, HashMap},
     future::Future,
@@ -18,7 +16,6 @@ const MAX_INFO_PLIST: u64 = 1024 * 1024;
 /// Links followed to reach one file.
 const MAX_LINKS: usize = 8;
 const CPU_TYPE_ARM64: u32 = 0x0100_000c;
-const CPU_TYPE_X86_64: u32 = 0x0100_0007;
 /// A universal binary listing more slices is refused at launch.
 const MAX_SLICES: u32 = 32;
 
@@ -142,13 +139,12 @@ impl<F: Copy> Listing<F> {
 }
 
 /// Whether the game a Mac build starts from `executable`, a path from the
-/// installation's root, runs on an Apple silicon Mac: its program holds a
-/// slice a launch runs, arm64 or 64-bit Intel, and so does the first library
-/// named like one of `libraries` in the folder a launch searches, which must
-/// hold one, of an architecture the program holds too. An application bundle
-/// starts the executable its Info.plist names. `read` gives a file's first
-/// bytes, never more than its size.
-pub async fn runs<F: Copy, E, Read>(
+/// installation's root, runs natively on Apple silicon: its program holds an
+/// arm64 slice, and so does the first library named like one of `libraries`
+/// in the folder a launch searches, which must hold one. An application
+/// bundle starts the executable its Info.plist names. `read` gives a file's
+/// first bytes, never more than its size.
+pub async fn runs_natively<F: Copy, E, Read>(
     listing: &Listing<F>,
     executable: &str,
     libraries: &[&str],
@@ -186,15 +182,14 @@ where
     let Some(program) = listing.find(&program) else {
         return Ok(false);
     };
-    let program = slices(&read_head(program, &read).await?);
-    if program.is_empty() {
+    if !has_arm64(&read_head(program, &read).await?) {
         return Ok(false);
     }
     if libraries.is_empty() {
         return Ok(true);
     }
     match listing.first_named(&searched, libraries) {
-        Some(library) => Ok(program.shares(slices(&read_head(library, &read).await?))),
+        Some(library) => Ok(has_arm64(&read_head(library, &read).await?)),
         None => Ok(false),
     }
 }
@@ -203,35 +198,9 @@ fn read_head<F, Read>((file, size): (F, u64), read: impl Fn(F, u64) -> Read) -> 
     read(file, size.min(PROGRAM_HEAD))
 }
 
-/// The architectures of the slices a program holds, among those a launch
-/// runs: arm64, natively, and 64-bit Intel, under Rosetta.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Slices(u8);
-
-impl Slices {
-    const NONE: Self = Self(0);
-
-    fn of(cpu: u32) -> Self {
-        match cpu {
-            CPU_TYPE_ARM64 => Self(1),
-            CPU_TYPE_X86_64 => Self(2),
-            _ => Self::NONE,
-        }
-    }
-
-    fn is_empty(self) -> bool {
-        self == Self::NONE
-    }
-
-    /// Whether a launch could run both as one architecture.
-    fn shares(self, other: Self) -> bool {
-        self.0 & other.0 != 0
-    }
-}
-
-/// The slices a program starting with `head` holds: those of a 64-bit
-/// Mach-O's one architecture, or of a universal binary's entries.
-fn slices(head: &[u8]) -> Slices {
+/// Whether a program starting with `head` holds an arm64 slice: a 64-bit
+/// Mach-O for arm64, or a universal binary listing one.
+pub fn has_arm64(head: &[u8]) -> bool {
     let word = |offset: usize, little: bool| -> Option<u32> {
         let bytes = head.get(offset..offset.checked_add(4)?)?.try_into().ok()?;
         Some(match little {
@@ -240,22 +209,21 @@ fn slices(head: &[u8]) -> Slices {
         })
     };
     match head {
-        [0xcf, 0xfa, 0xed, 0xfe, ..] => word(4, true).map_or(Slices::NONE, Slices::of),
-        [0xfe, 0xed, 0xfa, 0xcf, ..] => word(4, false).map_or(Slices::NONE, Slices::of),
+        [0xcf, 0xfa, 0xed, 0xfe, ..] => word(4, true) == Some(CPU_TYPE_ARM64),
+        [0xfe, 0xed, 0xfa, 0xcf, ..] => word(4, false) == Some(CPU_TYPE_ARM64),
         [0xca, 0xfe, 0xba, magic @ (0xbe | 0xbf), ..]
         | [magic @ (0xbe | 0xbf), 0xba, 0xfe, 0xca, ..] => {
             let little = head[0] != 0xca;
             let entry = if *magic == 0xbf { 32 } else { 20 };
             // A Java class file starts the same way, with its version where
             // the slice count would be.
-            match word(4, little) {
-                Some(count) if (1..=MAX_SLICES).contains(&count) => (0..count as usize)
-                    .filter_map(|index| word(8 + index * entry, little))
-                    .fold(Slices::NONE, |all, cpu| Slices(all.0 | Slices::of(cpu).0)),
-                _ => Slices::NONE,
-            }
+            word(4, little).is_some_and(|count| {
+                (1..=MAX_SLICES).contains(&count)
+                    && (0..count as usize)
+                        .any(|index| word(8 + index * entry, little) == Some(CPU_TYPE_ARM64))
+            })
         }
-        _ => Slices::NONE,
+        _ => false,
     }
 }
 

@@ -70,8 +70,8 @@ pub struct Game {
 /// any download, and its size.
 #[derive(Clone, Debug, Default)]
 pub struct GameDetails {
-    /// The Mac build, unless a download found that its game does not run.
-    /// Unknown when Epic could not tell.
+    /// The Mac build, unless a download found that its game does not run
+    /// natively. Unknown when Epic could not tell.
     pub platform: Option<Platform>,
     /// Unknown when Epic serves no manifest of the build.
     pub installation_bytes: Option<u64>,
@@ -84,7 +84,7 @@ pub struct Client {
     credential_events: Revisions,
     social: crate::social::SocialService,
     installation_sizes: crate::details::InstallationSizes,
-    /// Each Mac build's verdict, and the manifest the last one that runs read,
+    /// Each Mac build's verdict, and the manifest the last native one read,
     /// for its download.
     build_choice: crate::details::BuildChoice,
 }
@@ -177,8 +177,8 @@ impl Client {
     }
 
     /// The build the game's page shows before any download, and its size:
-    /// the Mac build, unless a download found that its game does not run.
-    /// Only `platform` reads the build's files.
+    /// the Mac build, unless a download found that its game does not run
+    /// natively. Only `platform` reads the build's files.
     pub async fn game_details(
         &self,
         namespace: &str,
@@ -216,7 +216,7 @@ impl Client {
     }
 
     /// The build a download of the game installs: the Mac build when its
-    /// game runs on Apple silicon, else the Windows build.
+    /// game runs natively on Apple silicon, else the Windows build.
     /// `cancel_download` stops it.
     pub async fn platform(
         &self,

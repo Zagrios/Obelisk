@@ -98,8 +98,8 @@ impl GameInfo {
 /// any download, and its size.
 #[derive(Clone, Debug, Default)]
 pub struct GameDetails {
-    /// The Mac build, unless a download found that its game does not run.
-    /// Unknown when GOG could not tell.
+    /// The Mac build, unless a download found that its game does not run
+    /// natively. Unknown when GOG could not tell.
     pub platform: Option<Platform>,
     /// Unknown when GOG serves no build Obelisk installs.
     pub installation_bytes: Option<u64>,

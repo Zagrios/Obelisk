@@ -552,8 +552,8 @@ macro_rules! lifecycle_suite {
 pub(crate) use lifecycle_suite;
 
 /// Instantiates the scenarios of a game that runs under Rosetta, for a
-/// harness that fakes Rosetta's helper: an Intel Mac build, or a Windows game
-/// on Rosetta's Wine.
+/// harness that can start one: a Windows game on Rosetta's Wine. A Mac game
+/// runs only natively.
 macro_rules! rosetta_suite {
     ($harness:ty) => {
         #[cfg(target_arch = "aarch64")]
