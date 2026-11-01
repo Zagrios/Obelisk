@@ -12,6 +12,7 @@ pub mod installations;
 pub mod launch;
 pub mod launch_settings;
 mod launch_shell;
+pub mod library_folder;
 mod locations;
 pub mod metal_hud;
 mod native;

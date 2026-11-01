@@ -500,6 +500,21 @@ fn copy_across(
     cancel: &CancelToken,
     progress: &mut impl FnMut(u64, u64),
 ) -> Result<bool, RelocationFailure> {
+    copy_folder(from, to, cancel, progress)?;
+    Ok(fs::remove_dir_all(from).is_ok())
+}
+
+/// Copies the folder `from` to `to`, which must not exist, on any disk
+/// through a hidden folder beside `to` that takes its name once complete,
+/// and keeps `from`. `progress` hears the bytes copied of the total; a
+/// cancellation or a failure removes the copy. Links are copied as links,
+/// and an installation lock at the top of `from` stays behind.
+pub fn copy_folder(
+    from: &Path,
+    to: &Path,
+    cancel: &CancelToken,
+    progress: &mut impl FnMut(u64, u64),
+) -> Result<(), RelocationFailure> {
     let (Some(parent), Some(name)) = (to.parent(), to.file_name()) else {
         return Err(RelocationFailure::Unsafe(to.to_owned()));
     };
@@ -525,7 +540,7 @@ fn copy_across(
         let _ = fs::remove_dir_all(&staging);
         return Err(failure);
     }
-    Ok(fs::remove_dir_all(from).is_ok())
+    Ok(())
 }
 
 /// The hidden folder a move to another disk copies `expected` into, inside
@@ -541,7 +556,7 @@ pub fn is_staging(name: &str) -> bool {
 }
 
 /// The bytes of every regular file in `folder`, links not followed.
-fn size(folder: &Path) -> io::Result<u64> {
+pub fn size(folder: &Path) -> io::Result<u64> {
     let mut total = 0;
     for entry in fs::read_dir(folder)? {
         let entry = entry?;

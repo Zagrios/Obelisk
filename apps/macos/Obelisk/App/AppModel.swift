@@ -18,6 +18,8 @@ final class AppModel {
     let downloads: DownloadsModel
     /// Where Obelisk installs games, which the player may change.
     let gamesFolder: GamesFolderModel
+    /// Where Obelisk keeps its library, which the player may move.
+    let libraryFolder: LibraryFolderModel
     /// The storefront's store, open over the whole window.
     var presentedStore: StorePresentation?
     /// The bug report being written, open over the whole window.
@@ -79,7 +81,7 @@ final class AppModel {
     init(directory: URL = AppIdentity.libraryDirectory, defaults: UserDefaults = .standard,
          defaultsDomain: String = Bundle.main.bundleIdentifier ?? AppIdentity.storageIdentifier, steam: SteamModel? = nil,
          epic: EpicModel? = nil, gog: GogModel? = nil, downloads: DownloadsModel? = nil,
-         gamesFolder: GamesFolderModel? = nil,
+         gamesFolder: GamesFolderModel? = nil, libraryFolder: LibraryFolderModel? = nil,
          performance: PerformanceReports? = nil, estimates: PerformanceEstimates? = nil, updates: AppUpdates? = nil,
          thermal: ThermalLog = .shared,
          overlay: GameOverlayEnvironment = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil
@@ -102,6 +104,7 @@ final class AppModel {
         self.steam.notifier = overlay.notifier
         self.downloads = downloads ?? DownloadsModel(defaults: defaults)
         self.gamesFolder = gamesFolder ?? GamesFolderModel(library: directory)
+        self.libraryFolder = libraryFolder ?? LibraryFolderModel(library: directory, defaults: defaults)
         let performance = performance ?? PerformanceReports(isEnabled: sharesGamePerformance)
         performance.isEnabled = sharesGamePerformance
         self.performance = performance
@@ -109,6 +112,7 @@ final class AppModel {
         self.estimates = estimates ?? PerformanceEstimates()
         self.updates = updates ?? AppUpdates()
         self.downloads.progress = { [weak self] item in self?.downloadTransfer(item) }
+        self.libraryFolder.restart = { [weak self] in self?.restart() }
         applyAutomaticUpdates()
         reportPerformance()
         observeGameRunning()
@@ -190,6 +194,16 @@ final class AppModel {
     /// The games whose move into the games folder waits or runs.
     var gamesMoving: Int {
         downloads.waiting.count(where: { $0.kind == .move }) + (downloads.running?.kind == .move ? 1 : 0)
+    }
+
+    /// Whether the library may move now: no game runs, and no Transfer
+    /// waits or runs, as each writes to it.
+    var libraryCanMove: Bool {
+        !isGameRunning && downloads.running == nil && downloads.waiting.isEmpty
+    }
+
+    private var isGameRunning: Bool {
+        steam.gameSessions.active != nil || epic.gameSessions.active != nil || gog.gameSessions.active != nil
     }
 
     private func applyAutomaticUpdates() {

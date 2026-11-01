@@ -10462,6 +10462,144 @@
         }
       }
     },
+    "ui.settings.library_folder_description_moved": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ keeps your saves, its runtimes and your Windows games’ environments here."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ y garde vos sauvegardes, ses runtimes et les environnements de vos jeux Windows."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ tiene qui i tuoi salvataggi, i suoi runtime e gli ambienti dei tuoi giochi Windows."
+          }
+        }
+      }
+    },
+    "ui.settings.library_folder_busy": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quit your game and let your downloads finish to move the library."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quittez votre jeu et laissez vos téléchargements se terminer pour déplacer la bibliothèque."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chiudi il gioco e lascia finire i download per spostare la libreria."
+          }
+        }
+      }
+    },
+    "ui.settings.library_folder_move": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Déplacer…"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sposta…"
+          }
+        }
+      }
+    },
+    "ui.settings.library_folder_back": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move Back to This Mac"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ramener sur ce Mac"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Riporta su questo Mac"
+          }
+        }
+      }
+    },
+    "ui.settings.library_folder_pick": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose where %1$@ keeps your saves, its runtimes and your Windows games’ environments, such as a folder on an external disk."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choisissez où %1$@ garde vos sauvegardes, ses runtimes et les environnements de vos jeux Windows, par exemple un dossier sur un disque externe."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scegli dove %1$@ tiene i tuoi salvataggi, i suoi runtime e gli ambienti dei tuoi giochi Windows, per esempio una cartella su un disco esterno."
+          }
+        }
+      }
+    },
+    "ui.settings.library_folder_failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not move the library"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de déplacer la bibliothèque"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossibile spostare la libreria"
+          }
+        }
+      }
+    },
     "ui.settings.open": {
       "extractionState": "manual",
       "localizations": {
@@ -14799,6 +14937,121 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ferma il gioco e riavvia"
+          }
+        }
+      }
+    },
+    "app.library.missing.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@’s library isn’t connected"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La bibliothèque d’%1$@ n’est pas connectée"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La libreria di %1$@ non è collegata"
+          }
+        }
+      }
+    },
+    "app.library.missing.message": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ keeps its library on a disk that isn’t connected:\n%2$@\n\nConnect the disk, then try again."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ garde sa bibliothèque sur un disque qui n’est pas connecté :\n%2$@\n\nConnectez le disque, puis réessayez."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ tiene la sua libreria su un disco non collegato:\n%2$@\n\nCollega il disco, poi riprova."
+          }
+        }
+      }
+    },
+    "app.library.missing.retry": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try Again"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Réessayer"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Riprova"
+          }
+        }
+      }
+    },
+    "app.library.missing.quit": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quit %1$@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quitter %1$@"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esci da %1$@"
+          }
+        }
+      }
+    },
+    "app.library.missing.mac": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start a New Library on This Mac"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Créer une bibliothèque sur ce Mac"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Crea una libreria su questo Mac"
           }
         }
       }
@@ -20247,6 +20500,167 @@
         }
       }
     },
+    "model.libraryFolder.missing": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This folder no longer exists."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce dossier n’existe plus."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Questa cartella non esiste più."
+          }
+        }
+      }
+    },
+    "model.libraryFolder.inside": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose a folder outside %1$@’s library."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choisissez un dossier hors de la bibliothèque d’%1$@."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scegli una cartella fuori dalla libreria di %1$@."
+          }
+        }
+      }
+    },
+    "model.libraryFolder.occupied": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This folder already holds a folder named “Obelisk Library” that isn’t empty. Choose another folder."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce dossier contient déjà un dossier « Obelisk Library » qui n’est pas vide. Choisissez un autre dossier."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Questa cartella contiene già una cartella «Obelisk Library» non vuota. Scegli un’altra cartella."
+          }
+        }
+      }
+    },
+    "model.libraryFolder.holdsGames": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Some games are installed in %1$@’s own games folder, inside the library. Move them to another games folder first, with the games folder’s Change… button."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Des jeux sont installés dans le dossier des jeux d’%1$@, dans la bibliothèque. Déplacez-les d’abord vers un autre dossier des jeux, avec le bouton Changer… du dossier des jeux."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alcuni giochi sono installati nella cartella dei giochi di %1$@, dentro la libreria. Spostali prima in un’altra cartella dei giochi, con il pulsante Cambia… della cartella dei giochi."
+          }
+        }
+      }
+    },
+    "model.libraryFolder.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not move the library: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de déplacer la bibliothèque : %@"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossibile spostare la libreria: %@"
+          }
+        }
+      }
+    },
+    "model.libraryFolder.refused": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The library can’t go to this folder."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La bibliothèque ne peut pas aller dans ce dossier."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La libreria non può andare in questa cartella."
+          }
+        }
+      }
+    },
+    "model.libraryFolder.failed_unknown": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The move stopped unexpectedly. The library stays where it was."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le déplacement s’est arrêté de façon inattendue. La bibliothèque reste où elle était."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lo spostamento si è interrotto inaspettatamente. La libreria resta dov’era."
+          }
+        }
+      }
+    },
     "ui.transfer.moving": {
       "extractionState": "manual",
       "localizations": {
@@ -21041,6 +21455,236 @@
           "stringUnit": {
             "state": "translated",
             "value": "Usa questa cartella"
+          }
+        }
+      }
+    },
+    "ui.library_folder.title_mac": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move the library back to this Mac?"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ramener la bibliothèque sur ce Mac ?"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Riportare la libreria su questo Mac?"
+          }
+        }
+      }
+    },
+    "ui.library_folder.title_move": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move the library to “%1$@”?"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Déplacer la bibliothèque sur « %1$@ » ?"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Spostare la libreria su «%1$@»?"
+          }
+        }
+      }
+    },
+    "ui.library_folder.copies": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ copies your saves, its runtimes and your Windows games’ environments there."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ y copie vos sauvegardes, ses runtimes et les environnements de vos jeux Windows."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ vi copia i tuoi salvataggi, i suoi runtime e gli ambienti dei tuoi giochi Windows."
+          }
+        }
+      }
+    },
+    "ui.library_folder.moves": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ moves your saves, its runtimes and your Windows games’ environments there, on the same disk."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ y déplace vos sauvegardes, ses runtimes et les environnements de vos jeux Windows, sur le même disque."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ vi sposta i tuoi salvataggi, i suoi runtime e gli ambienti dei tuoi giochi Windows, sullo stesso disco."
+          }
+        }
+      }
+    },
+    "ui.library_folder.restarts": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ then restarts there, and removes the library it left."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ redémarre ensuite là, et supprime la bibliothèque qu’il a quittée."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ poi si riavvia lì e rimuove la libreria che ha lasciato."
+          }
+        }
+      }
+    },
+    "ui.library_folder.format": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“%1$@” is formatted as %2$@, which can’t keep everything %3$@’s library holds, such as its links. Choose a disk formatted as APFS or Mac OS Extended."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "« %1$@ » est formaté en %2$@, qui ne peut pas garder tout ce que contient la bibliothèque d’%3$@, comme ses liens. Choisissez un disque formaté en APFS ou Mac OS étendu."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "«%1$@» è formattato in %2$@, che non può contenere tutto ciò che contiene la libreria di %3$@, come i suoi link. Scegli un disco formattato in APFS o Mac OS esteso."
+          }
+        }
+      }
+    },
+    "ui.library_folder.connected": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep this disk connected: %1$@ waits for it each time it starts."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gardez ce disque connecté : %1$@ l’attend à chaque démarrage."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tieni collegato questo disco: %1$@ lo attende a ogni avvio."
+          }
+        }
+      }
+    },
+    "ui.library_folder.move": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Déplacer"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sposta"
+          }
+        }
+      }
+    },
+    "ui.library_folder.copied": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ of %2$@ copied"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ sur %2$@ copiés"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ di %2$@ copiati"
+          }
+        }
+      }
+    },
+    "ui.library_folder.moving": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moving…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Déplacement…"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Spostamento…"
           }
         }
       }

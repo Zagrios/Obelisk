@@ -16,7 +16,7 @@ use std::{
 use tokio::sync::watch;
 
 /// Obelisk's own games folder, inside its library.
-const DEFAULT_DIRECTORY: &str = "Games";
+pub(crate) const DEFAULT_DIRECTORY: &str = "Games";
 /// The folder Obelisk makes inside the one the player chooses.
 pub const CHOSEN_DIRECTORY: &str = "Obelisk Games";
 /// The player's games folder, inside Obelisk's library; absent for its own.

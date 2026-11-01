@@ -50,6 +50,10 @@ pub struct Config {
     /// ships, if any.
     pub steam_api: Option<PathBuf>,
     pub home: PathBuf,
+    /// Obelisk's library, which the native host may not read, wherever the
+    /// player keeps it.
+    #[serde(default)]
+    pub library: PathBuf,
     pub app_id: u32,
     #[serde(default)]
     pub cloud_save_roots: Vec<PathBuf>,

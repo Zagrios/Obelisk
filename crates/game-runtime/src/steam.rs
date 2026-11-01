@@ -235,6 +235,7 @@ pub fn prepare(
             ),
             steam_api,
             home: home.clone(),
+            library: locations.library.clone(),
             wine,
         },
         cloud: Some(cloud),

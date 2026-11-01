@@ -100,6 +100,7 @@ fn config(directory: &Path) -> Config {
         wine: None,
         home: directory.into(),
         app_id: 42,
+        library: PathBuf::new(),
         cloud_save_roots: vec![],
     }
 }

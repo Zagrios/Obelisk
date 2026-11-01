@@ -10,6 +10,7 @@ impl Fixture {
     fn new() -> Self {
         let root = tempfile::tempdir().unwrap();
         let config = Config {
+            library: PathBuf::new(),
             cloud_save_roots: vec![],
             helpers: root.path().join("helpers"),
             package: root.path().join("runtime.zip"),
@@ -312,6 +313,7 @@ fn downloaded_runtime_loads_without_steam_installation_access() {
         PathBuf::from(std::env::var_os("OBELISK_STEAM_PAYLOAD").expect("OBELISK_STEAM_PAYLOAD"));
     let root = tempfile::tempdir().unwrap();
     let config = Config {
+        library: PathBuf::new(),
         cloud_save_roots: vec![],
         helpers: bundle.join("Contents/Helpers/SteamNative"),
         package: payload,
