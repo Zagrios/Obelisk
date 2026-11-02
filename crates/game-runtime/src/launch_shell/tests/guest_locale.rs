@@ -226,6 +226,7 @@ fn hand_over<L: Library>(library: &L, receipt: &Receipt<L::G>, launched: &Launch
         L::account(),
         L::credential(),
         Some(wine),
+        obelisk_core::OnlineStatus::default(),
     );
     let mut packet = Vec::new();
     storage::send(&mut packet, &request).unwrap();

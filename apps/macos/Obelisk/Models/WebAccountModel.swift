@@ -45,12 +45,19 @@ protocol AccountPresence: AnyObject {
     func close()
     /// Replaces only the social socket.
     func retry()
+    /// Whether the account shows to its friends with a status the player picks.
+    static var showsStatus: Bool { get }
+    /// How the account shows to its friends, the player's choice: from the
+    /// next connection on, and at once on a live one.
+    func setStatus(_ status: OnlineStatus)
 }
 
 /// The presence of a storefront that has none.
 @MainActor
 final class NoPresence<Session>: AccountPresence {
     init() {}
+    static var showsStatus: Bool { false }
+    func setStatus(_ status: OnlineStatus) {}
     func connect(_ session: Session, account: String) {}
     func revoke() {}
     var state: FriendsPresentationState? { nil }
@@ -174,6 +181,9 @@ final class WebAccountModel<Store: WebStorefront> {
     let achievements = GameAchievementsModel(storeID: Store.storeID, describe: Store.describe)
     /// What lives with the connection, such as Epic's friends.
     let presence: Store.Presence
+    /// How the account shows to its friends, from the account's menu; nil
+    /// for a storefront without friends.
+    let onlineStatus: OnlineStatusChoice?
 
     private(set) var selectedGame: Game?
     private(set) var selectedGameDetails: Store.Details?
@@ -216,7 +226,8 @@ final class WebAccountModel<Store: WebStorefront> {
         language: String = Locale.preferredLanguages.first ?? "en-US",
         gameSessions: GameSessions<Store> = Store.sessions,
         libraryCache: LibraryCache? = nil,
-        installations makeInstallations: MakeInstallations? = nil
+        installations makeInstallations: MakeInstallations? = nil,
+        onlineStatus: OnlineStatusChoice? = nil
     ) {
         self.directory = directory
         rememberedSession = RememberedSession(keychain: keychain, accountID: Store.accountID,
@@ -237,6 +248,10 @@ final class WebAccountModel<Store: WebStorefront> {
         library = AccountLibrary(history: gameSessions.history, cache: libraryCache,
                                  installations: installations)
         presence = Store.Presence()
+        self.onlineStatus = Store.Presence.showsStatus
+            ? onlineStatus ?? OnlineStatusChoice(storeID: Store.storeID) : nil
+        self.onlineStatus?.follow(presence.setStatus)
+        self.onlineStatus?.follow(gameSessions.setStatus)
         installations.selection = { [weak self] in self?.installationSelection }
     }
 

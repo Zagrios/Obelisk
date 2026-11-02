@@ -302,6 +302,22 @@ impl<P: Provider> Client<P> {
         Ok(())
     }
 
+    /// Shows the account as `status` says, while the game runs and from its
+    /// start on. A session that ended has nothing left to show.
+    pub fn set_status(
+        &self,
+        account_id: &P::Account,
+        status: obelisk_core::OnlineStatus,
+    ) -> Result<(), P::Error> {
+        let command = Command::<P>::Status {
+            id: self.id.clone(),
+            account_id: account_id.clone(),
+            status,
+        };
+        self.command(Some(account_id), command, false)?;
+        Ok(())
+    }
+
     /// Opens a supervisor's start gate. Begin is idempotent, so a lost request
     /// is retried while the supervisor lives, instead of silently expiring.
     pub fn begin(&self) -> Result<(), P::Error> {

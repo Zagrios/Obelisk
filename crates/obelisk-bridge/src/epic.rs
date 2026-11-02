@@ -239,6 +239,11 @@ impl EpicSession {
         Ok(self.client.credentials().await?.into())
     }
 
+    /// Shows the account to its friends as `status` says: from the next
+    /// friends connection on, and at once on a live one.
+    pub fn set_status(&self, status: crate::OnlineStatus) {
+        self.client.set_status(status.into());
+    }
     pub async fn start_friends(&self) {
         self.client.start_friends();
     }

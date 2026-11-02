@@ -39,6 +39,8 @@ pub use library_folder::{
 };
 mod launch_settings;
 pub use launch_settings::*;
+mod presence;
+pub use presence::OnlineStatus;
 mod downloads;
 pub use downloads::*;
 mod library_cache;

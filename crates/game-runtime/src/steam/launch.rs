@@ -33,7 +33,8 @@ pub(crate) trait Machine: Send + Sync + 'static {
         config: Config,
         storage: Option<NativeStorage>,
     ) -> Result<Host, Error>;
-    fn publish(host: &Host, active: bool);
+    /// Shows the account as the game's presence says.
+    fn publish(host: &Host, shown: session::Shown);
     fn cloud(
         config: cloud::Config,
         credentials: Credentials,
@@ -60,8 +61,8 @@ impl Machine for Mac {
     ) -> Result<Host, Error> {
         startup.prepare(config, storage)
     }
-    fn publish(host: &Host, active: bool) {
-        let _ = host.set_presence(active);
+    fn publish(host: &Host, shown: session::Shown) {
+        let _ = host.set_presence(shown.status());
     }
     fn cloud(
         config: cloud::Config,
@@ -121,6 +122,7 @@ impl<M: Machine> session::Launch for Launch<M> {
             account_id: credentials.steam_id,
             store: Store::new(request.config.app_id),
             helpers: helpers.into(),
+            status: request.status,
         };
         let launch = Self {
             startup: Arc::new(Startup::new(credentials.clone())),
@@ -201,10 +203,10 @@ impl<M: Machine> session::Launch for Launch<M> {
         })
     }
 
-    fn running(&self, host: &Arc<Host>, pid: u32) -> Box<dyn Fn(bool) + Send + Sync> {
+    fn running(&self, host: &Arc<Host>, pid: u32) -> session::Publish {
         let _ = host.started(pid);
         let host = host.clone();
-        Box::new(move |active| M::publish(&host, active))
+        Box::new(move |shown| M::publish(&host, shown))
     }
 
     fn control(&self, host: &Arc<Host>) -> Option<session::Control<Steam>> {

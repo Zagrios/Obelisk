@@ -3,11 +3,10 @@
 //! launch plan's target checks and the handoff are the adapter's own.
 use super::*;
 use crate::launch_shell::{tests::fields, validate};
-use crate::supervisor::architecture::tests::{ARM64, INTEL, thin};
+use crate::supervisor::architecture::tests::{ARM64, thin};
 use crate::supervisor::session::tests::{
     HELD, Harness, Script, begin_opens_the_start_gate_once_and_only_for_its_account,
-    fixture_directory, hold, inspect, launch, lifecycle_suite, record, rosetta_suite, script,
-    write_helper,
+    fixture_directory, hold, inspect, launch, lifecycle_suite, record, script, write_helper,
 };
 use crate::supervisor::storage;
 use crate::supervisor::{client::SessionAlive, session::Operation};
@@ -61,6 +60,7 @@ impl Harness for EpicHarness {
                 },
                 environment: crate::native::environment(directory),
                 wine: None,
+                status: OnlineStatus::default(),
             },
         )
     }
@@ -100,6 +100,13 @@ impl Harness for EpicHarness {
 }
 
 struct FakeEpic;
+fn record_presence(shown: Shown) {
+    record(
+        &fixture_directory().0,
+        &crate::supervisor::session::presence_event(shown),
+    );
+}
+
 impl Services for FakeEpic {
     async fn login(_: &str, account_id: &str) -> Result<Arc<Self>> {
         assert_eq!(account_id, ACCOUNT);
@@ -112,8 +119,7 @@ impl Services for FakeEpic {
         fs::create_dir_all(&config.install).unwrap();
         let executable = config.install.join("game");
         if !script.missing {
-            let cpu = if script.intel { INTEL } else { ARM64 };
-            fs::write(&executable, thin(cpu, true)).unwrap();
+            fs::write(&executable, thin(ARM64, true)).unwrap();
         }
         Ok(LaunchPlan {
             app_name: config.app_name.clone(),
@@ -131,11 +137,14 @@ impl Services for FakeEpic {
             },
         })
     }
-    fn start_presence(&self, _: Activity) {
-        record(&fixture_directory().0, "presence:true");
+    fn start_presence(&self, _: Activity, status: OnlineStatus) {
+        record_presence(Shown::Started(status));
+    }
+    fn presence_status(&self, status: OnlineStatus) {
+        record_presence(Shown::Changed(status));
     }
     fn stop_presence(&self) {
-        record(&fixture_directory().0, "presence:false");
+        record_presence(Shown::Stopped);
     }
     fn release(&self) {}
     async fn cloud(
@@ -203,7 +212,6 @@ impl LaunchCloud<Error> for FakeCloud {
 
 mod lifecycle_of_epic {
     super::lifecycle_suite!(super::EpicHarness);
-    super::rosetta_suite!(super::EpicHarness);
 }
 
 #[test]
@@ -272,6 +280,7 @@ fn an_ownership_token_lives_as_long_as_its_prepared_game() {
             exchange_code: String::new(),
         },
         None,
+        OnlineStatus::default(),
     );
     let mut plan = launch_plan(Some(b"ownership"));
     plan.target.executable = config.install.join("game").to_string_lossy().into_owned();

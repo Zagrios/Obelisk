@@ -215,7 +215,10 @@ final class WebAuthentication: NSObject, WKNavigationDelegate, WKUIDelegate, NSW
                 window(for: webView)?.showProgress(flow.store.string(.connecting))
             }
         }
-        guard url.scheme == "https" || url.absoluteString == "about:blank" else {
+        // Cloudflare's captcha, which holds GOG's sign-in button disabled
+        // until it hands over its token, builds its frames as `about:srcdoc`.
+        guard url.scheme == "https" || url.absoluteString == "about:blank"
+                || (url.absoluteString == "about:srcdoc" && navigationAction.targetFrame?.isMainFrame == false) else {
             decisionHandler(.cancel)
             if navigationAction.targetFrame?.isMainFrame == true {
                 finish(.failure(WebAuthenticationError.unsupportedPage(flow.store)))

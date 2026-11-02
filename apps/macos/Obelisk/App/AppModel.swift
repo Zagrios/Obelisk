@@ -96,8 +96,12 @@ final class AppModel {
         // Every storefront's library shares one cache, as every cache of the
         // directory does, `LaunchHistory.live`'s included.
         libraryCache = LibraryCache(directory: directory.path)
-        self.steam = steam ?? SteamModel(directory: directory, libraryCache: libraryCache)
-        self.epic = epic ?? EpicModel(directory: directory, libraryCache: libraryCache)
+        self.steam = steam ?? SteamModel(
+            directory: directory, libraryCache: libraryCache,
+            onlineStatus: OnlineStatusChoice(storeID: LibrarySection.steam.rawValue, defaults: defaults))
+        self.epic = epic ?? EpicModel(
+            directory: directory, libraryCache: libraryCache,
+            onlineStatus: OnlineStatusChoice(storeID: EpicGames.storeID, defaults: defaults))
         self.gog = gog ?? GogModel(directory: directory, libraryCache: libraryCache)
         self.overlay = GameOverlayController(steam: self.steam, epic: self.epic, gog: self.gog, environment: overlay)
         self.steam.overlay = self.overlay

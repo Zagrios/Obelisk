@@ -9,7 +9,7 @@ use crate::{
     runtimes::{self, Answer, Runtime, Runtimes, Update},
     supervisor::{self, FailureReason, Phase, Provider, Record},
 };
-use obelisk_core::{Platform, transfer::CancelToken};
+use obelisk_core::{OnlineStatus, Platform, transfer::CancelToken};
 use std::{
     fmt,
     sync::{
@@ -104,6 +104,8 @@ pub trait Supervised<P: Provider>: Send + Sync {
     fn revoke(&self, account: &P::Account) -> Result<(), String>;
     /// The player's `control` of the running game.
     fn control(&self, account: &P::Account, control: P::Control) -> Result<(), String>;
+    /// How the game shows the account to its friends, from its start on.
+    fn set_status(&self, account: &P::Account, status: OnlineStatus) -> Result<(), String>;
 }
 
 impl<P: Provider> Supervised<P> for supervisor::Client<P> {
@@ -141,6 +143,9 @@ impl<P: Provider> Supervised<P> for supervisor::Client<P> {
     fn control(&self, account: &P::Account, control: P::Control) -> Result<(), String> {
         supervisor::Client::control(self, account, control).map_err(|error| error.to_string())
     }
+    fn set_status(&self, account: &P::Account, status: OnlineStatus) -> Result<(), String> {
+        supervisor::Client::set_status(self, account, status).map_err(|error| error.to_string())
+    }
 }
 
 /// Runs once a new supervisor holds the game and before its start gate opens,
@@ -171,11 +176,13 @@ pub trait Handover<P: Storefront>: Send + Sync + 'static {
     fn before_begin(&self) -> BeforeBegin {
         Box::new(|| {})
     }
-    /// Starts the supervisor; `cancel` stops a start in progress. It blocks.
-    /// A failure leaves unknown whether the supervisor accepted the game.
+    /// Starts the supervisor, whose game shows the account as `status` says;
+    /// `cancel` stops a start in progress. It blocks. A failure leaves
+    /// unknown whether the supervisor accepted the game.
     fn start(
         self,
         prepared: Self::Prepared,
+        status: OnlineStatus,
         cancel: CancelToken,
     ) -> Result<Arc<dyn Supervised<P>>, String>;
 }
@@ -368,6 +375,12 @@ struct Inner<P: Storefront> {
     declined_rosetta: Option<(String, u64)>,
     /// Where the player's answer to the active launch's `voile_update` goes.
     voile_answer: Option<oneshot::Sender<Answer>>,
+    /// How the player shows to their friends: every game shows it. `None`
+    /// until the UI told one, which leaves a recovered game as it was.
+    status: Option<OnlineStatus>,
+    /// The status the current supervisor started with or confirmed; `None`
+    /// for one recovered, which shows what it was last told.
+    shown: Option<OnlineStatus>,
 }
 impl<P: Storefront> Inner<P> {
     fn state(&self) -> State<P> {
@@ -405,6 +418,7 @@ impl<P: Storefront> Inner<P> {
         self.active = None;
         self.client = None;
         self.applied.clear();
+        self.shown = None;
         self.recovering = false;
         self.recovery_failed = false;
         self.operation = None;
@@ -438,6 +452,28 @@ impl<P: Storefront> Shared<P> {
                 inner.finish();
             }
         });
+    }
+
+    /// Tells `client`, the current supervisor, the status the player chose
+    /// last, unless it already shows it.
+    fn apply_status(&self, account: &P::Account, client: &Arc<dyn Supervised<P>>) {
+        let status = {
+            let inner = self.inner.lock().unwrap();
+            match inner.status {
+                Some(status) if inner.shown != Some(status) => status,
+                _ => return,
+            }
+        };
+        if client.set_status(account, status).is_ok() {
+            let mut inner = self.inner.lock().unwrap();
+            if inner
+                .client
+                .as_ref()
+                .is_some_and(|current| Arc::ptr_eq(current, client))
+            {
+                inner.shown = Some(status);
+            }
+        }
     }
 
     /// Revokes `account` through `client` once, when it was signed out.
@@ -482,6 +518,10 @@ impl<P: Storefront> Shared<P> {
             }
             inner.client = Some(client.clone());
             inner.applied.clear();
+            if begin.is_none() {
+                // Recovered: it may show an older status.
+                inner.shown = None;
+            }
             Some(
                 inner
                     .active
@@ -531,10 +571,11 @@ impl<P: Storefront> Shared<P> {
                 .active
                 .as_ref()
                 .map(|active| active.account.clone());
-            if let Some(account) = account
-                && self.apply_revocation(&account, &client).is_err()
-            {
-                revocation_failed = true;
+            if let Some(account) = account {
+                if self.apply_revocation(&account, &client).is_err() {
+                    revocation_failed = true;
+                }
+                self.apply_status(&account, &client);
             }
             let observation = match client.snapshot(revision) {
                 Ok(observation) => observation,
@@ -637,6 +678,8 @@ impl<P: Storefront> Sessions<P> {
             operation: Some(operation.clone()),
             declined_rosetta: None,
             voile_answer: None,
+            status: None,
+            shown: None,
         };
         let (published, _) = watch::channel(inner.state());
         let shared = Arc::new(Shared {
@@ -784,6 +827,21 @@ impl<P: Storefront> Sessions<P> {
                 Ok(())
             }
         }
+    }
+
+    /// How the player shows to their friends: the next game starts showing
+    /// it, and the one under way shows it at once.
+    pub fn set_status(&self, status: OnlineStatus) {
+        let (client, account) = {
+            let mut inner = self.shared.inner.lock().unwrap();
+            inner.status = Some(status);
+            match (&inner.client, &inner.active) {
+                (Some(client), Some(active)) => (client.clone(), active.account.clone()),
+                _ => return,
+            }
+        };
+        // Otherwise its session's observation tells it again.
+        self.shared.apply_status(&account, &client);
     }
 
     /// The player's `control` of session `id`'s running game. Refused while
@@ -1011,7 +1069,13 @@ impl<P: Storefront> Admission<P> {
             if admission.cancelled() {
                 return Err(Handoff::Refused(Failure::Cancelled));
             }
-            tokio::task::spawn_blocking(move || handover.start(prepared, cancel))
+            let status = {
+                let mut inner = admission.shared.inner.lock().unwrap();
+                let status = inner.status.unwrap_or_default();
+                inner.shown = Some(status);
+                status
+            };
+            tokio::task::spawn_blocking(move || handover.start(prepared, status, cancel))
                 .await
                 .map_err(|_| Handoff::Lost(P::SESSION_FAILED.to_owned()))?
                 .map_err(Handoff::Lost)

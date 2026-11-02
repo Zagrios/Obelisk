@@ -21,7 +21,7 @@ use steam_kit::cloud::{CloudListing, CloudMetadata};
 /// wait on it.
 pub trait Network: Send + Sync + 'static {
     /// The build a Transfer without a platform installs, of those the
-    /// account's licenses grant: the Mac build when its game runs
+    /// account's licenses grant: the Mac build when its game runs natively
     /// on Apple silicon, else the Windows build.
     fn platform<'a>(
         &'a self,
@@ -421,9 +421,11 @@ impl sessions::Handover<Steam> for Handover {
     }
     fn start(
         self,
-        request: super::Request,
+        mut request: super::Request,
+        status: obelisk_core::OnlineStatus,
         cancel: CancelToken,
     ) -> Result<Arc<dyn Supervised<Steam>>, String> {
+        request.status = status;
         let helper = request.config.helpers.join(crate::package::HOST);
         super::start(&helper, &self.credentials, request, &cancel)
             .map(|client| Arc::new(client) as Arc<dyn Supervised<Steam>>)

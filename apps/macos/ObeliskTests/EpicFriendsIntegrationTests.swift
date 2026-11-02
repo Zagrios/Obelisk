@@ -317,12 +317,16 @@ final class EpicFriendsTestSession: EpicSessionProtocol, @unchecked Sendable {
     private var friendAfter: UInt64 = 0
     private var credentialAfter: UInt64 = 0
     private var startCount = 0, reconnectCount = 0, disconnectCount = 0, maximum = 0
+    /// Statuses and friends starts, in order.
+    private var socialCalls: [String] = []
     private var expireNext = false
     init(accountID: String = "epic-account") {
         snapshot.accountId = accountID
         saved.accountId = accountID
     }
     var starts: Int { lock.withLock { startCount } }
+    var social: [String] { lock.withLock { socialCalls } }
+    func setStatus(status: OnlineStatus) { lock.withLock { socialCalls.append("status:\(status)") } }
     var reconnections: Int { lock.withLock { reconnectCount } }
     var disconnects: Int { lock.withLock { disconnectCount } }
     var maximumWaiters: Int { lock.withLock { maximum } }
@@ -339,7 +343,7 @@ final class EpicFriendsTestSession: EpicSessionProtocol, @unchecked Sendable {
     /// The next library request finds the account signed out.
     func expireNextGames() { lock.withLock { expireNext = true } }
     func playtimes() async throws -> [EpicPlaytime] { [] }
-    func startFriends() async { lock.withLock { startCount += 1 } }
+    func startFriends() async { lock.withLock { startCount += 1; socialCalls.append("start") } }
     func reconnectFriends() async {
         lock.withLock {
             reconnectCount += 1

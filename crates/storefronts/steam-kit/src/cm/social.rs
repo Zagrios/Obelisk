@@ -7,8 +7,6 @@ use super::{CmError, SERVICE_REQUEST, SteamConnection, chat, invites, own_game, 
 
 const CHANGE_STATUS: u32 = 716;
 const MMS_INVITE_TO_LOBBY: u32 = 6621;
-/// EPersonaState::Online.
-const ONLINE: u32 = 1;
 /// EResult values a chat request reports to the person (SteamKit eresult.steamd).
 const ACCESS_DENIED: i32 = 15;
 const RATE_LIMIT_EXCEEDED: i32 = 84;
@@ -86,13 +84,26 @@ impl SteamConnection {
         self.social.invites.clone()
     }
 
-    /// Shows the account Online. Steam keeps the status for the session, so a
-    /// caller sends it again after anything else changed it, such as a game.
-    pub(crate) async fn set_online(&self) -> Result<(), CmError> {
+    /// Shows the account as `status` says. Steam keeps the status for the
+    /// session, so a caller sends it again after anything else changed it,
+    /// such as a game.
+    ///
+    /// Sent as Steam's own status menu sends it (steamui `FriendStore`
+    /// `SetUserPersonaState` → `SendPersonaStateToServer`): chosen by the
+    /// player, not idle. Steam's client sends an Away the player did not
+    /// choose as idleness only. Steam's own friends list shows an Away
+    /// friend as Online, whichever client set it.
+    pub(crate) async fn set_status(
+        &self,
+        status: obelisk_core::OnlineStatus,
+    ) -> Result<(), CmError> {
         self.send_unjobbed(
             CHANGE_STATUS,
             &proto::ChangeStatus {
-                persona_state: Some(ONLINE),
+                persona_state: Some(crate::friends::persona_state(status).into()),
+                persona_set_by_user: Some(true),
+                need_persona_response: Some(false),
+                is_client_idle: Some(false),
             },
             None,
             None,

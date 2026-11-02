@@ -1677,6 +1677,12 @@ public protocol EpicSessionProtocol: AnyObject, Sendable {
     
     func reconnectFriends() async 
     
+    /**
+     * Shows the account to its friends as `status` says: from the next
+     * friends connection on, and at once on a live one.
+     */
+    func setStatus(status: OnlineStatus) 
+    
     func shutdownObservers() 
     
     func startFriends() async 
@@ -1977,6 +1983,19 @@ open func reconnectFriends()async   {
             errorHandler: nil
             
         )
+}
+    
+    /**
+     * Shows the account to its friends as `status` says: from the next
+     * friends connection on, and at once on a live one.
+     */
+open func setStatus(status: OnlineStatus)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_obelisk_bridge_fn_method_epicsession_set_status(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeOnlineStatus_lower(status),uniffiCallStatus
+    )
+}
 }
     
 open func shutdownObservers()  {try! rustCall() {
@@ -3521,7 +3540,10 @@ public protocol SteamConnectionAttemptProtocol: AnyObject, Sendable {
     
     func cancel() 
     
-    func connect(credentials: SteamCredentials, library: LibraryCache?) async throws  -> SteamSession
+    /**
+     * Signs in, showing the account to its friends as `status` says.
+     */
+    func connect(credentials: SteamCredentials, library: LibraryCache?, status: OnlineStatus) async throws  -> SteamSession
     
 }
 /**
@@ -3596,12 +3618,15 @@ open func cancel()  {try! rustCall() {
 }
 }
     
-open func connect(credentials: SteamCredentials, library: LibraryCache?)async throws  -> SteamSession  {
+    /**
+     * Signs in, showing the account to its friends as `status` says.
+     */
+open func connect(credentials: SteamCredentials, library: LibraryCache?, status: OnlineStatus)async throws  -> SteamSession  {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
                 uniffi_obelisk_bridge_fn_method_steamconnectionattempt_connect(
-                        self.uniffiCloneHandle(),FfiConverterTypeSteamCredentials_lower(credentials),FfiConverterOptionTypeLibraryCache.lower(library)
+                        self.uniffiCloneHandle(),FfiConverterTypeSteamCredentials_lower(credentials),FfiConverterOptionTypeLibraryCache.lower(library),FfiConverterTypeOnlineStatus_lower(status)
                 )
             },
             pollFunc: ffi_obelisk_bridge_rust_future_poll_u64,
@@ -4252,8 +4277,11 @@ public protocol SteamSessionProtocol: AnyObject, Sendable {
     
     /**
      * Shows the account Online again, for instance after a game ended.
+     * Shows the account as `status` says, through this connection and
+     * every later one; also again once a game's own Steam session changed
+     * it.
      */
-    func setOnline() async throws 
+    func setStatus(status: OnlineStatus) async throws 
     
 }
 open class SteamSession: SteamSessionProtocol, @unchecked Sendable {
@@ -4308,13 +4336,14 @@ open class SteamSession: SteamSessionProtocol, @unchecked Sendable {
 
     
     /**
-     * Keeps every library it loads in `library`.
+     * Keeps every library it loads in `library`, and shows the account to
+     * its friends as `status` says.
      */
-public static func connect(credentials: SteamCredentials, library: LibraryCache?)async throws  -> SteamSession  {
+public static func connect(credentials: SteamCredentials, library: LibraryCache?, status: OnlineStatus)async throws  -> SteamSession  {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_obelisk_bridge_fn_constructor_steamsession_connect(FfiConverterTypeSteamCredentials_lower(credentials),FfiConverterOptionTypeLibraryCache.lower(library)
+                uniffi_obelisk_bridge_fn_constructor_steamsession_connect(FfiConverterTypeSteamCredentials_lower(credentials),FfiConverterOptionTypeLibraryCache.lower(library),FfiConverterTypeOnlineStatus_lower(status)
                 )
             },
             pollFunc: ffi_obelisk_bridge_rust_future_poll_u64,
@@ -4819,13 +4848,16 @@ open func sendTyping(friendSteamId: UInt64)async throws   {
     
     /**
      * Shows the account Online again, for instance after a game ended.
+     * Shows the account as `status` says, through this connection and
+     * every later one; also again once a game's own Steam session changed
+     * it.
      */
-open func setOnline()async throws   {
+open func setStatus(status: OnlineStatus)async throws   {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_obelisk_bridge_fn_method_steamsession_set_online(
-                        self.uniffiCloneHandle()
+                uniffi_obelisk_bridge_fn_method_steamsession_set_status(
+                        self.uniffiCloneHandle(),FfiConverterTypeOnlineStatus_lower(status)
                 )
             },
             pollFunc: ffi_obelisk_bridge_rust_future_poll_void,
@@ -4949,6 +4981,13 @@ public protocol StorefrontSessionsProtocol: AnyObject, Sendable {
      * Account revocation. The game keeps running.
      */
     func revoke(account: GameAccount) 
+    
+    /**
+     * How the player shows to their friends: the next game starts showing
+     * it, and the one under way shows it at once. Nothing for a storefront
+     * whose games show no presence.
+     */
+    func setStatus(status: OnlineStatus) async 
     
     func state()  -> GameSessionsState
     
@@ -5211,6 +5250,28 @@ open func revoke(account: GameAccount)  {try! rustCall() {
         FfiConverterTypeGameAccount_lower(account),uniffiCallStatus
     )
 }
+}
+    
+    /**
+     * How the player shows to their friends: the next game starts showing
+     * it, and the one under way shows it at once. Nothing for a storefront
+     * whose games show no presence.
+     */
+open func setStatus(status: OnlineStatus)async   {
+    return
+        try!  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_obelisk_bridge_fn_method_storefrontsessions_set_status(
+                        self.uniffiCloneHandle(),FfiConverterTypeOnlineStatus_lower(status)
+                )
+            },
+            pollFunc: ffi_obelisk_bridge_rust_future_poll_void,
+            completeFunc: ffi_obelisk_bridge_rust_future_complete_void,
+            freeFunc: ffi_obelisk_bridge_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: nil
+            
+        )
 }
     
 open func state() -> GameSessionsState  {
@@ -11762,7 +11823,7 @@ public enum GameOffer: Equatable, Hashable {
     /**
      * With the depots of `language`. Steam picks the build the account can
      * install as the Transfer starts: the Mac build when its game runs
-     * on Apple silicon, else the Windows build.
+     * natively on Apple silicon, else the Windows build.
      */
     case steam(appId: UInt32, name: String, language: String
     )
@@ -12883,6 +12944,85 @@ public func FfiConverterTypeLibraryFolderInspection_lift(_ buf: RustBuffer) thro
 #endif
 public func FfiConverterTypeLibraryFolderInspection_lower(_ value: LibraryFolderInspection) -> RustBuffer {
     return FfiConverterTypeLibraryFolderInspection.lower(value)
+}
+
+
+
+/**
+ * The status the player picks for a storefront account.
+ */
+
+public enum OnlineStatus: Equatable, Hashable {
+    
+    case online
+    case away
+    /**
+     * Friends see the account offline.
+     */
+    case invisible
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension OnlineStatus: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeOnlineStatus: FfiConverterRustBuffer {
+    typealias SwiftType = OnlineStatus
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> OnlineStatus {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .online
+        
+        case 2: return .away
+        
+        case 3: return .invisible
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: OnlineStatus, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .online:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .away:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .invisible:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOnlineStatus_lift(_ buf: RustBuffer) throws -> OnlineStatus {
+    return try FfiConverterTypeOnlineStatus.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOnlineStatus_lower(_ value: OnlineStatus) -> RustBuffer {
+    return FfiConverterTypeOnlineStatus.lower(value)
 }
 
 
@@ -16153,6 +16293,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_obelisk_bridge_checksum_method_epicsession_reconnect_friends() != 49037) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_obelisk_bridge_checksum_method_epicsession_set_status() != 35834) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_obelisk_bridge_checksum_method_epicsession_shutdown_observers() != 13061) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -16193,6 +16336,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_method_storefrontsessions_revoke() != 35880) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_method_storefrontsessions_set_status() != 22283) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_method_storefrontsessions_state() != 19945) {
@@ -16438,7 +16584,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_obelisk_bridge_checksum_method_steamsession_send_typing() != 6475) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_obelisk_bridge_checksum_method_steamsession_set_online() != 17400) {
+    if (uniffi_obelisk_bridge_checksum_method_steamsession_set_status() != 13167) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_method_steamchatfixture_connect_invite() != 34020) {
@@ -16477,7 +16623,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_obelisk_bridge_checksum_method_steamconnectionattempt_cancel() != 56619) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_obelisk_bridge_checksum_method_steamconnectionattempt_connect() != 54392) {
+    if (uniffi_obelisk_bridge_checksum_method_steamconnectionattempt_connect() != 40355) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_method_steamfriendsfixture_close() != 38754) {
@@ -16546,7 +16692,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_obelisk_bridge_checksum_constructor_steamlogin_begin_qr() != 58090) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_obelisk_bridge_checksum_constructor_steamsession_connect() != 9835) {
+    if (uniffi_obelisk_bridge_checksum_constructor_steamsession_connect() != 59461) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_constructor_steamchatfixture_new() != 16613) {

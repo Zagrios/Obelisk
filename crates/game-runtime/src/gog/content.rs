@@ -23,7 +23,7 @@ pub trait Network: Send + Sync + 'static {
     /// The account the session is signed in to now.
     fn account_id(&self) -> BoxFuture<'_, Result<String, Failure>>;
     /// The build a Transfer without a platform installs, with the depots of
-    /// `language`: the Mac build when its game runs on Apple
+    /// `language`: the Mac build when its game runs natively on Apple
     /// silicon, else the Windows build.
     fn platform<'a>(
         &'a self,

@@ -39,7 +39,7 @@ pub enum GogError {
 }
 
 use obelisk_core::{
-    build_choice::{DOES_NOT_RUN, Unavailable},
+    build_choice::{NOT_NATIVE, Unavailable},
     install::InstallError,
     publish::PublishError,
     transfer::Cancelled,
@@ -55,8 +55,8 @@ impl From<Unavailable> for GogError {
     fn from(unavailable: Unavailable) -> Self {
         match unavailable {
             Unavailable::NoBuild => Self::NoBuild,
-            Unavailable::DoesNotRun => Self::Service {
-                message: DOES_NOT_RUN.into(),
+            Unavailable::NotNative => Self::Service {
+                message: NOT_NATIVE.into(),
             },
         }
     }

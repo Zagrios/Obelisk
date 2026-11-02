@@ -3,10 +3,11 @@
 use crate::{
     EpicError, auth,
     client::SocialAuth,
-    friends::{Activity, Connection, Roster, Snapshot},
+    friends::{Activity, Connection, Roster, Snapshot, presence_status},
     stomp,
 };
 use futures_util::{SinkExt, StreamExt};
+use obelisk_core::OnlineStatus;
 use serde_json::Value;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -35,6 +36,8 @@ pub(crate) struct SocialService {
     state: watch::Sender<Snapshot>,
     epoch: Arc<AtomicU64>,
     task: Mutex<Option<JoinHandle<()>>>,
+    /// The status the account shows; a live connection registers each change.
+    status: watch::Sender<OnlineStatus>,
 }
 impl SocialService {
     pub(crate) fn new(account: String) -> Self {
@@ -42,7 +45,17 @@ impl SocialService {
             state: watch::channel(Snapshot::new(account)).0,
             epoch: Arc::new(AtomicU64::new(0)),
             task: Mutex::new(None),
+            status: watch::channel(OnlineStatus::default()).0,
         }
+    }
+    /// Shows the account as `status` says, from the next registration on:
+    /// at once on a live connection.
+    pub(crate) fn set_status(&self, status: OnlineStatus) {
+        self.status.send_if_modified(|current| {
+            let changed = *current != status;
+            *current = status;
+            changed
+        });
     }
     #[cfg(test)]
     pub(crate) fn snapshot(&self) -> Snapshot {
@@ -70,7 +83,12 @@ impl SocialService {
             generation,
         };
         publish.set(Connection::Loading, None, None);
-        *task = Some(tokio::spawn(run(auth, publish, activity)));
+        *task = Some(tokio::spawn(run(
+            auth,
+            publish,
+            activity,
+            self.status.subscribe(),
+        )));
     }
     pub(crate) fn stop(&self) {
         let mut task = self.task.lock().unwrap_or_else(|e| e.into_inner());
@@ -178,7 +196,12 @@ fn http_status(
         _ => Err(Failure::Protocol),
     }
 }
-async fn run(auth: SocialAuth, publish: Publisher, activity: Option<Activity>) {
+async fn run(
+    auth: SocialAuth,
+    publish: Publisher,
+    activity: Option<Activity>,
+    mut status: watch::Receiver<OnlineStatus>,
+) {
     let account = publish.state.borrow().account_id.clone();
     let mut attempts = 0u32;
     let mut rejected = None;
@@ -196,6 +219,7 @@ async fn run(auth: SocialAuth, publish: Publisher, activity: Option<Activity>) {
                     &publish,
                     &mut ready_since,
                     activity.as_ref(),
+                    &mut status,
                 )
                 .await;
                 (result.err().unwrap_or(Failure::Network), Some(token))
@@ -355,9 +379,8 @@ async fn register_presence(
             "presence",
             &registration.connection,
         ]);
-    // Epic requires an automatic connection status. Omitting statusSettings follows
-    // the launcher's automatic registration and leaves manual preferences to Epic.
-    // The supervisor advertises only the game it owns, on its own connection.
+    // The status is the player's choice, as the launcher's own status menu sends
+    // it. The supervisor advertises only the game it owns, on its own connection.
     let mut conn = serde_json::json!({"props": {}});
     if let Some(activity) = &registration.activity {
         let mut running = serde_json::json!({"id": activity.id});
@@ -373,7 +396,7 @@ async fn register_presence(
         .bearer_auth(token)
         .header("X-Epic-Agent", "epic-social")
         .header("X-HTTP-Method-Override", "PATCH")
-        .json(&serde_json::json!({"status":"online", "conn":conn}))
+        .json(&serde_json::json!({"status": presence_status(registration.status), "conn": conn}))
         .send()
         .await
         .map_err(|_| Failure::Network)?;
@@ -513,10 +536,14 @@ async fn bounded_bootstrap(
 type Bootstrap<'a> = std::pin::Pin<
     Box<dyn std::future::Future<Output = Result<BootstrapState, Failure>> + Send + 'a>,
 >;
+type Registering<'a> =
+    std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), Failure>> + Send + 'a>>;
 
+#[derive(Clone)]
 struct Registration {
     connection: String,
     activity: Option<Activity>,
+    status: OnlineStatus,
 }
 
 async fn connection(
@@ -526,6 +553,7 @@ async fn connection(
     publish: &Publisher,
     ready_since: &mut Option<Instant>,
     activity: Option<&Activity>,
+    status: &mut watch::Receiver<OnlineStatus>,
 ) -> Result<(), Failure> {
     let mut request = auth
         .api
@@ -584,6 +612,10 @@ async fn connection(
     let mut buffer_bytes = 0usize;
     let mut followup_refresh = false;
     let mut refresh: Option<Bootstrap<'_>> = None;
+    // This connection's registration, once its welcome named it, and the
+    // registration of the status the player changed since.
+    let mut registered: Option<Registration> = None;
+    let mut reregistration: Option<Registering<'_>> = None;
     let mut outgoing = None;
     let far = || Instant::now() + Duration::from_secs(86400);
     let mut send_deadline = far();
@@ -654,7 +686,9 @@ async fn connection(
                                     let registration = Registration {
                                         connection: event["connectionId"].as_str().unwrap().to_owned(),
                                         activity: activity.cloned(),
+                                        status: *status.borrow_and_update(),
                                     };
+                                    registered = Some(registration.clone());
                                     refresh = Some(Box::pin(bounded_bootstrap(auth, token, account, profiles.clone(), Some(registration))));
                                 }
                                 continue;
@@ -684,6 +718,31 @@ async fn connection(
                         "ERROR" => return Err(Failure::Protocol),
                         _ => return Err(Failure::Protocol),
                     }
+                }
+            }
+            // After the first registration, so a change never overtakes it.
+            changed = status.changed(), if ready && registered.is_some() && reregistration.is_none() => {
+                if changed.is_err() { return Err(Failure::Network); }
+                let registration = registered.as_mut().expect("guarded");
+                registration.status = *status.borrow_and_update();
+                let registration = registration.clone();
+                reregistration = Some(Box::pin(async move {
+                    timeout(REQUEST_TIMEOUT, register_presence(auth, token, account, &registration))
+                        .await
+                        .map_err(|_| Failure::Network)?
+                }));
+            }
+            result = async { reregistration.as_mut().unwrap().await }, if reregistration.is_some() => {
+                reregistration = None;
+                match result {
+                    Ok(()) => {}
+                    // As at bootstrap: friends still load without presence.
+                    // Only a ready connection re-registers.
+                    Err(Failure::Forbidden) => {
+                        presence_forbidden = true;
+                        publish_ready(publish, &roster, presence_forbidden);
+                    }
+                    Err(error) => return Err(error),
                 }
             }
             result = async { refresh.as_mut().unwrap().await }, if refresh.is_some() => {

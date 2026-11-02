@@ -4,7 +4,7 @@
 //! A storefront supplies its `Launch`; the order of the steps is the core's.
 use super::*;
 use crate::supervisor::architecture::Architecture;
-use obelisk_core::transfer::CancelToken;
+use obelisk_core::{OnlineStatus, transfer::CancelToken};
 use std::{
     io::{Read, Write},
     os::fd::OwnedFd,
@@ -26,6 +26,26 @@ use std::{
 pub type Inspect = fn(u32) -> Result<Option<Identity>, Error>;
 
 type Failure<L> = <<L as Launch>::P as Provider>::Error;
+/// How a running game shows the account to its friends.
+pub(crate) type Publish = Box<dyn Fn(Shown) + Send + Sync>;
+/// What a running game's presence publishes, in this order: `Started`
+/// once, a `Changed` for each status the player picks after, `Stopped` once.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Shown {
+    Started(OnlineStatus),
+    Changed(OnlineStatus),
+    /// The account shows offline.
+    Stopped,
+}
+impl Shown {
+    /// The status the account shows, `None` once offline.
+    pub(crate) fn status(self) -> Option<OnlineStatus> {
+        match self {
+            Self::Started(status) | Self::Changed(status) => Some(status),
+            Self::Stopped => None,
+        }
+    }
+}
 /// How the player's controls reach a running game.
 pub(crate) type Control<P> =
     Box<dyn Fn(<P as Provider>::Control) -> Result<(), Error> + Send + Sync>;
@@ -51,6 +71,9 @@ pub(crate) struct Opening<P: Provider> {
     pub store: P::Store,
     /// The directory that bundles the Obelisk Rosetta helper app.
     pub helpers: PathBuf,
+    /// How the game shows the account once it runs, until the player
+    /// changes it.
+    pub status: OnlineStatus,
 }
 
 /// A prepared game, ready for exec admission.
@@ -163,7 +186,7 @@ pub(crate) trait Launch: Sized + 'static {
         cloud: Option<&Self::Cloud>,
     ) -> Result<Prepared<Self::Host>, Failure<Self>>;
     /// The game runs. Returns how its presence is published.
-    fn running(&self, host: &Arc<Self::Host>, pid: u32) -> Box<dyn Fn(bool) + Send + Sync>;
+    fn running(&self, host: &Arc<Self::Host>, pid: u32) -> Publish;
     /// The game runs: how the player's controls reach it, if the storefront
     /// offers any. They stop once the game exits.
     fn control(&self, _host: &Arc<Self::Host>) -> Option<Control<Self::P>> {
@@ -227,26 +250,52 @@ impl Questions {
     }
 }
 
+/// How tests record what a game's presence published.
+#[cfg(test)]
+pub(crate) fn presence_event(shown: Shown) -> String {
+    let shown = match shown.status() {
+        None => "offline",
+        Some(OnlineStatus::Online) => "online",
+        Some(OnlineStatus::Away) => "away",
+        Some(OnlineStatus::Invisible) => "invisible",
+    };
+    format!("presence:{shown}")
+}
+
 /// Presence goes Active once, after exec is confirmed, and stops for good:
-/// a revocation before exec prevents any later publication.
-struct Presence(Mutex<PresenceState>);
+/// a revocation before exec prevents any later publication. It shows the
+/// status the player chose last.
+struct Presence(Mutex<(OnlineStatus, PresenceState)>);
 enum PresenceState {
     Pending,
-    Active(Box<dyn Fn(bool) + Send + Sync>),
+    Active(Publish),
     Stopped,
 }
 impl Presence {
-    fn start(&self, publish: Box<dyn Fn(bool) + Send + Sync>) {
-        let mut state = self.0.lock().unwrap();
-        if matches!(*state, PresenceState::Pending) {
-            publish(true);
+    fn new(status: OnlineStatus) -> Self {
+        Self(Mutex::new((status, PresenceState::Pending)))
+    }
+    fn start(&self, publish: Publish) {
+        let (status, state) = &mut *self.0.lock().unwrap();
+        if matches!(state, PresenceState::Pending) {
+            publish(Shown::Started(*status));
             *state = PresenceState::Active(publish);
         }
     }
+    /// The player changed the status: a running game shows it at once.
+    fn set_status(&self, status: OnlineStatus) {
+        let (shown, state) = &mut *self.0.lock().unwrap();
+        if std::mem::replace(shown, status) == status {
+            return;
+        }
+        if let PresenceState::Active(publish) = state {
+            publish(Shown::Changed(status));
+        }
+    }
     fn stop(&self) {
-        let mut state = self.0.lock().unwrap();
-        if let PresenceState::Active(publish) = &*state {
-            publish(false);
+        let (_, state) = &mut *self.0.lock().unwrap();
+        if let PresenceState::Active(publish) = state {
+            publish(Shown::Stopped);
         }
         *state = PresenceState::Stopped;
     }
@@ -552,7 +601,7 @@ pub(crate) fn serve<L: Launch>(
         cancel: CancelToken::new(),
         root: opening.root,
         questions: questions.clone(),
-        presence: Presence(Mutex::new(PresenceState::Pending)),
+        presence: Presence::new(opening.status),
         rosetta: crate::supervisor::rosetta::Gate::new(
             crate::supervisor::rosetta::helper(&opening.helpers),
             L::rosetta,
@@ -988,6 +1037,16 @@ fn respond<L: Launch>(mut stream: UnixStream, session: &Arc<Session<L::P>>) -> R
         }
         Command::Quit { id } => end(session, &id, false)?,
         Command::ForceQuit { id } => end(session, &id, true)?,
+        Command::Status {
+            id,
+            account_id,
+            status,
+        } => {
+            if !same(&session.state.lock().unwrap(), &id, Some(&account_id)) {
+                return Err(Error::InvalidSession);
+            }
+            session.presence.set_status(status);
+        }
         Command::Control {
             id,
             account_id,

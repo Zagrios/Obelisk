@@ -31,7 +31,7 @@ pub trait Network: Send + Sync + 'static {
     /// A short-lived code the game signs in with.
     fn exchange_code(&self) -> BoxFuture<'_, Result<String, Failure>>;
     /// The build a Transfer without a platform installs: the Mac build when
-    /// its game runs on Apple silicon, else the Windows build.
+    /// its game runs natively on Apple silicon, else the Windows build.
     fn platform<'a>(&'a self, product: &'a Product) -> BoxFuture<'a, Result<Platform, Failure>>;
     /// Runs `transfer` into the folder its begin settled the platform of.
     fn download<'a>(

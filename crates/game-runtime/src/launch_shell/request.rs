@@ -10,7 +10,7 @@ use crate::{
     },
     wine,
 };
-use obelisk_core::{Platform, launch::LaunchTarget, transfer::CancelToken};
+use obelisk_core::{OnlineStatus, Platform, launch::LaunchTarget, transfer::CancelToken};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, io::Read};
 
@@ -33,6 +33,9 @@ pub(crate) struct Request<G: Launchable> {
     /// How a Windows build runs.
     #[serde(default)]
     pub wine: Option<wine::Config>,
+    /// How the game shows the account to its friends.
+    #[serde(default)]
+    pub status: OnlineStatus,
 }
 
 /// Obelisk's side: `validate`, then `runs_in` (else `Unsupported`), then
@@ -45,6 +48,7 @@ pub(crate) fn start<G: Launchable>(
     account_id: String,
     credential: G::Credential,
     wine: Option<wine::Config>,
+    status: OnlineStatus,
     cancel: CancelToken,
 ) -> Result<supervisor::Client<G>, G::Error> {
     validate::<G>(&configuration, &account_id)?;
@@ -53,7 +57,7 @@ pub(crate) fn start<G: Launchable>(
         return Err(G::Error::unsupported());
     }
     let store = G::store(&configuration);
-    let request = Request::<G>::new(configuration, account_id, credential, wine);
+    let request = Request::<G>::new(configuration, account_id, credential, wine, status);
     let build = G::build(&request.config);
     Ok(supervisor::Client::<G>::start_with(
         build.session_directory,
@@ -88,6 +92,7 @@ impl<G: Launchable> Request<G> {
             helpers: supervisor::rosetta::helpers_of_host(build.helper)
                 .ok_or_else(G::Error::session)?
                 .into(),
+            status: request.status,
         };
         Ok((opening, request))
     }
@@ -163,6 +168,7 @@ impl<G: Launchable> Request<G> {
         account_id: String,
         credential: G::Credential,
         wine: Option<wine::Config>,
+        status: OnlineStatus,
     ) -> Self {
         Self {
             environment: native::environment(G::build(&configuration).home),
@@ -171,6 +177,7 @@ impl<G: Launchable> Request<G> {
             account_id,
             credential,
             wine,
+            status,
         }
     }
 

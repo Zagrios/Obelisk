@@ -57,7 +57,7 @@ struct EpicView: View {
     }
 
     @ViewBuilder private var accountMenu: some View {
-        Text(model.accountName ?? L10n.string("ui.epic.account"))
+        AccountMenuName(name: model.accountName ?? L10n.string("ui.epic.account"), status: model.onlineStatus)
         Text(L10n.string("ui.library.account_game_count", Int64(model.library.games.count)))
         Divider()
         EpicFriendsMenuButton(model: model)

@@ -166,4 +166,24 @@ final class GogModelTests: XCTestCase {
         XCTAssertEqual(loginWindow?.title, L10n.string("model.gogWeb.title"))
         XCTAssertEqual(loginWindow?.isVisible, false)
     }
+
+    /// GOG's sign-in button stays disabled until Cloudflare's captcha, which
+    /// runs in `about:srcdoc` frames, hands its token over.
+    func testTheGogWindowLetsAFrameBuildItsOwnDocument() async throws {
+        let completed = expectation(description: "GOG callback intercepted from a srcdoc frame")
+        let task = Task {
+            defer { completed.fulfill() }
+            return try await WebAuthentication(.gog).authorize { webView in
+                webView.loadHTMLString("""
+                    <html><body>
+                    <iframe srcdoc="<script>parent.location.href = 'https://embed.gog.com/on_login_success?origin=client&code=fixture-srcdoc'</script>"></iframe>
+                    </body></html>
+                    """, baseURL: nil)
+            }
+        }
+        await fulfillment(of: [completed], timeout: 10)
+        task.cancel()
+        let code = try await task.value
+        XCTAssertEqual(code, "fixture-srcdoc")
+    }
 }

@@ -324,7 +324,7 @@ async fn a_mac_build_without_a_mac_program_has_no_key_and_asks_steam_nothing() {
     steam.forget_requests();
     assert_eq!(steam.during(game.key(&mac)).await.unwrap(), None);
     let read = steam.during(game.inspect(&mac, &CancelToken::new())).await;
-    assert!(matches!(read.unwrap(), Inspection::DoesNotRun));
+    assert!(matches!(read.unwrap(), Inspection::NotNative));
     assert!(steam.requests().is_empty());
 }
 
@@ -373,7 +373,7 @@ impl GameBuilds for ReadByThePick<'_> {
         _: &Licensed,
         _: &CancelToken,
     ) -> Result<Inspection<Self::Kept>, ClientError> {
-        Ok(Inspection::Runs(self.kept.clone()))
+        Ok(Inspection::Native(self.kept.clone()))
     }
 }
 

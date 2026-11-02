@@ -58,7 +58,7 @@ struct GogView: View {
     }
 
     @ViewBuilder private var accountMenu: some View {
-        Text(model.accountName ?? L10n.string("ui.gog.account"))
+        AccountMenuName(name: model.accountName ?? L10n.string("ui.gog.account"), status: model.onlineStatus)
         Text(L10n.string("ui.library.account_game_count", Int64(model.library.games.count)))
         Divider()
         Button(L10n.string("ui.library.refresh"), systemImage: "arrow.clockwise", action: model.refresh)

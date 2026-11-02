@@ -55,6 +55,7 @@ impl Harness for SteamHarness {
                     app_id: 42,
                     prefix: None,
                 }),
+                status: obelisk_core::OnlineStatus::default(),
             },
         )
     }
@@ -126,8 +127,11 @@ impl Machine for FakeMac {
         fs::write(directory.join("host-pid"), host.pid().to_string()).unwrap();
         Ok(host)
     }
-    fn publish(_: &Host, active: bool) {
-        record(&fixture_directory().0, &format!("presence:{active}"));
+    fn publish(_: &Host, shown: crate::supervisor::session::Shown) {
+        record(
+            &fixture_directory().0,
+            &crate::supervisor::session::presence_event(shown),
+        );
     }
     fn cloud(
         _: cloud::Config,

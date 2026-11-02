@@ -21,7 +21,7 @@ use crate::{
         Provider,
         architecture::{
             Architecture,
-            tests::{ARM64, I386, INTEL, thin},
+            tests::{ARM64, INTEL, thin},
         },
         session::{
             Opening,
@@ -105,7 +105,13 @@ fn request<F: Setup>(
     configuration: Configuration<F::G>,
     wine: Option<wine::Config>,
 ) -> Request<F::G> {
-    Request::new(configuration, F::account(), F::credential(), wine)
+    Request::new(
+        configuration,
+        F::account(),
+        F::credential(),
+        wine,
+        obelisk_core::OnlineStatus::default(),
+    )
 }
 
 /// The key `result` failed with.
@@ -218,6 +224,7 @@ impl<F: Setup> Handoff<F> {
             F::account(),
             F::credential(),
             wine,
+            obelisk_core::OnlineStatus::Online,
             CancelToken::new(),
         ))
     }
@@ -237,13 +244,21 @@ pub(crate) fn a_mac_build_hands_its_supervisor_this_request_and_nothing_more<F: 
         "a supervisor starts without any environment of Obelisk's"
     );
     let request = handed.request;
-    let mut expected = vec!["account_id", "config", "environment", "id", "wine"];
+    let mut expected = vec![
+        "account_id",
+        "config",
+        "environment",
+        "id",
+        "status",
+        "wine",
+    ];
     let credential = F::credential_json();
     expected.extend(fields(&credential));
     expected.sort_unstable();
     assert_eq!(fields(&request), expected);
     assert!(uuid::Uuid::parse_str(request["id"].as_str().unwrap()).is_ok());
     assert_eq!(request["account_id"], F::account());
+    assert_eq!(request["status"], "online");
     for (field, value) in credential.as_object().unwrap() {
         assert_eq!(&request[field], value, "{field}");
     }
@@ -309,6 +324,7 @@ pub(crate) fn a_start_that_cannot_run_the_build_spawns_no_supervisor<F: Setup>()
             account,
             F::credential(),
             wine,
+            obelisk_core::OnlineStatus::Online,
             CancelToken::new(),
         ));
         assert_eq!(started.as_deref(), Some(F::UNSUPPORTED));
@@ -322,6 +338,7 @@ pub(crate) fn a_start_that_cannot_run_the_build_spawns_no_supervisor<F: Setup>()
             account,
             F::credential(),
             None,
+            obelisk_core::OnlineStatus::Online,
             CancelToken::new(),
         ));
         assert_eq!(started.as_deref(), Some(shown));
@@ -336,6 +353,7 @@ pub(crate) fn a_start_that_cannot_run_the_build_spawns_no_supervisor<F: Setup>()
         F::account(),
         F::credential(),
         None,
+        obelisk_core::OnlineStatus::Online,
         cancelled,
     ));
     assert_eq!(started.as_deref(), Some(F::CANCELLED));
@@ -485,33 +503,28 @@ pub(crate) fn a_mac_target_checks_the_full_macho_before_repairing_its_permission
     fs::write(&executable, b"\xcf\xfa\xed\xfe").unwrap();
     fs::set_permissions(&executable, fs::Permissions::from_mode(0o600)).unwrap();
 
-    // A truncated header, and a 32-bit Intel program, run nowhere.
-    for bytes in [b"\xcf\xfa\xed\xfe".to_vec(), thin(I386, true)] {
+    for bytes in [b"\xcf\xfa\xed\xfe".to_vec(), thin(INTEL, true)] {
         fs::write(&executable, bytes).unwrap();
         assert_eq!(
             key(request.target(&launched, None)).as_deref(),
-            Some("backend.runtime.macBuildDoesNotRun")
+            Some("backend.runtime.macBuildNotNative")
         );
         assert_eq!(mode(), 0, "a build that cannot run is left as it is");
     }
 
-    // A 64-bit Intel program runs under Rosetta, an arm64 one natively.
-    for (cpu, expected) in [(INTEL, Architecture::Intel), (ARM64, Architecture::Arm64)] {
-        fs::set_permissions(&executable, fs::Permissions::from_mode(0o600)).unwrap();
-        fs::write(&executable, thin(cpu, true)).unwrap();
-        let started = request.target(&launched, None).unwrap();
-        assert_eq!(started.architecture, expected);
-        assert_eq!(
-            started.target.executable,
-            executable.canonicalize().unwrap()
-        );
-        assert!(started.kept.is_none());
-        assert_ne!(
-            mode(),
-            0,
-            "an installer that dropped the permission is repaired"
-        );
-    }
+    fs::write(&executable, thin(ARM64, true)).unwrap();
+    let started = request.target(&launched, None).unwrap();
+    assert_eq!(started.architecture, Architecture::Arm64);
+    assert_eq!(
+        started.target.executable,
+        executable.canonicalize().unwrap()
+    );
+    assert!(started.kept.is_none());
+    assert_ne!(
+        mode(),
+        0,
+        "an installer that dropped the permission is repaired"
+    );
 
     // Nothing outside the installation is ever a target, nor a missing file.
     fs::write(root.join("Other"), thin(ARM64, true)).unwrap();

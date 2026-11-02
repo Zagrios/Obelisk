@@ -247,8 +247,11 @@ impl From<own_game::OwnGame> for SteamOwnGame {
 #[uniffi::export(async_runtime = "tokio")]
 impl SteamSession {
     /// Shows the account Online again, for instance after a game ended.
-    pub async fn set_online(&self) -> Result<(), SteamError> {
-        Ok(self.client().set_online().await?)
+    /// Shows the account as `status` says, through this connection and
+    /// every later one; also again once a game's own Steam session changed
+    /// it.
+    pub async fn set_status(&self, status: crate::OnlineStatus) -> Result<(), SteamError> {
+        Ok(self.account.set_status(status.into()).await?)
     }
 
     /// Suspends until chat events follow `after_sequence` or the session ends.

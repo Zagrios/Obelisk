@@ -65,12 +65,12 @@ fn build_key(identity: [&str; 4], asset: &Asset) -> Option<BuildKey> {
         .map(|hash| (identity.map(str::to_owned), hash))
 }
 
-/// Each Mac build's verdict, and the manifest of the last one that runs, which
+/// Each Mac build's verdict, and the manifest of the last native one, which
 /// its download starts from.
 pub(crate) type BuildChoice = obelisk_core::build_choice::BuildChoice<BuildKey, FetchedManifest>;
 
 /// The build a game's page shows before any download, and its size: the
-/// Mac build, unless a download found that its game does not run
+/// Mac build, unless a download found that its game does not run natively
 /// and Epic has a Windows build of it. None of the build's files is read.
 pub(crate) async fn shown_build(
     api: &Api,

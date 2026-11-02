@@ -160,6 +160,8 @@ final class SteamChatModel {
     /// The invitations friends sent, which a conversation and a friend's row join.
     @ObservationIgnored var invitations: SteamReceivedInvitations?
     @ObservationIgnored private var session: (any SteamSessionProtocol)?
+    /// The status last sent, which the next waits for: they arrive in order.
+    @ObservationIgnored private var statusTask: Task<Void, Never>?
     @ObservationIgnored private var account: UInt64?
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var observations: [Task<Void, Never>] = []
@@ -233,11 +235,15 @@ final class SteamChatModel {
         }
     }
 
-    /// Shows the account Online again, as a game's own Steam session can leave
-    /// its presence behind when it ends.
-    func setOnline() {
+    /// Shows the account as `status` says, the player's choice, also again
+    /// once a game's own Steam session left its presence behind.
+    func setStatus(_ status: OnlineStatus) {
         guard let session else { return }
-        Task { try? await session.setOnline() }
+        let previous = statusTask
+        statusTask = Task {
+            await previous?.value
+            try? await session.setStatus(status: status)
+        }
     }
 
     // MARK: Observation
