@@ -291,7 +291,7 @@ final class SteamFriendsIntegrationTests: XCTestCase {
         let attempt = SteamConnectionAttempt()
         attempt.cancel()
         do {
-            _ = try await attempt.connect(credentials: SteamCredentials(accountName: "fixture", steamId: 1, refreshToken: "unused"), library: nil)
+            _ = try await attempt.connect(credentials: SteamCredentials(accountName: "fixture", steamId: 1, refreshToken: "unused"), library: nil, status: .online)
             XCTFail("Cancelled connection unexpectedly succeeded")
         } catch {
             guard case SteamError.Cancelled = error else { return XCTFail("Unexpected error: \(error)") }
@@ -307,7 +307,8 @@ func friendsTestModel(
     installations: SteamModel.MakeInstallations? = nil,
     gameSessions: SteamGameSessions = .shared,
     chat: SteamChatModel? = nil,
-    webCookies: @escaping @Sendable (any SteamSessionProtocol) async throws -> [SteamWebCookie] = { _ in [] }
+    webCookies: @escaping @Sendable (any SteamSessionProtocol) async throws -> [SteamWebCookie] = { _ in [] },
+    onlineStatus: OnlineStatusChoice? = nil
 ) -> SteamModel {
     SteamModel(
         directory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString),
@@ -318,7 +319,8 @@ func friendsTestModel(
         beginLogin: offlineLogin,
         gameSessions: gameSessions,
         installations: installations,
-        chat: chat ?? SteamChatModel(isApplicationActive: false)
+        chat: chat ?? SteamChatModel(isApplicationActive: false),
+        onlineStatus: onlineStatus ?? OnlineStatusChoice(storeID: "steam", defaults: isolatedDefaults())
     )
 }
 

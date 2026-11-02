@@ -157,6 +157,9 @@ pub struct Request {
     pub target: Target,
     #[serde(default)]
     pub cloud: Option<cloud::Config>,
+    /// How the game shows the account to its friends.
+    #[serde(default)]
+    pub status: obelisk_core::OnlineStatus,
 }
 
 impl supervisor::Provider for Steam {
@@ -239,6 +242,7 @@ pub fn prepare(
         },
         cloud: Some(cloud),
         target,
+        status: obelisk_core::OnlineStatus::default(),
     })
 }
 

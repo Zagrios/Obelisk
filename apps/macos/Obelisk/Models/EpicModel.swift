@@ -146,6 +146,8 @@ final class EpicFriends: AccountPresence {
     private(set) var isPresented = false
     @ObservationIgnored private var session: (any EpicSessionProtocol)?
     @ObservationIgnored private var account: String?
+    /// The player's choice, which every friends connection registers.
+    @ObservationIgnored private var status = OnlineStatus.online
     /// Cancelled when the observation is revoked or replaced, which rejects its later snapshots.
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var wakeObserver: SystemWakeObservation?
@@ -160,9 +162,18 @@ final class EpicFriends: AccountPresence {
         task?.cancel()
     }
 
+    static var showsStatus: Bool { true }
+
+    func setStatus(_ status: OnlineStatus) {
+        self.status = status
+        session?.setStatus(status: status)
+    }
+
     func connect(_ session: any EpicSessionProtocol, account: String) {
         self.session = session
         self.account = account
+        // Before its first registration, so it never shows Online first.
+        session.setStatus(status: status)
         state = .epic(accountID: account)
         observe(reconnect: false)
     }

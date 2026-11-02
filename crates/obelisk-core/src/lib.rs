@@ -12,6 +12,7 @@ pub mod launch;
 pub mod library_cache;
 pub mod mac_build;
 pub mod platform;
+pub mod presence;
 pub mod publish;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
@@ -21,3 +22,4 @@ pub mod watch;
 
 pub use atomic_file::{write_atomic, write_atomic_with};
 pub use platform::Platform;
+pub use presence::OnlineStatus;

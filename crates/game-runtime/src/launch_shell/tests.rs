@@ -105,7 +105,13 @@ fn request<F: Setup>(
     configuration: Configuration<F::G>,
     wine: Option<wine::Config>,
 ) -> Request<F::G> {
-    Request::new(configuration, F::account(), F::credential(), wine)
+    Request::new(
+        configuration,
+        F::account(),
+        F::credential(),
+        wine,
+        obelisk_core::OnlineStatus::default(),
+    )
 }
 
 /// The key `result` failed with.
@@ -218,6 +224,7 @@ impl<F: Setup> Handoff<F> {
             F::account(),
             F::credential(),
             wine,
+            obelisk_core::OnlineStatus::Online,
             CancelToken::new(),
         ))
     }
@@ -237,13 +244,21 @@ pub(crate) fn a_mac_build_hands_its_supervisor_this_request_and_nothing_more<F: 
         "a supervisor starts without any environment of Obelisk's"
     );
     let request = handed.request;
-    let mut expected = vec!["account_id", "config", "environment", "id", "wine"];
+    let mut expected = vec![
+        "account_id",
+        "config",
+        "environment",
+        "id",
+        "status",
+        "wine",
+    ];
     let credential = F::credential_json();
     expected.extend(fields(&credential));
     expected.sort_unstable();
     assert_eq!(fields(&request), expected);
     assert!(uuid::Uuid::parse_str(request["id"].as_str().unwrap()).is_ok());
     assert_eq!(request["account_id"], F::account());
+    assert_eq!(request["status"], "online");
     for (field, value) in credential.as_object().unwrap() {
         assert_eq!(&request[field], value, "{field}");
     }
@@ -309,6 +324,7 @@ pub(crate) fn a_start_that_cannot_run_the_build_spawns_no_supervisor<F: Setup>()
             account,
             F::credential(),
             wine,
+            obelisk_core::OnlineStatus::Online,
             CancelToken::new(),
         ));
         assert_eq!(started.as_deref(), Some(F::UNSUPPORTED));
@@ -322,6 +338,7 @@ pub(crate) fn a_start_that_cannot_run_the_build_spawns_no_supervisor<F: Setup>()
             account,
             F::credential(),
             None,
+            obelisk_core::OnlineStatus::Online,
             CancelToken::new(),
         ));
         assert_eq!(started.as_deref(), Some(shown));
@@ -336,6 +353,7 @@ pub(crate) fn a_start_that_cannot_run_the_build_spawns_no_supervisor<F: Setup>()
         F::account(),
         F::credential(),
         None,
+        obelisk_core::OnlineStatus::Online,
         cancelled,
     ));
     assert_eq!(started.as_deref(), Some(F::CANCELLED));

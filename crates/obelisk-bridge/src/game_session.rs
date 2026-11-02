@@ -833,6 +833,19 @@ impl StorefrontSessions {
         each!(&*self.sessions, sessions => state(sessions.changed(after).await))
     }
 
+    /// How the player shows to their friends: the next game starts showing
+    /// it, and the one under way shows it at once. Nothing for a storefront
+    /// whose games show no presence.
+    pub async fn set_status(&self, status: crate::OnlineStatus) {
+        let (sessions, status) = (self.sessions.clone(), status.into());
+        // Telling a running game parks on its supervisor's connection.
+        let _ = blocking(self.sessions.failed(), move || {
+            each!(&*sessions, sessions => sessions.set_status(status));
+            Ok(())
+        })
+        .await;
+    }
+
     /// Account revocation. The game keeps running.
     pub fn revoke(&self, account: GameAccount) {
         each!(&*self.sessions, sessions => revoke(sessions, account))

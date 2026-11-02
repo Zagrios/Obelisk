@@ -36,6 +36,18 @@ impl Presence {
         )
     }
 }
+/// The status Epic's presence service takes for `status`. It accepts only
+/// `online`, `away` and `offline` (Epic Games Launcher 20.3.5 refuses any
+/// other with "Unsupported status for SetPresence API"); `dnd` and `xa` only
+/// come from other clients.
+pub(crate) fn presence_status(status: obelisk_core::OnlineStatus) -> &'static str {
+    match status {
+        obelisk_core::OnlineStatus::Online => "online",
+        obelisk_core::OnlineStatus::Away => "away",
+        obelisk_core::OnlineStatus::Invisible => "offline",
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Activity {
     pub id: String,

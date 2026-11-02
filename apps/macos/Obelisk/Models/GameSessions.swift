@@ -258,6 +258,8 @@ final class GameSessions<Store: GameStorefront> {
     private var rosetta: RosettaPrompt?
     /// Rust's Game sessions, which the account's installations admit launches into.
     @ObservationIgnored let core: any StorefrontSessionsProtocol
+    /// The status last told, which the next waits for: they arrive in order.
+    @ObservationIgnored private var statusTask: Task<Void, Never>?
     /// Where every game this Obelisk saw start is recorded.
     @ObservationIgnored let history: LaunchHistory
     /// The last session whose launch `history` recorded.
@@ -440,6 +442,16 @@ final class GameSessions<Store: GameStorefront> {
     func signedOut(account: Store.AccountID) {
         core.revoke(account: Store.account(account))
         apply(core.state())
+    }
+
+    /// How the player shows to their friends: the next game starts showing
+    /// it, and the running one shows it at once.
+    func setStatus(_ status: OnlineStatus) {
+        let (core, previous) = (core, statusTask)
+        statusTask = Task {
+            await previous?.value
+            await core.setStatus(status: status)
+        }
     }
 
     /// A session call's failure, reported as the storefront's error.

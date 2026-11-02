@@ -81,13 +81,15 @@ fn choice(cloud: bool) -> crate::cloud::Choice {
 }
 
 /// Events the fakes of every storefront record, in the order they occur.
-const SHARED: [&str; 8] = [
+const SHARED: [&str; 10] = [
     "cloud.prepare",
     "answered",
     "target",
     "cloud.started",
-    "presence:true",
-    "presence:false",
+    "presence:online",
+    "presence:away",
+    "presence:invisible",
+    "presence:offline",
     "cloud.finished",
     "cloud.aborted",
 ];
@@ -485,6 +487,10 @@ macro_rules! lifecycle_suite {
             lifecycle::revoking_a_running_game_withdraws_presence_but_keeps_the_game::<$harness>()
         }
         #[test]
+        fn a_running_game_shows_each_status_the_player_picks() {
+            lifecycle::a_running_game_shows_each_status_the_player_picks::<$harness>()
+        }
+        #[test]
         fn revocation_fences_presence_of_a_late_exec() {
             lifecycle::revocation_fences_presence_of_a_late_exec::<$harness>()
         }
@@ -594,8 +600,8 @@ pub(crate) fn a_launch_prepares_in_order_then_runs_its_game_and_settles_cloud<H:
             "cloud.prepare",
             "target",
             "cloud.started",
-            "presence:true",
-            "presence:false",
+            "presence:online",
+            "presence:offline",
             "cloud.finished:true",
         ]
     );
@@ -909,12 +915,40 @@ pub(crate) fn revoking_a_running_game_withdraws_presence_but_keeps_the_game<H: H
     run.until(|r| r.phase == Phase::Running);
     run.client.revoke(&H::account()).unwrap();
     // Presence is withdrawn before the reply.
-    assert_eq!(run.presence(), ["presence:true", "presence:false"]);
+    assert_eq!(run.presence(), ["presence:online", "presence:offline"]);
     assert_eq!(run.client.snapshot(None).unwrap().phase, Phase::Running);
     run.release("release-game");
     let finished = run.until(Record::finished);
     assert_eq!(finished.phase, Phase::Finished);
     assert_eq!(finished.exit_code, Some(3));
+}
+
+pub(crate) fn a_running_game_shows_each_status_the_player_picks<H: Harness>() {
+    use obelisk_core::OnlineStatus;
+    let run = launch::<H>(script(HELD));
+    run.until(|r| r.phase == Phase::Running);
+    assert!(
+        run.client
+            .set_status(&H::other_account(), OnlineStatus::Away)
+            .is_err(),
+        "another account is refused"
+    );
+    run.client
+        .set_status(&H::account(), OnlineStatus::Away)
+        .unwrap();
+    run.client
+        .set_status(&H::account(), OnlineStatus::Away)
+        .unwrap();
+    run.client
+        .set_status(&H::account(), OnlineStatus::Invisible)
+        .unwrap();
+    assert_eq!(
+        run.presence(),
+        ["presence:online", "presence:away", "presence:invisible"]
+    );
+    run.release("release-game");
+    run.until(Record::finished);
+    assert_eq!(run.presence().last().unwrap(), "presence:offline");
 }
 
 pub(crate) fn revocation_fences_presence_of_a_late_exec<H: Harness>() {

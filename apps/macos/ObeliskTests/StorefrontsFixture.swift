@@ -122,7 +122,8 @@ final class StorefrontsFixture {
             gameSessions: steamSessions,
             libraryCache: cache,
             installations: SteamModel.installations(steamBackend),
-            chat: SteamChatModel(isApplicationActive: false)
+            chat: SteamChatModel(isApplicationActive: false),
+            onlineStatus: OnlineStatusChoice(storeID: LibrarySection.steam.rawValue, defaults: defaults)
         )
         epic = EpicModel(
             directory: root,
@@ -140,7 +141,8 @@ final class StorefrontsFixture {
             },
             gameSessions: epicSessions,
             libraryCache: cache,
-            installations: EpicModel.installations(epicBackend)
+            installations: EpicModel.installations(epicBackend),
+            onlineStatus: OnlineStatusChoice(storeID: EpicGames.storeID, defaults: defaults)
         )
         gog = GogModel(
             directory: root,

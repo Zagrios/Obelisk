@@ -421,9 +421,11 @@ impl sessions::Handover<Steam> for Handover {
     }
     fn start(
         self,
-        request: super::Request,
+        mut request: super::Request,
+        status: obelisk_core::OnlineStatus,
         cancel: CancelToken,
     ) -> Result<Arc<dyn Supervised<Steam>>, String> {
+        request.status = status;
         let helper = request.config.helpers.join(crate::package::HOST);
         super::start(&helper, &self.credentials, request, &cancel)
             .map(|client| Arc::new(client) as Arc<dyn Supervised<Steam>>)

@@ -60,6 +60,7 @@ impl Harness for EpicHarness {
                 },
                 environment: crate::native::environment(directory),
                 wine: None,
+                status: OnlineStatus::default(),
             },
         )
     }
@@ -99,6 +100,13 @@ impl Harness for EpicHarness {
 }
 
 struct FakeEpic;
+fn record_presence(shown: Shown) {
+    record(
+        &fixture_directory().0,
+        &crate::supervisor::session::presence_event(shown),
+    );
+}
+
 impl Services for FakeEpic {
     async fn login(_: &str, account_id: &str) -> Result<Arc<Self>> {
         assert_eq!(account_id, ACCOUNT);
@@ -129,11 +137,14 @@ impl Services for FakeEpic {
             },
         })
     }
-    fn start_presence(&self, _: Activity) {
-        record(&fixture_directory().0, "presence:true");
+    fn start_presence(&self, _: Activity, status: OnlineStatus) {
+        record_presence(Shown::Started(status));
+    }
+    fn presence_status(&self, status: OnlineStatus) {
+        record_presence(Shown::Changed(status));
     }
     fn stop_presence(&self) {
-        record(&fixture_directory().0, "presence:false");
+        record_presence(Shown::Stopped);
     }
     fn release(&self) {}
     async fn cloud(
@@ -269,6 +280,7 @@ fn an_ownership_token_lives_as_long_as_its_prepared_game() {
             exchange_code: String::new(),
         },
         None,
+        OnlineStatus::default(),
     );
     let mut plan = launch_plan(Some(b"ownership"));
     plan.target.executable = config.install.join("game").to_string_lossy().into_owned();

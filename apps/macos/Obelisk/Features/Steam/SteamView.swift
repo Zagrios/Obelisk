@@ -49,7 +49,7 @@ struct SteamView: View {
     }
 
     @ViewBuilder private var accountMenu: some View {
-        Text(model.displayName ?? L10n.string("ui.steam.account"))
+        AccountMenuName(name: model.displayName ?? L10n.string("ui.steam.account"), status: model.onlineStatus)
         Text(L10n.string("ui.library.account_game_count", Int64(model.library.games.count)))
         Divider()
         SteamFriendsMenuButton(model: model)

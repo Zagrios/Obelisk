@@ -60,6 +60,7 @@ fn native_supervisor_acknowledges_and_reports_preparation_failure_without_valve(
         &credentials,
         Request {
             cloud: None,
+            status: obelisk_core::OnlineStatus::default(),
             id: String::new(),
             root: root.0.join("sessions"),
             config: Config {

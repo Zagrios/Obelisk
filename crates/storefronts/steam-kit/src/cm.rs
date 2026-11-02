@@ -1262,7 +1262,7 @@ async fn connection_worker(
                 // Read-only push request after a full list or newly accepted
                 // friend. Coalesce relationship bursts without periodically
                 // refreshing statuses. Hydration never sets the account's
-                // presence: only the UI session's explicit set_online does.
+                // presence: only the UI session's explicit set_status does.
                 let mut header = heartbeat_header.clone().expect("authenticated hydration");
                 header.job_source = Some(FRIENDS_HYDRATION_JOB);
                 header.target_name = Some("Chat.RequestFriendPersonaStates#1".into());

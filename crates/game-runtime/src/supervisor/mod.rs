@@ -251,6 +251,13 @@ pub(crate) enum Command<P: Provider> {
     ForceQuit {
         id: String,
     },
+    /// The player changed how the account shows to its friends: the game
+    /// shows it once it runs, at once if it already does.
+    Status {
+        id: String,
+        account_id: P::Account,
+        status: obelisk_core::OnlineStatus,
+    },
     /// The player's `control` of the running game, through its storefront.
     Control {
         id: String,

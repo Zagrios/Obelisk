@@ -41,8 +41,8 @@ pub fn serve(
         let mut input = std::io::stdin().lock();
         while let Ok(Some(command)) = HostCommand::read(&mut input) {
             match command {
-                HostCommand::SetPresence { online } => {
-                    *requested_presence.lock().unwrap() = Some(online);
+                HostCommand::SetPresence { status } => {
+                    *requested_presence.lock().unwrap() = Some(HostCommand::persona_state(status));
                 }
                 command => {
                     if commands.send(command).is_err() {

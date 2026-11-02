@@ -8,7 +8,7 @@ use crate::{
     sessions::{self, Admission, BeforeBegin, BoxFuture, Failure, Supervised, failed},
     wine,
 };
-use obelisk_core::{Platform, transfer::CancelToken};
+use obelisk_core::{OnlineStatus, Platform, transfer::CancelToken};
 use std::{path::PathBuf, sync::Arc};
 
 /// Who signs a launch in. Asked once the game's prefix is ready.
@@ -134,10 +134,18 @@ impl<G: Launchable, S: SignIn<G>> sessions::Handover<G> for Handover<G, S> {
     fn start(
         self,
         (account, credential, wine): Self::Prepared,
+        status: OnlineStatus,
         cancel: CancelToken,
     ) -> Result<Arc<dyn Supervised<G>>, String> {
-        request::start::<G>(self.configuration, account, credential, wine, cancel)
-            .map(|client| Arc::new(client) as Arc<dyn Supervised<G>>)
-            .map_err(|error| error.to_string())
+        request::start::<G>(
+            self.configuration,
+            account,
+            credential,
+            wine,
+            status,
+            cancel,
+        )
+        .map(|client| Arc::new(client) as Arc<dyn Supervised<G>>)
+        .map_err(|error| error.to_string())
     }
 }

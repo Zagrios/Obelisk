@@ -332,6 +332,7 @@ extension WebTestSession: EpicSessionProtocol where Store == EpicGames {
         try readAchievementShares(namespaces, locale: locale)
     }
 
+    nonisolated func setStatus(status: OnlineStatus) {}
     func startFriends() async {}
     func reconnectFriends() async {}
     nonisolated func stopFriends() {}

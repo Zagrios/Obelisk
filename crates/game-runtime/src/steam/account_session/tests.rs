@@ -193,6 +193,12 @@ impl Transport for Connection {
         self.ended.cancel();
         self.friends.disconnect(false);
     }
+    fn set_status(&self, status: OnlineStatus) -> BoxFuture<'_, Result<(), ClientError>> {
+        Box::pin(async move {
+            self.serve(format!("status:{status:?}"))
+                .map_err(|_| ClientError::Failure(DISCONNECTED.into()))
+        })
+    }
 }
 
 /// How the test's connector answers one attempt to connect.
@@ -210,6 +216,8 @@ struct Connector {
     answers: Mutex<VecDeque<Answer>>,
     /// When each attempt came.
     attempts: Mutex<Vec<Instant>>,
+    /// The status each attempt signed in showing.
+    statuses: Mutex<Vec<OnlineStatus>>,
 }
 
 impl Connector {
@@ -217,6 +225,7 @@ impl Connector {
         Arc::new(Self {
             answers: Mutex::new(answers.into_iter().collect()),
             attempts: Mutex::new(Vec::new()),
+            statuses: Mutex::new(Vec::new()),
         })
     }
     fn attempts(&self) -> Vec<Instant> {
@@ -232,8 +241,9 @@ impl Connector {
     }
     fn connect(self: &Arc<Self>) -> Connect<Connection> {
         let connector = self.clone();
-        Box::new(move || {
+        Box::new(move |status| {
             let connector = connector.clone();
+            connector.statuses.lock().unwrap().push(status);
             Box::pin(async move { connector.answer().await })
         })
     }
@@ -265,7 +275,9 @@ fn failures() -> impl Iterator<Item = Answer> {
 /// A session opened through `connector`'s first answer. The attempts it
 /// records start afterwards.
 async fn open(connector: &Arc<Connector>) -> Arc<AccountSession<Connection>> {
-    let session = AccountSession::open(connector.connect()).await.unwrap();
+    let session = AccountSession::open(connector.connect(), OnlineStatus::Online)
+        .await
+        .unwrap();
     connector.attempts.lock().unwrap().clear();
     session
 }
@@ -418,6 +430,37 @@ async fn a_dropped_connection_is_replaced_and_the_session_reaches_steam_through_
 }
 
 #[tokio::test(start_paused = true)]
+async fn the_chosen_status_is_shown_at_once_and_by_every_later_connection() {
+    let (a, b, c) = (Connection::new(), Connection::new(), Connection::new());
+    let held = CancelToken::new();
+    let connector = Connector::new([
+        Answer::Connects(a.clone()),
+        Answer::Connects(b.clone()),
+        Answer::Holds(c.clone(), held.clone()),
+    ]);
+    let session = open(&connector).await;
+
+    session.set_status(OnlineStatus::Invisible).await.unwrap();
+    assert_eq!(a.calls(), ["status:Invisible"]);
+    assert_eq!(session.status(), OnlineStatus::Invisible);
+
+    a.drops();
+    until(|| Arc::ptr_eq(&session.current(), &b)).await;
+    assert_eq!(
+        *connector.statuses.lock().unwrap(),
+        [OnlineStatus::Online, OnlineStatus::Invisible]
+    );
+    assert!(b.calls().is_empty(), "it signed in showing it");
+
+    // Changed while the next connection signs in: it shows it once it is in.
+    b.drops();
+    until(|| connector.statuses.lock().unwrap().len() == 3).await;
+    assert!(session.set_status(OnlineStatus::Away).await.is_err());
+    held.cancel();
+    until(|| c.calls() == ["status:Away"]).await;
+}
+
+#[tokio::test(start_paused = true)]
 async fn reconnecting_waits_longer_each_time_and_gives_up_after_about_a_minute() {
     let a = Connection::new();
     let connector = Connector::new(
@@ -494,7 +537,7 @@ async fn steam_logging_the_account_off_requires_signing_in_again_without_reconne
 async fn a_refused_first_connection_fails_the_sign_in_without_retrying() {
     let connector = Connector::new([Answer::Refuses, Answer::Connects(Connection::new())]);
 
-    let opened = AccountSession::open(connector.connect()).await;
+    let opened = AccountSession::open(connector.connect(), OnlineStatus::Online).await;
     assert!(matches!(
         opened,
         Err(ClientConnectError::AuthenticationRequired(_))

@@ -328,6 +328,12 @@ impl Client {
         }
     }
 
+    /// Shows the account to its friends as `status` says: from the next
+    /// social connection on, and at once on a live one.
+    pub fn set_status(&self, status: obelisk_core::OnlineStatus) {
+        self.social.set_status(status);
+    }
+
     pub fn start_friends(&self) {
         self.social.start(self.social_auth(), false, None);
     }

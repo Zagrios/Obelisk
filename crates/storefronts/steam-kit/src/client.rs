@@ -258,21 +258,25 @@ impl Client {
         }
     }
 
+    /// Signs the account's UI session in, showing it as `status` says.
     pub async fn connect(
         account_name: &str,
         steam_id: u64,
         refresh_token: &str,
+        status: obelisk_core::OnlineStatus,
     ) -> Result<Self, ClientConnectError> {
         let http = http_client().map_err(ClientConnectError::Other)?;
         let mut cm = SteamConnection::connect(http.clone())
             .await
             .map_err(ClientConnectError::from)?;
         // Only this UI session joins the friends chat and shows the account
-        // Online; Cloud sessions log on without either.
+        // to its friends; Cloud sessions log on without either.
         cm.log_on(account_name, steam_id, refresh_token, ChatMode::Enabled)
             .await
             .map_err(ClientConnectError::from)?;
-        cm.set_online().await.map_err(ClientConnectError::from)?;
+        cm.set_status(status)
+            .await
+            .map_err(ClientConnectError::from)?;
         Ok(Self::from_connection(http, cm, refresh_token.into()))
     }
 
@@ -318,10 +322,10 @@ impl Client {
         self.friends.resolve_game_names(account_id, &names);
     }
 
-    /// Shows the account Online again, for instance after a game's own Steam
-    /// session changed its status.
-    pub async fn set_online(&self) -> Result<(), ClientError> {
-        self.cm.set_online().await.map_err(Into::into)
+    /// Shows the account as `status` says, also again after a game's own
+    /// Steam session changed its status.
+    pub async fn set_status(&self, status: obelisk_core::OnlineStatus) -> Result<(), ClientError> {
+        self.cm.set_status(status).await.map_err(Into::into)
     }
 
     /// Chat events after `after_sequence`; waits until there are some or the

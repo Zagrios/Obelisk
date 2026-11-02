@@ -6,9 +6,10 @@ use crate::launch_shell::{ArgumentFile, Request, Started};
 use crate::supervisor::{
     Error as Core,
     architecture::Architecture,
-    session::{self as lifecycle, LaunchCloud, Opening, Prepared, Session},
+    session::{self as lifecycle, LaunchCloud, Opening, Prepared, Session, Shown},
 };
 use epic_kit::{client::LaunchPlan, friends::Activity};
+use obelisk_core::OnlineStatus;
 use std::{
     io::{Read, Write},
     path::Path,
@@ -20,7 +21,10 @@ pub(crate) trait Services: Sized + Send + Sync + 'static {
     /// Opens the launch's own Epic session; never the UI's remembered token.
     async fn login(exchange_code: &str, account_id: &str) -> Result<Arc<Self>>;
     async fn launch_plan(&self, config: &Configuration) -> Result<LaunchPlan>;
-    fn start_presence(&self, activity: Activity);
+    /// Advertises the game, showing the account as `status` says.
+    fn start_presence(&self, activity: Activity, status: OnlineStatus);
+    /// The player changed the status while the game runs.
+    fn presence_status(&self, status: OnlineStatus);
     fn stop_presence(&self);
     /// Stops the launch's Epic connections but never revokes its session:
     /// the game's own session came from it, and outlives the launch when the
@@ -56,9 +60,13 @@ impl Services for epic_kit::client::Client {
         )
         .await?)
     }
-    fn start_presence(&self, activity: Activity) {
+    fn start_presence(&self, activity: Activity, status: OnlineStatus) {
+        self.set_status(status);
         // Social availability never changes the game's lifetime.
         let _ = self.start_game_presence(activity);
+    }
+    fn presence_status(&self, status: OnlineStatus) {
+        self.set_status(status);
     }
     fn stop_presence(&self) {
         self.stop_friends();
@@ -174,15 +182,18 @@ impl<S: Services> lifecycle::Launch for Launch<S> {
         ))
     }
 
-    fn running(&self, _: &Arc<Host>, _: u32) -> Box<dyn Fn(bool) + Send + Sync> {
+    fn running(&self, _: &Arc<Host>, _: u32) -> lifecycle::Publish {
         let (Ok(api), activity) = (self.api(), self.activity.clone()) else {
             return Box::new(|_| {});
         };
         let api = api.clone();
-        Box::new(move |active| match (&activity, active) {
-            (Some(activity), true) => api.start_presence(activity.clone()),
-            (_, true) => {}
-            (_, false) => api.stop_presence(),
+        Box::new(move |shown| match (&activity, shown) {
+            (Some(activity), Shown::Started(status)) => {
+                api.start_presence(activity.clone(), status);
+            }
+            (Some(_), Shown::Changed(status)) => api.presence_status(status),
+            (None, Shown::Started(_) | Shown::Changed(_)) => {}
+            (_, Shown::Stopped) => api.stop_presence(),
         })
     }
 

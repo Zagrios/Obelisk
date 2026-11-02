@@ -41,7 +41,7 @@ extension SteamSessionProtocol {
     func shutdown() {}
     func reconnect() {}
 
-    func setOnline() async throws {}
+    func setStatus(status: OnlineStatus) async throws {}
     func nextChat(afterSequence: UInt64) async -> SteamChatEvents {
         let stream = AsyncStream<Void>(bufferingPolicy: .bufferingNewest(1)) { _ in }
         for await _ in stream {}

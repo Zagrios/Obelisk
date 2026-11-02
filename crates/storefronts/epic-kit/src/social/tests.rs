@@ -10,6 +10,7 @@ use std::{
 };
 
 use futures_util::{SinkExt, StreamExt};
+use obelisk_core::OnlineStatus;
 use serde_json::{Value, json};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -98,6 +99,41 @@ async fn running_game_is_advertised_on_its_own_connection_and_reconnect() {
     summary_request.respond(200, summary());
     registration.respond(200, registration_response());
     state(&client, |s| s.connection == Connection::Ready).await;
+    client.stop_friends();
+    peer.closed().await;
+}
+
+#[tokio::test]
+async fn the_chosen_status_registers_with_the_connection_and_again_when_it_changes() {
+    let mut fixture = Fixture::new().await;
+    let client = fixture.client();
+    client.set_status(OnlineStatus::Invisible);
+    client.start_friends();
+    let mut peer = fixture.peer().await;
+    peer.subscribe().await;
+    let (summary_request, registration) = fixture.bootstrap().await;
+    assert_eq!(
+        serde_json::from_str::<Value>(&registration.request.body).unwrap(),
+        json!({"status":"offline","conn":{"props":{}}})
+    );
+    summary_request.respond(200, summary());
+    registration.respond(200, registration_response());
+    state(&client, |s| s.connection == Connection::Ready).await;
+
+    // On the live connection, as the launcher's status menu does.
+    client.set_status(OnlineStatus::Away);
+    let registration = fixture.registration().await;
+    assert_eq!(
+        serde_json::from_str::<Value>(&registration.request.body).unwrap(),
+        json!({"status":"away","conn":{"props":{}}})
+    );
+    registration.respond(200, registration_response());
+    // The same status again is nothing to register.
+    client.set_status(OnlineStatus::Away);
+    peer.event(ONLINE).await;
+    peer.barrier().await;
+    assert!(fixture.http.try_recv().is_err());
+    assert_eq!(client.friends().connection, Connection::Ready);
     client.stop_friends();
     peer.closed().await;
 }

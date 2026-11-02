@@ -158,15 +158,17 @@ impl SteamConnectionAttempt {
         self.cancel.cancel();
     }
 
+    /// Signs in, showing the account to its friends as `status` says.
     pub async fn connect(
         &self,
         credentials: SteamCredentials,
         library: Option<Arc<LibraryCache>>,
+        status: crate::OnlineStatus,
     ) -> Result<Arc<SteamSession>, SteamError> {
         tokio::select! {
             biased;
             () = self.cancel.cancelled() => Err(SteamError::Cancelled),
-            result = SteamSession::connect(credentials, library) => result,
+            result = SteamSession::connect(credentials, library, status) => result,
         }
     }
 }

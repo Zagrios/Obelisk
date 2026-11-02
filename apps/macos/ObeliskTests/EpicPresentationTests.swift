@@ -515,6 +515,7 @@ private actor EpicPresentationCredentials: CredentialStore {
 }
 
 private actor EpicPresentationSession: EpicSessionProtocol {
+    nonisolated func setStatus(status: OnlineStatus) {}
     func startFriends() async {}
     func reconnectFriends() async {}
     nonisolated func stopFriends() {}

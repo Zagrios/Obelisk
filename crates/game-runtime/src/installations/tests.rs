@@ -457,6 +457,9 @@ impl Supervised<Steam> for Game {
     fn control(&self, _: &u64, _: crate::steam::Control) -> Result<(), String> {
         Ok(())
     }
+    fn set_status(&self, _: &u64, _: obelisk_core::OnlineStatus) -> Result<(), String> {
+        Ok(())
+    }
     fn choose(
         &self,
         _: &u64,

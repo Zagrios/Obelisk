@@ -6717,6 +6717,29 @@
         }
       }
     },
+    "ui.account.name_status": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ (%2$@)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ (%2$@)"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ (%2$@)"
+          }
+        }
+      }
+    },
     "ui.account.password": {
       "extractionState": "manual",
       "localizations": {
@@ -10757,6 +10780,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ordina la libreria %1$@"
+          }
+        }
+      }
+    },
+    "ui.status.invisible": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Invisible"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Invisible"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Invisibile"
           }
         }
       }

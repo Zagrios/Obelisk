@@ -4,12 +4,14 @@ import Foundation
 /// UniFFI 0.32 async wrappers do not propagate Swift cancellation to Rust.
 /// This explicit token cancels directory lookup, TLS connection and CM logon.
 enum SteamSessionConnection {
-    /// The account's session, which keeps every library it loads in `library`.
-    static func connect(_ credentials: SteamCredentials, library: LibraryCache?) async throws -> any SteamSessionProtocol {
+    /// The account's session, which keeps every library it loads in
+    /// `library` and shows the account to its friends as `status` says.
+    static func connect(_ credentials: SteamCredentials, library: LibraryCache?,
+                        status: OnlineStatus) async throws -> any SteamSessionProtocol {
         let attempt = SteamConnectionAttempt()
         return try await withTaskCancellationHandler {
             try Task.checkCancellation()
-            let session = try await attempt.connect(credentials: credentials, library: library)
+            let session = try await attempt.connect(credentials: credentials, library: library, status: status)
             if Task.isCancelled {
                 session.shutdown()
                 throw CancellationError()

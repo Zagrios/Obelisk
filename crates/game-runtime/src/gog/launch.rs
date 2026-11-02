@@ -50,7 +50,7 @@ impl lifecycle::Launch for Launch {
         Ok(self.request.prepared((), target))
     }
 
-    fn running(&self, _: &Arc<()>, _: u32) -> Box<dyn Fn(bool) + Send + Sync> {
+    fn running(&self, _: &Arc<()>, _: u32) -> crate::supervisor::session::Publish {
         Box::new(|_| {})
     }
 

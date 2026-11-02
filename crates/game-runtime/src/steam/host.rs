@@ -426,12 +426,15 @@ impl Host {
     pub(crate) fn directory(&self) -> &Path {
         &self.prepared.directory
     }
-    pub(crate) fn set_presence(&self, online: bool) -> Result<(), Error> {
+    pub(crate) fn set_presence(
+        &self,
+        status: Option<obelisk_core::OnlineStatus>,
+    ) -> Result<(), Error> {
         let mut inner = self.inner.lock().map_err(|_| Error::StartFailed)?;
         if inner.stopped {
             return Ok(());
         }
-        Self::send(&mut inner, &protocol::HostCommand::SetPresence { online })
+        Self::send(&mut inner, &protocol::HostCommand::SetPresence { status })
             .map_err(|_| Error::StartFailed)
     }
     fn send(inner: &mut Inner, command: &protocol::HostCommand) -> Result<(), Error> {
