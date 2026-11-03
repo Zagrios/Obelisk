@@ -241,6 +241,37 @@ fn neutral_depots_cannot_create_unsupported_or_unknown_platform_support() {
     assert!(selected_depots(&app, &owned, Platform::Windows, "english").is_empty());
 }
 
+/// A launch option of the publisher's that names no OS, as old games write it.
+fn launch(executable: &str, kind: &str) -> crate::cm::LaunchConfig {
+    crate::cm::LaunchConfig {
+        executable: executable.into(),
+        arguments: String::new(),
+        working_directory: String::new(),
+        launch_type: kind.into(),
+        os_list: Vec::new(),
+        os_arch: None,
+    }
+}
+
+#[test]
+fn a_game_that_names_no_os_anywhere_but_launches_a_program_is_a_windows_game() {
+    // Kohan II: Kings of War names no OS on the app, on its one depot or on
+    // its launch option, and Steam runs such a game on Windows.
+    let owned = licenses([1], [1]);
+    let mut app = app(vec![depot(1, "", None, None)]);
+    app.os_list.clear();
+    app.launch_configs = vec![launch("k2.exe", "")];
+    assert_eq!(
+        selected_depots(&app, &owned, Platform::Windows, "english").len(),
+        1
+    );
+    assert!(selected_depots(&app, &owned, Platform::Mac, "english").is_empty());
+    // A launch option that is no way to play it, such as a VR entry, does not
+    // establish the game's program.
+    app.launch_configs = vec![launch("k2vr.exe", "vr")];
+    assert!(selected_depots(&app, &owned, Platform::Windows, "english").is_empty());
+}
+
 #[test]
 fn unowned_platform_specific_dlc_cannot_establish_unknown_app_platform() {
     let mut app = app(vec![

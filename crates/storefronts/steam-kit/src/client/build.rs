@@ -96,10 +96,14 @@ impl<'a> Selection<'a> {
             .collect();
         // Shared asset depots often have no OS restriction. They do not establish
         // that the application ships an executable for an otherwise unknown OS.
+        // The publisher's launch option does, for Windows: Steam's default OS,
+        // which old games such as Kohan II name nowhere.
         if app.os_list.is_empty()
             && !eligible
                 .iter()
                 .any(|depot| depot.os_list.iter().any(|os| os == PLATFORM.name(platform)))
+            && !(platform == Platform::Windows
+                && crate::launch::configuration(app, platform).is_some())
         {
             return selected(Vec::new());
         }
