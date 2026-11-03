@@ -1,14 +1,15 @@
 //! What Obelisk reads of a Windows program, a PE file: the machine its code
-//! is for, whether it is a .NET program, the DLLs it imports and the
-//! description its version resource gives. Only the headers and the parts
-//! they point to are read, each within bounds, so a game's largest program
-//! reads as fast as its smallest; a file that is no PE, or whose headers
-//! point outside it, reads as nothing.
+//! is for, whether it is a .NET program, the DLLs it imports, the names it
+//! exports and the description its version resource gives. Only the headers
+//! and the parts they point to are read, each within bounds, so a game's
+//! largest program reads as fast as its smallest; a file that is no PE, or
+//! whose headers point outside it, reads as nothing.
 use std::{fs::File, os::unix::fs::FileExt, path::Path};
 
 /// The machine of x86-64 code.
 const AMD64: u16 = 0x8664;
 /// The data directories Obelisk reads, by index.
+const EXPORTS: usize = 0;
 const IMPORTS: usize = 1;
 const RESOURCES: usize = 2;
 const DELAY_IMPORTS: usize = 13;
@@ -16,10 +17,12 @@ const DELAY_IMPORTS: usize = 13;
 const CLR: usize = 14;
 /// The resource type of a version resource.
 const VERSION: u32 = 16;
-/// At most this many sections, DLLs imported, resource entries a directory
-/// lists, and bytes a DLL's name or a version resource holds.
+/// At most this many sections, DLLs imported, names exported, resource
+/// entries a directory lists, and bytes a DLL's name or a version resource
+/// holds.
 const SECTIONS: usize = 96;
 const DLLS: usize = 1024;
+const EXPORTED: usize = 4096;
 const ENTRIES: usize = 1024;
 const NAME: usize = 256;
 const VERSION_SIZE: u32 = 64 * 1024;
@@ -134,6 +137,31 @@ impl Program {
             }
         }
         dlls
+    }
+
+    /// Whether it exports `symbol` by name, as a program that brings
+    /// Microsoft's Direct3D 12 Agility SDK exports `D3D12SDKVersion`.
+    pub(crate) fn exports(&self, symbol: &str) -> bool {
+        // The export directory gives how many names it has at 24, and
+        // where the addresses of those names are at 32.
+        let Some(directory) = self
+            .directory(EXPORTS)
+            .and_then(|address| self.offset(address))
+            .and_then(|at| read(&self.file, at, 40))
+        else {
+            return false;
+        };
+        let (Some(count), Some(names)) = (u32_at(&directory, 24), u32_at(&directory, 32)) else {
+            return false;
+        };
+        let count = (count as usize).min(EXPORTED);
+        self.offset(names)
+            .and_then(|at| read(&self.file, at, count * 4))
+            .is_some_and(|addresses| {
+                addresses.as_chunks::<4>().0.iter().any(|address| {
+                    self.name(u32::from_le_bytes(*address)).as_deref() == Some(symbol)
+                })
+            })
     }
 
     /// What its version resource describes it as, such as "Easy Anti-Cheat
