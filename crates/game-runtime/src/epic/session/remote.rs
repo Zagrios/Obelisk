@@ -17,6 +17,17 @@ pub(crate) trait CloudRemote: Send + Sync + 'static {
         platform: Platform,
     ) -> impl Future<Output = std::result::Result<Option<CloudRules>, EpicError>> + Send;
 
+    /// What the catalog says of the game's Cloud, by attribute, to tell a
+    /// player why a game has none. Nothing by default.
+    fn cloud_attributes(
+        &self,
+        _namespace: &str,
+        _catalog_item_id: &str,
+        _app_name: &str,
+    ) -> impl Future<Output = std::result::Result<BTreeMap<String, String>, EpicError>> + Send {
+        async { Ok(BTreeMap::new()) }
+    }
+
     /// The game's Cloud now: each file's name, size and hash.
     fn cloud_list(
         &self,
@@ -66,6 +77,15 @@ impl CloudRemote for EpicClient {
         platform: Platform,
     ) -> std::result::Result<Option<CloudRules>, EpicError> {
         EpicClient::cloud_configuration(self, namespace, catalog_item_id, app_name, platform).await
+    }
+
+    async fn cloud_attributes(
+        &self,
+        namespace: &str,
+        catalog_item_id: &str,
+        app_name: &str,
+    ) -> std::result::Result<BTreeMap<String, String>, EpicError> {
+        EpicClient::cloud_attributes(self, namespace, catalog_item_id, app_name).await
     }
 
     async fn cloud_list(
