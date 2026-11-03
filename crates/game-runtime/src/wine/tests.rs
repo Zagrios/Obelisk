@@ -1106,6 +1106,91 @@ fn a_new_prefix_gets_mono_from_its_creation_alone() {
     );
 }
 
+/// A prefix wineboot created for `config`, whose last launch logged that its
+/// program did not find `dll`.
+fn prefix_after_a_launch_without(config: &Config, root: &Path, dll: &str) {
+    prepare_plain(config, root);
+    fs::write(config.prefix.join("system.reg"), "").unwrap();
+    fs::create_dir_all(config.log.parent().unwrap()).unwrap();
+    fs::write(
+        &config.log,
+        format!(
+            "0024:err:steam:setup_vr_registry Failed to load vrclient module\n\
+             012c:err:module:import_dll Library {dll} (which is needed by \
+             L\"Z:\\\\Games\\\\Game.exe\") not found\n\
+             012c:err:module:loader_init Importing dlls for L\"Z:\\\\Games\\\\Game.exe\" \
+             failed, status c0000135\n"
+        ),
+    )
+    .unwrap();
+}
+
+/// A DLL the runtime carries in `folder`.
+fn carried(config: &Config, folder: &str, dll: &str) {
+    let folder = config.runtime.join(folder);
+    fs::create_dir_all(&folder).unwrap();
+    fs::write(folder.join(dll), "").unwrap();
+}
+
+#[test]
+fn a_placeholder_a_launch_found_missing_comes_back_before_the_next_one() {
+    let (_directory, root) = installation();
+    let config = recording_runtime(&root);
+    carried(&config, "lib/wine/x86_64-windows", "propsys.dll");
+    prefix_after_a_launch_without(&config, &root, "PROPSYS.dll");
+
+    prepare_plain(&config, &root);
+    assert_eq!(calls(&root), ["wineboot --init", "wineboot --update"]);
+
+    // The update wrote it: the log it left asks for nothing more.
+    let system32 = config.prefix.join("drive_c/windows/system32");
+    fs::create_dir_all(&system32).unwrap();
+    fs::write(system32.join("propsys.dll"), "").unwrap();
+    prepare_plain(&config, &root);
+    assert_eq!(calls(&root), ["wineboot --init", "wineboot --update"]);
+}
+
+#[test]
+fn a_32_bit_placeholder_or_a_backend_s_comes_back_too() {
+    for (folder, dll) in [
+        ("lib/wine/i386-windows", "propsys.dll"),
+        ("lib/dxmt/x86_64-windows", "winemetal.dll"),
+    ] {
+        let (_directory, root) = installation();
+        let config = recording_runtime(&root);
+        carried(&config, folder, dll);
+        prefix_after_a_launch_without(&config, &root, dll);
+
+        prepare_plain(&config, &root);
+
+        assert_eq!(calls(&root), ["wineboot --init", "wineboot --update"]);
+    }
+}
+
+#[test]
+fn a_dll_the_runtime_does_not_carry_leaves_the_prefix_alone() {
+    let (_directory, root) = installation();
+    let config = recording_runtime(&root);
+    carried(&config, "lib/wine/x86_64-windows", "propsys.dll");
+    prefix_after_a_launch_without(&config, &root, "steam_api64.dll");
+
+    prepare_plain(&config, &root);
+
+    assert_eq!(calls(&root), ["wineboot --init"]);
+}
+
+#[test]
+fn a_log_that_names_a_path_as_its_dll_leaves_the_prefix_alone() {
+    let (_directory, root) = installation();
+    let config = recording_runtime(&root);
+    carried(&config, "lib/wine/x86_64-windows", "propsys.dll");
+    prefix_after_a_launch_without(&config, &root, "../x86_64-windows/propsys.dll");
+
+    prepare_plain(&config, &root);
+
+    assert_eq!(calls(&root), ["wineboot --init"]);
+}
+
 fn prepare_plain(config: &Config, root: &Path) {
     let (install, target) = game(root);
     prepare(

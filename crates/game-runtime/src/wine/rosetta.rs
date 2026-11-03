@@ -9,6 +9,7 @@ use obelisk_core::launch::LaunchTarget;
 use std::{
     collections::{BTreeSet, HashMap},
     fs,
+    io::Read as _,
     path::{Path, PathBuf},
     process::{Command, Stdio},
     time::Duration,
@@ -25,6 +26,17 @@ const BACKENDS: &str = "obelisk-graphics";
 const D3DMETAL_DLLS: &str = "lib/d3dmetal";
 /// DXMT's DLLs in a runtime, beside Wine's own.
 const DXMT_DLLS: &str = "lib/dxmt";
+/// Wine's own DLLs in a runtime.
+const WINE_DLLS: &str = "lib/wine";
+/// Each architecture's DLLs in a runtime's folder, and where a prefix keeps
+/// their placeholders.
+const PLACEHOLDERS: [(&str, &str); 2] = [
+    ("x86_64-windows", "drive_c/windows/system32"),
+    ("i386-windows", "drive_c/windows/syswow64"),
+];
+/// How much of a launch's log is searched for a DLL it did not find: Wine
+/// stops a program for one as the program starts.
+const LOADER_LOG_BYTES: u64 = 1024 * 1024;
 /// D3DMetal's library, which its unix libraries load.
 const D3DMETAL_FRAMEWORK: &str = "lib/external/D3DMetal.framework/D3DMetal";
 /// Their output, rewritten by each launch that runs one.
@@ -383,7 +395,8 @@ fn boot(config: &Config, home: &Path) -> Result<(), Error> {
     // DLL of the graphics backends when it creates a prefix: Wine loads a
     // DLL only through its placeholder, such as DXMT's winemetal. A prefix
     // created by a runtime without Mono or without one of the backends lacks
-    // them: updating the prefix once adds them.
+    // them: updating the prefix once adds them. It also brings back a
+    // placeholder the last launch found missing.
     let backends = backends(config)
         .iter()
         .filter_map(|folder| folder.file_name())
@@ -396,7 +409,7 @@ fn boot(config: &Config, home: &Path) -> Result<(), Error> {
         .filter_map(|(record, value)| Some((config.prefix.join(record), value?)))
         .filter(|(record, value)| fs::read_to_string(record).unwrap_or_default() != *value)
         .collect();
-    if !stale.is_empty() {
+    if !stale.is_empty() || (!created && lost_placeholder(config)) {
         if !created {
             wineboot(config, home, "--update")?;
         }
@@ -405,6 +418,36 @@ fn boot(config: &Config, home: &Path) -> Result<(), Error> {
         }
     }
     unlink_home_folders(&super::profile(&config.prefix))
+}
+
+/// Whether the last launch, whose log is still there, stopped on a DLL the
+/// runtime carries and the prefix holds no placeholder for.
+fn lost_placeholder(config: &Config) -> bool {
+    let mut log = Vec::new();
+    let read = fs::File::open(&config.log)
+        .and_then(|file| file.take(LOADER_LOG_BYTES).read_to_end(&mut log));
+    if read.is_err() {
+        return false;
+    }
+    let mut folders = backends(config);
+    folders.push(config.runtime.join(WINE_DLLS));
+    String::from_utf8_lossy(&log)
+        .lines()
+        .filter_map(dll_not_found)
+        .any(|dll| {
+            PLACEHOLDERS.iter().any(|(architecture, placeholders)| {
+                let carried = |folder: &PathBuf| folder.join(architecture).join(&dll).is_file();
+                folders.iter().any(carried) && !config.prefix.join(placeholders).join(&dll).exists()
+            })
+        })
+}
+
+/// The DLL's file name, when `line` of Wine's log says a program did not
+/// find it.
+fn dll_not_found(line: &str) -> Option<String> {
+    let (_, found) = line.split_once(":err:module:import_dll Library ")?;
+    let (dll, _) = found.split_once(" (which is needed by ")?;
+    (found.ends_with(") not found") && !dll.contains(['/', '\\'])).then(|| dll.to_ascii_lowercase())
 }
 
 /// Runs wineboot in the prefix and waits until its server stops writing the
