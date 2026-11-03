@@ -46,7 +46,7 @@ Keep the same signing identity across builds: macOS then keeps trusting it for t
 
 Debug builds save sessions in their own Keychain items, `com.zagrios.obelisk.debug.steam`, `.debug.epic` and `.debug.gog`, so sign in to each store once in a Debug build. A release is signed by another team, and macOS would otherwise ask for your password each time one build reads an item the other saved.
 
-By default, a build uses the same library as the installed app, in `~/Library/Application Support/com.zagrios.obelisk`. Set `OBELISK_LIBRARY_DIRECTORY` before launching the binary to use another one.
+By default, a build uses the same library as the installed app, in `~/Library/Application Support/com.zagrios.obelisk`, or the folder the player moved it to in **Settings → Storage**, which Obelisk's preferences keep as `obelisk.library.directory`. Set `OBELISK_LIBRARY_DIRECTORY` before launching the binary to use another one; it wins over both.
 
 ## Testing
 

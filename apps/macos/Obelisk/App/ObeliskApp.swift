@@ -10,7 +10,15 @@ struct ObeliskApp: App {
         // setenv is only safe while no other thread reads the environment:
         // before AppModel, whose Rust side starts threads. The test host
         // starts no game, and its environment stays as it is.
-        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil { GameLocale.adopt() }
+        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
+            GameLocale.adopt()
+            // A library the player moved to a disk that is not connected
+            // waits for it: nothing may make an empty one in its place.
+            let library = AppIdentity.libraryDirectory(environment: ProcessInfo.processInfo.environment,
+                                                       defaults: .standard)
+            if !LibraryStartup.awaitLibrary(library) { exit(0) }
+            LibraryStartup.removeLeftLibrary(AppIdentity.libraryDirectory)
+        }
         _model = State(wrappedValue: AppModel())
     }
 

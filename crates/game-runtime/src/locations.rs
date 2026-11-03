@@ -1,6 +1,9 @@
 //! Every path Obelisk uses, named once.
 use std::path::{Path, PathBuf};
 
+/// The Cloud archive's folder inside the library.
+pub(crate) const CLOUD_ARCHIVE: &str = "SteamCloud";
+
 /// Where Obelisk keeps everything, derived from its library directory, its
 /// application bundle and the user's home.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -32,7 +35,7 @@ impl Locations {
         let helpers = bundle.join("Contents/Helpers/SteamNative");
         let steam_runtime_cache = home.join("Library/Caches/com.zagrios.obelisk/SteamRuntime");
         Self {
-            cloud_archive: library.join("SteamCloud"),
+            cloud_archive: library.join(CLOUD_ARCHIVE),
             steam_sessions: library.join("SteamSessions"),
             epic_sessions: library.join("EpicSessions"),
             gog_sessions: library.join("GOGSessions"),

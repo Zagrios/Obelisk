@@ -19,6 +19,7 @@ fn fixture(root: &std::path::Path) -> (Config, files::Prepared) {
         wine: None,
         home: root.into(),
         app_id: 42,
+        library: PathBuf::new(),
         cloud_save_roots: vec![],
     };
     let prepared = tests::prepared(root);

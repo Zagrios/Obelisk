@@ -172,6 +172,13 @@ fn sandbox(config: &Config, directory: &Path) -> Result<String, Error> {
     for root in &config.cloud_save_roots {
         profile.push_str(&format!("(deny file-read* (subpath {}))\n", quote(root)?));
     }
+    // The library may live outside the home, such as on an external disk.
+    if !config.library.as_os_str().is_empty() {
+        profile.push_str(&format!(
+            "(deny file-read* (subpath {}))\n",
+            quote(&config.library)?
+        ));
+    }
     Ok(profile)
 }
 /// Replaces `path` atomically without fsync: diagnostics and caches need no
@@ -312,6 +319,7 @@ mod atomic_tests {
             wine: None,
             home,
             app_id: 42,
+            library: PathBuf::new(),
             cloud_save_roots: vec![],
         };
         let profile = format!(
@@ -365,6 +373,47 @@ mod atomic_tests {
         );
     }
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn sandbox_denies_a_library_kept_outside_the_home() {
+        let root = tempfile::tempdir().unwrap();
+        let root = root.path().canonicalize().unwrap();
+        let (home, library) = (root.join("home"), root.join("Disk/Obelisk Library"));
+        let runtime = home.join("cache/runtime");
+        fs::create_dir_all(&runtime).unwrap();
+        fs::create_dir_all(library.join("SteamSessions")).unwrap();
+        fs::write(root.join("Disk/elsewhere"), b"not the library").unwrap();
+        fs::write(library.join("SteamSessions/session.json"), b"secret").unwrap();
+        let config = Config {
+            helpers: runtime.clone(),
+            package: root.join("unused"),
+            cache: home.join("cache"),
+            diagnostics: root.join("logs"),
+            steam_api: None,
+            wine: None,
+            home,
+            app_id: 42,
+            library: library.clone(),
+            cloud_save_roots: vec![],
+        };
+        let profile = format!(
+            "{}\n(allow process-exec (literal \"/bin/cat\"))",
+            sandbox(&config, &runtime).unwrap()
+        );
+        let read = |path: &Path| {
+            std::process::Command::new("/usr/bin/sandbox-exec")
+                .args(["-p", &profile, "/bin/cat"])
+                .arg(path)
+                .output()
+                .unwrap()
+        };
+        let outside = read(&root.join("Disk/elsewhere"));
+        assert!(outside.status.success(), "{outside:?}");
+        let library = read(&library.join("SteamSessions/session.json"));
+        assert!(!library.status.success());
+        assert!(library.stdout.is_empty());
+    }
+
     #[test]
     fn only_a_mac_game_needs_its_steam_api_library_to_start_the_host() {
         let root = tempfile::tempdir().unwrap();
@@ -377,6 +426,7 @@ mod atomic_tests {
             wine: None,
             home: root.path().join("home"),
             app_id: 42,
+            library: PathBuf::new(),
             cloud_save_roots: vec![],
         };
         // A cancelled launch stops at the runtime package, after the library.
