@@ -65,6 +65,10 @@ pub struct GamePlatforms {
 pub enum ClientError {
     #[error("{0}")]
     Failure(String),
+    /// A failure asking again does not change: Steam refuses, or the content
+    /// is what Obelisk cannot install.
+    #[error("{0}")]
+    Refused(String),
     #[error("{0}")]
     Cancelled(String),
 }
@@ -1065,6 +1069,8 @@ impl From<ContentError> for ClientError {
     fn from(error: ContentError) -> Self {
         if matches!(error, ContentError::Cancelled) {
             ClientError::Cancelled(error.to_string())
+        } else if error.is_refusal() {
+            ClientError::Refused(error.to_string())
         } else {
             ClientError::Failure(error.to_string())
         }
@@ -1073,7 +1079,11 @@ impl From<ContentError> for ClientError {
 
 impl From<crate::cm::CmError> for ClientError {
     fn from(error: crate::cm::CmError) -> Self {
-        ClientError::Failure(error.to_string())
+        if error.is_refusal() {
+            ClientError::Refused(error.to_string())
+        } else {
+            ClientError::Failure(error.to_string())
+        }
     }
 }
 
@@ -1156,6 +1166,39 @@ mod tests {
         assert!(supports_platform(&["windows".into()], Platform::Windows));
         assert!(!supports_platform(&["windows".into()], Platform::Mac));
         assert!(supports_platform(&[], Platform::Mac));
+    }
+
+    #[test]
+    fn only_what_asking_again_cannot_change_is_a_refusal() {
+        use crate::cm::CmError;
+        let refused = |error: ClientError| matches!(error, ClientError::Refused(_));
+        let rejected = |result| CmError::Rejected {
+            action: "backend.steam.cm.action.depot",
+            result,
+        };
+
+        for error in [
+            ContentError::InvalidData("backend.steam.content.conflictingPaths".into()),
+            ContentError::UnsafePath("../game".into()),
+            ContentError::UnsupportedSymlink("game".into()),
+            ContentError::Http(404),
+        ] {
+            assert!(refused(error.into()));
+        }
+        assert!(refused(rejected(15).into()));
+
+        for error in [
+            ContentError::Network,
+            ContentError::Http(503),
+            ContentError::NoCdnAddress,
+            ContentError::AlreadyDownloading,
+            ContentError::Io(std::io::ErrorKind::StorageFull.into()),
+        ] {
+            assert!(!refused(error.into()));
+        }
+        for error in [rejected(20), CmError::Timeout, CmError::Disconnected] {
+            assert!(!refused(error.into()));
+        }
     }
 
     #[test]

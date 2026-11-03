@@ -118,6 +118,12 @@ impl CmError {
     pub fn authentication_required(&self) -> bool {
         matches!(self, Self::Rejected { result, .. } if friends::authentication_required(*result))
     }
+
+    /// Whether Steam denies the account what it asked for, which asking
+    /// again does not change.
+    pub(crate) fn is_refusal(&self) -> bool {
+        matches!(self, Self::Rejected { result: 15, .. })
+    }
 }
 
 impl From<prost::DecodeError> for CmError {

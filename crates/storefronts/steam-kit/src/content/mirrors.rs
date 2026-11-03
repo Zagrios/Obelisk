@@ -20,7 +20,7 @@ use tokio::sync::Notify;
 
 use obelisk_core::transfer::NETWORK_RETRY_WAITS;
 
-use super::{CancelToken, CdnAuthorization, ContentError, invalid};
+use super::{CancelToken, CdnAuthorization, ContentError};
 use crate::cm::ContentServer;
 
 /// Requests one server takes at once, so a depot spreads over several.
@@ -202,7 +202,7 @@ impl<'a> Mirrors<'a> {
             })
             .collect();
         if addresses.is_empty() {
-            return Err(invalid("backend.steam.content.invalidCdnAddress"));
+            return Err(ContentError::NoCdnAddress);
         }
         let servers = addresses.iter().map(|_| Server::default()).collect();
         Ok(Self {

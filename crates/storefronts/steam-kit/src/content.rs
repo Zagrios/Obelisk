@@ -128,6 +128,9 @@ pub enum ContentError {
     Http(u16),
     #[error("{}", crate::message::format("backend.steam.content.invalid", std::slice::from_ref(.0)))]
     InvalidData(String),
+    /// Steam named no server Obelisk can reach.
+    #[error("{}", crate::message::format("backend.steam.content.invalid", &["backend.steam.content.invalidCdnAddress".to_owned()]))]
+    NoCdnAddress,
     #[error("{}", crate::message::format("backend.steam.content.unsafePath", std::slice::from_ref(.0)))]
     UnsafePath(String),
     #[error("{}", crate::message::format("backend.steam.content.unsupportedSymlink", std::slice::from_ref(.0)))]
@@ -186,6 +189,15 @@ impl ContentError {
     fn is_outage(&self) -> bool {
         matches!(self, Self::Network)
             || matches!(self, Self::Http(status) if transfer::is_outage_status(*status))
+    }
+
+    /// Whether asking again does not change the answer: the depot holds what
+    /// Obelisk cannot install, or its servers refuse it.
+    pub(crate) fn is_refusal(&self) -> bool {
+        matches!(
+            self,
+            Self::InvalidData(_) | Self::UnsafePath(_) | Self::UnsupportedSymlink(_)
+        ) || (matches!(self, Self::Http(_)) && !self.is_outage())
     }
 }
 

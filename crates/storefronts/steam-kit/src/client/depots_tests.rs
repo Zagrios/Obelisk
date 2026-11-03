@@ -218,7 +218,9 @@ async fn update_available(
 
 fn message(error: ClientError) -> String {
     match error {
-        ClientError::Failure(message) | ClientError::Cancelled(message) => message,
+        ClientError::Failure(message)
+        | ClientError::Refused(message)
+        | ClientError::Cancelled(message) => message,
     }
 }
 
@@ -843,6 +845,19 @@ mod mac_pick {
         // The licenses and the game were known the second time.
         assert!(steam.app_queries().is_empty());
         assert_eq!(steam.package_queries(), 0);
+    }
+
+    #[tokio::test]
+    async fn a_mac_build_steam_refuses_gives_way_to_the_windows_build_once() {
+        let (client, mut steam) = account().await;
+        steam.world.refused_manifests = vec![102];
+        for _ in 0..2 {
+            steam.forget_requests();
+            let platform = steam.during(client.platform(GAME, ENGLISH)).await;
+            assert_eq!(platform.unwrap(), Platform::Windows);
+        }
+        // The verdict was kept: the second pick read nothing.
+        assert!(steam.depot_keys().is_empty());
     }
 }
 

@@ -71,12 +71,29 @@ impl GameBuilds for OwnedApp<'_> {
 
     /// Whether the build's program and its Steam API library hold arm64
     /// slices, as a launch would start them. It reads their first bytes from
-    /// the build's depots.
+    /// the build's depots. A build Steam refuses or Obelisk cannot install
+    /// does not; any other failure may pass, and fails the pick.
     async fn inspect(
         &self,
         mac: &Licensed,
         cancel: &CancelToken,
     ) -> Result<Inspection<Self::Kept>, ClientError> {
+        match self.read_program(mac, cancel).await {
+            Err(ClientError::Refused(_)) => {
+                cancel.check()?;
+                Ok(Inspection::NotNative)
+            }
+            read => read,
+        }
+    }
+}
+
+impl OwnedApp<'_> {
+    async fn read_program(
+        &self,
+        mac: &Licensed,
+        cancel: &CancelToken,
+    ) -> Result<Inspection<Kept>, ClientError> {
         let Some(executable) = crate::launch::configuration(&mac.app, Platform::Mac)
             .map(|config| config.executable.clone())
         else {
