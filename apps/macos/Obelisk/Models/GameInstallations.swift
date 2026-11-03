@@ -1,5 +1,9 @@
 import Foundation
 import Observation
+import OSLog
+
+/// What a bug report's log shows of a failed installation action.
+private let installationFailures = Logger(subsystem: AppIdentity.storageIdentifier, category: "Installations")
 
 /// What a storefront adds to its installation actions.
 protocol InstallationStorefront: GameStorefront {
@@ -338,7 +342,11 @@ final class GameInstallations<Store: InstallationStorefront> {
         if cloud.sync != snapshot.cloudSync { cloud.sync = snapshot.cloudSync }
         if report != snapshot.report {
             report = snapshot.report
-            if let report { port?.report(Self.failure(report)) }
+            if let report {
+                installationFailures.error(
+                    "\(String(describing: Store.self), privacy: .public): \(String(describing: report), privacy: .public)")
+                port?.report(Self.failure(report))
+            }
         }
         if warning != snapshot.warning {
             warning = snapshot.warning
