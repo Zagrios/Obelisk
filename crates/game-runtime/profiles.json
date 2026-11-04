@@ -372,6 +372,17 @@
       "variables": {
         "D3DM_EXE_OVERRIDE": "GoWR.exe"
       }
+    },
+    {
+      "name": "A Plague Tale: Innocence",
+      "note": "Renders through DXMT rather than D3DMetal.",
+      "steam": 752590,
+      "epic": {
+        "namespace": "71d19da3678943098859baa9c4c39f95",
+        "app_name": "e0fa47ae79514345823bff209ae29451"
+      },
+      "path": "APlagueTaleInnocence_x64.exe",
+      "graphics": "Dxmt"
     }
   ]
 }
