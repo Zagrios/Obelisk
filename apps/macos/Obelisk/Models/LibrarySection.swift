@@ -1,7 +1,7 @@
 import Foundation
 
 enum LibrarySection: String, CaseIterable, Identifiable, Sendable {
-    case home, steam, epic, gog, settings
+    case home, steam, epic, gog, custom, settings
 
     var id: String { rawValue }
 
@@ -11,6 +11,7 @@ enum LibrarySection: String, CaseIterable, Identifiable, Sendable {
         case .steam: L10n.string("model.section.steam.title")
         case .epic: L10n.string("model.section.epic.title")
         case .gog: L10n.string("model.section.gog.title")
+        case .custom: L10n.string("model.section.custom.title")
         case .settings: L10n.string("model.section.settings.title")
         }
     }
@@ -21,6 +22,7 @@ enum LibrarySection: String, CaseIterable, Identifiable, Sendable {
         case .steam: "gearshape.2"
         case .epic: "shield.lefthalf.filled"
         case .gog: "square.stack.3d.up"
+        case .custom: "gamecontroller"
         case .settings: "gearshape"
         }
     }
@@ -40,6 +42,7 @@ enum LibrarySection: String, CaseIterable, Identifiable, Sendable {
         case .steam: L10n.string("model.section.steam.subtitle")
         case .epic: L10n.string("model.section.epic.subtitle")
         case .gog: L10n.string("model.section.gog.subtitle")
+        case .custom: L10n.string("model.section.custom.subtitle")
         default: nil
         }
     }
@@ -50,6 +53,7 @@ enum LibrarySection: String, CaseIterable, Identifiable, Sendable {
         case .steam: L10n.string("ui.store.steam")
         case .epic: L10n.string("ui.store.epic")
         case .gog: L10n.string("ui.store.gog")
+        case .custom: L10n.string("ui.store.custom")
         default: nil
         }
     }

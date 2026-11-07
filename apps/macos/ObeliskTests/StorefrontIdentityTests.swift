@@ -22,7 +22,7 @@ final class StorefrontIdentityTests: XCTestCase {
 
     func testEachStorefrontIsNamedTheSameWayByEveryLookupOfItsIdentity() async throws {
         XCTAssertEqual(LibrarySection.storefronts, [.steam, .epic, .gog], "The sidebar's order")
-        XCTAssertEqual(LibrarySection.allCases.map(\.rawValue), ["home", "steam", "epic", "gog", "settings"],
+        XCTAssertEqual(LibrarySection.allCases.map(\.rawValue), ["home", "steam", "epic", "gog", "custom", "settings"],
                        "The accessibility identifiers are built from the sections' raw values")
         let fixture = StorefrontsFixture(.init(steam: [], epic: [], gog: []))
         defer { fixture.finish() }

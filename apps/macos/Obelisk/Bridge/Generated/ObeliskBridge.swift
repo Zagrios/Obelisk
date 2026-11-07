@@ -5681,6 +5681,92 @@ public func FfiConverterTypeCloudSync_lower(_ value: CloudSync) -> RustBuffer {
 }
 
 
+public struct CustomGameLaunchConfig: Equatable, Hashable {
+    public var executable: String
+    public var arguments: [String]
+    public var prefix: String
+    public var runner: String?
+    public var engine: LaunchEngine
+    public var graphics: LaunchGraphics
+    public var rayTracing: Bool
+    public var performanceHud: Bool
+    public var renderPercent: UInt32
+    public var environment: [String: String]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(executable: String, arguments: [String], prefix: String, runner: String?, engine: LaunchEngine, graphics: LaunchGraphics, rayTracing: Bool, performanceHud: Bool, renderPercent: UInt32, environment: [String: String]) {
+        self.executable = executable
+        self.arguments = arguments
+        self.prefix = prefix
+        self.runner = runner
+        self.engine = engine
+        self.graphics = graphics
+        self.rayTracing = rayTracing
+        self.performanceHud = performanceHud
+        self.renderPercent = renderPercent
+        self.environment = environment
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CustomGameLaunchConfig: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCustomGameLaunchConfig: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CustomGameLaunchConfig {
+        return
+            try CustomGameLaunchConfig(
+                executable: FfiConverterString.read(from: &buf), 
+                arguments: FfiConverterSequenceString.read(from: &buf), 
+                prefix: FfiConverterString.read(from: &buf), 
+                runner: FfiConverterOptionString.read(from: &buf), 
+                engine: FfiConverterTypeLaunchEngine.read(from: &buf), 
+                graphics: FfiConverterTypeLaunchGraphics.read(from: &buf), 
+                rayTracing: FfiConverterBool.read(from: &buf), 
+                performanceHud: FfiConverterBool.read(from: &buf), 
+                renderPercent: FfiConverterUInt32.read(from: &buf), 
+                environment: FfiConverterDictionaryStringString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CustomGameLaunchConfig, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.executable, into: &buf)
+        FfiConverterSequenceString.write(value.arguments, into: &buf)
+        FfiConverterString.write(value.prefix, into: &buf)
+        FfiConverterOptionString.write(value.runner, into: &buf)
+        FfiConverterTypeLaunchEngine.write(value.engine, into: &buf)
+        FfiConverterTypeLaunchGraphics.write(value.graphics, into: &buf)
+        FfiConverterBool.write(value.rayTracing, into: &buf)
+        FfiConverterBool.write(value.performanceHud, into: &buf)
+        FfiConverterUInt32.write(value.renderPercent, into: &buf)
+        FfiConverterDictionaryStringString.write(value.environment, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCustomGameLaunchConfig_lift(_ buf: RustBuffer) throws -> CustomGameLaunchConfig {
+    return try FfiConverterTypeCustomGameLaunchConfig.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCustomGameLaunchConfig_lower(_ value: CustomGameLaunchConfig) -> RustBuffer {
+    return FfiConverterTypeCustomGameLaunchConfig.lower(value)
+}
+
+
 /**
  * One Transfer in the queue.
  */
@@ -10897,6 +10983,111 @@ public func FfiConverterTypeCloudSyncKind_lower(_ value: CloudSyncKind) -> RustB
 
 
 
+public 
+enum CustomLaunchError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+
+    
+    
+    case WineUnavailable
+    case NotExecutable
+    case InvalidApplication
+    case StartFailed
+    case Storage
+    case Failed(message: String
+    )
+
+    
+
+    
+
+    
+    public var errorDescription: String? {
+        String(reflecting: self)
+    }
+    
+}
+
+#if compiler(>=6)
+extension CustomLaunchError: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCustomLaunchError: FfiConverterRustBuffer {
+    typealias SwiftType = CustomLaunchError
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CustomLaunchError {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        
+
+        
+        case 1: return .WineUnavailable
+        case 2: return .NotExecutable
+        case 3: return .InvalidApplication
+        case 4: return .StartFailed
+        case 5: return .Storage
+        case 6: return .Failed(
+            message: try FfiConverterString.read(from: &buf)
+            )
+
+         default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CustomLaunchError, into buf: inout [UInt8]) {
+        switch value {
+
+        
+
+        
+        
+        case .WineUnavailable:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .NotExecutable:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .InvalidApplication:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .StartFailed:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .Storage:
+            writeInt(&buf, Int32(5))
+        
+        
+        case let .Failed(message):
+            writeInt(&buf, Int32(6))
+            FfiConverterString.write(message, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCustomLaunchError_lift(_ buf: RustBuffer) throws -> CustomLaunchError {
+    return try FfiConverterTypeCustomLaunchError.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCustomLaunchError_lower(_ value: CustomLaunchError) -> RustBuffer {
+    return FfiConverterTypeCustomLaunchError.lower(value)
+}
+
+
 /**
  * What a bug report is about, as far as its diagnostics go: Obelisk, or one
  * game as its storefront names it.
@@ -15500,6 +15691,32 @@ fileprivate struct FfiConverterDictionaryStringDouble: FfiConverterRustBuffer {
         return dict
     }
 }
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterDictionaryStringString: FfiConverterRustBuffer {
+    public static func write(_ value: [String: String], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for (key, value) in value {
+            FfiConverterString.write(key, into: &buf)
+            FfiConverterString.write(value, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [String: String] {
+        let len: Int32 = try readInt(&buf)
+        var dict = [String: String]()
+        dict.reserveCapacity(Int(len))
+        for _ in 0..<len {
+            let key = try FfiConverterString.read(from: &buf)
+            let value = try FfiConverterString.read(from: &buf)
+            dict[key] = value
+        }
+        return dict
+    }
+}
 private let UNIFFI_RUST_FUTURE_POLL_READY: Int8 = 0
 private let UNIFFI_RUST_FUTURE_POLL_WAKE: Int8 = 1
 
@@ -15547,6 +15764,43 @@ fileprivate func uniffiFutureContinuationCallback(handle: UInt64, pollResult: In
     } else {
         print("uniffiFutureContinuationCallback invalid handle")
     }
+}
+public func forceQuitCustomExecutable(pid: UInt32, prefix: String, runner: String?, locations: ObeliskLocations)throws   {try rustCallWithError(FfiConverterTypeCustomLaunchError_lift) {
+        uniffiCallStatus in
+    uniffi_obelisk_bridge_fn_func_force_quit_custom_executable(
+        FfiConverterUInt32.lower(pid),
+        FfiConverterString.lower(prefix),
+        FfiConverterOptionString.lower(runner),
+        FfiConverterTypeObeliskLocations_lower(locations),uniffiCallStatus
+    )
+}
+}
+public func isCustomProcessRunning(pid: UInt32) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_obelisk_bridge_fn_func_is_custom_process_running(
+        FfiConverterUInt32.lower(pid),uniffiCallStatus
+    )
+})
+}
+public func launchCustomExecutable(config: CustomGameLaunchConfig, locations: ObeliskLocations)throws  -> UInt32  {
+    return try  FfiConverterUInt32.lift(try rustCallWithError(FfiConverterTypeCustomLaunchError_lift) {
+        uniffiCallStatus in
+    uniffi_obelisk_bridge_fn_func_launch_custom_executable(
+        FfiConverterTypeCustomGameLaunchConfig_lower(config),
+        FfiConverterTypeObeliskLocations_lower(locations),uniffiCallStatus
+    )
+})
+}
+public func stopCustomExecutable(pid: UInt32, prefix: String, runner: String?, locations: ObeliskLocations)throws   {try rustCallWithError(FfiConverterTypeCustomLaunchError_lift) {
+        uniffiCallStatus in
+    uniffi_obelisk_bridge_fn_func_stop_custom_executable(
+        FfiConverterUInt32.lower(pid),
+        FfiConverterString.lower(prefix),
+        FfiConverterOptionString.lower(runner),
+        FfiConverterTypeObeliskLocations_lower(locations),uniffiCallStatus
+    )
+}
 }
 /**
  * The diagnostics a bug report on `subject` attaches, most telling first.
@@ -15743,6 +15997,18 @@ private let initializationResult: InitializationResult = {
     let scaffolding_contract_version = ffi_obelisk_bridge_uniffi_contract_version()
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_func_force_quit_custom_executable() != 8284) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_func_is_custom_process_running() != 51884) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_func_launch_custom_executable() != 11256) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_func_stop_custom_executable() != 51353) {
+        return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_func_diagnostic_files() != 60320) {
         return InitializationResult.apiChecksumMismatch
