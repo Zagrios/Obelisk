@@ -152,12 +152,12 @@ struct CustomGameDetailView: View {
 
             metricItem(
                 symbol: "cpu",
-                text: LaunchSettingsSheet.name(of: game.engine)
+                text: game.engine == .rosetta ? L10n.string("ui.custom.engine_rosetta") : L10n.string("ui.custom.engine_linux")
             )
 
             metricItem(
                 symbol: "display",
-                text: LaunchSettingsSheet.name(of: game.graphics)
+                text: game.graphics == .d3dMetal ? L10n.string("ui.custom.graphics_d3dmetal") : L10n.string("ui.custom.graphics_dxmt")
             )
         }
         .padding(.top, 4)
@@ -232,8 +232,8 @@ struct CustomGameDetailView: View {
                 ObeliskRow(title: L10n.string("ui.custom.compatibility_section")) {
                     SymbolTile(name: "gearshape.2.fill", colors: TileColors.violet)
                 } detail: {
-                    let engineText = LaunchSettingsSheet.name(of: game.engine)
-                    let graphicsText = LaunchSettingsSheet.name(of: game.graphics)
+                    let engineText = game.engine == .rosetta ? L10n.string("ui.custom.engine_rosetta") : L10n.string("ui.custom.engine_linux")
+                    let graphicsText = game.graphics == .d3dMetal ? L10n.string("ui.custom.graphics_d3dmetal") : L10n.string("ui.custom.graphics_dxmt")
                     let rtText = game.rayTracing ? "RT: On" : "RT: Off"
                     let hudText = game.performanceHud ? "HUD: On" : "HUD: Off"
                     let summaryText = "\(engineText) · \(graphicsText) · \(rtText) · \(hudText) · \(game.renderPercent)%"

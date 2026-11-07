@@ -1,7 +1,7 @@
 //! Launching and process supervision of custom/non-store Windows executables in Obelisk.
 
 use crate::{
-    Locations, voile,
+    Locations, pe, voile,
     wine::{Engine, Graphics},
 };
 use std::{
@@ -48,6 +48,29 @@ impl From<std::io::Error> for CustomError {
     }
 }
 
+/// Downloads and installs the default Voile Wine engine (CrossOver + Apple GPTK 4).
+pub async fn download_default_wine_engine(locations: &Locations) -> Result<String, CustomError> {
+    let install = voile::Install::new();
+    let runtime = install
+        .run(&locations.voile, None)
+        .await
+        .map_err(|e| CustomError::Failed(e.to_string()))?;
+    let release = voile::release_of(&runtime).unwrap_or_else(|| "default".to_string());
+    Ok(release)
+}
+
+/// Checks whether the default Wine runtime (Voile / CrossOver / GPTK) is installed.
+pub fn is_default_wine_installed(locations: &Locations) -> bool {
+    voile::runtime(&locations.voile).is_some()
+}
+
+/// Inspects the PE headers of the target executable and recommends the optimal graphics backend.
+/// DirectX 12 games receive D3DMetal (GPTK 4), while DirectX 11/10/9 titles receive DXMT.
+pub fn recommended_graphics(executable: &Path) -> Graphics {
+    let program = pe::Program::open(executable);
+    Graphics::default_for(Engine::Rosetta, program.as_ref())
+}
+
 /// Launches a custom Windows executable using Wine or a custom runner.
 pub fn launch_custom(
     config: &CustomLaunchConfig,
@@ -70,6 +93,43 @@ pub fn launch_custom(
     // Ensure the prefix directory exists
     fs::create_dir_all(&config.prefix)?;
 
+    // Runner binary
+    let runner_binary = if let Some(ref runner) = config.runner {
+        runner.clone()
+    } else {
+        runtime.join("bin/wine")
+    };
+
+    let working_dir = config.executable.parent().unwrap_or(&config.prefix);
+
+    // Boot prefix if it has not been initialized yet (system.reg does not exist)
+    let system_reg = config.prefix.join("system.reg");
+    if config.runner.is_none() && !system_reg.is_file() {
+        let mut boot = Command::new(&runner_binary);
+        boot.args(["wineboot", "--init"])
+            .current_dir(working_dir)
+            .env_clear()
+            .envs(crate::native::environment(&locations.home))
+            .env("WINEPREFIX", &config.prefix)
+            .env("WINEDLLOVERRIDES", "mscoree,mshtml=;winemenubuilder.exe=d")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let _ = boot.status();
+
+        // Wait for wineserver to settle registry updates
+        let wineserver_bin = runtime.join("bin/wineserver");
+        if wineserver_bin.is_file() {
+            let _ = Command::new(&wineserver_bin)
+                .arg("-w")
+                .env("WINEPREFIX", &config.prefix)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+        }
+    }
+
     // Set up log file in <library>/Logs/Custom/<game_stem>.log
     let logs_dir = locations.library.join("Logs/Custom");
     fs::create_dir_all(&logs_dir)?;
@@ -85,26 +145,20 @@ pub fn launch_custom(
         .truncate(true)
         .open(&log_path)?;
 
-    // Runner binary
-    let runner_binary = if let Some(ref runner) = config.runner {
-        runner.clone()
-    } else {
-        runtime.join("bin/wine")
-    };
-
     let mut command = Command::new(&runner_binary);
-
-    // Working directory is the parent folder of the executable
-    let working_dir = config.executable.parent().unwrap_or(&config.prefix);
     command.current_dir(working_dir);
 
-    // Arguments: first the executable itself, then its command-line arguments
-    command.arg(&config.executable);
+    // Pass the executable as ./<name> inside working_dir, followed by arguments
+    let file_name = config
+        .executable
+        .file_name()
+        .unwrap_or(config.executable.as_os_str());
+    command.arg(format!("./{}", file_name.to_string_lossy()));
     for arg in &config.arguments {
         command.arg(arg);
     }
 
-    // Prepare clean environment
+    // Prepare clean environment matching Obelisk runtime conventions
     command.env_clear();
     command.envs(crate::native::environment(&locations.home));
     command.env("WINEPREFIX", &config.prefix);
@@ -113,6 +167,23 @@ pub fn launch_custom(
     command.env("WINE_LARGE_ADDRESS_AWARE", "1");
     command.env("ROSETTA_ADVERTISE_AVX", "1");
     command.env("DOTNET_EnableWriteXorExecute", "0");
+
+    // Standard native DLL overrides for standalone / cracked / non-store games
+    // so native proxy DLLs (winmm, version, d3d11, dxgi, etc.) in the game folder load first.
+    command.env(
+        "WINEDLLOVERRIDES",
+        "winmm,version,d3d11,dxgi,msvcp140,vcruntime140,vcruntime140_1=n,b;mshtml=;winemenubuilder.exe=d",
+    );
+
+    // GStreamer multimedia plugins
+    let gstreamer = runtime.join("lib/gstreamer-1.0");
+    if gstreamer.is_dir() {
+        command.env("GST_PLUGIN_SYSTEM_PATH", &gstreamer);
+        command.env(
+            "GST_REGISTRY",
+            config.prefix.join("obelisk-gstreamer-registry.bin"),
+        );
+    }
 
     if config.performance_hud {
         command.env("MTL_HUD_ENABLED", "1");
@@ -146,9 +217,15 @@ pub fn launch_custom(
             }
         }
         Graphics::Dxmt => {
-            let dxmt = runtime.join("lib/dxmt");
-            if dxmt.is_dir() {
-                command.env("WINEDLLPATH_PREPEND", dxmt.to_string_lossy().as_ref());
+            let folders = [runtime.join("lib/dxmt"), runtime.join("lib/d3dmetal")];
+            let search = folders
+                .iter()
+                .filter(|f| f.is_dir())
+                .map(|f| f.to_string_lossy())
+                .collect::<Vec<_>>()
+                .join(":");
+            if !search.is_empty() {
+                command.env("WINEDLLPATH_PREPEND", search);
             }
             command.env("CX_ACTIVE_GRAPHICS_BACKEND", "dxmt");
         }

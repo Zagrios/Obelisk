@@ -119,6 +119,30 @@ pub fn is_custom_process_running(pid: u32) -> bool {
     custom::is_custom_process_running(pid)
 }
 
+#[uniffi::export]
+pub async fn download_default_wine_engine(
+    locations: ObeliskLocations,
+) -> Result<String, CustomLaunchError> {
+    let locations = Locations::from(&locations);
+    Ok(custom::download_default_wine_engine(&locations).await?)
+}
+
+#[uniffi::export]
+pub fn is_default_wine_installed(locations: ObeliskLocations) -> bool {
+    let locations = Locations::from(&locations);
+    custom::is_default_wine_installed(&locations)
+}
+
+#[uniffi::export]
+pub fn recommended_graphics_backend(executable_path: String) -> LaunchGraphics {
+    let path = std::path::Path::new(&executable_path);
+    let graphics = custom::recommended_graphics(path);
+    match graphics {
+        Graphics::D3DMetal => LaunchGraphics::D3dMetal,
+        Graphics::Dxmt => LaunchGraphics::Dxmt,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

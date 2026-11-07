@@ -21741,19 +21741,19 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Rosetta (Apple Silicon translation)"
+            "value": "CrossOver Wine (Default • GPTK 4)"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Rosetta (traduction Apple Silicon)"
+            "value": "Wine CrossOver (Par défaut • GPTK 4)"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Rosetta (traduzione Apple Silicon)"
+            "value": "CrossOver Wine (Predefinito • GPTK 4)"
           }
         }
       }
@@ -21810,19 +21810,19 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "D3DMetal (Apple Game Porting Toolkit)"
+            "value": "Apple D3DMetal (GPTK 4 • DirectX 12/11)"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "D3DMetal (Apple Game Porting Toolkit)"
+            "value": "Apple D3DMetal (GPTK 4 • DirectX 12/11)"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "D3DMetal (Apple Game Porting Toolkit)"
+            "value": "Apple D3DMetal (GPTK 4 • DirectX 12/11)"
           }
         }
       }
@@ -22260,6 +22260,144 @@
           "stringUnit": {
             "state": "translated",
             "value": "Altre azioni"
+          }
+        }
+      }
+    },
+    "ui.custom.engine_linux": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Linux Engine (voile-lkd)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moteur Linux (voile-lkd)"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Motore Linux (voile-lkd)"
+          }
+        }
+      }
+    },
+    "ui.custom.graphics_dxmt": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DXMT (Metal DirectX 11/10)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DXMT (Metal DirectX 11/10)"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DXMT (Metal DirectX 11/10)"
+          }
+        }
+      }
+    },
+    "ui.custom.download_engine": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download Wine / GPTK 4 Engine"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Télécharger le moteur Wine / GPTK 4"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scarica il motore Wine / GPTK 4"
+          }
+        }
+      }
+    },
+    "ui.custom.downloading_engine": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloading Wine & GPTK 4..."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Téléchargement de Wine et GPTK 4..."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download di Wine e GPTK 4 in corso..."
+          }
+        }
+      }
+    },
+    "ui.custom.engine_installed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CrossOver Wine (GPTK 4) • Installed (%@)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wine CrossOver (GPTK 4) • Installé (%@)"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CrossOver Wine (GPTK 4) • Installato (%@)"
+          }
+        }
+      }
+    },
+    "ui.custom.engine_not_installed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default Wine Engine Not Installed"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moteur Wine par défaut non installé"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Motore Wine predefinito non installato"
           }
         }
       }

@@ -244,11 +244,11 @@ struct AddCustomGameSheet: View {
                 ObeliskRow(title: L10n.string("ui.custom.engine")) {
                     SymbolTile(name: "cpu", colors: TileColors.violet)
                 } detail: {
-                    Text(LaunchSettingsSheet.name(of: engine))
+                    Text(engine == .rosetta ? L10n.string("ui.custom.engine_rosetta") : L10n.string("ui.custom.engine_linux"))
                 } accessory: {
                     Picker(selection: $engine) {
-                        Text(LaunchSettingsSheet.name(of: LaunchEngine.rosetta)).tag(LaunchEngine.rosetta)
-                        Text(LaunchSettingsSheet.name(of: LaunchEngine.linux)).tag(LaunchEngine.linux)
+                        Text(L10n.string("ui.custom.engine_rosetta")).tag(LaunchEngine.rosetta)
+                        Text(L10n.string("ui.custom.engine_linux")).tag(LaunchEngine.linux)
                     } label: {
                         EmptyView()
                     }
@@ -258,14 +258,46 @@ struct AddCustomGameSheet: View {
 
                 ObeliskCardDivider()
 
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(model.isEngineInstalled
+                            ? L10n.string("ui.custom.engine_installed", model.installedEngineVersion ?? "Voile")
+                            : L10n.string("ui.custom.engine_not_installed"))
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(model.isEngineInstalled ? Color.secondary : Color.orange)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    if model.isDownloadingEngine {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text(L10n.string("ui.custom.downloading_engine"))
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        GlassCapsuleButton(
+                            title: L10n.string("ui.custom.download_engine"),
+                            identifier: "custom-game-download-engine"
+                        ) {
+                            Task { await model.downloadEngine() }
+                        }
+                    }
+                }
+                .padding(14)
+
+                ObeliskCardDivider()
+
                 ObeliskRow(title: L10n.string("ui.custom.graphics")) {
                     SymbolTile(name: "display", colors: TileColors.blue)
                 } detail: {
-                    Text(LaunchSettingsSheet.name(of: graphics))
+                    Text(graphics == .d3dMetal ? L10n.string("ui.custom.graphics_d3dmetal") : L10n.string("ui.custom.graphics_dxmt"))
                 } accessory: {
                     Picker(selection: $graphics) {
-                        Text(LaunchSettingsSheet.name(of: LaunchGraphics.d3dMetal)).tag(LaunchGraphics.d3dMetal)
-                        Text(LaunchSettingsSheet.name(of: LaunchGraphics.dxmt)).tag(LaunchGraphics.dxmt)
+                        Text(L10n.string("ui.custom.graphics_d3dmetal")).tag(LaunchGraphics.d3dMetal)
+                        Text(L10n.string("ui.custom.graphics_dxmt")).tag(LaunchGraphics.dxmt)
                     } label: {
                         EmptyView()
                     }
@@ -387,6 +419,8 @@ struct AddCustomGameSheet: View {
                 // Infer game name from executable without extension
                 title = url.deletingPathExtension().lastPathComponent
             }
+            // Auto-detect optimal graphics backend (DXMT for DX11, D3DMetal for DX12)
+            graphics = recommendedGraphicsBackend(executablePath: url.path)
         }
     }
 

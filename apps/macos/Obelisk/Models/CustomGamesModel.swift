@@ -39,6 +39,30 @@ final class CustomGamesModel {
     var editingGame: CustomGame?
     var settingsGame: CustomGame?
     var gamePendingRemoval: CustomGame?
+    var isDownloadingEngine = false
+    var engineDownloadError: String?
+
+    var installedEngineVersion: String? {
+        installedVoileRelease(locations: locations)
+    }
+
+    var isEngineInstalled: Bool {
+        isDefaultWineInstalled(locations: locations)
+    }
+
+    func downloadEngine() async {
+        guard !isDownloadingEngine else { return }
+        isDownloadingEngine = true
+        engineDownloadError = nil
+        do {
+            _ = try await downloadDefaultWineEngine(locations: locations)
+            isDownloadingEngine = false
+        } catch {
+            isDownloadingEngine = false
+            engineDownloadError = error.localizedDescription
+            customLog.error("Engine download failed: \(error.localizedDescription)")
+        }
+    }
 
     @ObservationIgnored private(set) var runningProcesses: [String: CustomGameRunningState] = [:]
     @ObservationIgnored let directory: URL
@@ -171,6 +195,17 @@ final class CustomGamesModel {
 
     func launch(_ game: CustomGame) {
         guard !isRunning(game) else { return }
+
+        // Automatically download the default engine if missing and not using a custom runner
+        if game.runnerPath == nil && !isEngineInstalled {
+            Task {
+                await downloadEngine()
+                if isEngineInstalled {
+                    launch(game)
+                }
+            }
+            return
+        }
 
         let defaultPrefix = directory
             .appendingPathComponent("Prefixes")
