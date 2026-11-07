@@ -13,6 +13,10 @@ struct CustomGameDetailView: View {
     private static var heroHeight: CGFloat { ObeliskStyle.libraryHeroHeight }
     private static var coverOverlap: CGFloat { 150 }
 
+    private var currentGame: CustomGame {
+        model.games.first(where: { $0.id == game.id }) ?? game
+    }
+
     var body: some View {
         StorefrontScrollView {
             VStack(alignment: .leading, spacing: 0) {
@@ -35,7 +39,7 @@ struct CustomGameDetailView: View {
         }
         .sheet(item: $cropTarget) { target in
             ArtworkCropSheet(target: target) { croppedPath in
-                var updated = game
+                var updated = currentGame
                 if target.isCover {
                     updated.customCoverPath = croppedPath
                 } else {
@@ -49,7 +53,7 @@ struct CustomGameDetailView: View {
 
     private var hero: some View {
         HeroBackdrop {
-            CustomGameBannerView(game: game)
+            CustomGameBannerView(game: currentGame)
         }
         .heroFrame()
     }
@@ -60,14 +64,14 @@ struct CustomGameDetailView: View {
             VStack(alignment: .leading, spacing: 0) {
                 Color.clear.frame(height: Self.coverOverlap)
                 VStack(alignment: .leading, spacing: 14) {
-                    Text(verbatim: game.title)
+                    Text(verbatim: currentGame.title)
                         .font(.system(size: 26, weight: .bold))
                         .lineLimit(2)
 
                     HStack(spacing: 12) {
                         GameActionButton(
-                            action: model.gameAction(for: game, place: .page),
-                            gameName: game.title
+                            action: model.gameAction(for: currentGame, place: .page),
+                            gameName: currentGame.title
                         )
 
                         StorefrontGlassButton(
@@ -75,7 +79,7 @@ struct CustomGameDetailView: View {
                             size: 14,
                             label: L10n.string("ui.custom.launch_settings_title"),
                             identifier: "custom-detail-settings",
-                            action: { model.settingsGame = game }
+                            action: { model.settingsGame = currentGame }
                         )
 
                         StorefrontGlassButton(
@@ -83,17 +87,17 @@ struct CustomGameDetailView: View {
                             size: 14,
                             label: L10n.string("ui.custom.edit_game"),
                             identifier: "custom-detail-edit",
-                            action: { model.editingGame = game }
+                            action: { model.editingGame = currentGame }
                         )
 
                         Menu {
                             Button {
-                                NSWorkspace.shared.selectFile(game.executablePath, inFileViewerRootedAtPath: "")
+                                NSWorkspace.shared.selectFile(currentGame.executablePath, inFileViewerRootedAtPath: "")
                             } label: {
                                 Label(L10n.string("ui.custom.show_in_finder"), systemImage: "folder")
                             }
 
-                            if let prefix = game.winePrefixPath, FileManager.default.fileExists(atPath: prefix) {
+                            if let prefix = currentGame.winePrefixPath, FileManager.default.fileExists(atPath: prefix) {
                                 Button {
                                     NSWorkspace.shared.selectFile(prefix, inFileViewerRootedAtPath: "")
                                 } label: {
@@ -101,7 +105,7 @@ struct CustomGameDetailView: View {
                                 }
                             }
 
-                            if let cover = game.customCoverPath, FileManager.default.fileExists(atPath: cover) {
+                            if let cover = currentGame.customCoverPath, FileManager.default.fileExists(atPath: cover) {
                                 Button {
                                     cropTarget = .cover(path: cover)
                                 } label: {
@@ -109,7 +113,7 @@ struct CustomGameDetailView: View {
                                 }
                             }
 
-                            if let banner = game.customBannerPath, FileManager.default.fileExists(atPath: banner) {
+                            if let banner = currentGame.customBannerPath, FileManager.default.fileExists(atPath: banner) {
                                 Button {
                                     cropTarget = .banner(path: banner)
                                 } label: {
@@ -120,7 +124,7 @@ struct CustomGameDetailView: View {
                             Divider()
 
                             Button(role: .destructive) {
-                                model.gamePendingRemoval = game
+                                model.gamePendingRemoval = currentGame
                             } label: {
                                 Label(L10n.string("ui.custom.remove_game"), systemImage: "trash")
                             }
@@ -150,7 +154,7 @@ struct CustomGameDetailView: View {
         return Color.clear
             .aspectRatio(ObeliskStyle.coverAspectRatio, contentMode: .fit)
             .overlay {
-                CustomGameCoverView(game: game)
+                CustomGameCoverView(game: currentGame)
             }
             .clipShape(shape)
             .overlay {
@@ -160,7 +164,7 @@ struct CustomGameDetailView: View {
             .frame(width: 190)
             .shadow(color: .black.opacity(colorScheme == .dark ? 0.5 : 0.3), radius: 24, y: 14)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(game.title)
+            .accessibilityLabel(currentGame.title)
             .accessibilityAddTraits(.isHeader)
     }
 
@@ -168,24 +172,24 @@ struct CustomGameDetailView: View {
         HStack(spacing: 18) {
             metricItem(
                 symbol: "clock",
-                text: game.playtimeSeconds > 0
-                    ? GameFormatting.playtime(Duration.seconds(Int64(game.playtimeSeconds)))
+                text: currentGame.playtimeSeconds > 0
+                    ? GameFormatting.playtime(Duration.seconds(Int64(currentGame.playtimeSeconds)))
                     : L10n.string("ui.game.never_played")
             )
 
             metricItem(
                 symbol: "calendar",
-                text: GameFormatting.lastPlayed(game.lastPlayed)
+                text: GameFormatting.lastPlayed(currentGame.lastPlayed)
             )
 
             metricItem(
                 symbol: "cpu",
-                text: game.engine == .rosetta ? L10n.string("ui.custom.engine_rosetta") : L10n.string("ui.custom.engine_linux")
+                text: currentGame.engine == .rosetta ? L10n.string("ui.custom.engine_rosetta") : L10n.string("ui.custom.engine_linux")
             )
 
             metricItem(
                 symbol: "display",
-                text: game.graphics == .d3dMetal ? L10n.string("ui.custom.graphics_d3dmetal") : L10n.string("ui.custom.graphics_dxmt")
+                text: currentGame.graphics == .d3dMetal ? L10n.string("ui.custom.graphics_d3dmetal") : L10n.string("ui.custom.graphics_dxmt")
             )
         }
         .padding(.top, 4)
@@ -208,7 +212,7 @@ struct CustomGameDetailView: View {
                 ObeliskRow(title: L10n.string("ui.custom.executable_path")) {
                     SymbolTile(name: "terminal.fill", colors: TileColors.graphite)
                 } detail: {
-                    Text(verbatim: game.executablePath)
+                    Text(verbatim: currentGame.executablePath)
                         .font(.system(size: 12, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
@@ -218,7 +222,7 @@ struct CustomGameDetailView: View {
                         systemImage: "folder",
                         identifier: "custom-executable-finder"
                     ) {
-                        NSWorkspace.shared.selectFile(game.executablePath, inFileViewerRootedAtPath: "")
+                        NSWorkspace.shared.selectFile(currentGame.executablePath, inFileViewerRootedAtPath: "")
                     }
                 }
 
@@ -227,7 +231,7 @@ struct CustomGameDetailView: View {
                 ObeliskRow(title: L10n.string("ui.custom.launch_arguments")) {
                     SymbolTile(name: "text.quote", colors: TileColors.grey)
                 } detail: {
-                    Text(verbatim: game.launchArguments.isEmpty ? "-" : game.launchArguments)
+                    Text(verbatim: currentGame.launchArguments.isEmpty ? "-" : currentGame.launchArguments)
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 } accessory: {
@@ -239,12 +243,12 @@ struct CustomGameDetailView: View {
                 ObeliskRow(title: L10n.string("ui.custom.wine_prefix")) {
                     SymbolTile(name: "folder.badge.gearshape", colors: TileColors.blue)
                 } detail: {
-                    Text(verbatim: game.winePrefixPath ?? L10n.string("ui.custom.wine_prefix_default"))
+                    Text(verbatim: currentGame.winePrefixPath ?? L10n.string("ui.custom.wine_prefix_default"))
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 } accessory: {
-                    if let prefix = game.winePrefixPath, FileManager.default.fileExists(atPath: prefix) {
+                    if let prefix = currentGame.winePrefixPath, FileManager.default.fileExists(atPath: prefix) {
                         GlassCapsuleButton(
                             title: L10n.string("ui.custom.show_in_finder"),
                             systemImage: "folder",
@@ -260,11 +264,11 @@ struct CustomGameDetailView: View {
                 ObeliskRow(title: L10n.string("ui.custom.compatibility_section")) {
                     SymbolTile(name: "gearshape.2.fill", colors: TileColors.violet)
                 } detail: {
-                    let engineText = game.engine == .rosetta ? L10n.string("ui.custom.engine_rosetta") : L10n.string("ui.custom.engine_linux")
-                    let graphicsText = game.graphics == .d3dMetal ? L10n.string("ui.custom.graphics_d3dmetal") : L10n.string("ui.custom.graphics_dxmt")
-                    let rtText = game.rayTracing ? "RT: On" : "RT: Off"
-                    let hudText = game.performanceHud ? "HUD: On" : "HUD: Off"
-                    let summaryText = "\(engineText) · \(graphicsText) · \(rtText) · \(hudText) · \(game.renderPercent)%"
+                    let engineText = currentGame.engine == .rosetta ? L10n.string("ui.custom.engine_rosetta") : L10n.string("ui.custom.engine_linux")
+                    let graphicsText = currentGame.graphics == .d3dMetal ? L10n.string("ui.custom.graphics_d3dmetal") : L10n.string("ui.custom.graphics_dxmt")
+                    let rtText = currentGame.rayTracing ? "RT: On" : "RT: Off"
+                    let hudText = currentGame.performanceHud ? "HUD: On" : "HUD: Off"
+                    let summaryText = "\(engineText) · \(graphicsText) · \(rtText) · \(hudText) · \(currentGame.renderPercent)%"
                     Text(verbatim: summaryText)
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
@@ -274,7 +278,7 @@ struct CustomGameDetailView: View {
                         systemImage: "slider.horizontal.3",
                         identifier: "custom-detail-open-settings"
                     ) {
-                        model.settingsGame = game
+                        model.settingsGame = currentGame
                     }
                 }
             }
@@ -287,7 +291,7 @@ struct CustomGameDetailView: View {
             searchLabel: "",
             showsBackdrop: showsBackdrop,
             game: LibraryGlassBar.GameBar(
-                title: game.title,
+                title: currentGame.title,
                 libraryTitle: L10n.string("model.section.custom.title"),
                 showsTitle: showsTitle,
                 back: {

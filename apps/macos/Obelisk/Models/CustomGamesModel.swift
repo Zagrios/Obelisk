@@ -425,9 +425,32 @@ struct CustomGameCoverView: View {
     var body: some View {
         if let path = game.customCoverPath,
            let image = NSImage(contentsOfFile: path) {
-            Image(nsImage: image)
-                .resizable()
-                .scaledToFill()
+            let imgAspect = image.size.width / max(image.size.height, 1)
+            if imgAspect > 0.82 {
+                ZStack {
+                    Image(nsImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .blur(radius: 20)
+                        .opacity(0.45)
+                        .overlay(Color.black.opacity(0.25))
+
+                    Image(nsImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .clipShape(RoundedRectangle(cornerRadius: imgAspect > 1.2 ? 8 : 14, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: imgAspect > 1.2 ? 8 : 14, style: .continuous)
+                                .strokeBorder(Color.white.opacity(0.25), lineWidth: 1)
+                        }
+                        .shadow(color: .black.opacity(0.4), radius: 8, y: 4)
+                        .padding(imgAspect > 1.2 ? 8 : 14)
+                }
+            } else {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFill()
+            }
         } else {
             ZStack {
                 LinearGradient(

@@ -203,9 +203,25 @@ struct AddCustomGameSheet: View {
         let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
         return Group {
             if let path = customCoverPath, let image = NSImage(contentsOfFile: path) {
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFill()
+                let imgAspect = image.size.width / max(image.size.height, 1)
+                if imgAspect > 0.82 {
+                    ZStack {
+                        Image(nsImage: image)
+                            .resizable()
+                            .scaledToFill()
+                            .blur(radius: 8)
+                            .opacity(0.45)
+                        Image(nsImage: image)
+                            .resizable()
+                            .scaledToFit()
+                            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                            .padding(3)
+                    }
+                } else {
+                    Image(nsImage: image)
+                        .resizable()
+                        .scaledToFill()
+                }
             } else {
                 ZStack {
                     Color.primary.opacity(0.08)
@@ -218,6 +234,7 @@ struct AddCustomGameSheet: View {
         .frame(width: 44, height: 66)
         .clipShape(shape)
         .overlay { shape.strokeBorder(Color.primary.opacity(0.12), lineWidth: 1) }
+        .id(customCoverPath ?? "empty-cover")
     }
 
     private var bannerPreview: some View {
@@ -239,6 +256,7 @@ struct AddCustomGameSheet: View {
         .frame(width: 80, height: 44)
         .clipShape(shape)
         .overlay { shape.strokeBorder(Color.primary.opacity(0.12), lineWidth: 1) }
+        .id(customBannerPath ?? "empty-banner")
     }
 
     private var launchOptionsSection: some View {

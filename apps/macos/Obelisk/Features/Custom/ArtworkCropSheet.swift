@@ -34,10 +34,14 @@ struct ArtworkCropSheet: View {
 
     @State private var aspectRatio: CGFloat
     @State private var scale: CGFloat = 1.0
+    @State private var baseScale: CGFloat = 1.0
     @State private var rotation: Double = 0.0
     @State private var offset: CGSize = .zero
     @State private var dragOffset: CGSize = .zero
     @State private var image: NSImage?
+    @State private var isHoveringCanvas: Bool = false
+    @State private var currentCanvasSize: CGSize = CGSize(width: 532, height: 330)
+    @State private var scrollMonitor: Any?
 
     @Environment(\.dismiss) private var dismiss
 
@@ -52,13 +56,13 @@ struct ArtworkCropSheet: View {
             if abs(aspectRatio - (2.0 / 3.0)) < 0.01 {
                 return CGSize(width: 200, height: 300)
             } else {
-                return CGSize(width: 260, height: 260)
+                return CGSize(width: 270, height: 270)
             }
         } else {
             if abs(aspectRatio - (16.0 / 9.0)) < 0.01 {
-                return CGSize(width: 440, height: 247.5)
+                return CGSize(width: 460, height: 258.75)
             } else {
-                return CGSize(width: 460, height: 197.1)
+                return CGSize(width: 480, height: 205.71)
             }
         }
     }
@@ -101,6 +105,10 @@ struct ArtworkCropSheet: View {
         .tint(ObeliskStyle.accent)
         .onAppear {
             loadImage()
+            installScrollMonitor()
+        }
+        .onDisappear {
+            removeScrollMonitor()
         }
     }
 
@@ -124,16 +132,39 @@ struct ArtworkCropSheet: View {
                         .rotationEffect(.degrees(rotation))
                         .offset(x: offset.width + dragOffset.width, y: offset.height + dragOffset.height)
                         .gesture(
-                            DragGesture()
-                                .onChanged { value in
-                                    dragOffset = value.translation
-                                }
-                                .onEnded { value in
-                                    offset.width += value.translation.width
-                                    offset.height += value.translation.height
-                                    dragOffset = .zero
-                                }
+                            SimultaneousGesture(
+                                DragGesture()
+                                    .onChanged { value in
+                                        dragOffset = value.translation
+                                    }
+                                    .onEnded { value in
+                                        offset.width += value.translation.width
+                                        offset.height += value.translation.height
+                                        dragOffset = .zero
+                                    },
+                                MagnificationGesture()
+                                    .onChanged { val in
+                                        let newScale = baseScale * val
+                                        scale = min(max(newScale, 0.15), 8.0)
+                                    }
+                                    .onEnded { _ in
+                                        baseScale = scale
+                                    }
+                            )
                         )
+                        .onTapGesture(count: 2) {
+                            withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+                                if scale > 1.2 {
+                                    scale = 1.0
+                                    baseScale = 1.0
+                                    offset = .zero
+                                    dragOffset = .zero
+                                } else {
+                                    scale = 2.0
+                                    baseScale = 2.0
+                                }
+                            }
+                        }
                 } else {
                     ProgressView()
                 }
@@ -147,6 +178,15 @@ struct ArtworkCropSheet: View {
                     .allowsHitTesting(false)
             }
             .clipped()
+            .onHover { hovering in
+                isHoveringCanvas = hovering
+            }
+            .onAppear {
+                currentCanvasSize = canvasSize
+            }
+            .onChange(of: canvasSize) { _, newSize in
+                currentCanvasSize = newSize
+            }
         }
     }
 
@@ -218,19 +258,44 @@ struct ArtworkCropSheet: View {
 
                 ObeliskCardDivider()
 
-                // Zoom Slider & Rotate / Reset buttons
-                HStack(spacing: 14) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+                // Zoom Controls & Rotate / Reset buttons
+                HStack(spacing: 12) {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            scale = max(scale - 0.25, 0.15)
+                            baseScale = scale
+                        }
+                    } label: {
+                        Image(systemName: "minus.magnifyingglass")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help(L10n.string("ui.custom.crop_zoom_out"))
 
-                    Slider(value: $scale, in: 1.0...3.5, step: 0.05)
+                    Slider(value: $scale, in: 0.2...5.0, step: 0.02)
                         .labelsHidden()
+                        .onChange(of: scale) { _, newScale in
+                            baseScale = newScale
+                        }
 
-                    Text(String(format: "%.1fx", scale))
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            scale = min(scale + 0.25, 8.0)
+                            baseScale = scale
+                        }
+                    } label: {
+                        Image(systemName: "plus.magnifyingglass")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help(L10n.string("ui.custom.crop_zoom_in"))
+
+                    Text(String(format: "%.0f%%", scale * 100))
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(.secondary)
-                        .frame(width: 34, alignment: .trailing)
+                        .frame(width: 42, alignment: .trailing)
 
                     Divider()
                         .frame(height: 16)
@@ -249,6 +314,7 @@ struct ArtworkCropSheet: View {
                     Button {
                         withAnimation(.easeInOut(duration: 0.2)) {
                             scale = 1.0
+                            baseScale = 1.0
                             offset = .zero
                             dragOffset = .zero
                             rotation = 0.0
@@ -310,11 +376,57 @@ struct ArtworkCropSheet: View {
         }
     }
 
+    // MARK: - Event Monitoring
+
+    private func installScrollMonitor() {
+        guard scrollMonitor == nil else { return }
+        scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel, .magnify]) { event in
+            guard isHoveringCanvas else { return event }
+            if event.type == .scrollWheel {
+                let delta = event.scrollingDeltaY != 0 ? event.scrollingDeltaY : (event.deltaY * 8)
+                let sensitivity: CGFloat = 0.003
+                let newScale = scale + (delta * sensitivity * scale)
+                let clamped = min(max(newScale, 0.15), 8.0)
+                scale = clamped
+                baseScale = clamped
+                return nil
+            } else if event.type == .magnify {
+                let newScale = scale * (1.0 + event.magnification)
+                let clamped = min(max(newScale, 0.15), 8.0)
+                scale = clamped
+                baseScale = clamped
+                return nil
+            }
+            return event
+        }
+    }
+
+    private func removeScrollMonitor() {
+        if let monitor = scrollMonitor {
+            NSEvent.removeMonitor(monitor)
+            scrollMonitor = nil
+        }
+    }
+
     // MARK: - Actions
 
     private func loadImage() {
         if let loaded = NSImage(contentsOfFile: target.path) {
             image = loaded
+            let aspect = loaded.size.width / max(loaded.size.height, 1)
+            if target.isCover {
+                if abs(aspect - 1.0) < 0.15 {
+                    aspectRatio = 1.0
+                } else {
+                    aspectRatio = 2.0 / 3.0
+                }
+            } else {
+                if aspect > 2.05 {
+                    aspectRatio = 21.0 / 9.0
+                } else {
+                    aspectRatio = 16.0 / 9.0
+                }
+            }
         }
     }
 
@@ -322,7 +434,13 @@ struct ArtworkCropSheet: View {
         guard let sourceImage = image else { return }
 
         // Render destination cropped image
-        let targetWidth: CGFloat = target.isCover ? 900 : 1920
+        let isSquare = abs(aspectRatio - 1.0) < 0.01
+        let targetWidth: CGFloat
+        if target.isCover {
+            targetWidth = isSquare ? 1024 : 900
+        } else {
+            targetWidth = 1920
+        }
         let targetHeight: CGFloat = targetWidth / aspectRatio
         let targetSize = CGSize(width: targetWidth, height: targetHeight)
 
@@ -334,8 +452,7 @@ struct ArtworkCropSheet: View {
             return
         }
 
-        let canvasWidth: CGFloat = 532
-        let canvasHeight: CGFloat = 330
+        let cSize = currentCanvasSize
         let box = cropBoxSize
         let multiplier = targetWidth / box.width
 
@@ -357,12 +474,12 @@ struct ArtworkCropSheet: View {
 
         // Compute source image aspect fit size within the preview canvas
         let imgAspect = sourceImage.size.width / max(sourceImage.size.height, 1)
-        let canvasAspect = canvasWidth / canvasHeight
+        let canvasAspect = cSize.width / max(cSize.height, 1)
         let fitSize: CGSize
         if imgAspect > canvasAspect {
-            fitSize = CGSize(width: canvasWidth, height: canvasWidth / imgAspect)
+            fitSize = CGSize(width: cSize.width, height: cSize.width / imgAspect)
         } else {
-            fitSize = CGSize(width: canvasHeight * imgAspect, height: canvasHeight)
+            fitSize = CGSize(width: cSize.height * imgAspect, height: cSize.height)
         }
 
         let drawRect = CGRect(
@@ -385,7 +502,19 @@ struct ArtworkCropSheet: View {
         let url = URL(fileURLWithPath: target.path)
         let dir = url.deletingLastPathComponent()
         let filename = url.deletingPathExtension().lastPathComponent
-        let destinationURL = dir.appendingPathComponent("\(filename)_cropped.png")
+        let cleanName = filename.replacingOccurrences(of: "_cropped.*", with: "", options: .regularExpression)
+        let timestamp = Int(Date().timeIntervalSince1970)
+        let destinationURL = dir.appendingPathComponent("\(cleanName)_cropped_\(timestamp).png")
+
+        // Clean up previous temporary cropped files for this asset
+        if let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) {
+            for file in files {
+                let name = file.lastPathComponent
+                if (name.hasPrefix("\(cleanName)_cropped_") || name == "\(cleanName)_cropped.png") && name.hasSuffix(".png") {
+                    try? FileManager.default.removeItem(at: file)
+                }
+            }
+        }
 
         do {
             try pngData.write(to: destinationURL, options: .atomic)
