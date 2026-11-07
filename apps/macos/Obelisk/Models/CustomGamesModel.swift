@@ -192,9 +192,9 @@ final class CustomGamesModel {
             runner: (game.runnerPath?.isEmpty == false) ? game.runnerPath : nil,
             engine: game.engine,
             graphics: game.graphics,
-            ray_tracing: game.rayTracing,
-            performance_hud: game.performanceHud,
-            render_percent: game.renderPercent,
+            rayTracing: game.rayTracing,
+            performanceHud: game.performanceHud,
+            renderPercent: game.renderPercent,
             environment: game.environmentVariables
         )
 
@@ -267,7 +267,7 @@ final class CustomGamesModel {
         monitorTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(500))
-                await self?.checkRunningProcesses()
+                self?.checkRunningProcesses()
             }
         }
     }

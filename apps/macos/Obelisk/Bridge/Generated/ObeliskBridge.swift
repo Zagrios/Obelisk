@@ -605,24 +605,6 @@ fileprivate struct FfiConverterString: FfiConverter {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterData: FfiConverterRustBuffer {
-    typealias SwiftType = Data
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Data {
-        let len: Int32 = try readInt(&buf)
-        return Data(try readBytes(&buf, count: Int(len)))
-    }
-
-    public static func write(_ value: Data, into buf: inout [UInt8]) {
-        let len = Int32(value.count)
-        writeInt(&buf, len)
-        writeBytes(&buf, value)
-    }
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
 fileprivate struct FfiConverterTimestamp: FfiConverterRustBuffer {
     typealias SwiftType = Date
 
@@ -3002,313 +2984,6 @@ public func FfiConverterTypeLibraryCache_lower(_ value: LibraryCache) -> UInt64 
 
 
 /**
- * Debug-only controlled chat and own-game sources. They use the production
- * decoders and observation, letting macOS tests drive both streams.
- */
-public protocol SteamChatFixtureProtocol: AnyObject, Sendable {
-    
-    /**
-     * A connect invitation into `app_id`, its header's routing AppID.
-     */
-    func connectInvite(friendSteamId: UInt64, appId: UInt32, connect: String) 
-    
-    func disconnect() 
-    
-    /**
-     * A friend's chat message, as Steam writes it for an invitation too.
-     */
-    func incomingInvitation(friendSteamId: UInt64, message: String, timestamp: UInt32, ordinal: UInt32) 
-    
-    func incomingMessage(friendSteamId: UInt64, message: String, timestamp: UInt32, ordinal: UInt32, fromMe: Bool) 
-    
-    /**
-     * A lobby invitation, as Steam sends it apart from the chat.
-     */
-    func lobbyInvite(friendSteamId: UInt64, lobbyId: UInt64, appId: UInt32) 
-    
-    func nextChat(afterSequence: UInt64) async  -> SteamChatEvents
-    
-    func nextInvites(afterRevision: UInt64) async  -> SteamReceivedInvites
-    
-    func nextOwnGame(afterRevision: UInt64) async  -> SteamOwnGame
-    
-    /**
-     * The account playing `app_id` (0 for none), with an optional lobby and
-     * rich presence `connect` string.
-     */
-    func ownGame(appId: UInt32, lobbyId: UInt64, connect: String?) 
-    
-    func readElsewhere(friendSteamId: UInt64, timestamp: UInt32) 
-    
-    func typing(friendSteamId: UInt64) 
-    
-}
-/**
- * Debug-only controlled chat and own-game sources. They use the production
- * decoders and observation, letting macOS tests drive both streams.
- */
-open class SteamChatFixture: SteamChatFixtureProtocol, @unchecked Sendable {
-    fileprivate let handle: UInt64
-
-    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    public struct NoHandle {
-        public init() {}
-    }
-
-    // TODO: We'd like this to be `private` but for Swifty reasons,
-    // we can't implement `FfiConverter` without making this `required` and we can't
-    // make it `required` without making it `public`.
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    required public init(unsafeFromHandle handle: UInt64) {
-        self.handle = handle
-    }
-
-    // This constructor can be used to instantiate a fake object.
-    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
-    //
-    // - Warning:
-    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    public init(noHandle: NoHandle) {
-        self.handle = 0
-    }
-
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    public func uniffiCloneHandle() -> UInt64 {
-        return try! rustCall { uniffi_obelisk_bridge_fn_clone_steamchatfixture(self.handle, $0) }
-    }
-public convenience init(accountId: UInt64) {
-    let handle =
-        try! rustCall() {
-        uniffiCallStatus in
-    uniffi_obelisk_bridge_fn_constructor_steamchatfixture_new(
-        FfiConverterUInt64.lower(accountId),uniffiCallStatus
-    )
-}
-    self.init(unsafeFromHandle: handle)
-}
-
-    deinit {
-        if handle == 0 {
-            // Mock objects have handle=0 don't try to free them
-            return
-        }
-
-        try! rustCall { uniffi_obelisk_bridge_fn_free_steamchatfixture(handle, $0) }
-    }
-
-    
-
-    
-    /**
-     * A connect invitation into `app_id`, its header's routing AppID.
-     */
-open func connectInvite(friendSteamId: UInt64, appId: UInt32, connect: String)  {try! rustCall() {
-        uniffiCallStatus in
-    uniffi_obelisk_bridge_fn_method_steamchatfixture_connect_invite(
-            self.uniffiCloneHandle(),
-        FfiConverterUInt64.lower(friendSteamId),
-        FfiConverterUInt32.lower(appId),
-        FfiConverterString.lower(connect),uniffiCallStatus
-    )
-}
-}
-    
-open func disconnect()  {try! rustCall() {
-        uniffiCallStatus in
-    uniffi_obelisk_bridge_fn_method_steamchatfixture_disconnect(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-}
-}
-    
-    /**
-     * A friend's chat message, as Steam writes it for an invitation too.
-     */
-open func incomingInvitation(friendSteamId: UInt64, message: String, timestamp: UInt32, ordinal: UInt32)  {try! rustCall() {
-        uniffiCallStatus in
-    uniffi_obelisk_bridge_fn_method_steamchatfixture_incoming_invitation(
-            self.uniffiCloneHandle(),
-        FfiConverterUInt64.lower(friendSteamId),
-        FfiConverterString.lower(message),
-        FfiConverterUInt32.lower(timestamp),
-        FfiConverterUInt32.lower(ordinal),uniffiCallStatus
-    )
-}
-}
-    
-open func incomingMessage(friendSteamId: UInt64, message: String, timestamp: UInt32, ordinal: UInt32, fromMe: Bool)  {try! rustCall() {
-        uniffiCallStatus in
-    uniffi_obelisk_bridge_fn_method_steamchatfixture_incoming_message(
-            self.uniffiCloneHandle(),
-        FfiConverterUInt64.lower(friendSteamId),
-        FfiConverterString.lower(message),
-        FfiConverterUInt32.lower(timestamp),
-        FfiConverterUInt32.lower(ordinal),
-        FfiConverterBool.lower(fromMe),uniffiCallStatus
-    )
-}
-}
-    
-    /**
-     * A lobby invitation, as Steam sends it apart from the chat.
-     */
-open func lobbyInvite(friendSteamId: UInt64, lobbyId: UInt64, appId: UInt32)  {try! rustCall() {
-        uniffiCallStatus in
-    uniffi_obelisk_bridge_fn_method_steamchatfixture_lobby_invite(
-            self.uniffiCloneHandle(),
-        FfiConverterUInt64.lower(friendSteamId),
-        FfiConverterUInt64.lower(lobbyId),
-        FfiConverterUInt32.lower(appId),uniffiCallStatus
-    )
-}
-}
-    
-open func nextChat(afterSequence: UInt64)async  -> SteamChatEvents  {
-    return
-        try!  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_obelisk_bridge_fn_method_steamchatfixture_next_chat(
-                        self.uniffiCloneHandle(),FfiConverterUInt64.lower(afterSequence)
-                )
-            },
-            pollFunc: ffi_obelisk_bridge_rust_future_poll_rust_buffer,
-            completeFunc: ffi_obelisk_bridge_rust_future_complete_rust_buffer,
-            freeFunc: ffi_obelisk_bridge_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypeSteamChatEvents_lift,
-            errorHandler: nil
-            
-        )
-}
-    
-open func nextInvites(afterRevision: UInt64)async  -> SteamReceivedInvites  {
-    return
-        try!  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_obelisk_bridge_fn_method_steamchatfixture_next_invites(
-                        self.uniffiCloneHandle(),FfiConverterUInt64.lower(afterRevision)
-                )
-            },
-            pollFunc: ffi_obelisk_bridge_rust_future_poll_rust_buffer,
-            completeFunc: ffi_obelisk_bridge_rust_future_complete_rust_buffer,
-            freeFunc: ffi_obelisk_bridge_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypeSteamReceivedInvites_lift,
-            errorHandler: nil
-            
-        )
-}
-    
-open func nextOwnGame(afterRevision: UInt64)async  -> SteamOwnGame  {
-    return
-        try!  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_obelisk_bridge_fn_method_steamchatfixture_next_own_game(
-                        self.uniffiCloneHandle(),FfiConverterUInt64.lower(afterRevision)
-                )
-            },
-            pollFunc: ffi_obelisk_bridge_rust_future_poll_rust_buffer,
-            completeFunc: ffi_obelisk_bridge_rust_future_complete_rust_buffer,
-            freeFunc: ffi_obelisk_bridge_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypeSteamOwnGame_lift,
-            errorHandler: nil
-            
-        )
-}
-    
-    /**
-     * The account playing `app_id` (0 for none), with an optional lobby and
-     * rich presence `connect` string.
-     */
-open func ownGame(appId: UInt32, lobbyId: UInt64, connect: String?)  {try! rustCall() {
-        uniffiCallStatus in
-    uniffi_obelisk_bridge_fn_method_steamchatfixture_own_game(
-            self.uniffiCloneHandle(),
-        FfiConverterUInt32.lower(appId),
-        FfiConverterUInt64.lower(lobbyId),
-        FfiConverterOptionString.lower(connect),uniffiCallStatus
-    )
-}
-}
-    
-open func readElsewhere(friendSteamId: UInt64, timestamp: UInt32)  {try! rustCall() {
-        uniffiCallStatus in
-    uniffi_obelisk_bridge_fn_method_steamchatfixture_read_elsewhere(
-            self.uniffiCloneHandle(),
-        FfiConverterUInt64.lower(friendSteamId),
-        FfiConverterUInt32.lower(timestamp),uniffiCallStatus
-    )
-}
-}
-    
-open func typing(friendSteamId: UInt64)  {try! rustCall() {
-        uniffiCallStatus in
-    uniffi_obelisk_bridge_fn_method_steamchatfixture_typing(
-            self.uniffiCloneHandle(),
-        FfiConverterUInt64.lower(friendSteamId),uniffiCallStatus
-    )
-}
-}
-    
-
-    
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeSteamChatFixture: FfiConverter {
-    typealias FfiType = UInt64
-    typealias SwiftType = SteamChatFixture
-
-    public static func lift(_ handle: UInt64) throws -> SteamChatFixture {
-        return SteamChatFixture(unsafeFromHandle: handle)
-    }
-
-    public static func lower(_ value: SteamChatFixture) -> UInt64 {
-        return value.uniffiCloneHandle()
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SteamChatFixture {
-        let handle: UInt64 = try readInt(&buf)
-        return try lift(handle)
-    }
-
-    public static func write(_ value: SteamChatFixture, into buf: inout [UInt8]) {
-        writeInt(&buf, lower(value))
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeSteamChatFixture_lift(_ handle: UInt64) throws -> SteamChatFixture {
-    return try FfiConverterTypeSteamChatFixture.lift(handle)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeSteamChatFixture_lower(_ value: SteamChatFixture) -> UInt64 {
-    return FfiConverterTypeSteamChatFixture.lower(value)
-}
-
-
-
-
-
-
-/**
  * A single-use connection attempt with explicit cancellation across UniFFI.
  */
 public protocol SteamConnectionAttemptProtocol: AnyObject, Sendable {
@@ -3455,277 +3130,6 @@ public func FfiConverterTypeSteamConnectionAttempt_lift(_ handle: UInt64) throws
 #endif
 public func FfiConverterTypeSteamConnectionAttempt_lower(_ value: SteamConnectionAttempt) -> UInt64 {
     return FfiConverterTypeSteamConnectionAttempt.lower(value)
-}
-
-
-
-
-
-
-/**
- * Debug-only controlled Account session. Its friends go through the
- * production reducer and its states through the production conversion,
- * letting macOS tests exercise raw packets and reconnections across UniFFI.
- */
-public protocol SteamFriendsFixtureProtocol: AnyObject, Sendable {
-    
-    /**
-     * The session is shut down.
-     */
-    func close() 
-    
-    /**
-     * The CM connection drops and the session connects again, or Steam
-     * asks the account to sign in again.
-     */
-    func disconnect(authenticationRequired: Bool) 
-    
-    /**
-     * Steam pushes `friend_steam_id` playing `app_id` (0 for none), in a
-     * lobby and with a rich presence `connect` string when given.
-     */
-    func friendPlaying(friendSteamId: UInt64, appId: UInt32, lobbyId: UInt64, connect: String?) 
-    
-    func nextFriends(afterRevision: UInt64) async  -> SteamFriendsSnapshot
-    
-    /**
-     * The CM connection of the moment receives a packet.
-     */
-    func receive(kind: UInt32, body: Data) 
-    
-    /**
-     * A new CM connection replaces the one that dropped, its friends still
-     * loading.
-     */
-    func reconnect() 
-    
-    /**
-     * The player's retry, or the Mac's wake: the session connects again,
-     * unless its account must sign in again or it closed.
-     */
-    func retry() 
-    
-    /**
-     * Every attempt to connect again failed.
-     */
-    func unreachable() 
-    
-}
-/**
- * Debug-only controlled Account session. Its friends go through the
- * production reducer and its states through the production conversion,
- * letting macOS tests exercise raw packets and reconnections across UniFFI.
- */
-open class SteamFriendsFixture: SteamFriendsFixtureProtocol, @unchecked Sendable {
-    fileprivate let handle: UInt64
-
-    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    public struct NoHandle {
-        public init() {}
-    }
-
-    // TODO: We'd like this to be `private` but for Swifty reasons,
-    // we can't implement `FfiConverter` without making this `required` and we can't
-    // make it `required` without making it `public`.
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    required public init(unsafeFromHandle handle: UInt64) {
-        self.handle = handle
-    }
-
-    // This constructor can be used to instantiate a fake object.
-    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
-    //
-    // - Warning:
-    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    public init(noHandle: NoHandle) {
-        self.handle = 0
-    }
-
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    public func uniffiCloneHandle() -> UInt64 {
-        return try! rustCall { uniffi_obelisk_bridge_fn_clone_steamfriendsfixture(self.handle, $0) }
-    }
-public convenience init(accountId: UInt64) {
-    let handle =
-        try! rustCall() {
-        uniffiCallStatus in
-    uniffi_obelisk_bridge_fn_constructor_steamfriendsfixture_new(
-        FfiConverterUInt64.lower(accountId),uniffiCallStatus
-    )
-}
-    self.init(unsafeFromHandle: handle)
-}
-
-    deinit {
-        if handle == 0 {
-            // Mock objects have handle=0 don't try to free them
-            return
-        }
-
-        try! rustCall { uniffi_obelisk_bridge_fn_free_steamfriendsfixture(handle, $0) }
-    }
-
-    
-
-    
-    /**
-     * The session is shut down.
-     */
-open func close()  {try! rustCall() {
-        uniffiCallStatus in
-    uniffi_obelisk_bridge_fn_method_steamfriendsfixture_close(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-}
-}
-    
-    /**
-     * The CM connection drops and the session connects again, or Steam
-     * asks the account to sign in again.
-     */
-open func disconnect(authenticationRequired: Bool)  {try! rustCall() {
-        uniffiCallStatus in
-    uniffi_obelisk_bridge_fn_method_steamfriendsfixture_disconnect(
-            self.uniffiCloneHandle(),
-        FfiConverterBool.lower(authenticationRequired),uniffiCallStatus
-    )
-}
-}
-    
-    /**
-     * Steam pushes `friend_steam_id` playing `app_id` (0 for none), in a
-     * lobby and with a rich presence `connect` string when given.
-     */
-open func friendPlaying(friendSteamId: UInt64, appId: UInt32, lobbyId: UInt64, connect: String?)  {try! rustCall() {
-        uniffiCallStatus in
-    uniffi_obelisk_bridge_fn_method_steamfriendsfixture_friend_playing(
-            self.uniffiCloneHandle(),
-        FfiConverterUInt64.lower(friendSteamId),
-        FfiConverterUInt32.lower(appId),
-        FfiConverterUInt64.lower(lobbyId),
-        FfiConverterOptionString.lower(connect),uniffiCallStatus
-    )
-}
-}
-    
-open func nextFriends(afterRevision: UInt64)async  -> SteamFriendsSnapshot  {
-    return
-        try!  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_obelisk_bridge_fn_method_steamfriendsfixture_next_friends(
-                        self.uniffiCloneHandle(),FfiConverterUInt64.lower(afterRevision)
-                )
-            },
-            pollFunc: ffi_obelisk_bridge_rust_future_poll_rust_buffer,
-            completeFunc: ffi_obelisk_bridge_rust_future_complete_rust_buffer,
-            freeFunc: ffi_obelisk_bridge_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypeSteamFriendsSnapshot_lift,
-            errorHandler: nil
-            
-        )
-}
-    
-    /**
-     * The CM connection of the moment receives a packet.
-     */
-open func receive(kind: UInt32, body: Data)  {try! rustCall() {
-        uniffiCallStatus in
-    uniffi_obelisk_bridge_fn_method_steamfriendsfixture_receive(
-            self.uniffiCloneHandle(),
-        FfiConverterUInt32.lower(kind),
-        FfiConverterData.lower(body),uniffiCallStatus
-    )
-}
-}
-    
-    /**
-     * A new CM connection replaces the one that dropped, its friends still
-     * loading.
-     */
-open func reconnect()  {try! rustCall() {
-        uniffiCallStatus in
-    uniffi_obelisk_bridge_fn_method_steamfriendsfixture_reconnect(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-}
-}
-    
-    /**
-     * The player's retry, or the Mac's wake: the session connects again,
-     * unless its account must sign in again or it closed.
-     */
-open func retry()  {try! rustCall() {
-        uniffiCallStatus in
-    uniffi_obelisk_bridge_fn_method_steamfriendsfixture_retry(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-}
-}
-    
-    /**
-     * Every attempt to connect again failed.
-     */
-open func unreachable()  {try! rustCall() {
-        uniffiCallStatus in
-    uniffi_obelisk_bridge_fn_method_steamfriendsfixture_unreachable(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-}
-}
-    
-
-    
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeSteamFriendsFixture: FfiConverter {
-    typealias FfiType = UInt64
-    typealias SwiftType = SteamFriendsFixture
-
-    public static func lift(_ handle: UInt64) throws -> SteamFriendsFixture {
-        return SteamFriendsFixture(unsafeFromHandle: handle)
-    }
-
-    public static func lower(_ value: SteamFriendsFixture) -> UInt64 {
-        return value.uniffiCloneHandle()
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SteamFriendsFixture {
-        let handle: UInt64 = try readInt(&buf)
-        return try lift(handle)
-    }
-
-    public static func write(_ value: SteamFriendsFixture, into buf: inout [UInt8]) {
-        writeInt(&buf, lower(value))
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeSteamFriendsFixture_lift(_ handle: UInt64) throws -> SteamFriendsFixture {
-    return try FfiConverterTypeSteamFriendsFixture.lift(handle)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeSteamFriendsFixture_lower(_ value: SteamFriendsFixture) -> UInt64 {
-    return FfiConverterTypeSteamFriendsFixture.lower(value)
 }
 
 
@@ -3947,24 +3351,16 @@ public protocol SteamSessionProtocol: AnyObject, Sendable {
      */
     func acquisitions() async throws  -> [UInt32: UInt64]
     
-    func cloudAutocloudMetadata() async throws  -> String
-    
     /**
      * Explicit diagnostic operation using this already-authenticated session.
      * It downloads a verified backup; no Cloud mutation or game launch occurs.
      */
     func cloudBackup(appId: UInt32, directory: String) async throws  -> String
     
-    func cloudInterruptionProbe(appId: UInt32, directory: String) async throws  -> String
-    
     /**
      * Returns only Cloud preferences and source revision, never roaming data.
      */
     func cloudPreferences(appId: UInt32) async throws  -> String
-    
-    func cloudSdkCandidates() async throws  -> String
-    
-    func cloudTransferProbe(appId: UInt32, directory: String) async throws  -> String
     
     func details(appId: UInt32, language: String) async throws  -> SteamGameDetails
     
@@ -4194,22 +3590,6 @@ open func acquisitions()async throws  -> [UInt32: UInt64]  {
         )
 }
     
-open func cloudAutocloudMetadata()async throws  -> String  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_obelisk_bridge_fn_method_steamsession_cloud_autocloud_metadata(
-                        self.uniffiCloneHandle()
-                )
-            },
-            pollFunc: ffi_obelisk_bridge_rust_future_poll_rust_buffer,
-            completeFunc: ffi_obelisk_bridge_rust_future_complete_rust_buffer,
-            freeFunc: ffi_obelisk_bridge_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterString.lift,
-            errorHandler: FfiConverterTypeSteamError_lift
-        )
-}
-    
     /**
      * Explicit diagnostic operation using this already-authenticated session.
      * It downloads a verified backup; no Cloud mutation or game launch occurs.
@@ -4230,22 +3610,6 @@ open func cloudBackup(appId: UInt32, directory: String)async throws  -> String  
         )
 }
     
-open func cloudInterruptionProbe(appId: UInt32, directory: String)async throws  -> String  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_obelisk_bridge_fn_method_steamsession_cloud_interruption_probe(
-                        self.uniffiCloneHandle(),FfiConverterUInt32.lower(appId),FfiConverterString.lower(directory)
-                )
-            },
-            pollFunc: ffi_obelisk_bridge_rust_future_poll_rust_buffer,
-            completeFunc: ffi_obelisk_bridge_rust_future_complete_rust_buffer,
-            freeFunc: ffi_obelisk_bridge_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterString.lift,
-            errorHandler: FfiConverterTypeSteamError_lift
-        )
-}
-    
     /**
      * Returns only Cloud preferences and source revision, never roaming data.
      */
@@ -4255,38 +3619,6 @@ open func cloudPreferences(appId: UInt32)async throws  -> String  {
             rustFutureFunc: {
                 uniffi_obelisk_bridge_fn_method_steamsession_cloud_preferences(
                         self.uniffiCloneHandle(),FfiConverterUInt32.lower(appId)
-                )
-            },
-            pollFunc: ffi_obelisk_bridge_rust_future_poll_rust_buffer,
-            completeFunc: ffi_obelisk_bridge_rust_future_complete_rust_buffer,
-            freeFunc: ffi_obelisk_bridge_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterString.lift,
-            errorHandler: FfiConverterTypeSteamError_lift
-        )
-}
-    
-open func cloudSdkCandidates()async throws  -> String  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_obelisk_bridge_fn_method_steamsession_cloud_sdk_candidates(
-                        self.uniffiCloneHandle()
-                )
-            },
-            pollFunc: ffi_obelisk_bridge_rust_future_poll_rust_buffer,
-            completeFunc: ffi_obelisk_bridge_rust_future_complete_rust_buffer,
-            freeFunc: ffi_obelisk_bridge_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterString.lift,
-            errorHandler: FfiConverterTypeSteamError_lift
-        )
-}
-    
-open func cloudTransferProbe(appId: UInt32, directory: String)async throws  -> String  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_obelisk_bridge_fn_method_steamsession_cloud_transfer_probe(
-                        self.uniffiCloneHandle(),FfiConverterUInt32.lower(appId),FfiConverterString.lower(directory)
                 )
             },
             pollFunc: ffi_obelisk_bridge_rust_future_poll_rust_buffer,
@@ -16319,22 +15651,10 @@ private let initializationResult: InitializationResult = {
     if (uniffi_obelisk_bridge_checksum_method_steamsession_acquisitions() != 3518) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_obelisk_bridge_checksum_method_steamsession_cloud_autocloud_metadata() != 51865) {
-        return InitializationResult.apiChecksumMismatch
-    }
     if (uniffi_obelisk_bridge_checksum_method_steamsession_cloud_backup() != 9595) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_obelisk_bridge_checksum_method_steamsession_cloud_interruption_probe() != 17246) {
-        return InitializationResult.apiChecksumMismatch
-    }
     if (uniffi_obelisk_bridge_checksum_method_steamsession_cloud_preferences() != 21560) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_steamsession_cloud_sdk_candidates() != 1694) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_steamsession_cloud_transfer_probe() != 23158) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_method_steamsession_details() != 22596) {
@@ -16394,67 +15714,10 @@ private let initializationResult: InitializationResult = {
     if (uniffi_obelisk_bridge_checksum_method_steamsession_set_status() != 13167) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_obelisk_bridge_checksum_method_steamchatfixture_connect_invite() != 34020) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_steamchatfixture_disconnect() != 21972) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_steamchatfixture_incoming_invitation() != 2401) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_steamchatfixture_incoming_message() != 62956) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_steamchatfixture_lobby_invite() != 16995) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_steamchatfixture_next_chat() != 26475) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_steamchatfixture_next_invites() != 34285) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_steamchatfixture_next_own_game() != 52730) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_steamchatfixture_own_game() != 56133) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_steamchatfixture_read_elsewhere() != 44124) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_steamchatfixture_typing() != 62764) {
-        return InitializationResult.apiChecksumMismatch
-    }
     if (uniffi_obelisk_bridge_checksum_method_steamconnectionattempt_cancel() != 56619) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_method_steamconnectionattempt_connect() != 40355) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_steamfriendsfixture_close() != 38754) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_steamfriendsfixture_disconnect() != 58396) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_steamfriendsfixture_friend_playing() != 12561) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_steamfriendsfixture_next_friends() != 52490) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_steamfriendsfixture_receive() != 17034) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_steamfriendsfixture_reconnect() != 4608) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_steamfriendsfixture_retry() != 11668) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_steamfriendsfixture_unreachable() != 65007) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_constructor_downloads_new() != 22984) {
@@ -16499,13 +15762,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_obelisk_bridge_checksum_constructor_steamsession_connect() != 59461) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_obelisk_bridge_checksum_constructor_steamchatfixture_new() != 16613) {
-        return InitializationResult.apiChecksumMismatch
-    }
     if (uniffi_obelisk_bridge_checksum_constructor_steamconnectionattempt_new() != 29670) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_constructor_steamfriendsfixture_new() != 31042) {
         return InitializationResult.apiChecksumMismatch
     }
 

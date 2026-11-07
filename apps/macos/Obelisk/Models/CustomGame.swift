@@ -70,3 +70,41 @@ struct CustomGame: Identifiable, Codable, Equatable, Sendable {
         }
     }
 }
+
+extension LaunchEngine: Codable {
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let raw = try container.decode(String.self)
+        switch raw {
+        case "linux": self = .linux
+        default: self = .rosetta
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .rosetta: try container.encode("rosetta")
+        case .linux: try container.encode("linux")
+        }
+    }
+}
+
+extension LaunchGraphics: Codable {
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let raw = try container.decode(String.self)
+        switch raw {
+        case "dxmt": self = .dxmt
+        default: self = .d3dMetal
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .d3dMetal: try container.encode("d3dMetal")
+        case .dxmt: try container.encode("dxmt")
+        }
+    }
+}

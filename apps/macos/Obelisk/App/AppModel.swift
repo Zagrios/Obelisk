@@ -216,7 +216,7 @@ final class AppModel {
         case .steam: steam
         case .epic: epic
         case .gog: gog
-        case .home, .settings: nil
+        case .home, .settings, .custom: nil
         }
     }
 

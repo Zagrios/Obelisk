@@ -62,12 +62,12 @@ final class CustomGamesModelTests: XCTestCase {
 
         game.title = "Hollow Knight: Silksong"
         game.launchArguments = "--debug"
-        game.graphics = .dxvk
+        game.graphics = .dxmt
         model.updateGame(game)
 
         XCTAssertEqual(model.games.first?.title, "Hollow Knight: Silksong")
         XCTAssertEqual(model.games.first?.launchArguments, "--debug")
-        XCTAssertEqual(model.games.first?.graphics, .dxvk)
+        XCTAssertEqual(model.games.first?.graphics, .dxmt)
     }
 
     func testRemoveGame() {

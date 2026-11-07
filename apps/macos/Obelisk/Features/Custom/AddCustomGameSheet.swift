@@ -244,11 +244,11 @@ struct AddCustomGameSheet: View {
                 ObeliskRow(title: L10n.string("ui.custom.engine")) {
                     SymbolTile(name: "cpu", colors: TileColors.violet)
                 } detail: {
-                    Text(engine == .rosetta ? L10n.string("ui.custom.engine_rosetta") : L10n.string("ui.custom.engine_wine"))
+                    Text(LaunchSettingsSheet.name(of: engine))
                 } accessory: {
                     Picker(selection: $engine) {
-                        Text(L10n.string("ui.custom.engine_rosetta")).tag(LaunchEngine.rosetta)
-                        Text(L10n.string("ui.custom.engine_wine")).tag(LaunchEngine.wine)
+                        Text(LaunchSettingsSheet.name(of: LaunchEngine.rosetta)).tag(LaunchEngine.rosetta)
+                        Text(LaunchSettingsSheet.name(of: LaunchEngine.linux)).tag(LaunchEngine.linux)
                     } label: {
                         EmptyView()
                     }
@@ -261,11 +261,11 @@ struct AddCustomGameSheet: View {
                 ObeliskRow(title: L10n.string("ui.custom.graphics")) {
                     SymbolTile(name: "display", colors: TileColors.blue)
                 } detail: {
-                    Text(graphics == .d3dMetal ? L10n.string("ui.custom.graphics_d3dmetal") : L10n.string("ui.custom.graphics_dxvk"))
+                    Text(LaunchSettingsSheet.name(of: graphics))
                 } accessory: {
                     Picker(selection: $graphics) {
-                        Text(L10n.string("ui.custom.graphics_d3dmetal")).tag(LaunchGraphics.d3dMetal)
-                        Text(L10n.string("ui.custom.graphics_dxvk")).tag(LaunchGraphics.dxvk)
+                        Text(LaunchSettingsSheet.name(of: LaunchGraphics.d3dMetal)).tag(LaunchGraphics.d3dMetal)
+                        Text(LaunchSettingsSheet.name(of: LaunchGraphics.dxmt)).tag(LaunchGraphics.dxmt)
                     } label: {
                         EmptyView()
                     }
