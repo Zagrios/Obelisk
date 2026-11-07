@@ -20,6 +20,7 @@ struct AddCustomGameSheet: View {
     @State private var performanceHud: Bool
     @State private var renderPercent: UInt32
     @State private var showsAdvanced: Bool = false
+    @State private var cropTarget: ArtworkCropTarget?
 
     @Environment(\.dismiss) private var dismiss
 
@@ -79,6 +80,15 @@ struct AddCustomGameSheet: View {
         }
         .frame(width: 580, height: 680)
         .tint(ObeliskStyle.accent)
+        .sheet(item: $cropTarget) { target in
+            ArtworkCropSheet(target: target) { croppedPath in
+                if target.isCover {
+                    customCoverPath = croppedPath
+                } else {
+                    customBannerPath = croppedPath
+                }
+            }
+        }
     }
 
     // MARK: - Sections
@@ -137,7 +147,12 @@ struct AddCustomGameSheet: View {
                                 identifier: "custom-game-browse-cover",
                                 action: pickCover
                             )
-                            if customCoverPath != nil {
+                            if let path = customCoverPath {
+                                GlassCapsuleButton(
+                                    title: L10n.string("ui.custom.crop_artwork"),
+                                    identifier: "custom-game-crop-cover",
+                                    action: { cropTarget = .cover(path: path) }
+                                )
                                 GlassCapsuleButton(
                                     title: L10n.string("ui.custom.remove_artwork"),
                                     identifier: "custom-game-remove-cover",
@@ -163,7 +178,12 @@ struct AddCustomGameSheet: View {
                                 identifier: "custom-game-browse-banner",
                                 action: pickBanner
                             )
-                            if customBannerPath != nil {
+                            if let path = customBannerPath {
+                                GlassCapsuleButton(
+                                    title: L10n.string("ui.custom.crop_artwork"),
+                                    identifier: "custom-game-crop-banner",
+                                    action: { cropTarget = .banner(path: path) }
+                                )
                                 GlassCapsuleButton(
                                     title: L10n.string("ui.custom.remove_artwork"),
                                     identifier: "custom-game-remove-banner",
@@ -433,11 +453,9 @@ struct AddCustomGameSheet: View {
 
         if panel.runModal() == .OK, let url = panel.url {
             let gameId = editingGame?.id ?? UUID().uuidString
-            if let savedPath = model.copyArtwork(from: url, for: gameId, kind: "cover") {
-                customCoverPath = savedPath
-            } else {
-                customCoverPath = url.path
-            }
+            let path = model.copyArtwork(from: url, for: gameId, kind: "cover") ?? url.path
+            customCoverPath = path
+            cropTarget = .cover(path: path)
         }
     }
 
@@ -450,11 +468,9 @@ struct AddCustomGameSheet: View {
 
         if panel.runModal() == .OK, let url = panel.url {
             let gameId = editingGame?.id ?? UUID().uuidString
-            if let savedPath = model.copyArtwork(from: url, for: gameId, kind: "banner") {
-                customBannerPath = savedPath
-            } else {
-                customBannerPath = url.path
-            }
+            let path = model.copyArtwork(from: url, for: gameId, kind: "banner") ?? url.path
+            customBannerPath = path
+            cropTarget = .banner(path: path)
         }
     }
 

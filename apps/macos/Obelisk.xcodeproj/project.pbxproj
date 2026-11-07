@@ -13,6 +13,7 @@
 		9D77F2CEC8A412FA1BB5C237 /* CustomGameDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D5D0A595A79C76BBEC50A75 /* CustomGameDetailView.swift */; };
 		8E223A3D63CD67A3657ABB34 /* AddCustomGameSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD4C9601599A9DE925071F0C /* AddCustomGameSheet.swift */; };
 		F06B3B0EBF81CCE86AC78DF1 /* CustomLaunchSettingsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2A85EAF59B56CD127206441 /* CustomLaunchSettingsSheet.swift */; };
+		F06B3B0EBF81CCE86AC78DF2 /* ArtworkCropSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2A85EAF59B56CD127206442 /* ArtworkCropSheet.swift */; };
 		D8D5A061423D262CED55E228 /* CustomGamesModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3114471D09462FDBEA4652A6 /* CustomGamesModelTests.swift */; };
 		016CDD4F01CA11E5ED771418 /* EpicKeychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = A723841678981CE2F86D0E9A /* EpicKeychain.swift */; };
 		01B0BAD8AC5542C383FBCD99 /* PerformanceReportsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EFDB7A53D56AC5DBAF68DFF /* PerformanceReportsTests.swift */; };
@@ -193,6 +194,7 @@
 		7D5D0A595A79C76BBEC50A75 /* CustomGameDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomGameDetailView.swift; sourceTree = "<group>"; };
 		BD4C9601599A9DE925071F0C /* AddCustomGameSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddCustomGameSheet.swift; sourceTree = "<group>"; };
 		E2A85EAF59B56CD127206441 /* CustomLaunchSettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomLaunchSettingsSheet.swift; sourceTree = "<group>"; };
+		E2A85EAF59B56CD127206442 /* ArtworkCropSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtworkCropSheet.swift; sourceTree = "<group>"; };
 		3114471D09462FDBEA4652A6 /* CustomGamesModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomGamesModelTests.swift; sourceTree = "<group>"; };
 		04A9D5D2D4BBF0AD6BA1087F /* LocalizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalizationTests.swift; sourceTree = "<group>"; };
 		07228AE3E2D76B31781B0323 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
@@ -476,6 +478,7 @@
 				7D5D0A595A79C76BBEC50A75 /* CustomGameDetailView.swift */,
 				BD4C9601599A9DE925071F0C /* AddCustomGameSheet.swift */,
 				E2A85EAF59B56CD127206441 /* CustomLaunchSettingsSheet.swift */,
+				E2A85EAF59B56CD127206442 /* ArtworkCropSheet.swift */,
 			);
 			path = Custom;
 			sourceTree = "<group>";
@@ -949,6 +952,7 @@
 				9D77F2CEC8A412FA1BB5C237 /* CustomGameDetailView.swift in Sources */,
 				8E223A3D63CD67A3657ABB34 /* AddCustomGameSheet.swift in Sources */,
 				F06B3B0EBF81CCE86AC78DF1 /* CustomLaunchSettingsSheet.swift in Sources */,
+				F06B3B0EBF81CCE86AC78DF2 /* ArtworkCropSheet.swift in Sources */,
 				EDF07CD0F5535211AB94A119 /* AccountLibrary.swift in Sources */,
 				D9573A92EA91EF347F971378 /* AppAppearance.swift in Sources */,
 				67E410310ED5E3C09C281EC5 /* AppIdentity.swift in Sources */,

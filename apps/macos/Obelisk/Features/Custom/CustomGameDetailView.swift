@@ -6,6 +6,7 @@ struct CustomGameDetailView: View {
     let game: CustomGame
     @State private var showsBackdrop = false
     @State private var showsTitle = false
+    @State private var cropTarget: ArtworkCropTarget?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
 
@@ -31,6 +32,17 @@ struct CustomGameDetailView: View {
         }
         .overlay(alignment: .top) {
             topBar
+        }
+        .sheet(item: $cropTarget) { target in
+            ArtworkCropSheet(target: target) { croppedPath in
+                var updated = game
+                if target.isCover {
+                    updated.customCoverPath = croppedPath
+                } else {
+                    updated.customBannerPath = croppedPath
+                }
+                model.updateGame(updated)
+            }
         }
         .ignoresSafeArea(.container, edges: .top)
     }
@@ -86,6 +98,22 @@ struct CustomGameDetailView: View {
                                     NSWorkspace.shared.selectFile(prefix, inFileViewerRootedAtPath: "")
                                 } label: {
                                     Label(L10n.string("ui.custom.show_prefix_in_finder"), systemImage: "folder.badge.gearshape")
+                                }
+                            }
+
+                            if let cover = game.customCoverPath, FileManager.default.fileExists(atPath: cover) {
+                                Button {
+                                    cropTarget = .cover(path: cover)
+                                } label: {
+                                    Label(L10n.string("ui.custom.crop_cover"), systemImage: "crop")
+                                }
+                            }
+
+                            if let banner = game.customBannerPath, FileManager.default.fileExists(atPath: banner) {
+                                Button {
+                                    cropTarget = .banner(path: banner)
+                                } label: {
+                                    Label(L10n.string("ui.custom.crop_banner"), systemImage: "crop")
                                 }
                             }
 
