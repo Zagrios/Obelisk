@@ -143,6 +143,21 @@ pub fn recommended_graphics_backend(executable_path: String) -> LaunchGraphics {
     }
 }
 
+#[uniffi::export]
+pub fn recommended_engine_backend(executable_path: String) -> LaunchEngine {
+    let path = std::path::Path::new(&executable_path);
+    match custom::recommended_engine(path) {
+        Engine::Rosetta => LaunchEngine::Rosetta,
+        Engine::Linux => LaunchEngine::Linux,
+    }
+}
+
+#[uniffi::export]
+pub fn is_linux_executable(executable_path: String) -> bool {
+    let path = std::path::Path::new(&executable_path);
+    custom::is_linux_binary(path)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

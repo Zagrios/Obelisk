@@ -20,7 +20,7 @@ use std::{
 
 /// Starts the window server and Neptune's render server, then the game, and
 /// ends them with it (see the script).
-const LAUNCHER: &str = include_str!("linux_engine/launch.sh");
+pub(crate) const LAUNCHER: &str = include_str!("linux_engine/launch.sh");
 /// The private folder of the window server and the render server that the
 /// launcher with `pid` started, in the temporary folder of its `environment`.
 fn sockets(environment: &HashMap<String, String>, pid: u32) -> PathBuf {

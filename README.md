@@ -39,7 +39,7 @@
 - [Getting started](#getting-started)
 - [Features](#features)
 - [Store support](#store-support)
-- [Custom Windows executables](#custom-windows-executables)
+- [Custom executables (Windows & Linux)](#custom-executables-windows--linux)
 - [Windows games](#windows-games)
 - [Performance](#performance)
 - [How games run](#how-games-run)
@@ -142,12 +142,13 @@ Gamepads work in Windows games, which see them as Xbox controllers. Mac games us
 
 Some controllers, such as the Steam Controller, get full support once Obelisk is allowed in **System Settings → Privacy & Security → Input Monitoring**.
 
-### Custom Windows executables
+### Custom executables (Windows & Linux)
 
-Add standalone Windows games, emulators, fan games, DRM-free releases, or itch.io downloads directly into Obelisk:
+Add standalone Windows or Linux games, emulators, fan games, DRM-free releases, itch.io downloads, or native Linux binaries (such as BeamNG Linux builds) directly into Obelisk:
 
-- **Manual executable management:** Browse for any `.exe` file to add and launch it directly from your library.
-- **Custom artwork & interactive crop:** Assign custom cover and banner artwork with a built-in cropping modal (`2:3 Cover` and `1:1 Square` presets, mouse scroll wheel and pinch zoom, and 90° rotation).
+- **Manual executable management:** Browse for any Windows `.exe` or native Linux executable / script (`x86_64` ELF, shell scripts) to add and launch directly from your library.
+- **Automatic engine & graphics detection:** Automatically detects Linux ELF binaries to launch with the Voile Linux engine (`voile-lkd` via FEX), or Windows binaries with CrossOver Wine / GPTK 4 and auto-configured DXMT or D3DMetal.
+- **Custom artwork & interactive crop:** Assign custom cover and banner artwork with a built-in cropping modal (`2:3 Cover` and `1:1 Square` presets, free mouse scroll wheel and pinch zoom, and 90° rotation).
 - **Runtime & graphics configuration:** Choose between CrossOver Wine / Apple GPTK 4 and the Voile Linux engine, select D3DMetal or DXMT, and configure Ray Tracing, Metal HUD, and render scaling.
 - **Process tracking:** Playtime accumulation and clean process management directly from the library card.
 
@@ -157,6 +158,7 @@ Add standalone Windows games, emulators, fan games, DRM-free releases, or itch.i
 | ------------------------- | :---: | :--------: | :-: | :----: |
 | Mac games                 |  ✅   |     ✅     | ✅  |   ❌   |
 | Windows games             |  ✅   |     ✅     | ✅  |   ✅   |
+| Linux executables         |  ❌   |     ❌     | ❌  |   ✅   |
 | Automatic updates         |  ✅   |     ✅     | ✅  |   ❌   |
 | Cloud saves               |  ✅   |     ✅     | ❌  |   ❌   |
 | Achievements              |  ✅   |     ✅     | ✅  |   ❌   |
@@ -228,7 +230,7 @@ Obelisk has no account of its own and does not track what you do in it. It talks
 
 ## Known limitations
 
-- Adding custom Windows games (`.exe`) is supported via the **Custom** section. Adding standalone Mac applications by hand is planned for a future release.
+- Adding custom Windows and Linux games (`.exe` or ELF binaries) is supported via the **Custom** section. Adding standalone Mac applications by hand is planned for a future release.
 - Games install in Obelisk's library folder, shown in **Settings → Storage**. Another location cannot be chosen yet.
 - Steam: Workshop content and beta branches are not available yet.
 - GOG: Cloud saves, friends and GOG Galaxy's online features are not available yet. Games only offered in GOG's older download format cannot be installed yet.
@@ -312,7 +314,7 @@ Enjoying Obelisk? Star the repository: it helps other Mac players find it.
 
 ## Credits
 
-Obelisk is developed by [Zagrios](https://github.com/Zagrios) with contributions from [thatonemacosdev](https://github.com/thatonemacosdev) (support for custom Windows executables and games).
+Obelisk is developed by [Zagrios](https://github.com/Zagrios) with contributions from [thatonemacosdev](https://github.com/thatonemacosdev) (support for custom Windows and Linux executables and games).
 
 It builds on the work of many open-source projects, without which Windows games could not run on a Mac:
 

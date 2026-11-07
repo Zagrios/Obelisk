@@ -21304,19 +21304,19 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Add standalone Windows executables, itch.io downloads, or emulated games to launch them directly from Obelisk."
+            "value": "Add standalone Windows or Linux executables, itch.io downloads, or emulated games to launch them directly from Obelisk."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ajoutez des exécutables Windows autonomes, des téléchargements itch.io ou des jeux émulés pour les lancer directement depuis Obelisk."
+            "value": "Ajoutez des exécutables Windows ou Linux autonomes, des téléchargements itch.io ou des jeux émulés pour les lancer directement depuis Obelisk."
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Aggiungi eseguibili Windows indipendenti, download di itch.io o giochi emulati per avviarli direttamente da Obelisk."
+            "value": "Aggiungi eseguibili Windows o Linux indipendenti, download di itch.io o giochi emulati per avviarli direttamente da Obelisk."
           }
         }
       }
@@ -21396,19 +21396,19 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Executable (.exe)"
+            "value": "Executable"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Exécutable (.exe)"
+            "value": "Exécutable"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Eseguibile (.exe)"
+            "value": "Eseguibile"
           }
         }
       }
@@ -21442,19 +21442,19 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Select Windows Executable"
+            "value": "Select Executable"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sélectionner un exécutable Windows"
+            "value": "Sélectionner un exécutable"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Seleziona eseguibile Windows"
+            "value": "Seleziona eseguibile"
           }
         }
       }

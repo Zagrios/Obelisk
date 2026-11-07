@@ -64,20 +64,126 @@ pub fn is_default_wine_installed(locations: &Locations) -> bool {
     voile::runtime(&locations.voile).is_some()
 }
 
+/// Inspects binary headers to determine if an executable is an ELF Linux binary or Linux script.
+pub fn is_linux_binary(executable: &Path) -> bool {
+    let mut file = match fs::File::open(executable) {
+        Ok(f) => f,
+        Err(_) => return false,
+    };
+    use std::io::Read;
+    let mut magic = [0u8; 4];
+    if file.read_exact(&mut magic).is_err() {
+        return false;
+    }
+    magic == [0x7f, b'E', b'L', b'F'] || &magic[0..2] == b"#!"
+}
+
+/// Recommends the optimal launch engine: Linux engine for ELF binaries, Rosetta for Windows PE binaries.
+pub fn recommended_engine(executable: &Path) -> Engine {
+    if is_linux_binary(executable) {
+        Engine::Linux
+    } else {
+        Engine::Rosetta
+    }
+}
+
 /// Inspects the PE headers of the target executable and recommends the optimal graphics backend.
-/// DirectX 12 games receive D3DMetal (GPTK 4), while DirectX 11/10/9 titles receive DXMT.
+/// DirectX 12 games receive D3DMetal (GPTK 4), while DirectX 11/10/9 titles and Linux binaries receive DXMT.
 pub fn recommended_graphics(executable: &Path) -> Graphics {
+    if is_linux_binary(executable) {
+        return Graphics::Dxmt;
+    }
     let program = pe::Program::open(executable);
     Graphics::default_for(Engine::Rosetta, program.as_ref())
 }
 
-/// Launches a custom Windows executable using Wine or a custom runner.
+/// Launches a custom Windows or Linux executable using Wine, voile-lkd, or a custom runner.
 pub fn launch_custom(
     config: &CustomLaunchConfig,
     locations: &Locations,
 ) -> Result<u32, CustomError> {
     if !config.executable.is_file() {
         return Err(CustomError::NotExecutable);
+    }
+
+    // Launch via Voile Linux Engine (voile-lkd) if selected
+    if config.engine == Engine::Linux && config.runner.is_none() {
+        let linux_runtime = voile::linux_runtime(&locations.voile)
+            .ok_or(CustomError::WineUnavailable)?;
+
+        let working_dir = config.executable.parent().unwrap_or(&config.prefix);
+        let install_dir = working_dir.canonicalize().unwrap_or_else(|_| working_dir.to_path_buf());
+
+        // Ensure prefix and home directories exist
+        fs::create_dir_all(&config.prefix)?;
+        let home_dir = config.prefix.join("home");
+        fs::create_dir_all(&home_dir)?;
+
+        // Set up logs in <library>/Logs/Custom/<game_stem>.log
+        let logs_dir = locations.library.join("Logs/Custom");
+        fs::create_dir_all(&logs_dir)?;
+        let exe_stem = config
+            .executable
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy();
+        let log_path = logs_dir.join(format!("{exe_stem}.log"));
+        let log_file = fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(&log_path)?;
+
+        let file_name = config
+            .executable
+            .file_name()
+            .unwrap_or(config.executable.as_os_str())
+            .to_string_lossy();
+        let guest_exe = format!("/opt/game/{file_name}");
+
+        let mut arguments = vec![
+            "-c".to_owned(),
+            crate::wine::linux_engine::LAUNCHER.to_owned(),
+            "obelisk-linux-engine".to_owned(),
+            linux_runtime.to_string_lossy().into_owned(),
+            home_dir.to_string_lossy().into_owned(),
+            install_dir.to_string_lossy().into_owned(),
+            "/opt/game".to_owned(),
+            "--graphics".to_owned(),
+            config.graphics.name().to_owned(),
+        ];
+
+        if config.render_percent != 100 {
+            arguments.push("--render-percent".to_owned());
+            arguments.push(config.render_percent.to_string());
+        }
+
+        for (k, v) in &config.environment {
+            arguments.push("--env".to_owned());
+            arguments.push(format!("{k}={v}"));
+        }
+
+        arguments.push("--".to_owned());
+        arguments.push(guest_exe);
+        for arg in &config.arguments {
+            arguments.push(arg.clone());
+        }
+
+        let mut command = Command::new("/bin/bash");
+        command.args(&arguments);
+        command.current_dir(&install_dir);
+        command.env_clear();
+        command.envs(crate::native::environment(&locations.home));
+        command.env(
+            crate::wine::linux_engine::APP_NAME,
+            config.executable.file_stem().unwrap_or_default().to_string_lossy().as_ref(),
+        );
+        command.stdin(Stdio::null());
+        command.stdout(log_file.try_clone()?);
+        command.stderr(log_file);
+
+        let child = command.spawn().map_err(|_| CustomError::StartFailed)?;
+        return Ok(child.id());
     }
 
     // Determine runtime path: either from custom runner parent or Voile runtime

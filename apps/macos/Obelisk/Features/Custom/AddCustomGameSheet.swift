@@ -446,10 +446,15 @@ struct AddCustomGameSheet: View {
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
+        panel.allowsOtherFileTypes = true
         panel.prompt = L10n.string("ui.custom.executable_select_prompt")
-        if let exeType = UTType(filenameExtension: "exe") {
-            panel.allowedContentTypes = [exeType]
-        }
+
+        var types: [UTType] = [UTType.unixExecutable, UTType.executable]
+        if let exeType = UTType(filenameExtension: "exe") { types.append(exeType) }
+        if let binType = UTType(filenameExtension: "bin") { types.append(binType) }
+        if let shType = UTType(filenameExtension: "sh") { types.append(shType) }
+        if let x86Type = UTType(filenameExtension: "x86_64") { types.append(x86Type) }
+        panel.allowedContentTypes = types
 
         if panel.runModal() == .OK, let url = panel.url {
             executablePath = url.path
@@ -457,8 +462,14 @@ struct AddCustomGameSheet: View {
                 // Infer game name from executable without extension
                 title = url.deletingPathExtension().lastPathComponent
             }
-            // Auto-detect optimal graphics backend (DXMT for DX11, D3DMetal for DX12)
-            graphics = recommendedGraphicsBackend(executablePath: url.path)
+            // Auto-detect optimal engine and graphics backend
+            if isLinuxExecutable(executablePath: url.path) {
+                engine = .linux
+                graphics = .dxmt
+            } else {
+                engine = recommendedEngineBackend(executablePath: url.path)
+                graphics = recommendedGraphicsBackend(executablePath: url.path)
+            }
         }
     }
 
