@@ -383,6 +383,17 @@
       },
       "path": "APlagueTaleInnocence_x64.exe",
       "graphics": "Dxmt"
+    },
+    {
+      "name": "Killing Floor",
+      "note": "Its frame rate swings too much on the Linux engine, 31 to 82 FPS with OpenGL on an M5 Pro, which feels broken though the average is fine. The lock shows its frames at the highest steady rate at or below 75 FPS for the player's screen: 60 on 60 and 120 Hz, 72 on 144 Hz. It drops a step while the Mac can't keep up and tries again later.",
+      "steam": 1250,
+      "engine": "Linux",
+      "graphics": "Dxmt",
+      "minimum_voile": "v26.3.0-26",
+      "variables": {
+        "WINE_GL_FRAME_LOCK": "75"
+      }
     }
   ]
 }
