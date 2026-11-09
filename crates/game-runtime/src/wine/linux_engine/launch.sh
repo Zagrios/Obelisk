@@ -12,6 +12,8 @@
 #   EXECUTABLE  the guest path of the Windows program, which Wine starts with its arguments
 # Options:
 #   --graphics dxmt|d3dmetal  what renders the game's Direct3D (default dxmt)
+#   --opengl virgl            what renders the game's OpenGL (default nothing): virgl, in DXMT's render server, when
+#                             the runtime's server can
 #   --render-percent N        the share of the screen's pixels per axis that the game sees (default 100, all of them;
 #                             wsd keeps it from 1 to 100): macOS scales the picture up to the screen
 #   --game-mode on|off        whether macOS turns Game Mode on while the game is full screen (default on)
@@ -25,11 +27,12 @@ set -u
 unset DYLD_INSERT_LIBRARIES
 runtime=$1 home=$2 install=$3 cwd=$4
 shift 4
-graphics=dxmt render_percent= game_mode=on binds= guest_env=()
+graphics=dxmt render_percent= game_mode=on binds= guest_env=() opengl=
 while [ $# -gt 0 ] && [ "$1" != "--" ]; do
     [ $# -ge 2 ] || exit 2
     case $1 in
     --graphics) graphics=$2 ;;
+    --opengl) opengl=$2 ;;
     --render-percent) render_percent=$2 ;;
     --game-mode) game_mode=$2 ;;
     --bind) binds="$binds;$2" ;;
@@ -180,9 +183,17 @@ if [ "$graphics" = d3dmetal ]; then
         "$server/bin/virgl_test_server" --no-virgl --no-fork --socket-path "$sockets/vtest.sock" &
 else
     dxmt="$runtime/graphics/dxmt-native.framework/Versions/A/dxmt-native"
+    # OpenGL renders on the Mac's GPU through virgl: the guest's Mesa sends it over the vtest socket, and the server
+    # runs it on CGL next to Neptune's Direct3D, for several clients: Wine's present thread connects beside Mesa. A server
+    # without --use-cgl keeps to Neptune's contexts.
+    virgl=--no-virgl clients=
+    if [ "$opengl" = virgl ] && "$runtime/graphics/bin/virgl_test_server" --help 2>&1 | /usr/bin/grep -q -e --use-cgl; then
+        virgl=--use-cgl clients=--multi-clients
+        guest_env+=(--env GALLIUM_DRIVER=virpipe)
+    fi
     RENDER_SERVER_EXEC_PATH="$render" NPT_BACKEND=dxmt \
         NPT_D3D11_LIBRARY_PATH="$dxmt" NPT_DXGI_LIBRARY_PATH="$dxmt" NPT_D3D12_LIBRARY_PATH="$dxmt" \
-        "$runtime/graphics/bin/virgl_test_server" --no-virgl --no-fork --socket-path "$sockets/vtest.sock" &
+        "$runtime/graphics/bin/virgl_test_server" "$virgl" --no-fork --socket-path "$sockets/vtest.sock" $clients &
 fi
 helpers+=($!)
 # The input service gives the Mac's gamepads to Wine's Obelisk bus. A runtime without it starts the game without
