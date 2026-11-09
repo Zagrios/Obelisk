@@ -1,7 +1,7 @@
 // Display identity can change without moving the user's library.
 PRODUCT_NAME = Obelisk
 PRODUCT_BUNDLE_IDENTIFIER = com.zagrios.obelisk
-MARKETING_VERSION = 0.6.1
+MARKETING_VERSION = 0.6.2
 // Sparkle compares the build version: each release must raise it, so it follows the version.
 CURRENT_PROJECT_VERSION = $(MARKETING_VERSION)
 INFOPLIST_KEY_CFBundleDisplayName = Obelisk
