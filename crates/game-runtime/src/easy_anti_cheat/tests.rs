@@ -101,6 +101,36 @@ fn settings_in_any_case_with_a_byte_order_mark_or_windows_separators_name_the_ga
 }
 
 #[test]
+fn settings_that_write_a_path_separator_as_a_single_backslash_still_name_the_game() {
+    // As Halo Infinite's do, then with folders whose first letter makes a JSON
+    // escape of the backslash, then as JSON wants them.
+    for (settings, game) in [
+        (
+            &br#"{"title":  "Halo Infinite", "executable":  "game\HaloInfinite.exe"}"#[..],
+            "game/HaloInfinite.exe",
+        ),
+        (
+            br#"{"executable": "game\bin\tools\update.exe"}"#,
+            "game/bin/tools/update.exe",
+        ),
+        (
+            br#"{"title": "A \"game\" \u00e9", "executable": "game\\bin\/Game.exe"}"#,
+            "game/bin/Game.exe",
+        ),
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        protect(directory.path(), "", "HaloInfinite.exe", "Game.exe");
+        write(directory.path(), "EasyAntiCheat/Settings.json", settings);
+        assert_eq!(
+            of(directory.path()).map(|found| found.game),
+            Some(PathBuf::from(game)),
+            "{}",
+            String::from_utf8_lossy(settings)
+        );
+    }
+}
+
+#[test]
 fn an_installation_without_a_bootstrapper_beside_easyanticheat_settings_has_no_easy_anti_cheat() {
     // Nothing of the anti-cheat.
     let directory = tempfile::tempdir().unwrap();
