@@ -1,6 +1,7 @@
-//! Platform-independent installation, Transfer and download rules shared by the storefront kits.
+//! Platform-independent installation, Transfer, download and account session rules shared by the
+//! storefront kits.
 //!
-//! This crate never launches a process or reads credentials.
+//! This crate never launches a process or reads credentials from where the host keeps them.
 //! Swift owns macOS presentation and native application launching.
 
 mod atomic_file;
@@ -11,6 +12,7 @@ pub mod installation;
 pub mod launch;
 pub mod library_cache;
 pub mod mac_build;
+pub mod oauth_session;
 pub mod platform;
 pub mod presence;
 pub mod publish;

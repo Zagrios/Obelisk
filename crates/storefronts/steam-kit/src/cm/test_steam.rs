@@ -3,6 +3,8 @@
 //! Obelisk asks, with every request kept for the test to count.
 use std::{convert::Infallible, fmt::Write as _};
 
+use obelisk_core::{testing::reaching, transfer::CdnClient};
+
 use super::*;
 use crate::client::Client;
 use test_server::TestServer;
@@ -14,9 +16,6 @@ const PATIENCE: Duration = Duration::from_secs(30);
 /// but cannot turn into a URL: a download finds no CDN address, and nothing
 /// is ever sent to a CDN.
 pub(crate) const NO_CDN_ADDRESS: &str = "999.999.999.999";
-/// A host that is a URL host. Nothing reaches it while a download needs no
-/// CDN request.
-pub(crate) const UNUSED_CDN: &str = "cdn.invalid";
 
 /// One request Obelisk made of Steam.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -294,8 +293,15 @@ pub(crate) struct Steam {
 }
 
 impl Steam {
-    /// A client logged on as an account holding the packages of `world`.
+    /// A client logged on as an account holding the packages of `world`,
+    /// whose depots no CDN serves.
     pub(crate) async fn account(world: World) -> (Client, Steam) {
+        Self::account_reaching(world, reaching(&[])).await
+    }
+
+    /// The same, whose depots come through `cdn`: the CDNs in memory that
+    /// answer to the hosts the content directory of `world` names.
+    pub(crate) async fn account_reaching(world: World, cdn: CdnClient) -> (Client, Steam) {
         let (connection, server) = test_server::connection(ACCOUNT, true).await;
         let mut steam = Steam {
             server,
@@ -323,7 +329,7 @@ impl Steam {
                 &list.encode_to_vec(),
             )
             .await;
-        (Client::with_test_connection(connection), steam)
+        (Client::with_test_cdn(connection, cdn), steam)
     }
 
     /// Runs `work`, which asks Steam, while Steam answers.

@@ -13,7 +13,7 @@ use sha1::{Digest, Sha1};
 
 use super::{Client, PLATFORM, validate_identity, write_platform};
 pub use crate::content_manifest::Prerequisite;
-use crate::{EpicError, content::ContentClient, details};
+use crate::{EpicError, details};
 
 pub use obelisk_core::{installation::TransferProgress, transfer::TransferState};
 
@@ -152,9 +152,7 @@ impl Client {
                     .await??;
                 // A revoked account withdraws nothing: the receipt stays until
                 // the installation lock is taken.
-                if self.session.lock().await.is_none() {
-                    return Err(EpicError::Unauthorized);
-                }
+                self.session.check().await?;
                 Ok(prepared)
             },
             |prepared, destination, transfer| async move {
@@ -202,7 +200,8 @@ impl Client {
         drop(fetched.bytes);
 
         let progress = transfer.clone();
-        let summary = ContentClient::new(self.api.http.clone())
+        let summary = self
+            .content
             .download(
                 Arc::clone(&manifest),
                 &fetched.base_urls,
@@ -219,9 +218,7 @@ impl Client {
             )
             .await?;
         cancel.check()?;
-        if self.session.lock().await.is_none() {
-            return Err(EpicError::Unauthorized);
-        }
+        self.session.check().await?;
         debug_assert!(summary.reused_bytes <= summary.total_bytes);
         debug_assert_eq!(summary.completed_files as usize, manifest.files.len());
         Ok(InstalledFiles {

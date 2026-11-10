@@ -117,7 +117,10 @@ impl Endpoint {
 /// Only HTTPS locations without embedded credentials.
 pub(crate) fn checked_url(value: &str) -> Result<Url, GogError> {
     let url = Url::parse(value).map_err(|_| GogError::Protocol)?;
-    if url.scheme() != "https"
+    // The tests' own GOG answers on a local socket, without TLS.
+    let secure = url.scheme() == "https"
+        || cfg!(test) && url.scheme() == "http" && url.host_str() == Some("127.0.0.1");
+    if !secure
         || url.host_str().is_none()
         || !url.username().is_empty()
         || url.password().is_some()

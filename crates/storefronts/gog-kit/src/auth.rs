@@ -3,6 +3,7 @@
 //! the Galaxy client's public credentials exchange for tokens.
 use std::time::{Duration, Instant};
 
+use obelisk_core::oauth_session::{OAuth, SessionError, Tokens};
 use reqwest::{StatusCode, Url};
 use serde::Deserialize;
 
@@ -89,10 +90,30 @@ fn valid_code(code: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
 }
 
-pub(crate) struct Session {
-    pub credentials: Credentials,
-    pub access_token: String,
-    pub expires_at: Instant,
+/// What GOG answers a sign-in or a renewal.
+pub(crate) type Session = Tokens<Credentials>;
+
+impl OAuth for Api {
+    type Credentials = Credentials;
+    type Error = GogError;
+
+    async fn refresh(&self, credentials: &Credentials) -> Result<Session, GogError> {
+        Api::refresh(self, credentials).await
+    }
+}
+
+impl SessionError for GogError {
+    fn unauthorized() -> Self {
+        Self::Unauthorized
+    }
+
+    fn cancelled() -> Self {
+        Self::Cancelled
+    }
+
+    fn is_unauthorized(&self) -> bool {
+        matches!(self, Self::Unauthorized)
+    }
 }
 
 #[derive(Deserialize)]

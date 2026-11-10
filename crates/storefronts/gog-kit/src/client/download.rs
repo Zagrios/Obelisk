@@ -10,13 +10,12 @@ use obelisk_core::{
     build_choice::GameBuilds,
     install::hex,
     installation::{self, Destination, InstallFailure, InstalledFiles, TransferError},
-    mac_build,
     platform::Platform,
-    transfer::{CancelToken, CdnClient, TransferBusy, TransferContext, Transfers},
+    transfer::{TransferBusy, TransferContext, Transfers},
 };
 use serde::{Deserialize, Serialize};
 
-use super::{Client, PLATFORM, content_platform, launch, valid_product_id, write_platform};
+use super::{Client, PLATFORM, content_platform, valid_product_id, write_platform};
 use crate::{
     GogError,
     auth::Api,
@@ -385,47 +384,6 @@ impl Client {
         Ok((platform, size))
     }
 
-    /// Whether the program the primary play task of `installed` starts holds
-    /// an arm64 slice.
-    async fn plays_natively(
-        &self,
-        product_id: &str,
-        installed: &Installed,
-        content_root: &str,
-        cancel: &CancelToken,
-    ) -> Result<bool, GogError> {
-        let from_root = |path: &str| match content_root {
-            "" => path.to_owned(),
-            root => format!("{root}/{path}"),
-        };
-        let mut listing = mac_build::Listing::default();
-        for (index, file) in installed.files.iter().enumerate() {
-            listing.file(&file.path, index, file.file.size());
-        }
-        for link in &installed.links {
-            listing.link(&link.path, &link.target);
-        }
-        let links = SecureLinks::new(self.secure_links());
-        let cdn = &CdnClient::new(self.tokens.api.http.clone());
-        let links = &links;
-        let read = move |index: usize, bytes: u64| {
-            content::read(cdn, links, &installed.files[index], bytes, cancel)
-        };
-        let mut program = None;
-        for info in launch::info_files(product_id) {
-            if let Some((file, size)) = listing.find(&from_root(&info))
-                && size <= launch::MAX_INFO_BYTES as u64
-            {
-                program = launch::played_program(&read(file, size).await?);
-                break;
-            }
-        }
-        let Some(program) = program else {
-            return Ok(false);
-        };
-        mac_build::runs_natively(&listing, &from_root(&program), &[], read).await
-    }
-
     /// The size of the listed `build` an installation in `language` holds.
     async fn build_size(
         &self,
@@ -495,9 +453,7 @@ impl Client {
                     .await??;
                 // A revoked account withdraws nothing: the receipt stays until
                 // the installation lock is taken.
-                if self.tokens.session.lock().await.is_none() {
-                    return Err(GogError::Unauthorized);
-                }
+                self.tokens.session.check().await?;
                 Ok(prepared)
             },
             |prepared, destination, transfer| async move {
@@ -637,7 +593,7 @@ impl Client {
         let links = Arc::new(SecureLinks::new(self.secure_links()));
         let progress = transfer.clone();
         let summary = content::download(
-            CdnClient::new(self.tokens.api.http.clone()),
+            self.cdn.clone(),
             links,
             Arc::new(installed),
             key,
@@ -647,9 +603,7 @@ impl Client {
         )
         .await?;
         cancel.check()?;
-        if self.tokens.session.lock().await.is_none() {
-            return Err(GogError::Unauthorized);
-        }
+        self.tokens.session.check().await?;
         Ok(InstalledFiles {
             receipt: Installation {
                 product_id: product_id.into(),

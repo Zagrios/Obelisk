@@ -190,6 +190,8 @@ struct ProgressBase {
 
 pub struct Client {
     http: reqwest::Client,
+    /// How the Mac pick and every download reach Steam's CDN.
+    content: ContentClient,
     cm: SteamConnection,
     friends: crate::friends::FriendsEventSource,
     chat: ChatEventSource,
@@ -238,14 +240,29 @@ impl Client {
     pub async fn acquisitions(&self) -> Result<BTreeMap<u32, u32>, ClientError> {
         Ok(self.licensed_content().await?.acquired.clone())
     }
+    /// A client no CDN serves: a request for a depot's content fails.
     #[cfg(test)]
     pub(crate) fn with_test_connection(cm: SteamConnection) -> Self {
-        Self::from_connection(http_client().unwrap(), cm, String::new())
+        Self::with_test_cdn(cm, obelisk_core::testing::reaching(&[]))
     }
 
-    fn from_connection(http: reqwest::Client, cm: SteamConnection, refresh_token: String) -> Self {
+    /// A client whose depots come through `cdn`, such as CDNs in memory.
+    #[cfg(test)]
+    pub(crate) fn with_test_cdn(cm: SteamConnection, cdn: transfer::CdnClient) -> Self {
+        let http = http_client().unwrap();
+        Self::from_connection(http, ContentClient::over(cdn), cm, String::new())
+    }
+
+    /// Depots come through `content` for as long as the client lives.
+    fn from_connection(
+        http: reqwest::Client,
+        content: ContentClient,
+        cm: SteamConnection,
+        refresh_token: String,
+    ) -> Self {
         Self {
             http,
+            content,
             friends: cm.friends_source(),
             chat: cm.chat_source(),
             own_game: cm.own_game_source(),
@@ -281,7 +298,13 @@ impl Client {
         cm.set_status(status)
             .await
             .map_err(ClientConnectError::from)?;
-        Ok(Self::from_connection(http, cm, refresh_token.into()))
+        let content = ContentClient::new(http.clone());
+        Ok(Self::from_connection(
+            http,
+            content,
+            cm,
+            refresh_token.into(),
+        ))
     }
 
     /// Cookies that sign Steam's sites in as the account, through a web
@@ -876,21 +899,13 @@ impl Client {
         };
         let mut manifests = Vec::new();
         let mut scripts = Vec::new();
-        let content = ContentClient::new(self.http.clone());
         for depot in &mut prepared.depots {
             cancel.check()?;
             let DepotInstallation {
                 summary,
                 install_scripts,
             } = self
-                .install_depot(
-                    &content,
-                    depot,
-                    &prepared.servers,
-                    destination,
-                    transfer,
-                    base,
-                )
+                .install_depot(depot, &prepared.servers, destination, transfer, base)
                 .await?;
             base.total_estimate =
                 base.total_estimate.saturating_sub(depot.estimated_bytes) + summary.total_bytes;
@@ -970,7 +985,6 @@ impl Client {
     /// refuses the depot is authorized over the CM.
     async fn install_depot(
         &self,
-        content: &ContentClient,
         depot: &mut PreparedDepot,
         servers: &[ContentServer],
         destination: &Path,
@@ -980,7 +994,8 @@ impl Client {
         let cancel = transfer.cancel_token();
         // The current manifest ID and depot key came from authorized Steam
         // metadata above. Keep one validated snapshot across all CDN requests.
-        let cached_manifest = match content
+        let cached_manifest = match self
+            .content
             .cached_manifest(destination, depot.depot_id, depot.manifest_id, &depot.key)
             .await?
         {
@@ -1012,7 +1027,7 @@ impl Client {
         // threads, so the callback owns everything it touches.
         let transfer = transfer.clone();
         let size = depot.estimated_bytes;
-        content
+        self.content
             .download_depot(&plan, cancel, move |progress: DownloadProgress| {
                 transfer.update(|status| {
                     status.show(progress);
@@ -1171,7 +1186,8 @@ mod tests {
     #[test]
     fn only_what_asking_again_cannot_change_is_a_refusal() {
         use crate::cm::CmError;
-        let refused = |error: ClientError| matches!(error, ClientError::Refused(_));
+        use obelisk_core::build_choice::GameBuilds;
+        let refused = |error: ClientError| OwnedApp::is_refusal(&error);
         let rejected = |result| CmError::Rejected {
             action: "backend.steam.cm.action.depot",
             result,

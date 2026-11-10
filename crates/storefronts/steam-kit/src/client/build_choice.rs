@@ -4,8 +4,8 @@
 use std::sync::Arc;
 
 use obelisk_core::{
-    build_choice::{GameBuilds, Inspection, Offered},
-    mac_build,
+    build_choice::{GameBuilds, Inspection, Launch, Offered, Verdict},
+    mac_build::Listing,
     platform::Platform,
 };
 
@@ -15,7 +15,7 @@ use super::{
 };
 use crate::{
     cm::{AppInfo, ContentLicenses},
-    content::{CancelToken, ContentClient, DepotFiles, DepotSource},
+    content::{CancelToken, DepotFiles, DepotSource},
 };
 
 /// The account's licenses and a game's PICS metadata, from which both of
@@ -49,6 +49,8 @@ impl GameBuilds for OwnedApp<'_> {
     type Key = Revision;
     type Kept = Kept;
     type Error = ClientError;
+    /// Steam's errors tell a refusal apart wherever they arise.
+    type Failure = ClientError;
 
     async fn builds(&self) -> Result<Offered<Licensed>, ClientError> {
         let (owned, app) = self.client.owned_app(self.app_id).await?;
@@ -69,27 +71,10 @@ impl GameBuilds for OwnedApp<'_> {
         Ok(Some(resolved.revision()))
     }
 
-    /// Whether the build's program and its Steam API library hold arm64
-    /// slices, as a launch would start them. It reads their first bytes from
-    /// the build's depots. A build Steam refuses or Obelisk cannot install
-    /// does not; any other failure may pass, and fails the pick.
+    /// The build's program and the Steam API library beside it, as a launch
+    /// would start them, read from the build's depots. The depots' manifests
+    /// are kept for the download of a build that is picked.
     async fn inspect(
-        &self,
-        mac: &Licensed,
-        cancel: &CancelToken,
-    ) -> Result<Inspection<Self::Kept>, ClientError> {
-        match self.read_program(mac, cancel).await {
-            Err(ClientError::Refused(_)) => {
-                cancel.check()?;
-                Ok(Inspection::NotNative)
-            }
-            read => read,
-        }
-    }
-}
-
-impl OwnedApp<'_> {
-    async fn read_program(
         &self,
         mac: &Licensed,
         cancel: &CancelToken,
@@ -97,7 +82,7 @@ impl OwnedApp<'_> {
         let Some(executable) = crate::launch::configuration(&mac.app, Platform::Mac)
             .map(|config| config.executable.clone())
         else {
-            return Ok(Inspection::NotNative);
+            return Ok(Inspection::no_program());
         };
         let (client, app) = (self.client, &*mac.app);
         let selection = Selection::of(app, &mac.owned, Platform::Mac, self.language);
@@ -115,9 +100,9 @@ impl OwnedApp<'_> {
             .iter()
             .map(|(depot, _)| depot.authorization(&client.cm))
             .collect();
-        let content = ContentClient::new(client.http.clone());
+        let content = &client.content;
         let mut files = Vec::new();
-        let mut listing = mac_build::Listing::default();
+        let mut listing = Listing::default();
         for ((depot, request_code), authorization) in depots.iter().zip(&authorizations) {
             let source = DepotSource {
                 depot_id: depot.depot_id,
@@ -135,11 +120,19 @@ impl OwnedApp<'_> {
             let files: &Vec<_> = &files;
             files[depot].read(file, bytes, cancel)
         };
-        let native =
-            mac_build::runs_natively(&listing, &executable, &["libsteam_api.dylib"], read).await?;
-        Ok(match native {
-            true => Inspection::Native(files.into_iter().map(DepotFiles::into_manifest).collect()),
-            false => Inspection::NotNative,
-        })
+        let launch = Launch {
+            executable: &executable,
+            libraries: &["libsteam_api.dylib"],
+        };
+        let verdict = Verdict::of(&listing, launch, read).await?;
+        Ok(verdict.keeping(|| files.into_iter().map(DepotFiles::into_manifest).collect()))
+    }
+
+    /// A build Steam refuses or whose depots hold what Obelisk cannot
+    /// install, as `ContentError::is_refusal` and `CmError::is_refusal` name
+    /// them: an unsafe path, invalid data, a link Obelisk does not make, a
+    /// status that is no outage, or Steam denying the account.
+    fn is_refusal(failure: &ClientError) -> bool {
+        matches!(failure, ClientError::Refused(_))
     }
 }

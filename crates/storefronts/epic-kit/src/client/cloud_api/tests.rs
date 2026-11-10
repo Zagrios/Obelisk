@@ -559,7 +559,7 @@ async fn cancellation_interrupts_pending_signed_request_and_session_loss_discard
     let cancel = CancelToken::new();
     let discard = async {
         tokio::time::sleep(Duration::from_millis(20)).await;
-        *client.session.lock().await = None;
+        client.session.discard().await;
     };
     let (result, _) = tokio::join!(download_all(&client, game(), &cancel), discard);
     assert!(matches!(result, Err(EpicError::Unauthorized)));

@@ -2,7 +2,10 @@
 //! documented by Legendary's `legendary/api/egs.py`.
 use std::time::{Duration, Instant};
 
-use obelisk_core::transfer::{BodySize, CancelToken, read_body};
+use obelisk_core::{
+    oauth_session::{OAuth, SessionError, Tokens},
+    transfer::{BodySize, CancelToken, read_body},
+};
 use reqwest::{StatusCode, Url};
 use serde::Deserialize;
 
@@ -74,10 +77,30 @@ pub fn authorization_code(input: &str) -> Result<String, EpicError> {
     Ok(candidate.to_owned())
 }
 
-pub(crate) struct Session {
-    pub credentials: Credentials,
-    pub access_token: String,
-    pub expires_at: Instant,
+/// What Epic answers a sign-in or a renewal.
+pub(crate) type Session = Tokens<Credentials>;
+
+impl OAuth for Api {
+    type Credentials = Credentials;
+    type Error = EpicError;
+
+    async fn refresh(&self, credentials: &Credentials) -> Result<Session, EpicError> {
+        Api::refresh(self, credentials).await
+    }
+}
+
+impl SessionError for EpicError {
+    fn unauthorized() -> Self {
+        Self::Unauthorized
+    }
+
+    fn cancelled() -> Self {
+        Self::Cancelled
+    }
+
+    fn is_unauthorized(&self) -> bool {
+        matches!(self, Self::Unauthorized)
+    }
 }
 
 #[derive(Deserialize)]
