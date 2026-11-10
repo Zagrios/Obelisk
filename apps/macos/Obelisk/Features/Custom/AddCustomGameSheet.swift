@@ -454,6 +454,7 @@ struct AddCustomGameSheet: View {
         if let binType = UTType(filenameExtension: "bin") { types.append(binType) }
         if let shType = UTType(filenameExtension: "sh") { types.append(shType) }
         if let x86Type = UTType(filenameExtension: "x86_64") { types.append(x86Type) }
+        if let x64Type = UTType(filenameExtension: "x64") { types.append(x64Type) }
         panel.allowedContentTypes = types
 
         if panel.runModal() == .OK, let url = panel.url {
