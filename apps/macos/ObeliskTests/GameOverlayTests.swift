@@ -291,8 +291,8 @@ final class OverlayFixture {
         presenter.showsPanel = showsPanel
         app = AppModel(
             directory: directory, steam: steam,
-            epic: EpicModel(directory: directory, keychain: MemoryStore<EpicCredentials>(nil), gameSessions: epicSessions),
-            gog: GogModel(directory: directory, keychain: MemoryStore<GogCredentials>(nil), gameSessions: gogSessions),
+            epic: EpicModel(directory: directory, keychain: MemoryStore<WebAccountCredentials>(nil), gameSessions: epicSessions),
+            gog: GogModel(directory: directory, keychain: MemoryStore<WebAccountCredentials>(nil), gameSessions: gogSessions),
             overlay: GameOverlayEnvironment(hotKey: hotKey, presenter: presenter, toaster: toaster,
                                             frontmost: { front.application }, voile: voile.path,
                                             observesActivations: false)

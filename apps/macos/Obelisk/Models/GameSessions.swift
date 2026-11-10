@@ -69,9 +69,9 @@ enum EpicGames: GameStorefront {
     /// A signed-out account still signs Obelisk out, as any Epic call does.
     static func failure(_ key: String) -> Error {
         switch key {
-        case "backend.epic.unauthorized": EpicError.Unauthorized
-        case "backend.epic.network": EpicError.Network
-        default: EpicError.Service(message: key)
+        case "backend.epic.unauthorized": WebAccountError.Unauthorized
+        case "backend.epic.network": WebAccountError.Network
+        default: WebAccountError.Service(message: key)
         }
     }
     static let invalidSession = "backend.epic.cloud.invalidSession"
@@ -100,9 +100,9 @@ enum GogGames: GameStorefront {
     /// A signed-out account still signs Obelisk out, as any GOG call does.
     static func failure(_ key: String) -> Error {
         switch key {
-        case "backend.gog.unauthorized": GogError.Unauthorized
-        case "backend.gog.network": GogError.Network
-        default: GogError.Service(message: key)
+        case "backend.gog.unauthorized": WebAccountError.Unauthorized
+        case "backend.gog.network": WebAccountError.Network
+        default: WebAccountError.Service(message: key)
         }
     }
     static let invalidSession = "backend.gog.invalidSession"

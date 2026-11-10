@@ -25,7 +25,7 @@ final class StorefrontsFixture {
         var gogReceipts: [InstallationReceipt<String>] = []
         var steamProfile = SteamProfile(displayName: nil, avatarUrl: nil)
         /// Replaces Epic's session, such as to count its friends' reconnections.
-        var epicSession: (any EpicSessionProtocol)?
+        var epicSession: WebSession?
         /// The storefronts whose restoration waits for the test.
         var held: Set<LibrarySection> = []
         /// The storefronts whose restoration fails.
@@ -88,8 +88,7 @@ final class StorefrontsFixture {
         let gogSession = GogTestSession(credentials: GogGames.credentials("current", account: Self.gogAccount),
                                         games: setup.gog ?? [])
         self.gogSession = gogSession
-        let epicSession: any EpicSessionProtocol = setup.epicSession ?? EpicGames.session(epicWeb)
-        let gogProtocolSession = GogGames.session(gogSession)
+        let epicSession: WebSession = setup.epicSession ?? epicWeb
 
         var gates: [LibrarySection: GameSessionGate<Void>] = [:]
         for section in setup.held { gates[section] = GameSessionGate<Void>() }
@@ -127,7 +126,7 @@ final class StorefrontsFixture {
         )
         epic = EpicModel(
             directory: root,
-            keychain: MemoryStore<EpicCredentials>(setup.epic == nil ? nil
+            keychain: MemoryStore<WebAccountCredentials>(setup.epic == nil ? nil
                 : EpicGames.credentials("saved", account: Self.epicAccount)),
             authorize: {
                 try await signInGate.wait()
@@ -146,17 +145,17 @@ final class StorefrontsFixture {
         )
         gog = GogModel(
             directory: root,
-            keychain: MemoryStore<GogCredentials>(setup.gog == nil ? nil
+            keychain: MemoryStore<WebAccountCredentials>(setup.gog == nil ? nil
                 : GogGames.credentials("saved", account: Self.gogAccount)),
             authorize: {
                 try await signInGate.wait()
                 return "test-code"
             },
-            signIn: { _ in gogProtocolSession },
+            signIn: { _ in gogSession },
             restore: { _ in
                 try await gogGate?.wait()
                 if failing.contains(.gog) { throw GogGames.network }
-                return gogProtocolSession
+                return gogSession
             },
             gameSessions: gogSessions,
             libraryCache: cache,

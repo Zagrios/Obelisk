@@ -4,7 +4,7 @@
 //! account that signs out.
 use crate::{
     EpicGame, GameAccount, GameIdentity, GogGame, SteamGame, SteamGameArtwork,
-    game_session::Bridged, installations::Named,
+    game_session::Bridged, installations::Named, web_account::WebStore,
 };
 use futures_util::{StreamExt, stream};
 use game_runtime::{epic, gog, steam};
@@ -20,8 +20,10 @@ use std::{
 };
 
 const STEAM: &str = "steam";
-const EPIC: &str = "epic";
-const GOG: &str = "gog";
+pub(crate) const EPIC: &str = "epic";
+pub(crate) const GOG: &str = "gog";
+/// The entry field that names a game as Swift does.
+const ID: &str = "id";
 /// The entry field that keeps a game's achievement progress.
 const ACHIEVEMENTS: &str = "achievements";
 /// The entry field that keeps when a Steam game joined the library.
@@ -49,7 +51,7 @@ pub struct LibraryAchievement {
 }
 
 /// A game's achievements, by the id its storefront reads them with: Steam's
-/// app ID, Epic's namespace, GOG's product id.
+/// app ID, Epic's sandbox, GOG's product id.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct GameAchievements {
     pub(crate) id: String,
@@ -97,7 +99,7 @@ pub struct CachedEpicGame {
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct CachedGogGame {
     pub game: GogGame,
-    pub playtime_minutes: Option<u64>,
+    pub playtime_seconds: Option<u64>,
     /// The share of its achievements unlocked when they were last read;
     /// none for a game without any.
     #[uniffi(default = None)]
@@ -144,27 +146,26 @@ impl LibraryCache {
 
     /// The account's last Epic library, empty when it has none.
     pub fn epic_library(&self, account_id: String) -> Vec<CachedEpicGame> {
-        // Each field on its own: reading the entry flattened would copy its
-        // metadata.
-        self.inner.library(EPIC, &account_id, |entry| {
-            Some(CachedEpicGame {
-                game: EpicGame::deserialize(entry).ok()?,
-                playtime_seconds: entry.get("playtimeSeconds").and_then(Value::as_u64),
-                achievement_share: kept(entry).and_then(|kept| unlocked_share(&kept.list)),
+        self.web_library::<epic::Epic>(&account_id)
+            .into_iter()
+            .map(|cached| CachedEpicGame {
+                game: cached.game,
+                playtime_seconds: cached.playtime_seconds,
+                achievement_share: cached.achievement_share,
             })
-        })
+            .collect()
     }
 
     /// The account's last GOG library, empty when it has none.
     pub fn gog_library(&self, user_id: String) -> Vec<CachedGogGame> {
-        // Read field by field: the entry's metadata stays in the cache.
-        self.inner.library(GOG, &user_id, |entry| {
-            Some(CachedGogGame {
-                game: GogGame::deserialize(entry).ok()?,
-                playtime_minutes: entry.get("playtimeMinutes").and_then(Value::as_u64),
-                achievement_share: kept(entry).and_then(|kept| unlocked_share(&kept.list)),
+        self.web_library::<gog::Gog>(&user_id)
+            .into_iter()
+            .map(|cached| CachedGogGame {
+                game: cached.game,
+                playtime_seconds: cached.playtime_seconds,
+                achievement_share: cached.achievement_share,
             })
-        })
+            .collect()
     }
 
     /// Every launch the cache keeps, for every storefront and account.
@@ -247,13 +248,38 @@ impl LibraryCache {
         SteamLibrary(self.inner.account(STEAM, &steam_id.to_string()))
     }
 
-    pub(crate) fn epic(&self, account_id: &str) -> EpicLibrary {
-        PlaytimeLibrary::new(self.inner.account(EPIC, account_id))
+    /// Where a session of the web storefront `S` keeps `account`'s library.
+    pub(crate) fn web<S: WebStore>(&self, account: &str) -> PlaytimeLibrary<S> {
+        PlaytimeLibrary {
+            account: self.inner.account(S::CACHE, account),
+            playtimes: Mutex::default(),
+            store: PhantomData,
+        }
     }
 
-    pub(crate) fn gog(&self, user_id: &str) -> GogLibrary {
-        PlaytimeLibrary::new(self.inner.account(GOG, user_id))
+    /// The last library of `account` on the web storefront `S`, empty when
+    /// it has none, with each game's playtime in seconds.
+    fn web_library<S: WebStore>(&self, account: &str) -> Vec<CachedWebGame<S::Shown>> {
+        // Each field on its own: reading the entry flattened would copy its
+        // metadata.
+        self.inner.library(S::CACHE, account, |entry| {
+            Some(CachedWebGame {
+                game: S::Shown::deserialize(entry).ok()?,
+                playtime_seconds: entry
+                    .get(S::PLAYTIME.field)
+                    .and_then(Value::as_u64)
+                    .map(|playtime| S::PLAYTIME.seconds(playtime)),
+                achievement_share: kept(entry).and_then(|kept| unlocked_share(&kept.list)),
+            })
+        })
     }
+}
+
+/// A game of an Epic or GOG account's cache, whichever its record.
+struct CachedWebGame<G> {
+    game: G,
+    playtime_seconds: Option<u64>,
+    achievement_share: Option<f64>,
 }
 
 /// The Steam library a session keeps for its account.
@@ -302,7 +328,7 @@ impl SteamLibrary {
     pub(crate) fn achievements(&self) -> LibraryAchievements<'_> {
         LibraryAchievements {
             account: &self.0,
-            id: "id",
+            id: |entry| Some(entry.get(ID)?.as_str()?.to_owned()),
             playtime: "playtimeMinutes",
         }
     }
@@ -327,95 +353,72 @@ impl SteamLibrary {
     }
 }
 
-/// A game a storefront loads apart from its playtime, as Epic and GOG do.
-pub(crate) trait PlayedGame {
-    /// The game as the library shows it.
-    type Shown;
-    /// The entry field the loaded playtimes name the game by.
-    const PLAYTIME_ID: &'static str;
-    /// The entry field that keeps its playtime.
-    const PLAYTIME: &'static str;
-    /// The entry field its achievements are read by: several games may
-    /// share an Epic sandbox.
-    const ACHIEVEMENTS_ID: &'static str;
-    /// The game's entry, with everything its storefront returned but its
-    /// playtime, and the game as the library shows it.
-    fn entry(self) -> (Entry, Self::Shown);
+/// How a storefront counts playtime: the entry field that keeps a game's, in
+/// the storefront's unit, and the seconds in one of that unit. The cache file
+/// keeps what the storefront told; playtimes cross to Swift in seconds.
+pub(crate) struct PlaytimeUnit {
+    pub(crate) field: &'static str,
+    seconds: u64,
 }
 
-impl PlayedGame for epic_kit::client::Game {
-    type Shown = EpicGame;
-    const PLAYTIME_ID: &'static str = "appName";
-    const PLAYTIME: &'static str = "playtimeSeconds";
-    const ACHIEVEMENTS_ID: &'static str = "namespace";
-    fn entry(mut self) -> (Entry, EpicGame) {
-        let metadata = std::mem::take(&mut self.metadata);
-        let game = EpicGame::from(self);
-        let mut entry = entry_of(&CachedEntry {
-            id: <epic::Epic as Named>::name(&epic::Store {
-                namespace: game.namespace.clone(),
-                app_name: game.app_name.clone(),
-            }),
-            game: &game,
-        });
-        entry.insert("metadata".into(), metadata);
-        (entry, game)
+impl PlaytimeUnit {
+    pub(crate) const SECONDS: Self = Self {
+        field: "playtimeSeconds",
+        seconds: 1,
+    };
+    pub(crate) const MINUTES: Self = Self {
+        field: "playtimeMinutes",
+        seconds: 60,
+    };
+
+    /// `playtime`, counted in this unit, in seconds. A count too large to
+    /// hold saturates.
+    pub(crate) fn seconds(&self, playtime: u64) -> u64 {
+        playtime.saturating_mul(self.seconds)
     }
 }
 
-impl PlayedGame for gog_kit::client::Game {
-    type Shown = GogGame;
-    const PLAYTIME_ID: &'static str = "id";
-    const PLAYTIME: &'static str = "playtimeMinutes";
-    const ACHIEVEMENTS_ID: &'static str = "id";
-    fn entry(mut self) -> (Entry, GogGame) {
-        let metadata = std::mem::take(&mut self.metadata);
-        let game = GogGame::from(self);
-        let mut entry = entry_of(&CachedEntry {
-            id: game.product_id.clone(),
-            game: &game,
-        });
-        entry.insert("metadata".into(), metadata);
-        (entry, game)
-    }
+/// The game `entry` keeps, from the name Swift gives it.
+fn game<S: WebStore>(entry: &Entry) -> Option<S::Game> {
+    S::named(entry.get(ID)?.as_str()?)
+}
+
+/// The playtime `playtimes` tells of `entry`'s game, in the storefront's
+/// unit.
+fn told<S: WebStore>(entry: &Entry, playtimes: &BTreeMap<String, u64>) -> Option<u64> {
+    playtimes.get(S::playtime_id(&game::<S>(entry)?)).copied()
 }
 
 /// The library a session keeps for its account, whose playtimes load apart
 /// from its games: Epic's or GOG's.
-pub(crate) struct PlaytimeLibrary<G> {
+pub(crate) struct PlaytimeLibrary<S> {
     account: AccountLibrary,
-    /// The playtimes the session last loaded: they may answer before the
-    /// games.
+    /// The playtimes the session last loaded, as the storefront told them:
+    /// they may answer before the games.
     playtimes: Mutex<Option<BTreeMap<String, u64>>>,
-    game: PhantomData<fn(G)>,
+    store: PhantomData<fn(S)>,
 }
 
-pub(crate) type EpicLibrary = PlaytimeLibrary<epic_kit::client::Game>;
-pub(crate) type GogLibrary = PlaytimeLibrary<gog_kit::client::Game>;
-
-impl<G: PlayedGame> PlaytimeLibrary<G> {
-    fn new(account: AccountLibrary) -> Self {
-        Self {
-            account,
-            playtimes: Mutex::default(),
-            game: PhantomData,
-        }
-    }
-
+impl<S: WebStore> PlaytimeLibrary<S> {
     /// Keeps the account's games with everything their storefront returned.
     /// Until the session loads the playtimes, each game keeps its earlier
     /// one.
-    pub(crate) fn games(&self, games: Vec<G>) -> Vec<G::Shown> {
+    pub(crate) fn games(&self, games: Vec<S::Listed>) -> Vec<S::Shown> {
         let playtimes = self.playtimes.lock().unwrap();
         let (entries, games) = games
             .into_iter()
-            .map(|loaded| {
-                let (mut entry, game) = loaded.entry();
-                let playtime = playtimes.as_ref().and_then(|playtimes| {
-                    playtimes.get(entry.get(G::PLAYTIME_ID)?.as_str()?).copied()
+            .map(|listed| {
+                let (game, metadata) = S::shown(listed);
+                let mut entry = entry_of(&CachedEntry {
+                    id: S::id(&game),
+                    game: &game,
                 });
+                entry.insert("metadata".into(), metadata);
+                let playtime = playtimes
+                    .as_ref()
+                    .and_then(|playtimes| told::<S>(&entry, playtimes));
                 if let Some(playtime) = playtime {
-                    entry.insert(G::PLAYTIME.into(), playtime.into());
+                    entry.insert(S::PLAYTIME.field.into(), playtime.into());
                 }
                 (entry, game)
             })
@@ -423,7 +426,7 @@ impl<G: PlayedGame> PlaytimeLibrary<G> {
         let kept: &[&str] = if playtimes.is_some() {
             &[ACHIEVEMENTS]
         } else {
-            &[G::PLAYTIME, ACHIEVEMENTS]
+            &[S::PLAYTIME.field, ACHIEVEMENTS]
         };
         self.account.replace(entries, kept);
         games
@@ -433,25 +436,20 @@ impl<G: PlayedGame> PlaytimeLibrary<G> {
     pub(crate) fn achievements(&self) -> LibraryAchievements<'_> {
         LibraryAchievements {
             account: &self.account,
-            id: G::ACHIEVEMENTS_ID,
-            playtime: G::PLAYTIME,
+            id: |entry| Some(S::achievements_id(&game::<S>(entry)?).to_owned()),
+            playtime: S::PLAYTIME.field,
         }
     }
 
-    /// Keeps every game's playtime. A game missing from `playtimes` was
-    /// never played.
+    /// Keeps every game's playtime, as the storefront told it. A game
+    /// missing from `playtimes` was never played.
     pub(crate) fn playtimes(&self, playtimes: &BTreeMap<String, u64>) {
         *self.playtimes.lock().unwrap() = Some(playtimes.clone());
-        self.account.update(|entry| {
-            let playtime = entry
-                .get(G::PLAYTIME_ID)
-                .and_then(Value::as_str)
-                .and_then(|id| playtimes.get(id).copied());
-            match playtime {
-                Some(playtime) => set(entry, G::PLAYTIME, playtime.into()),
-                None => entry.remove(G::PLAYTIME).is_some(),
-            }
-        });
+        self.account
+            .update(|entry| match told::<S>(entry, playtimes) {
+                Some(playtime) => set(entry, S::PLAYTIME.field, playtime.into()),
+                None => entry.remove(S::PLAYTIME.field).is_some(),
+            });
     }
 }
 
@@ -459,8 +457,8 @@ impl<G: PlayedGame> PlaytimeLibrary<G> {
 /// language, moment and playtime of its last read.
 pub(crate) struct LibraryAchievements<'a> {
     account: &'a AccountLibrary,
-    /// The entry field the storefront reads a game's achievements by.
-    id: &'static str,
+    /// The id the storefront reads the achievements of an entry's game by.
+    id: fn(&Entry) -> Option<String>,
     /// The entry field that keeps the game's playtime.
     playtime: &'static str,
 }
@@ -477,24 +475,21 @@ struct KeptAchievements {
 }
 
 impl LibraryAchievements<'_> {
-    /// The lists the library keeps of `ids`, named as their entries' id
-    /// field names them, that are current in `locale`, and the ids to read
+    /// The lists the library keeps of `ids`, named as the storefront reads
+    /// them, that are current in `locale`, and the ids to read
     /// again: those it keeps none of, keeps in another language, or keeps
     /// from before one of their games was last played, as its playtime
     /// changed since or Obelisk launched it after.
     fn current<K: ToString>(&self, ids: Vec<K>, locale: &str) -> (Vec<GameAchievements>, Vec<K>) {
         let asked: HashSet<String> = ids.iter().map(ToString::to_string).collect();
         let read = self.account.read(|entry| {
-            let id = entry
-                .get(self.id)?
-                .as_str()
-                .filter(|id| asked.contains(*id))?;
+            let id = (self.id)(entry).filter(|id| asked.contains(id))?;
             let current = kept(entry).filter(|kept| {
                 kept.locale == locale
                     && kept.playtime == entry.get(self.playtime).and_then(Value::as_u64)
                     && library_cache::launched_at(entry).is_none_or(|launched| launched <= kept.at)
             });
-            Some((id.to_owned(), current.map(|kept| kept.list)))
+            Some((id, current.map(|kept| kept.list)))
         });
         // Games read by one id, such as an Epic sandbox's, are current together.
         let mut lists: HashMap<String, Option<Vec<LibraryAchievement>>> = HashMap::new();
@@ -534,11 +529,7 @@ impl LibraryAchievements<'_> {
             .duration_since(UNIX_EPOCH)
             .map_or(0, |since| since.as_secs());
         self.account.update(|entry| {
-            let Some(list) = entry
-                .get(self.id)
-                .and_then(Value::as_str)
-                .and_then(|id| read.get(id))
-            else {
+            let Some(list) = (self.id)(entry).and_then(|id| read.get(id.as_str())) else {
                 return false;
             };
             let kept = KeptAchievements {
@@ -558,7 +549,7 @@ impl LibraryAchievements<'_> {
 
 /// `ids`' achievements in `locale`: the library's while current, unless
 /// `fresh`, else read through `read`, `width` games at a time, which the
-/// library then keeps. `ids` name games as their entries' id field does. A
+/// library then keeps. `ids` name games as the storefront reads them. A
 /// game `read` failed for is left out; when no game could be told, the
 /// first failure.
 pub(crate) async fn achievements<K, A, E, Fut>(

@@ -1,32 +1,17 @@
-//! GOG's account seam. Only refresh credentials cross into the macOS Keychain;
-//! the account access token stays inside the Rust session.
-use std::{collections::HashMap, sync::Arc};
-
+//! GOG's part of a web storefront Account session: how its kit signs in,
+//! lists and names games, and what it tells of each.
 use crate::{
-    GamePlatform, LibraryCache,
-    library_cache::{self, GameAchievements, GogLibrary, LibraryAchievement},
+    GameOffer,
+    installations::Named,
+    library_cache::{self, LibraryAchievement, PlaytimeUnit},
+    web_account::{WebAccountCredentials, WebAccountError, WebGameDetails, WebStore},
 };
+use game_runtime::gog;
 use gog_kit::{auth, client};
+use serde_json::Value;
+use std::collections::BTreeMap;
 
-/// Achievement requests a library sends at once: GOG answers one game at a
-/// time.
-const ACHIEVEMENT_READS: usize = 6;
-
-#[derive(Debug, thiserror::Error, uniffi::Error)]
-pub enum GogError {
-    #[error("backend.gog.network")]
-    Network,
-    #[error("backend.gog.unauthorized")]
-    Unauthorized,
-    #[error("backend.gog.invalid_code")]
-    InvalidCode,
-    #[error("backend.gog.invalid_response")]
-    InvalidResponse,
-    #[error("{message}")]
-    Service { message: String },
-}
-
-impl From<gog_kit::GogError> for GogError {
+impl From<gog_kit::GogError> for WebAccountError {
     fn from(error: gog_kit::GogError) -> Self {
         match error {
             gog_kit::GogError::Network => Self::Network,
@@ -53,32 +38,25 @@ pub fn gog_is_login_redirect(url: String) -> bool {
 }
 
 #[uniffi::export]
-pub fn gog_authorization_code(input: String) -> Result<String, GogError> {
+pub fn gog_authorization_code(input: String) -> Result<String, WebAccountError> {
     auth::authorization_code(&input).map_err(Into::into)
 }
 
-#[derive(Clone, uniffi::Record)]
-pub struct GogCredentials {
-    pub user_id: String,
-    pub username: String,
-    pub refresh_token: String,
-}
-
-impl From<auth::Credentials> for GogCredentials {
+impl From<auth::Credentials> for WebAccountCredentials {
     fn from(credentials: auth::Credentials) -> Self {
         Self {
-            user_id: credentials.user_id,
-            username: credentials.username,
+            account_id: credentials.user_id,
+            name: credentials.username,
             refresh_token: credentials.refresh_token,
         }
     }
 }
 
-impl From<GogCredentials> for auth::Credentials {
-    fn from(credentials: GogCredentials) -> Self {
+impl From<WebAccountCredentials> for auth::Credentials {
+    fn from(credentials: WebAccountCredentials) -> Self {
         Self {
-            user_id: credentials.user_id,
-            username: credentials.username,
+            user_id: credentials.account_id,
+            username: credentials.name,
             refresh_token: credentials.refresh_token,
         }
     }
@@ -144,13 +122,6 @@ impl From<client::Game> for GogGame {
     }
 }
 
-/// How long the account played one game, as GOG records it.
-#[derive(Clone, Debug, uniffi::Record)]
-pub struct GogPlaytime {
-    pub product_id: String,
-    pub minutes: u64,
-}
-
 impl From<client::Achievement> for LibraryAchievement {
     fn from(value: client::Achievement) -> Self {
         Self {
@@ -165,17 +136,7 @@ impl From<client::Achievement> for LibraryAchievement {
     }
 }
 
-/// What a game's page adds to its library entry: the build it shows before
-/// any download, and its size.
-#[derive(Clone, Debug, uniffi::Record)]
-pub struct GogGameDetails {
-    /// Unknown when GOG could not tell.
-    pub platform: Option<GamePlatform>,
-    /// Unknown when GOG serves no build for the platform.
-    pub installation_bytes: Option<u64>,
-}
-
-impl From<client::GameDetails> for GogGameDetails {
+impl From<client::GameDetails> for WebGameDetails {
     fn from(details: client::GameDetails) -> Self {
         Self {
             platform: details.platform.map(Into::into),
@@ -184,173 +145,108 @@ impl From<client::GameDetails> for GogGameDetails {
     }
 }
 
-#[derive(uniffi::Object)]
-pub struct GogSession {
-    pub(crate) client: Arc<client::Client>,
-    pub(crate) persistence: Arc<crate::credentials::Persistence>,
-    /// Where the account's library is kept as it loads.
-    library: Option<GogLibrary>,
-}
+impl WebStore for gog::Gog {
+    type Client = client::Client;
+    type Game = String;
+    type Product = gog::Product;
+    type Listed = client::Game;
+    type Shown = GogGame;
 
-impl GogSession {
-    async fn with(
-        client: client::Client,
-        library: Option<Arc<LibraryCache>>,
-    ) -> Result<Arc<Self>, GogError> {
-        let library = match library {
-            Some(library) => Some(library.gog(&client.credentials().await?.user_id)),
-            None => None,
-        };
-        Ok(Arc::new(Self {
-            client: Arc::new(client),
-            persistence: Default::default(),
-            library,
-        }))
+    const CACHE: &'static str = library_cache::GOG;
+    /// GOG counts minutes.
+    const PLAYTIME: PlaytimeUnit = PlaytimeUnit::MINUTES;
+    /// Achievement requests a library sends at once: GOG answers one game at
+    /// a time.
+    const ACHIEVEMENT_READS: usize = 6;
+
+    fn named(name: &str) -> Option<String> {
+        <Self as Named>::named(name)
     }
 
-    /// `product_ids`' achievements in `locale`: the library's for a game not
-    /// played since they were read, unless `fresh`, else GOG's, which answers
-    /// one game at a time, which the library then keeps. A game GOG did not
-    /// answer for is left out; when none could be told, the first failure.
-    async fn read_achievements(
-        &self,
-        product_ids: Vec<String>,
+    fn product(offer: GameOffer) -> Option<gog::Product> {
+        Some(<Self as Named>::offer(offer)?.product)
+    }
+
+    /// GOG tells playtimes and achievements by product.
+    fn playtime_id(game: &String) -> &str {
+        game
+    }
+
+    fn achievements_id(game: &String) -> &str {
+        game
+    }
+
+    /// Beside the game: its library record and catalog data.
+    fn shown(mut listed: client::Game) -> (GogGame, Value) {
+        let metadata = std::mem::take(&mut listed.metadata);
+        (listed.into(), metadata)
+    }
+
+    fn id(game: &GogGame) -> String {
+        game.product_id.clone()
+    }
+
+    async fn sign_in(code: &str) -> Result<client::Client, WebAccountError> {
+        Ok(client::Client::sign_in(code).await?)
+    }
+
+    async fn restore(
+        credentials: WebAccountCredentials,
+    ) -> Result<client::Client, WebAccountError> {
+        Ok(client::Client::restore(credentials.into()).await?)
+    }
+
+    async fn credentials(
+        client: &client::Client,
+    ) -> Result<WebAccountCredentials, WebAccountError> {
+        Ok(client.credentials().await?.into())
+    }
+
+    async fn games(client: &client::Client) -> Result<Vec<client::Game>, WebAccountError> {
+        Ok(client.games().await?)
+    }
+
+    /// GOG answers one game at a time: each of `games` is asked.
+    async fn playtimes(
+        client: &client::Client,
+        games: &[String],
+    ) -> Result<BTreeMap<String, u64>, WebAccountError> {
+        Ok(client.playtimes(games).await?)
+    }
+
+    async fn achievements(
+        client: &client::Client,
+        id: &str,
         locale: &str,
-        fresh: bool,
-    ) -> Result<Vec<GameAchievements>, GogError> {
-        let client = &self.client;
-        library_cache::achievements(
-            self.library.as_ref().map(|library| library.achievements()),
-            product_ids,
-            locale,
-            fresh,
-            ACHIEVEMENT_READS,
-            |product_id| async move {
-                client
-                    .achievements(&product_id, locale)
-                    .await
-                    .map_err(GogError::from)
-            },
-        )
-        .await
-    }
-}
-
-#[uniffi::export(async_runtime = "tokio")]
-impl GogSession {
-    /// Keeps every library it loads in `library`.
-    #[uniffi::constructor]
-    pub async fn sign_in(
-        authorization_code: String,
-        library: Option<Arc<LibraryCache>>,
-    ) -> Result<Arc<Self>, GogError> {
-        Self::with(client::Client::sign_in(&authorization_code).await?, library).await
-    }
-
-    /// Keeps every library it loads in `library`.
-    #[uniffi::constructor]
-    pub async fn restore(
-        credentials: GogCredentials,
-        library: Option<Arc<LibraryCache>>,
-    ) -> Result<Arc<Self>, GogError> {
-        Self::with(client::Client::restore(credentials.into()).await?, library).await
-    }
-
-    pub async fn credentials(&self) -> Result<GogCredentials, GogError> {
-        Ok(self.client.credentials().await?.into())
-    }
-
-    /// The account's avatar, as its GOG profile shows it.
-    pub fn avatar_url(&self) -> Option<String> {
-        self.client.avatar_url()
-    }
-
-    pub fn shutdown_observers(&self) {
-        self.client.shutdown_observers();
-    }
-
-    pub async fn next_credentials_revision(&self, after_revision: u64) -> Option<u64> {
-        self.client.next_credentials_revision(after_revision).await
-    }
-
-    /// Saves the account's credentials through `credentials` now and after
-    /// every rotation, one save at a time and in order, until the session's
-    /// observers stop. Every account call relies on it.
-    pub async fn persist(&self, credentials: Arc<dyn crate::CredentialSave>) {
-        crate::credentials::persist(self.client.clone(), self.persistence.clone(), credentials);
-    }
-
-    pub async fn games(&self) -> Result<Vec<GogGame>, GogError> {
-        let games = self.client.games().await?;
-        Ok(match &self.library {
-            Some(library) => library.games(games),
-            None => games.into_iter().map(Into::into).collect(),
-        })
-    }
-
-    /// The game's achievements in `locale`, such as `fr-FR`, as the game
-    /// page reads them: the library's while the game was not played since
-    /// they were read, unless `fresh`, else GOG's, which the library then
-    /// keeps.
-    pub async fn achievements(
-        &self,
-        product_id: String,
-        locale: String,
-        fresh: bool,
-    ) -> Result<Vec<LibraryAchievement>, GogError> {
-        let read = self
-            .read_achievements(vec![product_id], &locale, fresh)
-            .await?;
-        Ok(read
-            .into_iter()
-            .next()
-            .map(|game| game.achievements)
-            .unwrap_or_default())
-    }
-
-    /// The share of each of `product_ids`' achievements the account unlocked,
-    /// by product, as `achievements` reads them: none for a game without
-    /// achievements or that GOG did not answer for. It fails only when no
-    /// game could be told.
-    pub async fn achievement_shares(
-        &self,
-        product_ids: Vec<String>,
-        locale: String,
-    ) -> Result<HashMap<String, f64>, GogError> {
-        let read = self.read_achievements(product_ids, &locale, false).await?;
-        Ok(library_cache::unlocked_shares(read).collect())
-    }
-
-    /// How long the account played each of `product_ids`; a game never
-    /// played has no entry. GOG answers one game at a time.
-    pub async fn playtimes(&self, product_ids: Vec<String>) -> Result<Vec<GogPlaytime>, GogError> {
-        let playtimes = self.client.playtimes(&product_ids).await?;
-        if let Some(library) = &self.library {
-            library.playtimes(&playtimes);
-        }
-        Ok(playtimes
-            .into_iter()
-            .map(|(product_id, minutes)| GogPlaytime {
-                product_id,
-                minutes,
-            })
-            .collect())
-    }
-
-    pub async fn disconnect(&self) -> Result<(), GogError> {
-        self.client.disconnect().await.map_err(Into::into)
+    ) -> Result<Vec<LibraryAchievement>, WebAccountError> {
+        let achievements = client.achievements(id, locale).await?;
+        Ok(achievements.into_iter().map(Into::into).collect())
     }
 
     /// `language` names the depots, such as `fr-FR`.
-    pub async fn game_details(
-        &self,
-        product_id: String,
-        language: String,
-    ) -> Result<GogGameDetails, GogError> {
-        Ok(self
-            .client
-            .game_details(&product_id, &language)
+    async fn details(
+        client: &client::Client,
+        product: &gog::Product,
+        language: &str,
+    ) -> Result<WebGameDetails, WebAccountError> {
+        Ok(client
+            .game_details(&product.product_id, language)
             .await?
             .into())
+    }
+
+    /// GOG offers no revocation of a Galaxy token: this only forgets the
+    /// session.
+    async fn disconnect(client: &client::Client) -> Result<(), WebAccountError> {
+        Ok(client.disconnect().await?)
+    }
+
+    fn shutdown_observers(client: &client::Client) {
+        client.shutdown_observers();
+    }
+
+    /// The account's avatar, as its GOG profile shows it.
+    fn avatar_url(client: &client::Client) -> Option<String> {
+        client.avatar_url()
     }
 }

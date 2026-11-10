@@ -8,16 +8,16 @@ struct EpicKeychain: CredentialStore {
         store = KeychainStore(service: service, account: "epic-session", label: L10n.string("model.brand.epic"))
     }
 
-    func load() async throws -> EpicCredentials? {
+    func load() async throws -> WebAccountCredentials? {
         try await store.load().map {
-            EpicCredentials(accountId: $0.accountId, displayName: $0.displayName, refreshToken: $0.refreshToken)
+            WebAccountCredentials(accountId: $0.accountId, name: $0.displayName, refreshToken: $0.refreshToken)
         }
     }
 
-    func save(_ credentials: EpicCredentials) async throws {
+    func save(_ credentials: WebAccountCredentials) async throws {
         try await store.save(StoredEpicCredentials(
             accountId: credentials.accountId,
-            displayName: credentials.displayName,
+            displayName: credentials.name,
             refreshToken: credentials.refreshToken
         ))
     }
@@ -27,6 +27,7 @@ struct EpicKeychain: CredentialStore {
     }
 }
 
+/// The item as the Keychain keeps it, under Epic's own names.
 private struct StoredEpicCredentials: Codable {
     let accountId: String
     let displayName: String
