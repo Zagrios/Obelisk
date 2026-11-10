@@ -10,24 +10,8 @@
       }
     },
     {
-      "name": "HELLDIVERS 2",
-      "steam": 553850,
-      "text": {
-        "en": "The game uses several protection mechanisms on top of Easy Anti-Cheat, which stops it from launching for now. Investigation is ongoing.",
-        "fr": "Le jeu utilise plusieurs mécanismes de protection en plus d'Easy Anti-Cheat, ce qui empêche de le lancer pour l'instant. Des recherches sont en cours."
-      }
-    },
-    {
       "name": "Hunt: Showdown 1896",
       "steam": 594650,
-      "text": {
-        "en": "The game uses several protection mechanisms on top of Easy Anti-Cheat, which stops it from launching for now. Investigation is ongoing.",
-        "fr": "Le jeu utilise plusieurs mécanismes de protection en plus d'Easy Anti-Cheat, ce qui empêche de le lancer pour l'instant. Des recherches sont en cours."
-      }
-    },
-    {
-      "name": "THE FINALS",
-      "steam": 2073850,
       "text": {
         "en": "The game uses several protection mechanisms on top of Easy Anti-Cheat, which stops it from launching for now. Investigation is ongoing.",
         "fr": "Le jeu utilise plusieurs mécanismes de protection en plus d'Easy Anti-Cheat, ce qui empêche de le lancer pour l'instant. Des recherches sont en cours."
@@ -42,6 +26,14 @@
       "text": {
         "en": "Fortnite can't run on a Mac with Obelisk: Epic Games doesn't allow its Easy Anti-Cheat on Wine or Linux.",
         "fr": "Fortnite ne peut pas tourner sur Mac avec Obelisk : Epic Games n'autorise pas son Easy Anti-Cheat sur Wine ni sous Linux."
+      }
+    },
+    {
+      "name": "Apex Legends",
+      "steam": 1172470,
+      "text": {
+        "en": "Apex Legends can't run on a Mac with Obelisk: since October 2024, Electronic Arts no longer allows its Easy Anti-Cheat on Wine or Linux.",
+        "fr": "Apex Legends ne peut pas tourner sur Mac avec Obelisk : depuis octobre 2024, Electronic Arts n'autorise plus son Easy Anti-Cheat sur Wine ni sous Linux."
       }
     },
     {
