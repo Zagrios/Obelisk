@@ -1,9 +1,11 @@
 //! What a Cloud sync publishes and asks, shared by every storefront. A Game
 //! session journals its status; Cloud maintenance keeps it in Obelisk's memory.
 //! Only the publication differs. `sync` runs one Cloud sync, `view` reads and
-//! confirms the Cloud view it compares against, and `record` keeps each
-//! game's Cloud record between syncs.
+//! confirms the Cloud view it compares against, `record` keeps each game's
+//! Cloud record between syncs, and `saves` is what an account's installations
+//! ask about its Cloud saves between Game sessions.
 pub(crate) mod record;
+pub(crate) mod saves;
 pub(crate) mod sync;
 pub(crate) mod view;
 

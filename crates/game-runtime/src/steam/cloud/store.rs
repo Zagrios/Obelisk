@@ -1,6 +1,7 @@
 use super::paths::Paths;
 use super::*;
 use crate::cloud::record;
+use crate::cloud::saves::{Archive, Rules};
 use crate::cloud::sync::{Pending, Work};
 use crate::files::safe_storage_path;
 use cloud_vault::{
@@ -287,20 +288,55 @@ impl record::Record for Context {
     }
 }
 
-/// Archives the saves before an uninstall, under the Cloud rules and listing
-/// Steam gives now.
-pub fn archive_with_rules(
+/// Whether Steam keeps saves of this build under rules Obelisk follows. It
+/// keeps none behind an app-id redirect, nor when its Auto-Cloud rules are all
+/// for other platforms, as KIBORG's Mac build, whose rules are all for Windows
+/// and Linux.
+pub(super) fn follows(
+    metadata: &CloudMetadata,
+    config: &Config,
+    steam_id: u64,
+) -> Result<bool, Failure> {
+    if metadata
+        .field("appidredirect")
+        .is_some_and(|v| v.text() != Some("0"))
+    {
+        return Ok(false);
+    }
+    if metadata.field("savefiles").is_some() {
+        match AutoCloudPaths::new(metadata, steam_id, &config.platform(), &config.install) {
+            Err(steam_kit::cloud::CloudError::OtherPlatforms) => return Ok(false),
+            paths => {
+                paths?;
+            }
+        }
+    }
+    Ok(true)
+}
+
+/// What an uninstall archives the saves under: the Cloud rules and listing
+/// Steam gives now, for the account they were read for.
+pub(crate) fn archive_under(
     config: &Config,
     metadata: CloudMetadata,
     listing: CloudListing,
-) -> Result<(), Failure> {
+) -> Result<Archive<Context>, Failure> {
     if listing.app_id != config.app_id {
         return Err(Failure::Authentication);
     }
     let account = listing.steam_id;
-    let (mut vault, saved) = record::locked::<Context>(config, &account)?;
+    let (vault, saved) = record::locked::<Context>(config, &account)?;
+    if !follows(&metadata, config, account)? {
+        return Ok(Archive {
+            vault,
+            rules: Rules::Unfollowed(saved),
+        });
+    }
     let mut context = saved.unwrap_or_else(|| Context::new(config, account, metadata.clone()));
     context.metadata = metadata;
     context.listing = listing;
-    record::archive(&mut vault, context, config.clone())
+    Ok(Archive {
+        vault,
+        rules: Rules::Followed(context),
+    })
 }

@@ -4,42 +4,6 @@ use std::ffi::{CStr, CString, c_char, c_void};
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 
-/// Replace this architecture-specific helper with the selected slice of the
-/// game its supervisor admits on stdin. No shell or platform wrapper gets a
-/// chance to strip the game's dyld variables.
-pub fn exec_game() -> std::io::Result<()> {
-    use std::{fs::File, os::fd::AsRawFd};
-    // The confirmation descriptor closes atomically on exec, while the game
-    // itself gets null stdout.
-    game_runtime::protocol::exec_or_report(|| {
-        let null = File::options().read(true).write(true).open("/dev/null")?;
-        // SAFETY: valid null descriptor, redirecting only this helper's stdout.
-        if unsafe { libc::dup2(null.as_raw_fd(), 1) } < 0 {
-            return Err(std::io::Error::last_os_error());
-        }
-        // The supervisor first persists ownership of this PID, then admits it.
-        // Losing that parent before its message must never launch a game.
-        let admission = game_runtime::supervisor::exec::receive(std::io::stdin().lock())?;
-        // SAFETY: valid readable null descriptor; the game must not inherit the
-        // private admission pipe or any bytes remaining in it.
-        if unsafe { libc::dup2(null.as_raw_fd(), 0) } < 0 {
-            return Err(std::io::Error::last_os_error());
-        }
-        if let Some(log) = &admission.log {
-            let log = game_runtime::diagnostics::open_log(log)?;
-            // SAFETY: valid writable descriptor, replacing only standard error,
-            // which the supervisor left discarded.
-            if unsafe { libc::dup2(log.as_raw_fd(), 2) } < 0 {
-                return Err(std::io::Error::last_os_error());
-            }
-        }
-        std::env::set_current_dir(&admission.working_directory)?;
-        let mut arguments = vec![admission.executable.into_os_string()];
-        arguments.extend(admission.arguments.into_iter().map(Into::into));
-        exec_game_inner(&arguments)
-    })
-}
-
 /// d3dmetal-native's `dmn_options`.
 #[repr(C)]
 struct D3DMetalOptions {
@@ -79,96 +43,6 @@ pub fn warm_d3dmetal(library: &std::ffi::OsStr, framework: &std::ffi::OsStr) -> 
         log_context: std::ptr::null_mut(),
     };
     init(&options) == 0
-}
-
-fn exec_game_inner(arguments: &[std::ffi::OsString]) -> std::io::Result<()> {
-    let strings = arguments
-        .iter()
-        .map(|argument| CString::new(argument.as_os_str().as_bytes()))
-        .collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(|_| std::io::Error::from_raw_os_error(libc::EINVAL))?;
-    let executable = strings
-        .first()
-        .ok_or_else(|| std::io::Error::from_raw_os_error(libc::EINVAL))?;
-    let mut argv: Vec<_> = strings.iter().map(|s| s.as_ptr().cast_mut()).collect();
-    argv.push(std::ptr::null_mut());
-    let mut attributes = std::ptr::null_mut();
-    // SAFETY: writable opaque attribute storage, initialized before any use.
-    let status = unsafe { libc::posix_spawnattr_init(&mut attributes) };
-    if status != 0 {
-        return Err(std::io::Error::from_raw_os_error(status));
-    }
-    let result = (|| {
-        // CPU_ARCH_ABI64 | CPU_TYPE_X86/ARM, from mach/machine.h.
-        #[cfg(target_arch = "x86_64")]
-        let mut architecture = 0x0100_0007;
-        #[cfg(target_arch = "aarch64")]
-        let mut architecture = 0x0100_000c;
-        let mut accepted = 0;
-        // SAFETY: initialized attributes and exactly one valid CPU preference.
-        let status = unsafe {
-            libc::posix_spawnattr_setbinpref_np(
-                &mut attributes,
-                1,
-                &mut architecture,
-                &mut accepted,
-            )
-        };
-        if status != 0 || accepted != 1 {
-            return Err(std::io::Error::from_raw_os_error(if status == 0 {
-                libc::EINVAL
-            } else {
-                status
-            }));
-        }
-        // The Rust runtime ignores SIGPIPE; the game starts with the default.
-        let mut defaults = std::mem::MaybeUninit::<libc::sigset_t>::uninit();
-        // SAFETY: writable signal set storage, initialized by sigemptyset
-        // before sigaddset and posix_spawnattr_setsigdefault read it.
-        let status = unsafe {
-            libc::sigemptyset(defaults.as_mut_ptr());
-            libc::sigaddset(defaults.as_mut_ptr(), libc::SIGPIPE);
-            libc::posix_spawnattr_setsigdefault(&mut attributes, defaults.as_ptr())
-        };
-        if status != 0 {
-            return Err(std::io::Error::from_raw_os_error(status));
-        }
-        // SAFETY: SETEXEC replaces this PID, retaining supervisor parentage.
-        let status = unsafe {
-            libc::posix_spawnattr_setflags(
-                &mut attributes,
-                (libc::POSIX_SPAWN_SETEXEC | libc::POSIX_SPAWN_SETSIGDEF) as i16,
-            )
-        };
-        if status != 0 {
-            return Err(std::io::Error::from_raw_os_error(status));
-        }
-        unsafe extern "C" {
-            fn _NSGetEnviron() -> *mut *mut *mut c_char;
-        }
-        // SAFETY: argv is NUL terminated and all owned strings remain live. This
-        // startup path has not modified the inherited environment. It is passed
-        // verbatim, including non-UTF8 values.
-        let status = unsafe {
-            libc::posix_spawn(
-                std::ptr::null_mut(),
-                executable.as_ptr(),
-                std::ptr::null(),
-                &attributes,
-                argv.as_ptr(),
-                *_NSGetEnviron(),
-            )
-        };
-        // Successful SETEXEC never returns. Refuse an unexpected returned zero.
-        Err(std::io::Error::from_raw_os_error(if status == 0 {
-            libc::EIO
-        } else {
-            status
-        }))
-    })();
-    // SAFETY: attribute initialization succeeded; only failed exec returns here.
-    unsafe { libc::posix_spawnattr_destroy(&mut attributes) };
-    result
 }
 
 pub struct Library(*mut c_void);

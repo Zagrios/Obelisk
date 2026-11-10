@@ -44,7 +44,6 @@ impl lifecycle::Launch for Launch {
         &mut self,
         _: &Arc<Session<Gog>>,
         target: &Target,
-        _: Option<Architecture>,
         _: Option<&Self::Cloud>,
     ) -> Result<Prepared<()>> {
         Ok(self.request.prepared((), target))

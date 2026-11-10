@@ -4,7 +4,7 @@
 //! record one vocabulary of events. Only process inspection is replaced.
 use super::*;
 use crate::supervisor::client::Client;
-use std::{fs, path::Path};
+use std::{fs, path::Path, process::Command as Process};
 
 mod gog;
 mod recording;

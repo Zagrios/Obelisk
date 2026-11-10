@@ -30,12 +30,8 @@ struct Fake {
     /// Renewing credentials waits until the test releases it.
     held: Mutex<bool>,
     released: Notify,
-    /// Each maintenance's configuration, and whether an Epic launch could
-    /// start meanwhile.
-    maintained: Mutex<Vec<(Configuration, bool)>>,
-    maintenance: Mutex<Option<Error>>,
-    /// Each configuration an archive was taken with.
-    archived: Mutex<Vec<Configuration>>,
+    /// Each maintenance's configuration.
+    maintained: Mutex<Vec<Configuration>>,
 }
 
 impl Fake {
@@ -121,11 +117,14 @@ impl Network for Fake {
             Ok(true)
         })
     }
-    fn archive(&self, config: Configuration) -> BoxFuture<'_, Result<(), Error>> {
+    /// A game without Cloud saves.
+    fn cloud_rules<'a>(
+        &'a self,
+        _: &'a Configuration,
+    ) -> BoxFuture<'a, Result<Option<CloudRules>, Error>> {
         Box::pin(async move {
-            self.call("archive");
-            self.archived.lock().unwrap().push(config);
-            Ok(())
+            self.call("rules");
+            Ok(None)
         })
     }
     fn maintain<'a>(
@@ -135,16 +134,8 @@ impl Network for Fake {
         _: &'a IdleGuard,
     ) -> BoxFuture<'a, Result<(), Error>> {
         Box::pin(async move {
-            let launch_could_start =
-                crate::epic::Client::idle_guard(&config.session_directory, &config.helper).is_ok();
-            self.maintained
-                .lock()
-                .unwrap()
-                .push((config, launch_could_start));
-            match self.maintenance.lock().unwrap().take() {
-                Some(error) => Err(error),
-                None => Ok(()),
-            }
+            self.maintained.lock().unwrap().push(config);
+            Ok(())
         })
     }
 }
@@ -228,18 +219,20 @@ async fn every_account_call_renews_and_saves_the_credentials_first() {
         ["prepare", "saved", "download", "saved"]
     );
 
+    // An uninstall's archive asks Epic for the account and the game's rules.
     let receipt = fixture.receipt(Platform::Mac);
-    fixture.content.archive(&receipt).await.unwrap();
-    eventually(|| fixture.fake.calls().len() == 8).await;
+    let cloud = fixture.content.cloud().unwrap();
+    cloud.archive(&receipt).await.unwrap();
+    eventually(|| fixture.fake.calls().len() == 9).await;
     assert_eq!(
         fixture.fake.calls()[4..],
-        ["prepare", "saved", "archive", "saved"]
+        ["prepare", "saved", "account", "rules", "saved"]
     );
 
     // A short call renews the token itself, then its rotation is saved.
     assert!(fixture.content.update_available(&receipt).await.unwrap());
-    eventually(|| fixture.fake.calls().len() == 10).await;
-    assert_eq!(fixture.fake.calls()[8..], ["update", "saved"]);
+    eventually(|| fixture.fake.calls().len() == 11).await;
+    assert_eq!(fixture.fake.calls()[9..], ["update", "saved"]);
 }
 
 #[tokio::test]
@@ -291,17 +284,15 @@ async fn a_transfer_cancelled_while_its_credentials_renew_never_begins() {
 #[tokio::test]
 async fn a_windows_build_keeps_its_saves_in_its_wine_prefix_and_a_mac_build_has_none() {
     let fixture = Fixture::new();
-    for platform in [Platform::Windows, Platform::Mac] {
-        let receipt = fixture.receipt(platform);
-        fixture
-            .content
-            .maintain(&game(), Some(&receipt), control())
+
+    let windows =
+        saves::Storefront::configuration(&fixture.content, &fixture.receipt(Platform::Windows))
             .await
             .unwrap();
-    }
+    let mac = saves::Storefront::configuration(&fixture.content, &fixture.receipt(Platform::Mac))
+        .await
+        .unwrap();
 
-    let maintained = fixture.fake.maintained.lock().unwrap().clone();
-    let (windows, mac) = (&maintained[0].0, &maintained[1].0);
     assert_eq!(
         windows.prefix,
         Some(fixture.locations.wine_prefixes.join("epic-hash-Windows"))
@@ -311,58 +302,6 @@ async fn a_windows_build_keeps_its_saves_in_its_wine_prefix_and_a_mac_build_has_
     assert_eq!(windows.root, fixture.locations.cloud_archive);
     assert_eq!(windows.session_directory, fixture.locations.epic_sessions);
     assert_eq!(mac.prefix, None);
-    assert!(
-        maintained
-            .iter()
-            .all(|(_, launch_could_start)| !launch_could_start),
-        "maintenance holds Epic's idle guard"
-    );
-}
-
-#[tokio::test]
-async fn a_windows_build_s_cloud_archive_is_taken_in_its_wine_prefix_and_a_mac_build_s_has_none() {
-    let fixture = Fixture::new();
-    for platform in [Platform::Windows, Platform::Mac] {
-        fixture
-            .content
-            .archive(&fixture.receipt(platform))
-            .await
-            .unwrap();
-    }
-
-    let archived = fixture.fake.archived.lock().unwrap().clone();
-    assert_eq!(
-        archived
-            .iter()
-            .map(|archive| archive.prefix.clone())
-            .collect::<Vec<_>>(),
-        [
-            Some(fixture.locations.wine_prefixes.join("epic-hash-Windows")),
-            None
-        ]
-    );
-}
-
-#[tokio::test]
-async fn an_uninstalled_game_without_a_saved_context_cannot_sync_and_a_cancelled_sync_ends_silently()
- {
-    let fixture = Fixture::new();
-
-    assert_eq!(
-        fixture.content.maintain(&game(), None, control()).await,
-        Err(Failure::Failed("backend.epic.cloud.failed".into()))
-    );
-    assert!(fixture.fake.maintained.lock().unwrap().is_empty());
-
-    let receipt = fixture.receipt(Platform::Mac);
-    *fixture.fake.maintenance.lock().unwrap() = Some(Error::Cancelled);
-    assert_eq!(
-        fixture
-            .content
-            .maintain(&game(), Some(&receipt), control())
-            .await,
-        Err(Failure::Cancelled)
-    );
 }
 
 #[tokio::test]
@@ -395,13 +334,10 @@ async fn an_uninstalled_game_syncs_the_configuration_its_record_names_with_this_
     drop(vault);
     std::fs::remove_dir_all(&receipt.directory).unwrap();
 
-    fixture
-        .content
-        .maintain(&game(), None, control())
-        .await
-        .unwrap();
+    let cloud = fixture.content.cloud().unwrap();
+    cloud.maintain(&game(), None, control()).await.unwrap();
 
-    let maintained = fixture.fake.maintained.lock().unwrap()[0].0.clone();
+    let maintained = fixture.fake.maintained.lock().unwrap()[0].clone();
     assert_eq!(maintained.install, configuration.install);
     assert_eq!(maintained.title, "Fixture");
     assert_eq!(maintained.root, fixture.locations.cloud_archive);

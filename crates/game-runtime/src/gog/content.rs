@@ -1,9 +1,9 @@
 //! GOG's part of an account's installations: where each build lives, the
 //! credentials every account call renews and saves first, and what GOG's
 //! network does for them. Only the network is a seam; tests stand in for it.
-use super::{Configuration, Error, Gog, Product};
+use super::{Configuration, Gog, Product};
 use crate::{
-    Locations, cloud_status,
+    Locations,
     installations::{self, BoxFuture, Credentials, Receipt, Transfer},
     launch_shell::{self, NoCredential},
     sessions::{Admission, Failure, Storefront as _, failed},
@@ -225,13 +225,6 @@ impl<N: Network> installations::Content<Gog> for Content<N> {
             .await
         })
     }
-    /// GOG keeps no Cloud saves for Obelisk yet.
-    fn archive<'a>(&'a self, _: &'a Receipt<Gog>) -> BoxFuture<'a, Result<(), Failure>> {
-        Box::pin(async { Ok(()) })
-    }
-    fn removed<'a>(&'a self, _: &'a Receipt<Gog>) -> BoxFuture<'a, Result<(), Failure>> {
-        Box::pin(async { Ok(()) })
-    }
     fn directory_name(&self, receipt: &Receipt<Gog>) -> String {
         gog_kit::client::installation_directory_name(&receipt.product.product_id, receipt.platform)
     }
@@ -249,17 +242,6 @@ impl<N: Network> installations::Content<Gog> for Content<N> {
     }
     fn remove_prefix(&self, receipt: &Receipt<Gog>) -> Option<Result<(), String>> {
         receipt.remove_prefix(&self.locations)
-    }
-    fn maintain<'a>(
-        &'a self,
-        _: &'a String,
-        _: Option<&'a Receipt<Gog>>,
-        _: Arc<crate::cloud::Control>,
-    ) -> BoxFuture<'a, Result<(), Failure>> {
-        Box::pin(async { Err(failed(Error::Unsupported)) })
-    }
-    fn indicators(&self, _: &[String]) -> Result<Vec<(String, cloud_status::Indicator)>, Failure> {
-        Ok(Vec::new())
     }
 }
 

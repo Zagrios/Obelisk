@@ -1,16 +1,12 @@
-//! Each game's Cloud record, whatever the storefront: the work a Cloud sync
-//! leaves and the removal fence, and what Obelisk does with the record outside
-//! a sync: the uninstall archive, the removal, and the pending discovery behind
-//! the Cloud indicators. A storefront plugs in its saved record as a `Record`,
-//! which its Cloud sync adapter holds during a sync.
-use super::sync::{self, Failure as _, Pending, Work};
-use crate::{cloud_status, files::safe_storage_path};
+//! Each game's Cloud record, whatever the storefront: the configuration that
+//! places its saves, the work a Cloud sync leaves and the removal fence. A
+//! storefront plugs in its saved record as a `Record`, which its Cloud sync
+//! adapter holds during a sync and which `saves` reads between Game sessions.
+use super::sync::{self, Work};
+use crate::files::safe_storage_path;
 use cloud_vault::{AccountIdentity, Bindings, Manifest, StoreScope, Vault};
 use serde::de::DeserializeOwned;
-use std::{collections::BTreeSet, fs, path::Path};
-
-#[cfg(test)]
-pub(crate) mod tests;
+use std::{fs, path::Path};
 
 /// Where a game is installed and keeps its saves, as its storefront configures it.
 pub(crate) trait Configuration: Clone {
@@ -116,8 +112,15 @@ pub(crate) fn rebind<R: Record>(record: &mut R, configuration: R::Configuration)
     *record.configuration_mut() = configuration;
 }
 
+/// Whether `record` places the saves of the game's other build than the one
+/// under `configuration`: a Windows build keeps its saves in a Wine prefix, a
+/// Mac build in none. A build its engine moved to another prefix is the same.
+pub(crate) fn other_build<R: Record>(record: &R, configuration: &R::Configuration) -> bool {
+    record.configuration().prefix().is_some() != configuration.prefix().is_some()
+}
+
 /// From now on, a save missing locally may be one an uninstall removed.
-fn fence<R: Record>(record: &mut R) {
+pub(crate) fn fence<R: Record>(record: &mut R) {
     let mut work = record.work();
     work.installation_removed = true;
     record.set_work(work);
@@ -132,160 +135,4 @@ pub(crate) fn locked<R: Record>(
     let vault = Vault::open(configuration.root(), scope)?;
     let record = R::load(configuration, account)?;
     Ok((vault, record))
-}
-
-/// Before an uninstall removes the game's files: captures the saves under
-/// the installation's `configuration`, then raises the removal fence. It
-/// never creates work: an exit save or an upload still waiting stays as it
-/// is. After a partial uninstall, or once the saves moved to another Wine
-/// prefix, a save missing now keeps its archived version.
-pub(crate) fn archive<R: Record>(
-    vault: &mut Vault,
-    mut record: R,
-    configuration: R::Configuration,
-) -> Result<(), R::Failure> {
-    let gone = absent(configuration.install())?;
-    rebind(&mut record, configuration);
-    let fenced = gone || record.work().installation_removed;
-    let bindings = record.bindings(vault, None, false)?;
-    capture(vault, bindings, fenced)?;
-    // Persist before removal starts: recursive deletion can fail partway.
-    fence(&mut record);
-    record.save()
-}
-
-/// Records a completed uninstall: a save missing from now on is never read
-/// as deleted. Exit saves and uploads still waiting stay valid.
-pub(crate) fn removed<R: Record>(
-    configuration: &R::Configuration,
-    account: &R::Account,
-) -> Result<(), R::Failure> {
-    let (_vault, record) = locked::<R>(configuration, account)?;
-    let Some(mut record) = record else {
-        return Ok(());
-    };
-    if !absent(configuration.install())? {
-        return Err(R::Failure::recovery());
-    }
-    fence(&mut record);
-    record.save()
-}
-
-/// The Cloud indicators of `games`, plus every other game of `account` with
-/// pending work, such as an uninstalled one. Nothing here takes a lock: a game
-/// or maintenance may be writing these journals meanwhile.
-pub(crate) fn indicators<R: Record>(
-    root: &Path,
-    account: &AccountIdentity,
-    games: &[StoreScope],
-) -> Result<Vec<(StoreScope, cloud_status::Indicator)>, R::Failure> {
-    let mut wanted: BTreeSet<StoreScope> = games.iter().cloned().collect();
-    wanted.extend(pending::<R>(root, account)?);
-    let mut indicators = Vec::new();
-    for scope in wanted {
-        match indicator::<R>(root, &scope) {
-            Ok(indicator) => indicators.push((scope, indicator)),
-            Err(error) => eprintln!("Cloud indicator of {scope:?} unavailable: {}", error.key()),
-        }
-    }
-    Ok(indicators)
-}
-
-fn indicator<R: Record>(
-    root: &Path,
-    scope: &StoreScope,
-) -> Result<cloud_status::Indicator, R::Failure> {
-    let vault = cloud_vault::peek(root, scope.clone())?;
-    // No record: the game has no Cloud rules or was never checked.
-    let record = saved::<R>(root, scope)?;
-    let journal = journal(
-        record.as_ref().map(R::work).as_ref(),
-        record.as_ref().is_some_and(R::uncertain),
-    );
-    let status = cloud_status::read(root, scope)?;
-    Ok(cloud_status::indicator(scope, &vault, &journal, &status))
-}
-
-/// What Cloud maintenance of an uninstalled game syncs: the record it left.
-pub(crate) fn saved<R: Record>(root: &Path, scope: &StoreScope) -> Result<Option<R>, R::Failure> {
-    safe_storage_path(root)?;
-    read(root, &scope.directory(root)?)
-}
-
-/// The games of `account` whose Cloud work still waits. One unreadable record
-/// never hides the others' work.
-fn pending<R: Record>(
-    root: &Path,
-    account: &AccountIdentity,
-) -> Result<Vec<StoreScope>, R::Failure> {
-    safe_storage_path(root)?;
-    let directory = account.directory(root)?;
-    safe_storage_path(&directory)?;
-    if !directory.exists() {
-        return Ok(Vec::new());
-    }
-    let mut games = Vec::new();
-    for entry in fs::read_dir(directory).map_err(cloud_vault::Error::from)? {
-        let entry = entry.map_err(cloud_vault::Error::from)?;
-        if !entry
-            .file_type()
-            .map_err(cloud_vault::Error::from)?
-            .is_dir()
-        {
-            continue;
-        }
-        match waiting::<R>(root, &entry.path()) {
-            Ok(Some(scope)) => games.push(scope),
-            Ok(None) => {}
-            Err(error) => eprintln!(
-                "Cloud record of {} unreadable: {}",
-                entry.file_name().to_string_lossy(),
-                error.key()
-            ),
-        }
-    }
-    Ok(games)
-}
-
-/// The game whose record lives in `directory`, if its work still waits.
-fn waiting<R: Record>(root: &Path, directory: &Path) -> Result<Option<StoreScope>, R::Failure> {
-    let Some(record) = read::<R>(root, directory)? else {
-        return Ok(None);
-    };
-    let scope = R::scope(record.configuration(), record.account())?;
-    // Vault work outlives the record's: an uncertain upload or an
-    // interrupted replacement still needs this game's next sync.
-    let vault = cloud_vault::peek(root, scope.clone())?;
-    Ok(
-        (record.work().pending.is_some() || vault.pending.is_some() || vault.applying)
-            .then_some(scope),
-    )
-}
-
-/// A record read without the vault's lock, from the game directory it must
-/// name: one copied from another account, game or archive is refused.
-fn read<R: Record>(root: &Path, directory: &Path) -> Result<Option<R>, R::Failure> {
-    let path = directory.join(R::FILE);
-    safe_storage_path(&path)?;
-    let Some(record) = cloud_vault::journal::read::<R>(&path)? else {
-        return Ok(None);
-    };
-    record.check()?;
-    if record.configuration().root() != root
-        || R::scope(record.configuration(), record.account())?.directory(root)? != directory
-    {
-        return Err(cloud_vault::Error::Invalid.into());
-    }
-    Ok(Some(record))
-}
-
-/// What a game's Cloud indicator reads from its record's work.
-fn journal(work: Option<&Work>, uncertain: bool) -> cloud_status::Journal {
-    let pending = work.and_then(|work| work.pending.as_ref());
-    cloud_status::Journal {
-        pending: matches!(pending, Some(Pending::Capture | Pending::Upload { .. })),
-        uncertain,
-        applying: matches!(pending, Some(Pending::Applying { .. })),
-        installation_removed: work.is_some_and(|work| work.installation_removed),
-    }
 }

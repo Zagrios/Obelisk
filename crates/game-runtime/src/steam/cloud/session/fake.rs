@@ -1,6 +1,14 @@
 //! An in-memory Steam Cloud for session tests: one app's files, its Cloud
-//! rules and preferences, and failures injected into the next connection.
+//! rules and preferences, and failures injected into the next connection. An
+//! account's installations reach it as Steam's network, for their Cloud saves
+//! only.
 use super::*;
+use crate::{
+    installations::{BoxFuture, Receipt, Transfer},
+    sessions,
+    steam::{Steam, content::Network},
+};
+use obelisk_core::{Platform, installation::TransferProgress, launch::LaunchTarget};
 use sha1::{Digest, Sha1};
 use std::{
     collections::{BTreeMap, VecDeque},
@@ -115,15 +123,63 @@ impl FakeSteamCloud {
     pub(crate) fn downloads(&self) -> usize {
         self.state.lock().unwrap().downloads
     }
+}
 
-    /// The Cloud rules and listing Steam gives an uninstall archive, `None`
-    /// without Steam Cloud.
-    pub(crate) fn archive_rules(&self) -> Option<(CloudMetadata, CloudListing)> {
+/// Cloud saves ask Steam's network for no Transfer and no launch.
+impl Network for FakeSteamCloud {
+    fn platform<'a>(
+        &'a self,
+        _: u32,
+        _: &'a str,
+    ) -> BoxFuture<'a, Result<Platform, sessions::Failure>> {
+        unreachable!("Cloud saves pick no build")
+    }
+    fn download<'a>(
+        &'a self,
+        _: &'a Transfer<Steam>,
+    ) -> BoxFuture<'a, Result<steam_kit::client::Installation, sessions::Failure>> {
+        unreachable!("Cloud saves run no Transfer")
+    }
+    fn progress(&self) -> Option<TransferProgress> {
+        None
+    }
+    fn cancel(&self) {}
+    fn update_available<'a>(
+        &'a self,
+        _: &'a Receipt<Steam>,
+    ) -> BoxFuture<'a, Result<bool, sessions::Failure>> {
+        unreachable!("Cloud saves check no update")
+    }
+    fn launch_target<'a>(
+        &'a self,
+        _: u32,
+        _: Platform,
+        _: &'a std::path::Path,
+    ) -> BoxFuture<'a, Result<LaunchTarget, sessions::Failure>> {
+        unreachable!("Cloud saves launch nothing")
+    }
+    /// As Steam's client: rules and listing only for a game with Auto-Cloud
+    /// rules.
+    fn archive_rules(
+        &self,
+        _: u32,
+    ) -> BoxFuture<'_, Result<Option<(CloudMetadata, CloudListing)>, Failure>> {
         let state = self.state.lock().unwrap();
-        state
+        let rules = state
             .metadata
             .clone()
-            .map(|metadata| (metadata, state.listing()))
+            .filter(|metadata| metadata.field("savefiles").is_some())
+            .map(|metadata| (metadata, state.listing()));
+        Box::pin(async move { Ok(rules) })
+    }
+    fn maintain(
+        &self,
+        config: Config,
+        credentials: &Credentials,
+        control: Arc<Control>,
+        idle: &crate::steam::IdleGuard,
+    ) -> Result<(), Failure> {
+        maintain_over(self.handle(), config, credentials, control, idle)
     }
 }
 

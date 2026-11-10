@@ -1,8 +1,16 @@
 //! An in-memory Epic Cloud for session tests. It keeps one complete set,
 //! bumps the revision on every upload, counts the files it is asked to read,
-//! can fail the next calls and can change between a listing and its check.
+//! can fail the next calls and can change between a listing and its check. An
+//! account's installations reach it as Epic's network, for their Cloud saves
+//! only.
 use super::*;
+use crate::{
+    epic::{Product, content::Network},
+    installations::{BoxFuture, Receipt, Transfer},
+    sessions::Failure,
+};
 use epic_kit::cloud::CloudListing;
+use obelisk_core::installation::TransferProgress;
 use std::{
     collections::{BTreeSet, VecDeque},
     sync::Mutex,
@@ -182,5 +190,63 @@ impl CloudRemote for FakeCloud {
         state.uploads += 1;
         state.files = files.clone();
         Ok(state.listing(&self.account))
+    }
+}
+
+/// Cloud saves ask Epic's network for no Transfer and no launch.
+impl Network for FakeCloud {
+    fn prepare(&self) -> BoxFuture<'_, std::result::Result<(), Failure>> {
+        Box::pin(async { Ok(()) })
+    }
+    fn account_id(&self) -> BoxFuture<'_, std::result::Result<String, Failure>> {
+        Box::pin(async move { Ok(self.account.clone()) })
+    }
+    fn exchange_code(&self) -> BoxFuture<'_, std::result::Result<String, Failure>> {
+        unreachable!("Cloud saves launch nothing")
+    }
+    fn platform<'a>(
+        &'a self,
+        _: &'a Product,
+    ) -> BoxFuture<'a, std::result::Result<Platform, Failure>> {
+        unreachable!("Cloud saves pick no build")
+    }
+    fn download<'a>(
+        &'a self,
+        _: &'a Transfer<Epic>,
+    ) -> BoxFuture<'a, std::result::Result<epic_kit::client::Installation, Failure>> {
+        unreachable!("Cloud saves run no Transfer")
+    }
+    fn progress(&self) -> Option<TransferProgress> {
+        None
+    }
+    fn cancel(&self) {}
+    fn update_available<'a>(
+        &'a self,
+        _: &'a Receipt<Epic>,
+    ) -> BoxFuture<'a, std::result::Result<bool, Failure>> {
+        unreachable!("Cloud saves check no update")
+    }
+    fn cloud_rules<'a>(
+        &'a self,
+        config: &'a Configuration,
+    ) -> BoxFuture<'a, Result<Option<CloudRules>>> {
+        Box::pin(async move {
+            Ok(CloudRemote::cloud_configuration(
+                self,
+                &config.namespace,
+                &config.catalog_item_id,
+                &config.app_name,
+                config.platform,
+            )
+            .await?)
+        })
+    }
+    fn maintain<'a>(
+        self: Arc<Self>,
+        config: Configuration,
+        control: Arc<Control>,
+        idle: &'a IdleGuard,
+    ) -> BoxFuture<'a, Result<()>> {
+        Box::pin(maintain(config, self, control, idle))
     }
 }

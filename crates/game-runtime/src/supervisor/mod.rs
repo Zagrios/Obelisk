@@ -3,7 +3,6 @@
 //! stdin pipe; control uses session and account IDs. Each storefront plugs in
 //! as a `Provider`.
 pub(crate) mod architecture;
-mod child;
 pub(crate) mod client;
 pub mod exec;
 pub(crate) mod journal;
@@ -36,7 +35,7 @@ pub struct Identity {
     pub executable: String,
 }
 
-/// Durable ownership between spawning an architecture helper and observing its
+/// Durable ownership between spawning an exec helper and observing its
 /// replacement by the game. Missing inspection never proves that child exited.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum StartingGame {

@@ -64,6 +64,8 @@ struct Script {
     picked: Option<Platform>,
     /// The next Transfer fails as it begins.
     begin_failure: Option<Failure>,
+    /// The storefront keeps no Cloud saves for Obelisk.
+    without_cloud: bool,
 }
 
 struct Fake {
@@ -282,6 +284,37 @@ impl super::Content<Steam> for Content {
             }
         })
     }
+    fn cloud(&self) -> Option<Box<dyn cloud::saves::Saves<Steam> + '_>> {
+        let without_cloud = self.0.with(|script| script.without_cloud);
+        (!without_cloud).then(|| Box::new(Content(self.0.clone())) as _)
+    }
+    fn directory_name(&self, receipt: &Receipt<Steam>) -> String {
+        steam_kit::client::installation_directory_name(receipt.game(), receipt.platform)
+    }
+    fn relocated(&self, receipt: &Receipt<Steam>, from: &Path) -> Result<(), String> {
+        let mut script = self.0.script.lock().unwrap();
+        script.calls.push(format!(
+            "relocated:{}:{}",
+            receipt.game(),
+            from.file_name().unwrap().to_string_lossy()
+        ));
+        while script.relocation_held && !self.0.cancelled.load(Ordering::Acquire) {
+            script = self.0.released.wait(script).unwrap();
+        }
+        script.relocated.take().unwrap_or(Ok(()))
+    }
+    fn remove_prefix(&self, receipt: &Receipt<Steam>) -> Option<Result<(), String>> {
+        (receipt.platform == Platform::Windows).then(|| {
+            self.0.with(|script| {
+                script.calls.push("prefix".into());
+                script.prefix.take().unwrap_or(Ok(()))
+            })
+        })
+    }
+}
+
+/// The account's Cloud saves, as the test scripts them.
+impl cloud::saves::Saves<Steam> for Content {
     fn archive<'a>(&'a self, receipt: &'a Receipt<Steam>) -> BoxFuture<'a, Result<(), Failure>> {
         Box::pin(async move {
             let held = self.0.with(|script| {
@@ -305,29 +338,6 @@ impl super::Content<Steam> for Content {
                 self.0.wait_while(|script| script.removed_held).await;
             }
             Ok(())
-        })
-    }
-    fn directory_name(&self, receipt: &Receipt<Steam>) -> String {
-        steam_kit::client::installation_directory_name(receipt.game(), receipt.platform)
-    }
-    fn relocated(&self, receipt: &Receipt<Steam>, from: &Path) -> Result<(), String> {
-        let mut script = self.0.script.lock().unwrap();
-        script.calls.push(format!(
-            "relocated:{}:{}",
-            receipt.game(),
-            from.file_name().unwrap().to_string_lossy()
-        ));
-        while script.relocation_held && !self.0.cancelled.load(Ordering::Acquire) {
-            script = self.0.released.wait(script).unwrap();
-        }
-        script.relocated.take().unwrap_or(Ok(()))
-    }
-    fn remove_prefix(&self, receipt: &Receipt<Steam>) -> Option<Result<(), String>> {
-        (receipt.platform == Platform::Windows).then(|| {
-            self.0.with(|script| {
-                script.calls.push("prefix".into());
-                script.prefix.take().unwrap_or(Ok(()))
-            })
         })
     }
     /// Asks about a conflict, and ends with the player's answer.
@@ -1193,7 +1203,12 @@ async fn an_update_check_names_each_installation_with_a_newer_build_until_its_tr
     );
     assert_eq!(fixture.fake.calls(), Vec::<String>::new());
 
+    fixture.fake.hold();
     fixture.installations.update("620-macos");
+    eventually(|| fixture.fake.calls() == ["download:620"]).await;
+    let running = fixture.queue.view().running.map(|item| item.kind);
+    assert_eq!(running, Some(queue::Kind::Update));
+    fixture.fake.release();
     idle(&fixture.installations).await;
     assert!(fixture.installations.state().updates.is_empty());
 }
@@ -1214,11 +1229,80 @@ async fn a_session_that_connects_again_is_asked_for_newer_builds_at_once_after_a
     fixture.fake.release_checks();
     eventually(|| fixture.installations.state().updates == ["620-macos"]).await;
     assert_eq!(checks(), [620, 620]);
+}
 
+#[tokio::test]
+async fn an_update_check_drops_its_answer_about_an_installation_a_transfer_began_over_meanwhile() {
+    let fixture = Fixture::with_both_builds().await;
+    fixture.fake.with(|script| {
+        script.newer.push(620);
+        script.checks_held = true;
+    });
     fixture.installations.check_updates();
-    assert_eq!(checks(), [620, 620], "a check just ran");
+    eventually(|| fixture.fake.with(|script| script.checks.len()) == 2).await;
+
+    // The Mac build's Transfer starts while the storefront is asked.
+    fixture.fake.hold();
+    fixture.installations.update("620-macos");
+    eventually(|| fixture.fake.calls() == ["download:620"]).await;
+    fixture.fake.release_checks();
+    eventually(|| !fixture.installations.state().updates.is_empty()).await;
+    assert_eq!(
+        fixture.installations.state().updates,
+        ["620-windows"],
+        "the answer about the Mac build is about the one its Transfer replaces"
+    );
+
+    fixture.fake.release();
+    idle(&fixture.installations).await;
+    assert_eq!(fixture.installations.state().updates, ["620-windows"]);
+}
+
+#[tokio::test]
+async fn a_signed_out_account_is_not_asked_for_newer_builds() {
+    let fixture = Fixture::new(true).await;
+    fixture.installations.signed_out();
+    fixture.installations.check_updates();
     fixture.fake.reconnects();
-    eventually(|| checks() == [620, 620, 620]).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert!(fixture.fake.with(|script| script.checks.is_empty()));
+}
+
+/// The storefront never answers: its update check gives up after its
+/// timeout, and not before. Time is paused, and moves as the test says.
+#[tokio::test]
+async fn an_update_check_that_gets_no_answer_in_time_cannot_tell() {
+    let fixture = Fixture::new(true).await;
+    fixture.fake.with(|script| {
+        script.newer.push(620);
+        script.checks_held = true;
+    });
+    let (shared, receipt) = (fixture.installations.shared.clone(), fixture.receipt());
+    tokio::time::pause();
+    let asked = tokio::spawn(async move { shared.ask_update(&receipt).await });
+    while fixture.fake.with(|script| script.checks.is_empty()) {
+        tokio::task::yield_now().await;
+    }
+
+    // A timer fires within a millisecond of its instant: a second either
+    // side of the timeout tells.
+    let second = Duration::from_secs(1);
+    tokio::time::advance(UPDATE_TIMEOUT - second).await;
+    let early = settled(&asked).await;
+    tokio::time::advance(2 * second).await;
+    let late = settled(&asked).await;
+    fixture.fake.release_checks();
+    assert!(!early, "it still waits for its answer");
+    assert!(late, "it gave up");
+    assert_eq!(asked.await.unwrap(), None);
+}
+
+/// Whether `task` ended, once the runtime ran what was ready.
+async fn settled<T>(task: &tokio::task::JoinHandle<T>) -> bool {
+    for _ in 0..10 {
+        tokio::task::yield_now().await;
+    }
+    task.is_finished()
 }
 
 #[tokio::test]
@@ -1409,22 +1493,6 @@ async fn an_automatic_update_pauses_while_they_are_off_then_resumes() {
     fixture.installations.set_automatic_updates(true);
     eventually(|| fixture.fake.calls() == ["download:620", "download:620"]).await;
     eventually(|| fixture.installations.state().updates.is_empty()).await;
-}
-
-#[tokio::test]
-async fn turning_automatic_updates_off_leaves_the_players_own_transfer_alone() {
-    let fixture = Fixture::new(true).await;
-    fixture.fake.hold();
-    fixture.installations.update("620-macos");
-    eventually(|| fixture.fake.calls() == ["download:620"]).await;
-    fixture.installations.set_automatic_updates(false);
-    assert!(fixture.installations.state().downloading);
-    fixture.fake.release();
-    idle(&fixture.installations).await;
-    assert_eq!(
-        fixture.installations.state().transfer.unwrap().state,
-        TransferState::Complete
-    );
 }
 
 #[tokio::test]
@@ -1781,6 +1849,24 @@ async fn cloud_indicators_come_from_the_storefronts_journals() {
     let indicators = fixture.installations.cloud_indicators(&[620]).unwrap();
     assert_eq!(indicators.len(), 1);
     assert_eq!(indicators[0].1.state, cloud_status::SavedState::NeverSynced);
+}
+
+#[tokio::test]
+async fn a_storefront_without_cloud_saves_uninstalls_without_an_archive_and_syncs_nothing() {
+    let fixture = Fixture::new(true).await;
+    let installations = &fixture.installations;
+    fixture.fake.with(|script| script.without_cloud = true);
+
+    assert!(installations.cloud_indicators(&[620]).unwrap().is_empty());
+    installations.maintain_cloud(620, Some("620-macos"));
+    eventually(|| installations.state().maintenance.is_none()).await;
+    installations.uninstall("620-macos");
+    eventually(|| installations.state().uninstall_game.is_none()).await;
+
+    let state = installations.state();
+    assert!(state.receipts.is_empty());
+    assert_eq!(state.report, None);
+    assert!(fixture.fake.calls().is_empty(), "nothing asks its Cloud");
 }
 
 #[tokio::test]

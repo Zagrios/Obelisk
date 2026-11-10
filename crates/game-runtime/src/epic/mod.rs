@@ -13,7 +13,6 @@ pub use crate::supervisor::{FailureReason, Phase};
 pub use launch::serve;
 use obelisk_core::{Platform, transfer::CancelToken};
 use serde::{Deserialize, Serialize};
-pub use session::{archive, maintain};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,

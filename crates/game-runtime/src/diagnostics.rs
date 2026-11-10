@@ -82,7 +82,7 @@ pub fn game_log(home: &Path, game: Game<'_>, build: Platform) -> PathBuf {
 /// Opens `log` empty for a new launch. The last launch's log stays beside it
 /// as `<name>.previous.log`: a player who relaunches a game that crashed
 /// still has the crash's log to send.
-pub fn open_log(log: &Path) -> io::Result<File> {
+pub(crate) fn open_log(log: &Path) -> io::Result<File> {
     use std::os::unix::fs::OpenOptionsExt;
     let _ = fs::rename(log, previous_log(log));
     fs::OpenOptions::new()

@@ -1,6 +1,6 @@
 //! The Steam launch through the shared lifecycle suite. Its machine and
-//! Steam Cloud are fakes that follow the suite's script; the handoff, the
-//! native host's interruption and the helper choice are the adapter's own.
+//! Steam Cloud are fakes that follow the suite's script; the handoff and the
+//! native host's interruption are the adapter's own.
 use super::*;
 use crate::supervisor::session::tests::{
     Harness, Script, fixture_directory, hold, inspect, lifecycle_suite, record, rosetta_suite,
@@ -120,9 +120,8 @@ impl Machine for FakeMac {
             &config.cache,
         )?;
         record(&directory, "host.prepare");
-        // Both helpers are the suite's; the adapter chooses between them.
+        // The bundled host is the suite's exec helper.
         write_helper(&config.helpers.join(package::HOST), &directory, &script);
-        write_helper(&config.cache.join(package::SDK_INTEL), &directory, &script);
         fs::write(directory.join("host-pid"), host.pid().to_string()).unwrap();
         Ok(host)
     }

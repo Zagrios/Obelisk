@@ -192,14 +192,12 @@ impl<const BEGIN: bool> Launch for Recorder<BEGIN> {
         &mut self,
         _: &Arc<Session<Recording>>,
         target: &Target,
-        _: Option<Architecture>,
         _: Option<&Cloud>,
     ) -> Result<Prepared<()>, Failure> {
         record(&self.directory, "host.prepare");
         Ok(Prepared {
             host: (),
             helper: self.directory.join("helper"),
-            subcommand: "game-exec",
             environment: target.environment.clone(),
         })
     }

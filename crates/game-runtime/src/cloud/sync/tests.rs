@@ -2,8 +2,10 @@
 //! harness puts an in-memory storefront Cloud behind its real adapter.
 use super::*;
 use crate::cloud::Status;
-use crate::cloud::record;
+use crate::cloud::{record, saves};
 use crate::cloud_status::{Indicator, Record, SavedState};
+use crate::installations::Receipt;
+use crate::sessions;
 use crate::supervisor::client::no_other_session;
 use cloud_vault::{AccountIdentity, StoreScope};
 use std::{
@@ -20,6 +22,9 @@ pub(crate) type RecordOf<H> = <<H as Harness>::Store as Storefront>::Record;
 #[allow(async_fn_in_trait)]
 pub(crate) trait Harness: Sized + 'static {
     type Store: Storefront;
+    /// The storefront's own adapter of the account's Cloud saves between Game
+    /// sessions, over the same in-memory Cloud.
+    type Saves: saves::Storefront<Record = RecordOf<Self>>;
     /// What the storefront reports when the game has no Cloud rules.
     const NO_RULES: UnavailableReason;
     fn game() -> Self;
@@ -39,12 +44,17 @@ pub(crate) trait Harness: Sized + 'static {
     fn fail_next(&self, transient: bool);
     fn failure_key(&self) -> String;
     fn set_rules(&self, available: bool);
+    /// The storefront gives Cloud rules for the game's other build only.
+    fn set_rules_of_another_build(&self);
     /// The game becomes a Windows build that runs in `prefix`, where its
     /// save's folder exists, as once an engine readied that prefix.
     fn run_in(&mut self, prefix: &Path);
-    /// Archives the saves before an uninstall, under the storefront's rules.
-    async fn archive(&self) -> Result<(), Of<Self>>;
-    async fn maintain(&self, alive: &SessionAlive<'_>) -> Result<(), Of<Self>>;
+    fn saves(&self) -> &Self::Saves;
+    /// The game, as the account's library names it.
+    fn library_game(&self) -> saves::Game<Self::Saves>;
+    /// The Installation receipt of the game's build: the Windows one once
+    /// it runs in a Wine prefix.
+    fn receipt(&self) -> Receipt<<Self::Saves as saves::Storefront>::Of>;
     /// Where the game is installed and keeps its saves now.
     fn configuration(&self) -> <RecordOf<Self> as record::Record>::Configuration;
     fn account_id(&self) -> &<RecordOf<Self> as record::Record>::Account;
@@ -84,14 +94,14 @@ fn conflict_key<H: Harness>() -> String {
 /// This game's Cloud indicator, whether or not it was requested.
 pub(crate) fn indicator<H: Harness>(game: &H, requested: bool) -> Option<Indicator> {
     let requested = if requested {
-        vec![game.scope()]
+        vec![game.library_game()]
     } else {
         Vec::new()
     };
-    record::indicators::<RecordOf<H>>(&game.root(), &game.account(), &requested)
+    saves::indicators(game.saves(), &requested)
         .unwrap()
         .into_iter()
-        .find(|(scope, _)| *scope == game.scope())
+        .find(|(shown, _)| *shown == game.library_game())
         .map(|(_, indicator)| indicator)
 }
 /// Pending discovery lists this game.
@@ -99,11 +109,26 @@ pub(crate) fn listed<H: Harness>(game: &H) -> bool {
     indicator(game, false).is_some()
 }
 
+/// The archive an uninstall takes before the game's files go.
+pub(crate) async fn archive<H: Harness>(game: &H) -> Result<(), sessions::Failure> {
+    saves::archive(game.saves(), game.configuration()).await
+}
+
+/// The removal of the game's installation, recorded.
+pub(crate) async fn record_removal<H: Harness>(game: &H) -> Result<(), sessions::Failure> {
+    saves::removed(game.saves(), game.configuration()).await
+}
+
 /// Archives the saves, removes the installation and records the removal.
 pub(crate) async fn uninstall<H: Harness>(game: &H) {
-    game.archive().await.unwrap();
+    archive(game).await.unwrap();
     fs::remove_dir_all(game.install()).unwrap();
-    record::removed::<RecordOf<H>>(&game.configuration(), game.account_id()).unwrap();
+    record_removal(game).await.unwrap();
+}
+
+/// A Cloud failure, as the player sees it.
+pub(crate) fn player_sees<H: Harness>(failure: Of<H>) -> sessions::Failure {
+    sessions::Failure::Failed(failure.key())
 }
 
 /// A first launch that finds both sides equal and records the baseline.
@@ -131,18 +156,33 @@ fn reinstall<H: Harness>(game: &H) {
     fs::create_dir_all(game.save().parent().unwrap()).unwrap();
 }
 
-async fn maintain<H: Harness>(game: &H) -> Result<(), Of<H>> {
-    maintain_beside(game, &no_other_session).await
+/// Waits until nothing holds the idle guard a maintenance dropped in
+/// `sessions`: a process another test forks may keep its locks until its exec.
+pub(crate) fn idle_guard_released(sessions: &Path) {
+    for lock in ["start.lock", "owner.lock"] {
+        let lock = sessions.join(lock);
+        if lock.exists() {
+            crate::tests::wait_for_lock_release(&lock);
+        }
+    }
 }
-async fn maintain_beside<H: Harness>(game: &H, alive: &SessionAlive<'_>) -> Result<(), Of<H>> {
+
+/// Cloud maintenance of the game: of its installation, or, once that is gone,
+/// of what its record names.
+pub(crate) async fn maintain<H: Harness>(game: &H) -> Result<(), sessions::Failure> {
+    use saves::Storefront as _;
+    idle_guard_released(game.saves().sessions().0);
+    let installed = game.install().exists().then(|| game.configuration());
+    let (library_game, control) = (game.library_game(), Arc::clone(game.control()));
+    let maintenance = saves::maintain(game.saves(), &library_game, installed, control);
     // A maintenance never waits on a question it should not ask.
-    tokio::time::timeout(Duration::from_secs(20), game.maintain(alive))
+    tokio::time::timeout(Duration::from_secs(20), maintenance)
         .await
         .expect("maintenance finished")
 }
 
 /// Waits for a Cloud question newer than decision `after`.
-fn next_question(control: &Control, after: u64) -> Status {
+pub(crate) fn next_question(control: &Control, after: u64) -> Status {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         let status = control.status();
@@ -530,7 +570,7 @@ pub(crate) async fn maintenance_asks_about_a_conflict_and_cancel_keeps_the_work_
     let cancelled = maintain(&game).await.unwrap_err();
 
     answering.join().unwrap();
-    assert_eq!(cancelled.kind(), Kind::Cancelled);
+    assert_eq!(cancelled, sessions::Failure::Cancelled);
     assert_eq!(record(&game).problem.unwrap().kind, ProblemKind::Conflict);
     assert!(listed(&game));
     let answering = answer(game.control(), Choice::Local);
@@ -547,7 +587,7 @@ pub(crate) async fn maintenance_leaves_unchanged_saves_unqueued_when_it_fails<H:
 
     let failed = maintain(&game).await.unwrap_err();
 
-    assert_eq!(failed.key(), game.failure_key());
+    assert_eq!(failed, sessions::Failure::Failed(game.failure_key()));
     assert!(status(&game).allowed_choices.is_empty());
     let problem = record(&game).problem.unwrap();
     assert_eq!(problem.kind, ProblemKind::Failed);
@@ -579,7 +619,7 @@ pub(crate) async fn maintenance_keeps_the_guard_of_a_game_session_that_still_run
     fs::write(game.save(), b"still playing").unwrap();
     drop(sync);
 
-    let refused = maintain_beside(&game, &|_| Ok(true)).await.unwrap_err();
+    let refused = game.open().maintain(&|_| Ok(true)).await.unwrap_err();
 
     assert_eq!(refused.key(), Of::<H>::from(cloud_vault::Error::Busy).key());
     assert_eq!(game.cloud().unwrap(), b"old");
@@ -662,7 +702,7 @@ pub(crate) async fn a_missing_installation_without_an_uninstall_keeps_the_saved_
 
     let refused = maintain(&game).await.unwrap_err();
 
-    assert_eq!(refused.key(), Of::<H>::recovery().key());
+    assert_eq!(refused, player_sees::<H>(Of::<H>::recovery()));
     assert!(uploading(pending(&game)).is_some());
     assert!(listed(&game));
 }

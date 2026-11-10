@@ -5,10 +5,13 @@
 //! what may start. The account's Installation receipts live in its receipt
 //! book, and each action names one of them: the Transfers it needs are built
 //! here and wait in the process's download queue. So is the account's one
-//! Cloud question, whichever sync asks it.
+//! Cloud question, whichever sync asks it. Its update watch says when the
+//! storefront is asked for newer builds, what it then knows of them, and
+//! which Obelisk installs on its own.
 mod receipt;
 mod receipt_book;
 mod reservation;
+mod update_watch;
 
 use crate::{
     cloud, cloud_status,
@@ -39,12 +42,10 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::watch;
+use update_watch::{Asked, UpdateWatch};
 
 /// How often a running Transfer's progress is read.
 const PROGRESS: Duration = Duration::from_millis(250);
-/// How long the installations' newer builds stay known before the
-/// storefront is asked again.
-const UPDATE_CHECK: Duration = Duration::from_secs(10 * 60);
 /// How long one installation's update check may take. A launch that waits
 /// longer starts the installed build.
 const UPDATE_TIMEOUT: Duration = Duration::from_secs(15);
@@ -87,9 +88,9 @@ pub trait Storefront: sessions::Storefront {
     }
 }
 
-/// A storefront's part of one account's installations: where its games and
-/// their Cloud saves live, and what its session does for them. Steam's and
-/// Epic's are `steam::content` and `epic::content`.
+/// A storefront's part of one account's installations: where its games
+/// live, and what its session does for them. Steam's and Epic's are
+/// `steam::content` and `epic::content`.
 pub trait Content<S: Storefront>: Send + Sync {
     /// Starts `transfer` before its runtimes: renews and saves the account's
     /// credentials for a storefront whose session rotates them, and returns
@@ -129,10 +130,11 @@ pub trait Content<S: Storefront>: Send + Sync {
         admission: Admission<S>,
         join: Option<&'a S::Join>,
     ) -> BoxFuture<'a, Result<(), Failure>>;
-    /// Saves the game's Cloud archive before its files go.
-    fn archive<'a>(&'a self, receipt: &'a Receipt<S>) -> BoxFuture<'a, Result<(), Failure>>;
-    /// Records the removal for Cloud sync. Runs even after sign-out.
-    fn removed<'a>(&'a self, receipt: &'a Receipt<S>) -> BoxFuture<'a, Result<(), Failure>>;
+    /// The account's Cloud saves between Game sessions. None for a
+    /// storefront that keeps no Cloud saves for Obelisk yet.
+    fn cloud(&self) -> Option<Box<dyn cloud::saves::Saves<S> + '_>> {
+        None
+    }
     /// The dedicated folder name the storefront installed `receipt` into.
     fn directory_name(&self, receipt: &Receipt<S>) -> String;
     /// Follows the installation `receipt` names, which moved from `from`:
@@ -142,21 +144,6 @@ pub trait Content<S: Storefront>: Send + Sync {
     /// Deletes a Windows installation's Wine prefix once its folder is gone.
     /// `None` when the installation has none.
     fn remove_prefix(&self, receipt: &Receipt<S>) -> Option<Result<(), String>>;
-    /// Syncs the game's Cloud saves on the player's request: those of
-    /// `installed`, or, for an uninstalled game, those its saved Cloud context
-    /// names. `control` shows the sync's progress and asks the player.
-    fn maintain<'a>(
-        &'a self,
-        game: &'a S::Game,
-        installed: Option<&'a Receipt<S>>,
-        control: Arc<cloud::Control>,
-    ) -> BoxFuture<'a, Result<(), Failure>>;
-    /// The Cloud indicators of `games` from their journals, and of every other
-    /// game of the account with pending work. It blocks on file reads.
-    fn indicators(
-        &self,
-        games: &[S::Game],
-    ) -> Result<Vec<(S::Game, cloud_status::Indicator)>, Failure>;
 }
 
 /// Cloud maintenance of one game, which the player asked for: its sync's
@@ -289,6 +276,16 @@ enum Job {
     Move,
 }
 
+impl Job {
+    /// The receipt Obelisk updates on its own with it, by its id.
+    fn automatic(&self) -> Option<&str> {
+        match self {
+            Job::Transfer { automatic } => automatic.as_deref(),
+            Job::Launch | Job::Move => None,
+        }
+    }
+}
+
 /// Where an account's Transfers queue, and how the queue names them.
 pub struct Queueing<S: Storefront> {
     pub queue: Arc<DownloadQueue>,
@@ -321,17 +318,9 @@ struct Inner<S: Storefront> {
     /// The last question answered, by the sync that asked it: it no longer
     /// shows, until that sync asks another.
     answered: Option<(String, u64)>,
-    /// An update check asks the storefront now.
-    checking_updates: bool,
-    /// The session connected again while it asked: another check follows.
-    check_again: bool,
-    /// When the last update check finished.
-    updates_checked: Option<Instant>,
-    /// The player wants each newer build installed as soon as it is known.
-    automatic_updates: bool,
-    /// The receipts updated automatically since the last update check: one
-    /// that failed or was stopped waits for the next check.
-    automatic_skipped: Vec<String>,
+    /// The account's update watch. The state's `updates` show what it knows
+    /// as of the last `Shared::update`, the only code that writes them.
+    updates: UpdateWatch,
     /// The account's Transfers in the download queue, waiting or running.
     queued: Vec<Queued<S>>,
     /// The queue id of the account's Transfer under way.
@@ -386,15 +375,10 @@ impl<S: Storefront> Owner for Shared<S> {
         let started = self.update(|inner| {
             let queued = inner.queued.iter().find(|queued| queued.id == id)?;
             let transfer = queued.transfer.clone();
-            let automatic = match &queued.job {
-                Job::Transfer { automatic } => automatic.clone(),
-                _ => None,
-            };
-            if let Some(receipt) = &automatic {
-                inner.automatic_skipped.push(receipt.clone());
-            }
+            let automatic = queued.job.automatic().is_some();
+            inner.updates.started(&queued.job);
             self.begin_in(inner, id, &transfer);
-            Some((transfer, automatic.is_some()))
+            Some((transfer, automatic))
         });
         let Some((transfer, automatic)) = started else {
             self.queueing.queue.finished(id);
@@ -470,10 +454,11 @@ impl<S: Storefront> Shared<S> {
         inner.state.gate = Reservation::of(&inner, &sessions).gate();
         inner.state.cloud_sync = cloud_sync(&inner, &sessions, &self.account);
         if inner.state.receipts != before.receipts {
-            let State {
-                updates, receipts, ..
-            } = &mut inner.state;
-            updates.retain(|id| receipts.iter().any(|receipt| receipt.id() == *id));
+            let Inner { updates, book, .. } = &mut *inner;
+            updates.receipts_changed(book.shown());
+        }
+        if inner.state.updates != inner.updates.known() {
+            inner.state.updates = inner.updates.known().to_vec();
         }
         // A game whose move waits still launches until its turn.
         let mut queued = Vec::new();
@@ -636,11 +621,7 @@ impl<S: Storefront> Shared<S> {
             if automatic.is_none() {
                 inner.state.report = None;
             }
-            let kind = match inner.book.landing(&transfer) {
-                None => queue::Kind::Install,
-                Some(receipt) if inner.state.updates.contains(&receipt.id()) => queue::Kind::Update,
-                Some(_) => queue::Kind::Repair,
-            };
+            let kind = inner.updates.transfer_kind(inner.book.landing(&transfer));
             // The queue calls no owner while it adds: the game is queued at once.
             let id = self.queueing.queue.push(
                 &self.owner(),
@@ -726,20 +707,10 @@ impl<S: Storefront> Shared<S> {
     fn update_automatically(self: &Arc<Self>) {
         let transfers: Vec<(Transfer<S>, String)> = {
             let inner = self.inner.lock().unwrap();
-            if !inner.automatic_updates {
-                return;
-            }
             let modify = self.gate(&inner).modify;
             inner
-                .book
-                .shown()
-                .iter()
-                .filter(|receipt| {
-                    let id = receipt.id();
-                    inner.state.updates.contains(&id)
-                        && !inner.automatic_skipped.contains(&id)
-                        && modify.allows(&receipt.game())
-                })
+                .updates
+                .due(inner.book.shown(), &modify)
                 .map(|receipt| {
                     let transfer = inner
                         .resumable(&receipt.game())
@@ -762,36 +733,16 @@ impl<S: Storefront> Shared<S> {
             .ok()
     }
 
-    /// Records whether the receipt `id` has a newer build, which the state
-    /// then shows.
-    fn mark_update(inner: &mut Inner<S>, id: String, available: bool) {
-        inner.state.updates.retain(|kept| *kept != id);
-        if available {
-            inner.state.updates.push(id);
-        }
-    }
-
-    /// Asks whether each installation has a newer build, unless a check ran
-    /// less than ten minutes ago. Once the session connected `again`, it
-    /// asks at once, as a new sign-in would, or as soon as the check under
-    /// way ends.
-    fn check_updates(self: &Arc<Self>, again: bool) {
+    /// Asks whether each installation has a newer build, when the update
+    /// watch lets a check start: `asked` tells why. A signed-out account
+    /// asks nothing.
+    fn check_updates(self: &Arc<Self>, asked: Asked) {
         let started = self.update(|inner| {
             if inner.signed_out {
                 return None;
             }
-            if inner.checking_updates {
-                inner.check_again |= again;
-                return None;
-            }
-            let recent = inner
-                .updates_checked
-                .is_some_and(|checked| checked.elapsed() < UPDATE_CHECK);
-            if recent && !again {
-                return None;
-            }
-            inner.checking_updates = true;
-            Some(inner.book.shown().to_vec())
+            let Inner { updates, book, .. } = inner;
+            updates.check(asked, Instant::now(), book.shown())
         });
         let Some(receipts) = started else {
             return;
@@ -801,10 +752,6 @@ impl<S: Storefront> Shared<S> {
             // Every installation is asked at once, each within its timeout.
             let mut checks = tokio::task::JoinSet::new();
             for receipt in receipts {
-                // An interrupted Transfer is repaired before its game launches.
-                if receipt.needs_verification {
-                    continue;
-                }
                 let shared = shared.clone();
                 checks.spawn(async move {
                     let available = shared.ask_update(&receipt).await;
@@ -817,22 +764,15 @@ impl<S: Storefront> Shared<S> {
                     found.push((receipt, available));
                 }
             }
+            // The answers are read against the receipts as they are now: a
+            // Transfer may have replaced one while the storefront was asked.
             let again = shared.update(|inner| {
-                inner.checking_updates = false;
-                inner.updates_checked = Some(Instant::now());
-                inner.automatic_skipped.clear();
-                for (receipt, available) in found {
-                    // A Transfer replaced the receipt meanwhile: its answer is
-                    // about the build it replaced.
-                    if inner.book.shown().contains(&receipt) {
-                        Shared::mark_update(inner, receipt.id(), available);
-                    }
-                }
-                std::mem::take(&mut inner.check_again)
+                let Inner { updates, book, .. } = inner;
+                updates.checked(Instant::now(), found, book.shown())
             });
             shared.update_automatically();
             if again {
-                shared.check_updates(true);
+                shared.check_updates(Asked::Reconnected);
             }
         });
     }
@@ -840,7 +780,7 @@ impl<S: Storefront> Shared<S> {
     /// Asks whether `receipt`'s installation has a newer build, and records it.
     async fn newer_build(&self, receipt: &Receipt<S>) -> Option<bool> {
         let available = self.ask_update(receipt).await?;
-        self.update(|inner| Self::mark_update(inner, receipt.id(), available));
+        self.update(|inner| inner.updates.learned(receipt.id(), available));
         Some(available)
     }
 
@@ -934,9 +874,8 @@ impl<S: Storefront> Shared<S> {
             .filter(|progress| progress.game == name && progress.state == settled);
         self.update(|inner| {
             if let Ok(receipt) = &outcome {
-                let id = receipt.id();
                 inner.book.installed(receipt.clone());
-                inner.state.updates.retain(|kept| *kept != id);
+                inner.updates.installed(&receipt.id());
                 inner.state.last_download = None;
             }
             match last {
@@ -1193,11 +1132,7 @@ impl<S: Storefront> Installations<S> {
             maintenance: None,
             maintenances: 0,
             answered: None,
-            checking_updates: false,
-            check_again: false,
-            updates_checked: None,
-            automatic_updates: false,
-            automatic_skipped: Vec::new(),
+            updates: UpdateWatch::default(),
             queued: Vec::new(),
             running: None,
         };
@@ -1262,7 +1197,7 @@ impl<S: Storefront> Installations<S> {
             loop {
                 connection = content.reconnected(connection).await;
                 let Some(shared) = weak.upgrade() else { return };
-                shared.check_updates(true);
+                shared.check_updates(Asked::Reconnected);
             }
         });
         shared
@@ -1337,24 +1272,13 @@ impl<S: Storefront> Installations<S> {
     /// verified for the next time.
     pub fn set_automatic_updates(&self, enabled: bool) {
         let withdrawn: Vec<u64> = self.shared.update(|inner| {
-            inner.automatic_updates = enabled;
-            if enabled {
-                return Vec::new();
-            }
-            let automatic: Vec<(u64, String)> = inner
-                .queued
-                .iter()
-                .filter_map(|queued| match &queued.job {
-                    Job::Transfer {
-                        automatic: Some(receipt),
-                    } => Some((queued.id, receipt.clone())),
-                    _ => None,
-                })
-                .collect();
-            inner
-                .automatic_skipped
-                .retain(|receipt| !automatic.iter().any(|(_, withdrawn)| withdrawn == receipt));
-            automatic.into_iter().map(|(id, _)| id).collect()
+            let Inner {
+                updates, queued, ..
+            } = inner;
+            updates.set_automatic(
+                enabled,
+                queued.iter().map(|queued| (queued.id, &queued.job)),
+            )
         });
         for id in withdrawn {
             self.shared.queueing.queue.remove(id);
@@ -1431,7 +1355,7 @@ impl<S: Storefront> Installations<S> {
     /// most once every ten minutes; the state then names those that do. An
     /// installation it cannot tell about keeps what was known.
     pub fn check_updates(&self) {
-        self.shared.check_updates(false);
+        self.shared.check_updates(Asked::Routine);
     }
 
     /// Launches the installation `receipt` names. A Transfer runs first,
@@ -1703,10 +1627,9 @@ impl<S: Storefront> Installations<S> {
         };
         let shared = shared.clone();
         runtime().spawn(async move {
-            let _ = shared
-                .content
-                .maintain(&game, installed.as_ref(), control)
-                .await;
+            if let Some(cloud) = shared.content.cloud() {
+                let _ = cloud.maintain(&game, installed.as_ref(), control).await;
+            }
             shared.update(|inner| {
                 if inner
                     .maintenance
@@ -1785,7 +1708,10 @@ impl<S: Storefront> Installations<S> {
         &self,
         games: &[S::Game],
     ) -> Result<Vec<(S::Game, cloud_status::Indicator)>, Failure> {
-        self.shared.content.indicators(games)
+        match self.shared.content.cloud() {
+            Some(cloud) => cloud.indicators(games),
+            None => Ok(Vec::new()),
+        }
     }
 }
 
@@ -1797,7 +1723,10 @@ impl<S: Storefront> Shared<S> {
         if signed_out() {
             return Ok(false);
         }
-        self.content.archive(receipt).await?;
+        let cloud = self.content.cloud();
+        if let Some(cloud) = &cloud {
+            cloud.archive(receipt).await?;
+        }
         if signed_out() {
             return Ok(false);
         }
@@ -1820,13 +1749,17 @@ impl<S: Storefront> Shared<S> {
         if let Err(error) = removal {
             // Receipt persistence can fail after the folder was removed. The
             // Cloud fence must still record that removal.
-            if !Path::new(&receipt.directory).exists() {
-                self.content.removed(receipt).await?;
+            if let Some(cloud) = &cloud
+                && !Path::new(&receipt.directory).exists()
+            {
+                cloud.removed(receipt).await?;
             }
             return Err(error);
         }
         // Removal is never a Cloud delete.
-        self.content.removed(receipt).await?;
+        if let Some(cloud) = &cloud {
+            cloud.removed(receipt).await?;
+        }
         // As Steam deletes a Proton prefix, the prefix goes with its game,
         // after the Cloud archive took its saves.
         let (content, receipt) = (self.content.clone(), receipt.clone());

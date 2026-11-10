@@ -7,13 +7,12 @@ use crate::supervisor::architecture::Architecture;
 use obelisk_core::{OnlineStatus, transfer::CancelToken};
 use std::{
     io::{Read, Write},
-    os::fd::OwnedFd,
     os::unix::{
         fs::PermissionsExt,
         net::{UnixListener, UnixStream},
     },
     path::Path,
-    process::{Command as Process, Stdio},
+    process::Stdio,
     sync::{
         Arc, Condvar, Mutex, OnceLock,
         atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
@@ -79,9 +78,8 @@ pub(crate) struct Opening<P: Provider> {
 /// A prepared game, ready for exec admission.
 pub(crate) struct Prepared<H> {
     pub host: H,
-    /// The exec helper and its subcommand.
+    /// Obelisk's host, which becomes the game as its exec helper.
     pub helper: PathBuf,
-    pub subcommand: &'static str,
     /// The game's environment. It is set on the helper and inherited through
     /// exec, so it reaches the game verbatim.
     pub environment: std::collections::HashMap<String, String>,
@@ -182,7 +180,6 @@ pub(crate) trait Launch: Sized + 'static {
         &mut self,
         session: &Arc<Session<Self::P>>,
         target: &Target,
-        architecture: Option<Architecture>,
         cloud: Option<&Self::Cloud>,
     ) -> Result<Prepared<Self::Host>, Failure<Self>>;
     /// The game runs. Returns how its presence is published.
@@ -714,7 +711,7 @@ async fn run<L: Launch>(
     inspect: Inspect,
     alive: &SessionAlive<'_>,
 ) -> Result<(), Failure<L>> {
-    use super::child::{Execution, confirm_execution, wait_for_exit, wait_identity};
+    use exec::Execution;
 
     if L::BEGIN {
         session.begun().await?;
@@ -725,7 +722,7 @@ async fn run<L: Launch>(
     }
     session.check()?;
     let mut refreshed = false;
-    let (target, architecture) = loop {
+    let target = loop {
         let (target, architecture) = launch.target(session).await?;
         session.check()?;
         if architecture == Some(Architecture::Intel) && cfg!(target_arch = "aarch64") {
@@ -740,11 +737,11 @@ async fn run<L: Launch>(
                 continue;
             }
         }
-        break (target, architecture);
+        break target;
     };
     session.check()?;
     let mut prepared = launch
-        .prepare_host(session, &target, architecture, cloud.as_ref())
+        .prepare_host(session, &target, cloud.as_ref())
         .await?;
     let wine = launch.wine();
     // A game in Wine for macOS reads the Mac's gamepads through the input
@@ -772,21 +769,16 @@ async fn run<L: Launch>(
         program: target.program.clone(),
     });
     let host = Arc::new(prepared.host);
-    let mut command = Process::new(&prepared.helper);
-    let (mut pipe, child_pipe) = UnixStream::pair().map_err(Error::from)?;
-    pipe.set_write_timeout(Some(Duration::from_secs(5)))
-        .map_err(Error::from)?;
-    command
-        .arg(prepared.subcommand)
-        .env_clear()
-        .envs(&prepared.environment)
-        .stdin(Stdio::from(OwnedFd::from(child_pipe)))
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null());
-    let expected = target
-        .executable
-        .canonicalize()
-        .map_err(|_| Error::StartFailed)?;
+    let log_header = session
+        .wine
+        .get()
+        .and_then(Option::as_ref)
+        .map(crate::wine::Config::log_header);
+    let helper = exec::Helper::new(
+        &prepared.helper,
+        &prepared.environment,
+        exec::Admission::of(&target, log_header),
+    )?;
     let (mut game, admitted) = {
         // Cancellation and spawn have one linearization point. Cancellation
         // after it never ends a game, including sign-out and UI loss.
@@ -795,51 +787,21 @@ async fn run<L: Launch>(
         if let Some(cloud) = cloud.as_mut() {
             cloud.started()?;
         }
-        let game = tokio::process::Command::from(command)
-            .kill_on_drop(false)
-            .spawn()
-            .map_err(|_| Error::StartFailed)?;
+        let mut game = helper.spawn()?;
         {
             let mut state = session.state.lock().unwrap();
             state.spawned = true;
-            state.game = game.id();
+            state.game = game.pid();
         }
-        let admitted = (|| {
-            // Read now: a game reaped during confirmation no longer has one.
-            let pid = game.id().ok_or(Error::StartFailed)?;
-            let identity = inspect(pid)?.ok_or(Error::StartFailed)?;
-            // The helper cannot exec before its identity and destination are
-            // durable: this write must succeed.
-            session.update(|r| {
-                r.starting = Some(StartingGame::Process {
-                    identity,
-                    executable: expected.clone(),
-                })
-            })?;
-            exec::send(
-                &mut pipe,
-                &exec::Admission {
-                    executable: target.executable.clone(),
-                    arguments: target.arguments.clone(),
-                    working_directory: target.working_directory.clone(),
-                    log: target.log.clone(),
-                    log_header: session
-                        .wine
-                        .get()
-                        .and_then(Option::as_ref)
-                        .map(crate::wine::Config::log_header),
-                },
-            )
-            .map_err(|_| Error::StartFailed)?;
-            Ok(pid)
-        })();
+        let admitted = game.admit(inspect, |starting| {
+            session.update(|r| r.starting = Some(starting))
+        });
         (game, admitted)
     };
-    drop(pipe);
     // A helper that never became the game keeps its ownership until it is
     // reaped, outside the admission lock.
-    let reap = async |mut game: tokio::process::Child, error: Error| {
-        let exit = wait_for_exit(&mut game).await.code().unwrap_or(-1);
+    let reap = async |mut game: exec::Child, error: Error| {
+        let exit = game.exit().await.code().unwrap_or(-1);
         session.state.lock().unwrap().game = None;
         launch.stopped(&host, Some(exit));
         session.state.lock().unwrap().spawned = false;
@@ -851,14 +813,13 @@ async fn run<L: Launch>(
         Ok(pid) => pid,
         Err(error) => return reap(game, error).await,
     };
-    let inspect_game = |pid| inspect(pid).ok().flatten();
-    let execution = confirm_execution(&mut game, &target.executable, inspect_game).await;
+    let execution = game.confirm(inspect).await;
     if execution == Execution::Failed {
         return reap(game, Error::StartFailed).await;
     }
     let started = execution == Execution::Started;
     if started {
-        let identity = wait_identity(&mut game, &target.executable, inspect_game).await;
+        let identity = game.identity(inspect).await;
         // Revocation takes this same lock: its permanent stop fences a late exec.
         let _admission = session.admission.lock().unwrap();
         session.presence.start(launch.running(&host, pid));
@@ -876,7 +837,7 @@ async fn run<L: Launch>(
     }
     let watching = launch.watch(&host, session);
     let began = Instant::now();
-    let status = wait_for_exit(&mut game).await;
+    let status = game.exit().await;
     let seconds = began.elapsed().as_secs();
     let exit = status.code().unwrap_or(-1);
     drop(input);

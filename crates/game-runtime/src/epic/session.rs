@@ -2,6 +2,7 @@
 //! live, its listing, fetches and the republication of a complete set.
 use super::*;
 use crate::cloud::record::{self, Record as _};
+use crate::cloud::saves::{Archive, Rules};
 use crate::cloud::sync::{self, Availability, CloudSync, Kind, Storefront};
 use crate::cloud_status::UnavailableReason;
 use crate::supervisor::client::SessionAlive;
@@ -11,7 +12,7 @@ use epic_kit::{
     client::Client as EpicClient,
     cloud::{CloudGame, CloudRules, ResolvedCloudRules},
 };
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, future::Future};
 mod remote;
 mod store;
 pub(crate) use remote::CloudRemote;
@@ -127,12 +128,8 @@ impl<R: CloudRemote> Storefront for Adapter<R> {
                 .iter()
                 .chain(self.context.iter())
                 .filter_map(|context| context.pending.as_ref())
-                .flat_map(|pending| match pending {
-                    sync::Pending::Applying {
-                        desired, remote, ..
-                    } => vec![desired.clone(), remote.files.clone()],
-                    pending => pending.files().cloned().into_iter().collect(),
-                })
+                .flat_map(sync::Pending::manifests)
+                .cloned()
                 .collect(),
         )
     }
@@ -261,9 +258,9 @@ fn upload_files(
 /// Cloud maintenance of one Epic game, run inside Obelisk with the UI's
 /// authenticated client. `idle` proves no Epic launch or supervisor can
 /// start while it runs.
-pub async fn maintain(
+pub(crate) async fn maintain<R: CloudRemote>(
     config: Configuration,
-    api: Arc<EpicClient>,
+    api: Arc<R>,
     control: Arc<Control>,
     idle: &IdleGuard,
 ) -> Result<()> {
@@ -283,46 +280,54 @@ pub(crate) async fn maintain_with<R: CloudRemote>(
         .await
 }
 
-pub async fn archive(config: Configuration, api: &EpicClient) -> Result<()> {
-    archive_with(config, api).await
-}
-
-async fn archive_with(config: Configuration, api: &impl CloudRemote) -> Result<()> {
-    let account = api.account_id().await?;
-    let (mut vault, saved) = record::locked::<Context>(&config, &account)?;
-    let context = if let Some(saved) = saved {
-        saved
-    } else {
-        let Some(rules) = api
-            .cloud_configuration(
-                &config.namespace,
-                &config.catalog_item_id,
-                &config.app_name,
-                config.platform,
-            )
-            .await?
-        else {
-            if record::holds_saves(&vault, false) {
-                return Err(Error::Unsupported);
-            }
-            return Ok(());
+/// What an uninstall archives the saves of `account` under. A game with a
+/// record keeps the rules it saved, as its Cloud sync refuses changed ones:
+/// `rules`, the Cloud rules Epic gives now, is asked only without one. A
+/// record of the game's other build whose rules name no folder for this
+/// build has nothing of this build to capture.
+pub(crate) async fn archive_under(
+    config: &Configuration,
+    account: String,
+    rules: impl Future<Output = Result<Option<CloudRules>>>,
+) -> Result<Archive<Context>> {
+    let (vault, saved) = record::locked::<Context>(config, &account)?;
+    if let Some(saved) = saved {
+        let rules = if record::other_build(&saved, config) && !names_folder(&saved.rules, config) {
+            Rules::Unfollowed(Some(saved))
+        } else {
+            Rules::Followed(saved)
         };
-        if !supports_rules(&config, &account, &rules, &vault, false)? {
-            return Ok(());
-        }
-        Context {
-            config: config.clone(),
-            account_id: account,
-            rules,
-            pending: None,
-            installation_removed: false,
+        return Ok(Archive { vault, rules });
+    }
+    let rules = match rules.await? {
+        Some(rules) if supports_rules(config, &account, &rules, &vault, false)? => rules,
+        _ => {
+            return Ok(Archive {
+                vault,
+                rules: Rules::Unfollowed(None),
+            });
         }
     };
-    // Capture rehashes every save file. The caller shares one runtime with
-    // downloads and the UI, so that work does not belong on it.
-    tokio::task::spawn_blocking(move || record::archive(&mut vault, context, config))
-        .await
-        .map_err(|_| Error::Session)?
+    let context = Context {
+        config: config.clone(),
+        account_id: account,
+        rules,
+        pending: None,
+        installation_removed: false,
+    };
+    Ok(Archive {
+        vault,
+        rules: Rules::Followed(context),
+    })
+}
+
+/// Whether `rules` name a save folder for the build under `config`: Epic
+/// keeps none of the saves of a build they name none for.
+fn names_folder(rules: &CloudRules, config: &Configuration) -> bool {
+    match config.cloud_platform() {
+        epic_kit::cloud::CloudPlatform::Mac { .. } => rules.cloud_save_folder_mac.is_some(),
+        epic_kit::cloud::CloudPlatform::Windows { .. } => rules.cloud_save_folder.is_some(),
+    }
 }
 
 /// Whether Obelisk can follow `rules`. Rules it cannot follow leave a game
