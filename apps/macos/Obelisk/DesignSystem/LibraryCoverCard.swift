@@ -31,7 +31,7 @@ struct LibraryCoverCard<Artwork: View>: View {
         return Button(action: open) {
             Color.clear
                 .aspectRatio(ObeliskStyle.coverAspectRatio, contentMode: .fit)
-                .overlay { artwork }
+                .overlay { artwork.environment(\.showsCoverLabels, hovered) }
                 .contentShape(shape)
         }
         .obeliskButtonStyle(.plain)
@@ -248,6 +248,31 @@ struct LibraryCardBadge: View {
             .frame(width: 26, height: 26)
             .glassEffect(.regular, in: .circle)
             .environment(\.colorScheme, .dark)
+            .accessibilityHidden(true)
+            .allowsHitTesting(false)
+    }
+}
+
+extension EnvironmentValues {
+    /// Whether a cover shows its labels: a library card's only under the
+    /// pointer, as its title; a game page's always.
+    @Entry var showsCoverLabels = true
+}
+
+/// What a cover says of its game, such as that it is a demo, in the colors
+/// of the button that installs it.
+struct LibraryCoverLabel: View {
+    let text: String
+
+    var body: some View {
+        // As tall as a card's storefront badge, level with it.
+        Text(text)
+            .font(.system(size: 12, weight: .bold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 10)
+            .frame(height: 26)
+            .background(LinearGradient(colors: ObeliskStyle.installGradient, startPoint: .leading, endPoint: .trailing),
+                        in: Capsule())
             .accessibilityHidden(true)
             .allowsHitTesting(false)
     }

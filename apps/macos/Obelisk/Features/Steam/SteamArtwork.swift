@@ -11,6 +11,7 @@ struct SteamArtwork: View {
     var portrait = true
     var iconHash = ""
     @Environment(SteamLibraryArtwork.self) private var library: SteamLibraryArtwork?
+    @Environment(\.showsCoverLabels) private var showsLabels
 
     /// The image at `path` under the game's store assets.
     static func url(appId: UInt32, path: String) -> URL? {
@@ -34,6 +35,35 @@ struct SteamArtwork: View {
     }
 
     var body: some View {
+        if portrait {
+            // The label keeps to the cover's frame, which a header filling it overflows.
+            Color.clear
+                .overlay { artwork }
+                .overlay(alignment: .topTrailing) {
+                    if showsLabels, let label {
+                        // A pixel lower than the storefront badge's inset looks level with it.
+                        LibraryCoverLabel(text: label)
+                            .padding(.top, 10.5)
+                            .padding(.trailing, 10)
+                            .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                    }
+                }
+        } else {
+            artwork
+        }
+    }
+
+    /// What the game is when not a full game: a demo, a playtest or a beta.
+    private var label: String? {
+        switch library?.games[appId]?.kind {
+        case .demo: L10n.string("ui.library.demo")
+        case .playtest: L10n.string("ui.library.playtest")
+        case .beta: L10n.string("ui.library.beta")
+        case nil: nil
+        }
+    }
+
+    private var artwork: some View {
         // A cover decodes at its published size, a hero at most 2048 pixels wide as Epic's.
         CachedArtwork(urls: urls, maxPixelSize: portrait ? 900 : 2048) { image in
             image.resizable().scaledToFill()
