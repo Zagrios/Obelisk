@@ -8,16 +8,16 @@ struct GogKeychain: CredentialStore {
         store = KeychainStore(service: service, account: "gog-session", label: L10n.string("model.brand.gog"))
     }
 
-    func load() async throws -> GogCredentials? {
+    func load() async throws -> WebAccountCredentials? {
         try await store.load().map {
-            GogCredentials(userId: $0.userId, username: $0.username, refreshToken: $0.refreshToken)
+            WebAccountCredentials(accountId: $0.userId, name: $0.username, refreshToken: $0.refreshToken)
         }
     }
 
-    func save(_ credentials: GogCredentials) async throws {
+    func save(_ credentials: WebAccountCredentials) async throws {
         try await store.save(StoredGogCredentials(
-            userId: credentials.userId,
-            username: credentials.username,
+            userId: credentials.accountId,
+            username: credentials.name,
             refreshToken: credentials.refreshToken
         ))
     }
@@ -27,6 +27,7 @@ struct GogKeychain: CredentialStore {
     }
 }
 
+/// The item as the Keychain keeps it, under GOG's own names.
 private struct StoredGogCredentials: Codable {
     let userId: String
     let username: String

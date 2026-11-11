@@ -73,19 +73,20 @@ pub(crate) type BuildChoice = obelisk_core::build_choice::BuildChoice<BuildKey, 
 /// Mac build, unless a download found that its game does not run natively
 /// and Epic has a Windows build of it. None of the build's files is read.
 pub(crate) async fn shown_build(
-    api: &Api,
-    access_token: &str,
-    namespace: &str,
-    catalog_item_id: &str,
-    app_name: &str,
+    game: &LiveBuilds<'_>,
     choice: &BuildChoice,
     sizes: &InstallationSizes,
 ) -> Result<(Platform, Option<u64>), EpicError> {
+    let (api, namespace, catalog_item_id, app_name) = (
+        game.api,
+        game.namespace,
+        game.catalog_item_id,
+        game.app_name,
+    );
     let identity = |platform| [namespace, catalog_item_id, app_name, platform];
-    let game = LiveBuilds::new(api, access_token, namespace, catalog_item_id, app_name);
     let offered = game.builds().await?;
     let (platform, asset) = choice
-        .shown(&game, offered)
+        .shown(game, offered)
         .await
         .ok_or(EpicError::Protocol)?;
     let label = PLATFORM.name(platform);
@@ -243,13 +244,18 @@ fn reported<T>(
     trace: &mut diagnostic::Trace,
     result: Result<T, EpicError>,
 ) -> Result<T, EpicError> {
-    if let Err(error) = &result
-        && !matches!(error, EpicError::Cancelled | EpicError::Network)
-    {
+    if let Err(error) = &result {
+        report(trace, error);
+    }
+    result
+}
+
+/// Writes `trace` for `error`, unless it is the network's or a cancellation.
+fn report(trace: &mut diagnostic::Trace, error: &EpicError) {
+    if !matches!(error, EpicError::Cancelled | EpicError::Network) {
         trace.error = format!("{error:?}");
         diagnostic::write(trace);
     }
-    result
 }
 
 /// The game's live Mac and Windows builds; none for a platform Epic has no

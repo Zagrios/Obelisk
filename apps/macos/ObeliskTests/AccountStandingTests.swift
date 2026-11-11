@@ -77,8 +77,8 @@ final class AccountStandingTests: XCTestCase {
                     CachedSteamGame(game: StorefrontsFixture.counterStrike, platforms: nil)],
             epic: [CachedEpicGame(game: StorefrontsFixture.epicGame("one"), playtimeSeconds: nil),
                    CachedEpicGame(game: StorefrontsFixture.epicGame("two"), playtimeSeconds: nil)],
-            gog: [CachedGogGame(game: StorefrontsFixture.gogGame("1207658924"), playtimeMinutes: nil),
-                  CachedGogGame(game: StorefrontsFixture.gogGame("1"), playtimeMinutes: nil)]
+            gog: [CachedGogGame(game: StorefrontsFixture.gogGame("1207658924"), playtimeSeconds: nil),
+                  CachedGogGame(game: StorefrontsFixture.gogGame("1"), playtimeSeconds: nil)]
         )
         let fixture = StorefrontsFixture(setup)
         defer { fixture.finish() }

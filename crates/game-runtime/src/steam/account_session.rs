@@ -498,12 +498,12 @@ impl<T: Transport> Network for AccountSession<T> {
     }
     fn maintain(
         &self,
-        target: steam_cloud::MaintenanceTarget,
+        config: steam_cloud::Config,
         credentials: &Credentials,
         control: Arc<Control>,
         idle: &IdleGuard,
     ) -> Result<(), steam_cloud::Failure> {
-        self.current().maintain(target, credentials, control, idle)
+        self.current().maintain(config, credentials, control, idle)
     }
 }
 

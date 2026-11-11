@@ -563,9 +563,7 @@ pub(crate) fn a_mac_game_starts_where_its_plan_says_with_its_arguments_and_its_l
     assert_eq!(target.program, None);
 }
 
-pub(crate) fn a_prepared_game_runs_through_its_helpers_game_exec_with_its_targets_environment<
-    F: Setup,
->() {
+pub(crate) fn a_prepared_game_runs_through_its_helper_with_its_targets_environment<F: Setup>() {
     let (_directory, root) = installation();
     let (mut request, install) = mac_request::<F>(&root);
     fs::write(install.join("Game"), thin(ARM64, true)).unwrap();
@@ -578,7 +576,6 @@ pub(crate) fn a_prepared_game_runs_through_its_helpers_game_exec_with_its_target
 
     assert_eq!(prepared.host, "host", "kept until the game exits");
     assert_eq!(prepared.helper, F::G::build(&request.config).helper);
-    assert_eq!(prepared.subcommand, "game-exec");
     assert_eq!(prepared.environment, started.target.environment);
     assert_eq!(prepared.environment["LANG"], "fr_FR.UTF-8");
 }
@@ -807,8 +804,8 @@ macro_rules! setup_suite {
             shell::a_mac_game_starts_where_its_plan_says_with_its_arguments_and_its_log::<$setup>()
         }
         #[test]
-        fn a_prepared_game_runs_through_its_helpers_game_exec_with_its_targets_environment() {
-            shell::a_prepared_game_runs_through_its_helpers_game_exec_with_its_targets_environment::<
+        fn a_prepared_game_runs_through_its_helper_with_its_targets_environment() {
+            shell::a_prepared_game_runs_through_its_helper_with_its_targets_environment::<
                 $setup,
             >()
         }

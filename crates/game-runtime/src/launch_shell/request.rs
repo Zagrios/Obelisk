@@ -181,13 +181,12 @@ impl<G: Launchable> Request<G> {
         }
     }
 
-    /// The prepared game: run through the request's helper's `game-exec` with
-    /// the target's environment, `host` kept until the game exits.
+    /// The prepared game: the request's helper becomes it, with the target's
+    /// environment, `host` kept until the game exits.
     pub fn prepared<H>(&self, host: H, target: &Target) -> Prepared<H> {
         Prepared {
             host,
             helper: G::build(&self.config).helper.to_owned(),
-            subcommand: "game-exec",
             environment: target.environment.clone(),
         }
     }

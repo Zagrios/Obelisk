@@ -18,8 +18,11 @@ use std::{
 const MANIFEST: &str = include_str!("../runtime-manifest.json");
 pub const HOST: &str = "obelisk-steam-host";
 pub(crate) const ADAPTER: &str = "libobelisk_steam_discovery_adapter.dylib";
+/// Obelisk's Intel helper, which translates D3DMetal ahead of the Linux
+/// engine's games.
 pub(crate) const SDK_INTEL: &str = "obelisk-steam-sdk-x86_64";
-pub(crate) const HELPERS: [&str; 3] = [HOST, ADAPTER, SDK_INTEL];
+/// What a generation holds of Obelisk beside Valve's components.
+pub(crate) const HELPERS: [&str; 2] = [HOST, ADAPTER];
 /// What Steam launches leave in the runtime cache: the generations `prepare`
 /// extracts, their unfinished staging, and each launch's own folder.
 const GENERATION: &str = "runtime-v1-";
@@ -27,7 +30,7 @@ const STAGING: &str = ".staging-";
 pub(crate) const LAUNCH: &str = "launch-";
 
 fn executable_helper(name: &str) -> bool {
-    matches!(name, HOST | SDK_INTEL)
+    name == HOST
 }
 
 #[derive(Deserialize)]

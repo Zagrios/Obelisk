@@ -402,7 +402,8 @@ extension LibraryCache {
                 ]
                 entry["imageUrl"] = game.imageUrl
                 entry["headerImageUrl"] = game.headerImageUrl
-                entry["playtimeMinutes"] = cached.playtimeMinutes
+                // The file keeps GOG's playtime as GOG tells it, in minutes.
+                entry["playtimeMinutes"] = cached.playtimeSeconds.map { $0 / 60 }
                 entry["achievements"] = cached.achievementShare.map(keptAchievements(share:))
                 return entry
             }

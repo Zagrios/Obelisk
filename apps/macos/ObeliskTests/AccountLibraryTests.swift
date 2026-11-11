@@ -402,7 +402,7 @@ final class AccountLibraryTests: XCTestCase {
         library.sort = .name
         library.filter = .played
         XCTAssertNotNil(library.pendingMetadata)
-        await failing.fail(EpicError.Network)
+        await failing.fail(WebAccountError.Network)
         try await eventually { library.missingMetadata != nil }
         XCTAssertNil(library.pendingMetadata)
         XCTAssertEqual(ended.loads, ["failing"], "A failed load still ends")
@@ -438,7 +438,7 @@ final class AccountLibraryTests: XCTestCase {
         let count = await reads.count
         XCTAssertEqual(count, 1, "A load already running is not asked again")
 
-        library.load(.dateAdded) { await reads.add(); throw EpicError.Network }
+        library.load(.dateAdded) { await reads.add(); throw WebAccountError.Network }
         try await eventually { await reads.count == 2 }
         await drainMainQueue(times: 3)
         XCTAssertEqual(library.value(of: portal, for: .dateAdded), 1_300_000_000, "A failure keeps what showed")

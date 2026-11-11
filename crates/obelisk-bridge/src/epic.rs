@@ -1,32 +1,17 @@
-//! Epic's account seam. Only refresh credentials cross into the macOS Keychain;
-//! the account access token stays inside the Rust session.
-use std::{collections::HashMap, sync::Arc};
-
+//! Epic's part of a web storefront Account session: how its kit signs in,
+//! lists and names games, and what it tells of each.
 use crate::{
-    GamePlatform, LibraryCache,
-    library_cache::{self, EpicLibrary, GameAchievements, LibraryAchievement},
+    GameOffer,
+    installations::Named,
+    library_cache::{self, LibraryAchievement, PlaytimeUnit},
+    web_account::{WebAccountCredentials, WebAccountError, WebGameDetails, WebStore},
 };
 use epic_kit::{auth, client};
+use game_runtime::epic;
+use serde_json::Value;
+use std::collections::BTreeMap;
 
-/// Sandboxes whose achievements a library reads at once: each takes two
-/// requests.
-const ACHIEVEMENT_READS: usize = 4;
-
-#[derive(Debug, thiserror::Error, uniffi::Error)]
-pub enum EpicError {
-    #[error("backend.epic.network")]
-    Network,
-    #[error("backend.epic.unauthorized")]
-    Unauthorized,
-    #[error("backend.epic.invalid_code")]
-    InvalidCode,
-    #[error("backend.epic.invalid_response")]
-    InvalidResponse,
-    #[error("{message}")]
-    Service { message: String },
-}
-
-impl From<epic_kit::EpicError> for EpicError {
+impl From<epic_kit::EpicError> for WebAccountError {
     fn from(error: epic_kit::EpicError) -> Self {
         match error {
             epic_kit::EpicError::Network => Self::Network,
@@ -47,32 +32,25 @@ pub fn epic_login_url() -> String {
 }
 
 #[uniffi::export]
-pub fn epic_authorization_code(input: String) -> Result<String, EpicError> {
+pub fn epic_authorization_code(input: String) -> Result<String, WebAccountError> {
     auth::authorization_code(&input).map_err(Into::into)
 }
 
-#[derive(Clone, uniffi::Record)]
-pub struct EpicCredentials {
-    pub account_id: String,
-    pub display_name: String,
-    pub refresh_token: String,
-}
-
-impl From<auth::Credentials> for EpicCredentials {
+impl From<auth::Credentials> for WebAccountCredentials {
     fn from(credentials: auth::Credentials) -> Self {
         Self {
             account_id: credentials.account_id,
-            display_name: credentials.display_name,
+            name: credentials.display_name,
             refresh_token: credentials.refresh_token,
         }
     }
 }
 
-impl From<EpicCredentials> for auth::Credentials {
-    fn from(credentials: EpicCredentials) -> Self {
+impl From<WebAccountCredentials> for auth::Credentials {
+    fn from(credentials: WebAccountCredentials) -> Self {
         Self {
             account_id: credentials.account_id,
-            display_name: credentials.display_name,
+            display_name: credentials.name,
             refresh_token: credentials.refresh_token,
         }
     }
@@ -136,17 +114,7 @@ impl From<client::Achievement> for LibraryAchievement {
     }
 }
 
-/// What a game's page adds to its library entry: the build it shows before
-/// any download, and its size.
-#[derive(Clone, Debug, uniffi::Record)]
-pub struct EpicGameDetails {
-    /// Unknown when Epic could not tell.
-    pub platform: Option<GamePlatform>,
-    /// Unknown when Epic serves no manifest of the build.
-    pub installation_bytes: Option<u64>,
-}
-
-impl From<client::GameDetails> for EpicGameDetails {
+impl From<client::GameDetails> for WebGameDetails {
     fn from(details: client::GameDetails) -> Self {
         Self {
             platform: details.platform.map(Into::into),
@@ -155,195 +123,118 @@ impl From<client::GameDetails> for EpicGameDetails {
     }
 }
 
-/// How long the account played one game, as Epic records it.
-#[derive(Clone, Debug, uniffi::Record)]
-pub struct EpicPlaytime {
-    pub app_name: String,
-    pub seconds: u64,
-}
+impl WebStore for epic::Epic {
+    type Client = client::Client;
+    type Game = epic::Store;
+    type Product = epic::Product;
+    type Listed = client::Game;
+    type Shown = EpicGame;
 
-#[derive(uniffi::Object)]
-pub struct EpicSession {
-    /// Shared with the Cloud maintenance this session starts.
-    pub(crate) client: Arc<client::Client>,
-    pub(crate) persistence: Arc<crate::credentials::Persistence>,
-    /// Where the account's library is kept as it loads.
-    library: Option<EpicLibrary>,
-}
-impl EpicSession {
-    async fn with(
-        client: client::Client,
-        library: Option<Arc<LibraryCache>>,
-    ) -> Result<Arc<Self>, EpicError> {
-        let library = match library {
-            Some(library) => Some(library.epic(&client.credentials().await?.account_id)),
-            None => None,
-        };
-        Ok(Arc::new(Self {
-            client: Arc::new(client),
-            persistence: Default::default(),
-            library,
-        }))
+    const CACHE: &'static str = library_cache::EPIC;
+    /// Epic counts seconds.
+    const PLAYTIME: PlaytimeUnit = PlaytimeUnit::SECONDS;
+    /// Sandboxes whose achievements a library reads at once: each takes two
+    /// requests.
+    const ACHIEVEMENT_READS: usize = 4;
+
+    fn named(name: &str) -> Option<epic::Store> {
+        <Self as Named>::named(name)
     }
 
-    /// `namespaces`' achievements in `locale`: the library's for a game not
-    /// played since they were read, unless `fresh`, else Epic's, a few
-    /// sandboxes at a time, which the library then keeps. A sandbox Epic did
-    /// not answer for is left out; when none could be told, the first
-    /// failure.
-    async fn read_achievements(
-        &self,
-        namespaces: Vec<String>,
-        locale: &str,
-        fresh: bool,
-    ) -> Result<Vec<GameAchievements>, EpicError> {
-        let client = &self.client;
-        library_cache::achievements(
-            self.library.as_ref().map(|library| library.achievements()),
-            namespaces,
-            locale,
-            fresh,
-            ACHIEVEMENT_READS,
-            |namespace| async move {
-                client
-                    .achievements(&namespace, locale)
-                    .await
-                    .map_err(EpicError::from)
-            },
-        )
-        .await
-    }
-}
-
-#[uniffi::export(async_runtime = "tokio")]
-impl EpicSession {
-    /// Keeps every library it loads in `library`.
-    #[uniffi::constructor]
-    pub async fn sign_in(
-        authorization_code: String,
-        library: Option<Arc<LibraryCache>>,
-    ) -> Result<Arc<Self>, EpicError> {
-        Self::with(client::Client::sign_in(&authorization_code).await?, library).await
+    fn product(offer: GameOffer) -> Option<epic::Product> {
+        Some(<Self as Named>::offer(offer)?.product)
     }
 
-    /// Keeps every library it loads in `library`.
-    #[uniffi::constructor]
-    pub async fn restore(
-        credentials: EpicCredentials,
-        library: Option<Arc<LibraryCache>>,
-    ) -> Result<Arc<Self>, EpicError> {
-        Self::with(client::Client::restore(credentials.into()).await?, library).await
+    /// Epic tells playtimes by app name, whatever the sandbox.
+    fn playtime_id(game: &epic::Store) -> &str {
+        &game.app_name
     }
 
-    pub async fn credentials(&self) -> Result<EpicCredentials, EpicError> {
-        Ok(self.client.credentials().await?.into())
+    /// Epic tells achievements by sandbox, which several games may share.
+    fn achievements_id(game: &epic::Store) -> &str {
+        &game.namespace
     }
 
-    /// Shows the account to its friends as `status` says: from the next
-    /// friends connection on, and at once on a live one.
-    pub fn set_status(&self, status: crate::OnlineStatus) {
-        self.client.set_status(status.into());
-    }
-    pub async fn start_friends(&self) {
-        self.client.start_friends();
-    }
-    pub async fn reconnect_friends(&self) {
-        self.client.reconnect_friends();
-    }
-    pub fn stop_friends(&self) {
-        self.client.stop_friends();
-    }
-    pub fn shutdown_observers(&self) {
-        self.client.shutdown_observers();
-    }
-    pub async fn next_friends(&self, after_revision: u64) -> crate::EpicFriendsSnapshot {
-        self.client.next_friends(after_revision).await.into()
-    }
-    pub async fn next_credentials_revision(&self, after_revision: u64) -> Option<u64> {
-        self.client.next_credentials_revision(after_revision).await
+    /// Beside the game: its catalog items, library records and assets.
+    fn shown(mut listed: client::Game) -> (EpicGame, Value) {
+        let metadata = std::mem::take(&mut listed.metadata);
+        (listed.into(), metadata)
     }
 
-    /// Saves the account's credentials through `credentials` now and after
-    /// every rotation, one save at a time and in order, until the session's
-    /// observers stop. Every account call relies on it.
-    pub async fn persist(&self, credentials: Arc<dyn crate::CredentialSave>) {
-        crate::credentials::persist(self.client.clone(), self.persistence.clone(), credentials);
-    }
-
-    pub async fn games(&self) -> Result<Vec<EpicGame>, EpicError> {
-        let games = self.client.games().await?;
-        Ok(match &self.library {
-            Some(library) => library.games(games),
-            None => games.into_iter().map(Into::into).collect(),
+    fn id(game: &EpicGame) -> String {
+        <Self as Named>::name(&epic::Store {
+            namespace: game.namespace.clone(),
+            app_name: game.app_name.clone(),
         })
     }
 
-    /// The game's achievements in `locale`, such as the game page's: the
-    /// library's while the game was not played since they were read, unless
-    /// `fresh`, else Epic's, which the library then keeps. Epic tells them by
-    /// sandbox, which several games may share.
-    pub async fn achievements(
-        &self,
-        namespace: String,
-        locale: String,
-        fresh: bool,
-    ) -> Result<Vec<LibraryAchievement>, EpicError> {
-        let read = self
-            .read_achievements(vec![namespace], &locale, fresh)
-            .await?;
-        Ok(read
-            .into_iter()
-            .next()
-            .map(|game| game.achievements)
-            .unwrap_or_default())
+    async fn sign_in(code: &str) -> Result<client::Client, WebAccountError> {
+        Ok(client::Client::sign_in(code).await?)
     }
 
-    /// The share of each of `namespaces`' achievements the account unlocked,
-    /// by namespace, as `achievements` reads them: none for a sandbox without
-    /// achievements or that Epic did not answer for. It fails only when no
-    /// sandbox could be told.
-    pub async fn achievement_shares(
-        &self,
-        namespaces: Vec<String>,
-        locale: String,
-    ) -> Result<HashMap<String, f64>, EpicError> {
-        let read = self.read_achievements(namespaces, &locale, false).await?;
-        Ok(library_cache::unlocked_shares(read).collect())
+    async fn restore(
+        credentials: WebAccountCredentials,
+    ) -> Result<client::Client, WebAccountError> {
+        Ok(client::Client::restore(credentials.into()).await?)
+    }
+
+    async fn credentials(
+        client: &client::Client,
+    ) -> Result<WebAccountCredentials, WebAccountError> {
+        Ok(client.credentials().await?.into())
+    }
+
+    async fn games(client: &client::Client) -> Result<Vec<client::Game>, WebAccountError> {
+        Ok(client.games().await?)
     }
 
     /// Every game the account played, in one request.
-    pub async fn playtimes(&self) -> Result<Vec<EpicPlaytime>, EpicError> {
-        let playtimes = self.client.playtimes().await?;
-        if let Some(library) = &self.library {
-            library.playtimes(&playtimes);
-        }
-        Ok(playtimes
-            .into_iter()
-            .map(|(app_name, seconds)| EpicPlaytime { app_name, seconds })
-            .collect())
+    async fn playtimes(
+        client: &client::Client,
+        _: &[epic::Store],
+    ) -> Result<BTreeMap<String, u64>, WebAccountError> {
+        Ok(client.playtimes().await?)
     }
 
-    pub async fn disconnect(&self) -> Result<(), EpicError> {
-        self.client.disconnect().await.map_err(Into::into)
+    async fn achievements(
+        client: &client::Client,
+        id: &str,
+        locale: &str,
+    ) -> Result<Vec<LibraryAchievement>, WebAccountError> {
+        let achievements = client.achievements(id, locale).await?;
+        Ok(achievements.into_iter().map(Into::into).collect())
     }
 
-    /// Opens Epic's site signed in as the account, then `redirect_url`, an
-    /// Epic page. The address holds a single-use code: never keep or log it.
-    pub async fn web_sign_in_url(&self, redirect_url: String) -> Result<String, EpicError> {
-        Ok(self.client.web_sign_in_url(&redirect_url).await?)
-    }
-
-    pub async fn game_details(
-        &self,
-        namespace: String,
-        catalog_item_id: String,
-        app_name: String,
-    ) -> Result<EpicGameDetails, EpicError> {
-        Ok(self
-            .client
-            .game_details(&namespace, &catalog_item_id, &app_name)
+    /// Epic's builds have no language.
+    async fn details(
+        client: &client::Client,
+        product: &epic::Product,
+        _language: &str,
+    ) -> Result<WebGameDetails, WebAccountError> {
+        Ok(client
+            .game_details(
+                &product.namespace,
+                &product.catalog_item_id,
+                &product.app_name,
+            )
             .await?
             .into())
+    }
+
+    async fn disconnect(client: &client::Client) -> Result<(), WebAccountError> {
+        Ok(client.disconnect().await?)
+    }
+
+    fn shutdown_observers(client: &client::Client) {
+        client.shutdown_observers();
+    }
+
+    /// Each address spends a new exchange code of the session.
+    async fn web_sign_in_url(
+        client: &client::Client,
+        redirect: &str,
+    ) -> Result<Option<String>, WebAccountError> {
+        Ok(Some(client.web_sign_in_url(redirect).await?))
     }
 }
 

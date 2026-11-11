@@ -48,17 +48,6 @@ pub(super) struct Revision {
     manifests: Vec<(u32, u64)>,
 }
 
-#[cfg(test)]
-impl Revision {
-    /// The revision of `app_id` at `manifests`, as `Build::revision` names it.
-    pub(super) fn fabricated(app_id: u32, manifests: &[(u32, u64)]) -> Self {
-        Self {
-            app_id,
-            manifests: manifests.to_vec(),
-        }
-    }
-}
-
 /// The depots the account's licenses select of an app for a Platform and a
 /// language. It reads nothing from Steam: the game's page and the builds
 /// offered ask for nothing more.

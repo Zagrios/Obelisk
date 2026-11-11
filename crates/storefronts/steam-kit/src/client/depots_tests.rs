@@ -1,17 +1,21 @@
 //! Which depots and manifests an account installs of a game, and how often
-//! Steam is asked for them, through the interface of `Client`: the update
-//! check, the game's page, the Mac pick and the download. Steam is scripted
-//! (`cm::test_steam`); no CDN is reachable, so a download that needs one ends
-//! at the CDN address the content directory names.
+//! Steam and its CDN are asked for them, through the interface of `Client`:
+//! the update check, the game's page, the Mac pick and the download. Steam is
+//! scripted (`cm::test_steam`) and its CDN is in memory (`cdn`). Where the
+//! content directory names no usable CDN address, a pick or a download that
+//! needs the CDN ends there.
 use std::path::Path;
 
-use obelisk_core::platform::Platform;
-
-use super::{Client, ClientError, Installation, InstalledDepot};
-use crate::cm::test_steam::{
-    AppSpec, DepotSpec, NO_CDN_ADDRESS, PackageSpec, Request, Steam, World, depot_key,
+use obelisk_core::{
+    platform::Platform,
+    testing::{Cdn, reaching},
 };
 
+use super::{Client, ClientError, Installation, InstalledDepot};
+use crate::cm::test_steam::{AppSpec, DepotSpec, PackageSpec, Request, Steam, World};
+use cdn::{ARM64, Held, INTEL, LIBRARY, PROGRAM, holding, manifests_asked, requests};
+
+mod cdn;
 mod internals;
 
 const ENGLISH: &str = "english";
@@ -169,6 +173,73 @@ fn world() -> World {
 
 async fn account() -> (Client, Steam) {
     Steam::account(world()).await
+}
+
+/// The account, with `cdn` the one server Steam names for its depots.
+async fn account_served_by(cdn: &Cdn) -> (Client, Steam) {
+    let mut world = world();
+    world.cdn_host = cdn.host().into();
+    Steam::account_reaching(world, reaching(&[cdn])).await
+}
+
+/// What the CDN holds of `GAME`: its Windows depot, its Mac depot, whose
+/// program starts with `head`, and the depot both builds share.
+fn game_depots(head: [u8; 8]) -> [Held; 3] {
+    [
+        Held::data(101, 1001, GAME),
+        Held::program(102, 1002, GAME, head),
+        Held::data(103, 1003, GAME),
+    ]
+}
+
+/// What the CDN holds of `SHARED_GAME`'s Mac build, each depot keyed under
+/// the game; the last holds its program.
+fn shared_game_mac_depots() -> [Held; 3] {
+    [
+        Held::data(302, 3502, SHARED_GAME),
+        Held::data(303, 3003, SHARED_GAME),
+        Held::program(304, 3004, SHARED_GAME, ARM64),
+    ]
+}
+
+/// What the CDN holds of `REDIST_GAME`: its own depot, and the Common
+/// Redistributables a download keeps, keyed under their own app.
+fn redist_game_depots() -> [Held; 4] {
+    [
+        Held::data(401, 4001, REDIST_GAME),
+        Held::data(228_990, 9990, REDISTRIBUTABLES),
+        Held::data(228_989, 2_289_891, REDISTRIBUTABLES),
+        Held::data(229_013, 2_290_131, REDISTRIBUTABLES),
+    ]
+}
+
+/// What the CDN holds of `FREE_GAME`: its own depot and the one it shares,
+/// keyed under the game, and a Common Redistributable under its own app.
+fn free_game_depots() -> [Held; 3] {
+    [
+        Held::data(501, 5001, FREE_GAME),
+        Held::data(502, 5502, FREE_GAME),
+        Held::data(228_990, 9990, REDISTRIBUTABLES),
+    ]
+}
+
+/// The `(depot, manifest)` of each depot `installation` records, in order.
+fn recorded(installation: &Installation) -> Vec<(u32, u64)> {
+    installation
+        .manifests
+        .iter()
+        .map(|depot| (depot.depot_id, depot.manifest_id))
+        .collect()
+}
+
+/// Asserts that the installation in `folder` holds every file of `depots`.
+fn assert_installed(folder: &Path, depots: &[&Held]) {
+    for (name, bytes) in depots.iter().flat_map(|depot| depot.installed()) {
+        let installed = std::fs::read(folder.join(name)).unwrap_or_else(|error| {
+            panic!("{name} of the installation: {error}");
+        });
+        assert_eq!(installed, bytes, "{name}");
+    }
 }
 
 /// The folder of an installation of `app_id`'s `platform` build whose receipt
@@ -757,12 +828,87 @@ mod mac_pick {
     }
 
     #[tokio::test]
+    async fn a_mac_build_whose_program_and_steam_library_hold_an_arm64_slice_is_picked_from_their_first_bytes()
+     {
+        let depots = game_depots(ARM64);
+        let [_, mac, shared] = &depots;
+        let cdn = holding(&depots);
+        let (client, mut steam) = account_served_by(&cdn).await;
+        let platform = steam.during(client.platform(GAME, ENGLISH)).await;
+        assert_eq!(platform.unwrap(), Platform::Mac);
+        // Each depot's manifest, then the first chunk of the program and the
+        // library beside it: the rest of the program is not read.
+        assert_eq!(
+            requests(&cdn),
+            [
+                mac.manifest_path(),
+                shared.manifest_path(),
+                mac.first_chunk_path(PROGRAM),
+                mac.first_chunk_path(LIBRARY),
+            ]
+        );
+        // The verdict is kept: the same build is not read again.
+        steam.forget_requests();
+        let again = steam.during(client.platform(GAME, ENGLISH)).await;
+        assert_eq!(again.unwrap(), Platform::Mac);
+        assert!(steam.requests().is_empty());
+        assert_eq!(requests(&cdn).len(), 4);
+        let details = steam.during(client.details(GAME, ENGLISH)).await.unwrap();
+        assert_eq!(details.platform, Some(Platform::Mac));
+    }
+
+    #[tokio::test]
+    async fn a_mac_build_whose_program_holds_no_arm64_slice_gives_way_to_the_windows_build_which_the_page_then_shows()
+     {
+        let depots = game_depots(INTEL);
+        let [_, mac, shared] = &depots;
+        let cdn = holding(&depots);
+        let (client, mut steam) = account_served_by(&cdn).await;
+        let details = steam.during(client.details(GAME, ENGLISH)).await.unwrap();
+        assert_eq!(details.platform, Some(Platform::Mac));
+        let platform = steam.during(client.platform(GAME, ENGLISH)).await;
+        assert_eq!(platform.unwrap(), Platform::Windows);
+        // The program told: its library is not read.
+        assert_eq!(
+            requests(&cdn),
+            [
+                mac.manifest_path(),
+                shared.manifest_path(),
+                mac.first_chunk_path(PROGRAM),
+            ]
+        );
+        let details = steam.during(client.details(GAME, ENGLISH)).await.unwrap();
+        assert_eq!(details.platform, Some(Platform::Windows));
+        // The verdict is kept: the same build is not read again.
+        steam.forget_requests();
+        let again = steam.during(client.platform(GAME, ENGLISH)).await;
+        assert_eq!(again.unwrap(), Platform::Windows);
+        assert!(steam.requests().is_empty());
+        assert_eq!(requests(&cdn).len(), 3);
+    }
+
+    #[tokio::test]
+    async fn a_mac_only_game_whose_program_holds_no_arm64_slice_has_no_pick() {
+        let cdn = holding(&[
+            Held::program(1401, 14_001, THREE_DEPOTS, INTEL),
+            Held::data(1402, 14_002, THREE_DEPOTS),
+            Held::data(1403, 14_003, THREE_DEPOTS),
+        ]);
+        let (client, mut steam) = account_served_by(&cdn).await;
+        let platform = steam.during(client.platform(THREE_DEPOTS, ENGLISH)).await;
+        assert_eq!(
+            message(platform.unwrap_err()),
+            "backend.install.macBuildNotNative"
+        );
+    }
+
+    #[tokio::test]
     async fn reading_a_mac_build_asks_for_each_depots_key_and_manifest_code_and_its_servers_once() {
-        // The files are read from the CDN, which the content directory gives
-        // no address: everything before that is on record.
-        let (client, mut steam) = account().await;
+        let depots = shared_game_mac_depots();
+        let cdn = holding(&depots);
+        let (client, mut steam) = account_served_by(&cdn).await;
         let platform = steam.during(client.platform(SHARED_GAME, ENGLISH)).await;
-        assert_eq!(message(platform.unwrap_err()), no_cdn_address());
+        assert_eq!(platform.unwrap(), Platform::Mac);
         // The game, then the app its shared depots come from, once for the
         // whole pick.
         assert_eq!(steam.package_queries(), 1);
@@ -783,13 +929,18 @@ mod mac_pick {
             ]
         );
         assert!(steam.cdn_tokens().is_empty());
+        // The CDN gives each depot's manifest once, the shared depot's being
+        // its source app's.
+        let manifests: Vec<_> = depots.iter().map(Held::manifest_path).collect();
+        assert_eq!(manifests_asked(&cdn), manifests);
     }
 
     #[tokio::test]
     async fn a_mac_build_is_read_one_depot_at_a_time_after_its_sources_and_servers() {
-        let (client, mut steam) = account().await;
+        let cdn = holding(&shared_game_mac_depots());
+        let (client, mut steam) = account_served_by(&cdn).await;
         let platform = steam.during(client.platform(SHARED_GAME, ENGLISH)).await;
-        assert_eq!(message(platform.unwrap_err()), no_cdn_address());
+        assert_eq!(platform.unwrap(), Platform::Mac);
         // The sorted counts above cannot tell the order Steam is asked in: the
         // licenses, the game, the source app of the shared depots, the servers,
         // then each depot's key and manifest code before the next depot's.
@@ -834,6 +985,8 @@ mod mac_pick {
 
     #[tokio::test]
     async fn a_mac_build_that_cannot_be_read_keeps_no_verdict_and_is_read_again() {
+        // The content directory names no usable CDN address: the build's
+        // files cannot be read, which is no refusal.
         let (client, mut steam) = account().await;
         for _ in 0..2 {
             steam.forget_requests();
@@ -848,16 +1001,19 @@ mod mac_pick {
     }
 
     #[tokio::test]
-    async fn a_mac_build_steam_refuses_gives_way_to_the_windows_build_once() {
+    async fn a_mac_build_whose_manifest_steam_refuses_gives_way_to_the_windows_build_once() {
         let (client, mut steam) = account().await;
         steam.world.refused_manifests = vec![102];
-        for _ in 0..2 {
-            steam.forget_requests();
-            let platform = steam.during(client.platform(GAME, ENGLISH)).await;
-            assert_eq!(platform.unwrap(), Platform::Windows);
-        }
-        // The verdict was kept: the second pick read nothing.
-        assert!(steam.depot_keys().is_empty());
+        let platform = steam.during(client.platform(GAME, ENGLISH)).await;
+        assert_eq!(platform.unwrap(), Platform::Windows);
+        // The read ended on the first depot, whose manifest Steam refused.
+        assert_eq!(steam.depot_keys(), [(102, GAME)]);
+        assert_eq!(steam.manifest_codes(), [(102, GAME, 1002)]);
+        // The verdict is kept: Steam is not asked for the same build again.
+        steam.forget_requests();
+        let again = steam.during(client.platform(GAME, ENGLISH)).await;
+        assert_eq!(again.unwrap(), Platform::Windows);
+        assert!(steam.requests().is_empty());
     }
 }
 
@@ -998,5 +1154,516 @@ mod download {
             .unwrap_err();
         assert_eq!(message(error), no_cdn_address());
         assert_eq!(steam.depot_keys(), [(101, GAME), (103, GAME), (104, GAME)]);
+    }
+
+    #[tokio::test]
+    async fn a_download_with_no_server_allowed_for_the_game_fails() {
+        let (client, mut steam) = account().await;
+        steam.world.cdn_host = String::new();
+        steam.world.restricted_hosts = vec![("for-others.invalid".into(), vec![GAME])];
+        let parent = tempfile::tempdir().unwrap();
+        let error = download(
+            &client,
+            &mut steam,
+            SHARED_GAME,
+            Platform::Windows,
+            parent.path(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(message(error), "backend.steam.client.noContentServer");
+    }
+
+    #[tokio::test]
+    async fn a_download_reaches_only_the_servers_steam_allows_for_the_game_the_first_named_first() {
+        let depots = [
+            Held::data(301, 3001, SHARED_GAME),
+            Held::data(304, 3004, SHARED_GAME),
+        ];
+        let [everyone, others, the_game, no_one] = [0; 4].map(|_| holding(&depots));
+        let mut world = world();
+        world.cdn_host = everyone.host().into();
+        world.restricted_hosts = vec![
+            (others.host().into(), vec![GAME]),
+            (the_game.host().into(), vec![GAME, SHARED_GAME]),
+            (no_one.host().into(), vec![SHARED_GAME + 1]),
+        ];
+        let reached = reaching(&[&everyone, &others, &the_game, &no_one]);
+        let (client, mut steam) = Steam::account_reaching(world, reached).await;
+        let parent = tempfile::tempdir().unwrap();
+        download(
+            &client,
+            &mut steam,
+            SHARED_GAME,
+            Platform::Windows,
+            parent.path(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(steam.content_server_queries(), 1);
+        // A depot's manifest goes to the first server Steam names; its chunk
+        // then tries the next one allowed, which is not measured yet.
+        assert_eq!(requests(&everyone)[0], depots[0].manifest_path());
+        assert!(!requests(&the_game).is_empty());
+        assert!(requests(&others).is_empty());
+        assert!(requests(&no_one).is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_download_installs_the_depots_selected_with_a_public_manifest_in_the_apps_order() {
+        let depots = shared_game_mac_depots();
+        let cdn = holding(&depots);
+        let (client, mut steam) = account_served_by(&cdn).await;
+        let parent = tempfile::tempdir().unwrap();
+        let installation = download(
+            &client,
+            &mut steam,
+            SHARED_GAME,
+            Platform::Mac,
+            parent.path(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(installation.name, "Shared Game");
+        // The shared depots have the manifest of their source app, or their
+        // own; the CDN gives each in the app's order.
+        assert_eq!(
+            recorded(&installation),
+            [(302, 3502), (303, 3003), (304, 3004)]
+        );
+        let manifests: Vec<_> = depots.iter().map(Held::manifest_path).collect();
+        assert_eq!(manifests_asked(&cdn), manifests);
+        // Each is keyed under the game, as its chunks are on the CDN, and
+        // authorized through its source app.
+        let [first, second, own] = &depots;
+        assert_installed(Path::new(&installation.directory), &[first, second, own]);
+        assert_eq!(
+            steam.depot_keys(),
+            [(302, SHARED_GAME), (303, SHARED_GAME), (304, SHARED_GAME)]
+        );
+        assert_eq!(
+            steam.manifest_codes(),
+            [
+                (302, BASE, 3502),
+                (303, BASE, 3003),
+                (304, SHARED_GAME, 3004)
+            ]
+        );
+        assert_eq!(steam.package_queries(), 1);
+        assert_eq!(steam.app_queries(), [vec![SHARED_GAME], vec![BASE]]);
+        assert_eq!(steam.content_server_queries(), 1);
+        assert!(steam.cdn_tokens().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_depot_that_names_its_own_game_and_has_no_manifest_is_selected_but_not_installed() {
+        let depots = [
+            Held::data(301, 3001, SHARED_GAME),
+            Held::data(304, 3004, SHARED_GAME),
+        ];
+        let cdn = holding(&depots);
+        let (client, mut steam) = account_served_by(&cdn).await;
+        let parent = tempfile::tempdir().unwrap();
+        let installation = download(
+            &client,
+            &mut steam,
+            SHARED_GAME,
+            Platform::Windows,
+            parent.path(),
+        )
+        .await
+        .unwrap();
+        // Depot 305 is selected: no key is asked for it.
+        assert_eq!(recorded(&installation), [(301, 3001), (304, 3004)]);
+        assert_eq!(steam.depot_keys(), [(301, SHARED_GAME), (304, SHARED_GAME)]);
+        // Nothing the Windows build selects needs another app.
+        assert_eq!(steam.app_queries(), [[SHARED_GAME]]);
+    }
+
+    #[tokio::test]
+    async fn the_common_redistributables_get_their_key_from_their_own_app_except_the_net_ones() {
+        let depots = redist_game_depots();
+        let cdn = holding(&depots);
+        let (client, mut steam) = account_served_by(&cdn).await;
+        let parent = tempfile::tempdir().unwrap();
+        let installation = download(
+            &client,
+            &mut steam,
+            REDIST_GAME,
+            Platform::Windows,
+            parent.path(),
+        )
+        .await
+        .unwrap();
+        // 229000 and 229012 are left out: no key is asked for them.
+        assert_eq!(
+            recorded(&installation),
+            [
+                (401, 4001),
+                (228_990, 9990),
+                (228_989, 2_289_891),
+                (229_013, 2_290_131),
+            ]
+        );
+        // The chunks the CDN holds under those keys installed.
+        let [own, shared, named, kept] = &depots;
+        assert_installed(
+            Path::new(&installation.directory),
+            &[own, shared, named, kept],
+        );
+        assert_eq!(
+            steam.depot_keys(),
+            [
+                (401, REDIST_GAME),
+                (228_989, REDISTRIBUTABLES),
+                (228_990, REDISTRIBUTABLES),
+                (229_013, REDISTRIBUTABLES),
+            ]
+        );
+        assert_eq!(
+            steam.manifest_codes(),
+            [
+                (401, REDIST_GAME, 4001),
+                (228_989, REDISTRIBUTABLES, 2_289_891),
+                (228_990, REDISTRIBUTABLES, 9990),
+                (229_013, REDISTRIBUTABLES, 2_290_131),
+            ]
+        );
+        assert_eq!(
+            steam.app_queries(),
+            [vec![REDIST_GAME], vec![REDISTRIBUTABLES]]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_free_to_download_game_authorizes_every_depot_through_itself() {
+        let depots = free_game_depots();
+        let cdn = holding(&depots);
+        let (client, mut steam) = account_served_by(&cdn).await;
+        let parent = tempfile::tempdir().unwrap();
+        let installation = download(
+            &client,
+            &mut steam,
+            FREE_GAME,
+            Platform::Windows,
+            parent.path(),
+        )
+        .await
+        .unwrap();
+        // It owns no depot, so the depots come from the game being free; a
+        // shared depot is keyed under the game, a redistributable under its app.
+        assert_eq!(
+            recorded(&installation),
+            [(501, 5001), (502, 5502), (228_990, 9990)]
+        );
+        let [own, shared, redistributable] = &depots;
+        assert_installed(
+            Path::new(&installation.directory),
+            &[own, shared, redistributable],
+        );
+        assert_eq!(
+            steam.depot_keys(),
+            [
+                (501, FREE_GAME),
+                (502, FREE_GAME),
+                (228_990, REDISTRIBUTABLES)
+            ]
+        );
+        assert_eq!(
+            steam.manifest_codes(),
+            [
+                (501, FREE_GAME, 5001),
+                (502, FREE_GAME, 5502),
+                (228_990, FREE_GAME, 9990)
+            ]
+        );
+        assert_eq!(
+            steam.app_queries(),
+            [vec![FREE_GAME], vec![BASE, REDISTRIBUTABLES]]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_cdn_that_refuses_a_depot_gets_its_token_through_the_app_that_authorizes_it() {
+        let depots: Vec<Held> = shared_game_mac_depots()
+            .into_iter()
+            .chain(redist_game_depots())
+            .chain(free_game_depots())
+            .collect();
+        let cdn = cdn::holding_behind_tokens(&depots);
+        let (client, mut steam) = account_served_by(&cdn).await;
+        let parent = tempfile::tempdir().unwrap();
+        let mut tokens_asked_for = async |app_id, platform| {
+            steam.forget_requests();
+            download(&client, &mut steam, app_id, platform, parent.path())
+                .await
+                .unwrap();
+            steam.cdn_tokens()
+        };
+        // One token a depot, which its manifest and chunks then bear.
+        assert_eq!(
+            tokens_asked_for(SHARED_GAME, Platform::Mac).await,
+            [(302, BASE), (303, BASE), (304, SHARED_GAME)]
+        );
+        assert_eq!(
+            tokens_asked_for(REDIST_GAME, Platform::Windows).await,
+            [
+                (401, REDIST_GAME),
+                (228_989, REDISTRIBUTABLES),
+                (228_990, REDISTRIBUTABLES),
+                (229_013, REDISTRIBUTABLES),
+            ]
+        );
+        assert_eq!(
+            tokens_asked_for(FREE_GAME, Platform::Windows).await,
+            [(501, FREE_GAME), (502, FREE_GAME), (228_990, FREE_GAME)]
+        );
+    }
+
+    /// Picks the Mac build of `app_id`, whose game runs natively.
+    async fn pick_mac_build(client: &Client, steam: &mut Steam, app_id: u32) {
+        let platform = steam.during(client.platform(app_id, ENGLISH)).await;
+        assert_eq!(platform.unwrap(), Platform::Mac);
+        steam.forget_requests();
+    }
+
+    #[tokio::test]
+    async fn a_download_after_a_mac_pick_starts_from_the_manifests_the_pick_read_and_records_the_depots_it_installed()
+     {
+        let depots = game_depots(ARM64);
+        let [_, mac, shared] = &depots;
+        let cdn = holding(&depots);
+        let (client, mut steam) = account_served_by(&cdn).await;
+        pick_mac_build(&client, &mut steam, GAME).await;
+        let parent = tempfile::tempdir().unwrap();
+        let installation = download(&client, &mut steam, GAME, Platform::Mac, parent.path())
+            .await
+            .unwrap();
+        // The pick's read served the install: Steam is asked for no manifest
+        // code, and the CDN for no manifest but the two the pick fetched.
+        assert!(steam.manifest_codes().is_empty());
+        assert!(steam.cdn_tokens().is_empty());
+        assert_eq!(
+            manifests_asked(&cdn),
+            [mac.manifest_path(), shared.manifest_path()]
+        );
+        assert_eq!(steam.depot_keys(), [(102, GAME), (103, GAME)]);
+        assert_eq!(steam.content_server_queries(), 1);
+        // The game and its licenses were read once, by the pick.
+        assert_eq!(steam.package_queries(), 0);
+        assert!(steam.app_queries().is_empty());
+
+        let folder = parent
+            .path()
+            .canonicalize()
+            .unwrap()
+            .join("steam-100-macos");
+        assert_eq!(installation.app_id, GAME);
+        assert_eq!(installation.name, "Game");
+        assert_eq!(installation.platform, Platform::Mac);
+        assert_eq!(installation.language, ENGLISH);
+        assert_eq!(installation.directory, folder.to_string_lossy());
+        // What the files hold, not the sizes PICS estimates.
+        assert_eq!(installation.total_bytes, mac.size() + shared.size());
+        assert_eq!(recorded(&installation), [(102, 1002), (103, 1003)]);
+        assert_installed(&folder, &[mac, shared]);
+        // The receipt on disk is the one returned, and is current.
+        let receipt = obelisk_core::installation::read_receipt::<Installation>(&folder)
+            .unwrap()
+            .expect("a receipt");
+        assert_eq!(recorded(&receipt), [(102, 1002), (103, 1003)]);
+        let update = update_available(&client, &mut steam, GAME, Platform::Mac, ENGLISH, &folder);
+        assert!(!update.await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn the_manifests_a_pick_read_serve_one_download_only() {
+        let cdn = holding(&game_depots(ARM64));
+        let (client, mut steam) = account_served_by(&cdn).await;
+        pick_mac_build(&client, &mut steam, GAME).await;
+        let first = tempfile::tempdir().unwrap();
+        download(&client, &mut steam, GAME, Platform::Mac, first.path())
+            .await
+            .unwrap();
+        assert!(steam.manifest_codes().is_empty());
+        // Another installation of the same build finds nothing left of the
+        // pick: Steam and the CDN are asked for both manifests again.
+        let second = tempfile::tempdir().unwrap();
+        download(&client, &mut steam, GAME, Platform::Mac, second.path())
+            .await
+            .unwrap();
+        assert_eq!(
+            steam.manifest_codes(),
+            [(102, GAME, 1002), (103, GAME, 1003)]
+        );
+        assert_eq!(manifests_asked(&cdn).len(), 4);
+    }
+
+    #[tokio::test]
+    async fn a_windows_download_neither_uses_nor_uses_up_the_manifests_a_mac_pick_read() {
+        let cdn = holding(&game_depots(ARM64));
+        let (client, mut steam) = account_served_by(&cdn).await;
+        pick_mac_build(&client, &mut steam, GAME).await;
+        let parent = tempfile::tempdir().unwrap();
+        // Depot 103 is in both builds, and the pick read its manifest: the
+        // Windows download still asks for it.
+        download(&client, &mut steam, GAME, Platform::Windows, parent.path())
+            .await
+            .unwrap();
+        assert_eq!(
+            steam.manifest_codes(),
+            [(101, GAME, 1001), (103, GAME, 1003)]
+        );
+        steam.forget_requests();
+        download(&client, &mut steam, GAME, Platform::Mac, parent.path())
+            .await
+            .unwrap();
+        assert!(steam.manifest_codes().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_windows_download_of_a_game_whose_builds_share_every_depot_still_leaves_the_mac_picks_manifests()
+     {
+        let cdn = holding(&[Held::program(1201, 12_001, SAME_DEPOTS, ARM64)]);
+        let (client, mut steam) = account_served_by(&cdn).await;
+        pick_mac_build(&client, &mut steam, SAME_DEPOTS).await;
+        let parent = tempfile::tempdir().unwrap();
+        // The Windows build is named as the Mac build is, but is not a Mac
+        // build.
+        let windows = download(
+            &client,
+            &mut steam,
+            SAME_DEPOTS,
+            Platform::Windows,
+            parent.path(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(recorded(&windows), [(1201, 12_001)]);
+        assert_eq!(steam.manifest_codes(), [(1201, SAME_DEPOTS, 12_001)]);
+        steam.forget_requests();
+        let mac = download(
+            &client,
+            &mut steam,
+            SAME_DEPOTS,
+            Platform::Mac,
+            parent.path(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(recorded(&mac), [(1201, 12_001)]);
+        assert!(steam.manifest_codes().is_empty());
+    }
+
+    #[tokio::test]
+    async fn cancelling_the_download_forgets_what_the_pick_read() {
+        let cdn = holding(&game_depots(ARM64));
+        let (client, mut steam) = account_served_by(&cdn).await;
+        pick_mac_build(&client, &mut steam, GAME).await;
+        client.cancel_download();
+        let parent = tempfile::tempdir().unwrap();
+        download(&client, &mut steam, GAME, Platform::Mac, parent.path())
+            .await
+            .unwrap();
+        assert_eq!(
+            steam.manifest_codes(),
+            [(102, GAME, 1002), (103, GAME, 1003)]
+        );
+    }
+
+    #[tokio::test]
+    async fn the_download_shows_the_depots_installed_so_far_and_estimates_the_others_from_pics() {
+        let depots = [
+            Held::data(1401, 14_001, THREE_DEPOTS),
+            Held::data(1402, 14_002, THREE_DEPOTS),
+        ];
+        let [first, second] = &depots;
+        let cdn = holding(&depots);
+        let (client, mut steam) = account_served_by(&cdn).await;
+        // Steam refuses the third depot's manifest, which ends the install there.
+        steam.world.refused_manifests = vec![1403];
+        let parent = tempfile::tempdir().unwrap();
+        let error = download(
+            &client,
+            &mut steam,
+            THREE_DEPOTS,
+            Platform::Mac,
+            parent.path(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(
+            message(error),
+            crate::message::format(
+                "backend.steam.cm.rejected",
+                &["backend.steam.cm.action.manifest".into(), "15".into()]
+            )
+        );
+        // The last depot installed showed what it and the first one hold,
+        // with the third depot's size as PICS estimates it, and what the CDN
+        // sent for both: their chunks, and their manifests besides.
+        let progress = client.progress().expect("the download's progress");
+        assert_eq!(progress.total_bytes, first.size() + second.size() + 4000);
+        assert_eq!(progress.completed_bytes, first.size() + second.size());
+        let (manifests, chunks) = [first.sent_bytes(), second.sent_bytes()]
+            .into_iter()
+            .fold((0, 0), |sent, depot| (sent.0 + depot.0, sent.1 + depot.1));
+        assert_eq!(progress.content_bytes, chunks);
+        assert_eq!(progress.network_bytes, manifests + chunks);
+        // A second download finds both depots in the folder, manifests and
+        // files: it shows them whole, and the CDN sends nothing.
+        steam.forget_requests();
+        let taken = requests(&cdn).len();
+        download(
+            &client,
+            &mut steam,
+            THREE_DEPOTS,
+            Platform::Mac,
+            parent.path(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(steam.manifest_codes(), [(1403, THREE_DEPOTS, 14_003)]);
+        assert_eq!(requests(&cdn).len(), taken);
+        let progress = client.progress().expect("the download's progress");
+        assert_eq!(progress.total_bytes, first.size() + second.size() + 4000);
+        assert_eq!(progress.completed_bytes, first.size() + second.size());
+        assert_eq!(progress.network_bytes, 0);
+        assert_eq!(progress.content_bytes, 0);
+    }
+
+    #[tokio::test]
+    async fn a_depot_not_installed_yet_counts_for_the_size_pics_states_and_for_nothing_when_it_states_none()
+     {
+        // The total a download shows as it ends on the depot whose manifest
+        // Steam refuses, with the depots before it installed.
+        let total_shown = async |app_id, platform, depots: &[Held], refused| {
+            let cdn = holding(depots);
+            let (client, mut steam) = account_served_by(&cdn).await;
+            steam.world.refused_manifests = vec![refused];
+            let parent = tempfile::tempdir().unwrap();
+            download(&client, &mut steam, app_id, platform, parent.path())
+                .await
+                .unwrap_err();
+            let progress = client.progress().expect("the download's progress");
+            progress.total_bytes
+        };
+        // PICS states 40 bytes for depot 303 and 60 for depot 304.
+        let depots = shared_game_mac_depots();
+        let [first, second, _] = &depots;
+        assert_eq!(
+            total_shown(SHARED_GAME, Platform::Mac, &depots, 303).await,
+            first.size() + 40 + 60
+        );
+        assert_eq!(
+            total_shown(SHARED_GAME, Platform::Mac, &depots, 304).await,
+            first.size() + second.size() + 60
+        );
+        // It states no size for the Common Redistributables a game names.
+        let depots = redist_game_depots();
+        assert_eq!(
+            total_shown(REDIST_GAME, Platform::Windows, &depots, 228_990).await,
+            depots[0].size()
+        );
     }
 }

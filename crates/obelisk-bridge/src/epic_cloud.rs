@@ -1,8 +1,8 @@
 //! Presentation of the Rust-owned Epic supervisor and Cloud decisions.
-use crate::EpicError;
+use crate::WebAccountError;
 use game_runtime::epic;
 
-impl From<epic::Error> for EpicError {
+impl From<epic::Error> for WebAccountError {
     fn from(error: epic::Error) -> Self {
         Self::Service {
             message: error.to_string(),

@@ -171,7 +171,6 @@ impl<S: Services> lifecycle::Launch for Launch<S> {
         &mut self,
         _: &Arc<Session<Epic>>,
         target: &Target,
-        _: Option<Architecture>,
         _: Option<&Box<dyn LaunchCloud<Error>>>,
     ) -> Result<Prepared<Host>> {
         Ok(self.request.prepared(

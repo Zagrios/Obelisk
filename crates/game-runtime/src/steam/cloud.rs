@@ -5,8 +5,7 @@ mod session;
 mod store;
 pub use session::maintain;
 pub(crate) use session::{Session, open};
-pub(crate) use store::Context;
-pub use store::archive_with_rules;
+pub(crate) use store::{Context, archive_under};
 
 use crate::cloud::{Control, Stop, record};
 use serde::{Deserialize, Serialize};
@@ -50,14 +49,6 @@ impl record::Configuration for Config {
     fn prefix(&self) -> Option<&Path> {
         self.prefix.as_deref()
     }
-}
-
-/// What Cloud maintenance syncs: an installed game, or an uninstalled game
-/// whose saved context still holds pending work.
-#[derive(Clone, Debug)]
-pub enum MaintenanceTarget {
-    Installed(Config),
-    Uninstalled { root: PathBuf, app_id: u32 },
 }
 
 #[derive(Clone, Copy, Debug, thiserror::Error)]

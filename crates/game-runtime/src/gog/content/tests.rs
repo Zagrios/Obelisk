@@ -225,27 +225,11 @@ async fn a_transfer_cancelled_while_its_credentials_renew_never_begins() {
     assert_eq!(beginning.await.unwrap(), Err(Failure::Cancelled));
 }
 
-#[tokio::test]
-async fn gog_keeps_no_cloud_saves() {
+#[test]
+fn gog_keeps_no_cloud_saves() {
     let fixture = Fixture::new();
-    let receipt = fixture.receipt(Platform::Mac);
-    assert_eq!(fixture.content.archive(&receipt).await, Ok(()));
-    assert_eq!(fixture.content.removed(&receipt).await, Ok(()));
-    assert!(
-        fixture
-            .content
-            .indicators(&["1207658924".into()])
-            .unwrap()
-            .is_empty()
-    );
-    let control = Arc::new(crate::cloud::Control::new(|_| {}));
-    assert_eq!(
-        fixture
-            .content
-            .maintain(&"1207658924".into(), Some(&receipt), control)
-            .await,
-        Err(Failure::Failed("backend.gog.unsupported".into()))
-    );
+
+    assert!(fixture.content.cloud().is_none());
 }
 
 #[tokio::test]

@@ -213,6 +213,12 @@ impl ContentClient {
         }
     }
 
+    /// Requests go through `cdn`, such as CDNs in memory.
+    #[cfg(test)]
+    pub(crate) fn over(cdn: CdnClient) -> Self {
+        Self { cdn }
+    }
+
     /// Reads and validates the cache without issuing a CDN or authentication request.
     pub async fn cached_manifest(
         &self,
@@ -1007,4 +1013,4 @@ fn link_stays_inside(path: &Path, target: &str) -> bool {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

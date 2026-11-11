@@ -22,7 +22,12 @@ mod publish;
 const KEY: [u8; 32] = [0x42; 32];
 
 fn encrypt(bytes: &[u8]) -> Vec<u8> {
-    let cipher = aes::Aes256::new((&KEY).into());
+    encrypt_under(&KEY, bytes)
+}
+
+/// `bytes` as a CDN serves a chunk of a depot whose key is `key`.
+fn encrypt_under(key: &[u8; 32], bytes: &[u8]) -> Vec<u8> {
+    let cipher = aes::Aes256::new(key.into());
     let iv = [0x12; 16];
     let mut encrypted_iv = aes::cipher::Block::<aes::Aes256>::default();
     encrypted_iv.copy_from_slice(&iv);
@@ -30,7 +35,7 @@ fn encrypt(bytes: &[u8]) -> Vec<u8> {
     let mut output = encrypted_iv.to_vec();
     let mut body = bytes.to_vec();
     body.resize(bytes.len() + 16, 0);
-    let encrypted = cbc::Encryptor::<aes::Aes256>::new((&KEY).into(), (&iv).into())
+    let encrypted = cbc::Encryptor::<aes::Aes256>::new(key.into(), (&iv).into())
         .encrypt_padded::<Pkcs7>(&mut body, bytes.len())
         .unwrap();
     output.extend_from_slice(encrypted);
@@ -142,13 +147,22 @@ fn manifest(files: Vec<ManifestFile>, encrypted_names: bool) -> Vec<u8> {
 }
 
 fn manifest_version(files: Vec<ManifestFile>, encrypted_names: bool, manifest_id: u64) -> Vec<u8> {
+    depot_manifest(42, manifest_id, files, encrypted_names)
+}
+
+fn depot_manifest(
+    depot_id: u32,
+    manifest_id: u64,
+    files: Vec<ManifestFile>,
+    encrypted_names: bool,
+) -> Vec<u8> {
     let payload = TestPayload { files }.encode_to_vec();
     let mut crc = crc32fast::Hasher::new();
     crc.update(&(payload.len() as u32).to_le_bytes());
     crc.update(&payload);
     let crc = crc.finalize();
     let metadata = TestMetadata {
-        depot_id: 42,
+        depot_id,
         manifest_id,
         encrypted_names,
         encrypted_crc: if encrypted_names { crc } else { 0 },
@@ -540,6 +554,33 @@ fn decodes_upstream_reference_manifest_and_three_real_chunk_fixtures() {
     }
 }
 
+/// What a CDN serves of a depot at `manifest_id`, by path: its manifest, for
+/// a request bearing `request_code`, and the chunks of its `files`, each a
+/// name and the pieces its chunks hold, under the depot's `key`.
+pub(crate) fn depot_routes(
+    depot_id: u32,
+    manifest_id: u64,
+    request_code: u64,
+    key: &[u8; 32],
+    files: &[(&str, &[&[u8]])],
+) -> HashMap<String, Vec<u8>> {
+    let listed = files
+        .iter()
+        .map(|(name, pieces)| file(name, pieces))
+        .collect();
+    let mut routes = HashMap::from([(
+        format!("/{}", manifest_path(depot_id, manifest_id, request_code)),
+        zip(&depot_manifest(depot_id, manifest_id, listed, false)),
+    )]);
+    for bytes in files.iter().flat_map(|(_, pieces)| pieces.iter()) {
+        routes.insert(
+            format!("/depot/{depot_id}/chunk/{}", hex(&Sha1::digest(bytes))),
+            encrypt_under(key, &zip(bytes)),
+        );
+    }
+    routes
+}
+
 /// The host `plan` names; a fixture's `client` serves it.
 const CDN_HOST: &str = "cdn.steamcontent.com";
 
@@ -605,9 +646,7 @@ fn serving(fixtures: &[(&str, &CdnFixture)]) -> ContentClient {
         .iter()
         .map(|(host, fixture)| (*host, &fixture.cdn))
         .collect();
-    ContentClient {
-        cdn: reaching_as(&hosts),
-    }
+    ContentClient::over(reaching_as(&hosts))
 }
 
 fn plan(destination: &Path) -> DepotDownload<'static> {
@@ -684,16 +723,11 @@ async fn a_depot_s_files_are_listed_and_read_from_their_first_chunks_only() {
     let depot = client.depot_files(source, &cancel).await.unwrap();
     let mut listing = Listing::default();
     depot.list(&mut listing, 0);
-    let read = |(_, file): (usize, usize), bytes: u64| depot.read(file, bytes, &cancel);
-    let native = obelisk_core::mac_build::runs_natively(
-        &listing,
-        "Game.app/Contents/MacOS/Launcher",
-        &[],
-        read,
-    )
-    .await
-    .unwrap();
-    assert!(native);
+    // The link names the program, by its depot and its place in the manifest.
+    let launcher = listing.find("Game.app/Contents/MacOS/Launcher");
+    assert_eq!(launcher, Some(((0, 1), 5023)));
+    let head = depot.read(1, 4096, &cancel).await.unwrap();
+    assert_eq!(head, program[..4096]);
     assert_eq!(fixture.chunk_requests(), 1);
     let whole = depot.read(1, 10_000, &cancel).await.unwrap();
     assert_eq!(whole, pieces.concat());

@@ -103,6 +103,12 @@ impl ContentClient {
         }
     }
 
+    /// Requests go through `cdn`, such as CDNs in memory.
+    #[cfg(test)]
+    pub(crate) fn over(cdn: CdnClient) -> Self {
+        Self { cdn }
+    }
+
     pub async fn download(
         &self,
         manifest: Arc<Manifest>,
@@ -885,4 +891,4 @@ fn verify_file(
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

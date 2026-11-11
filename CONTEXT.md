@@ -11,7 +11,7 @@ One account-scoped attempt to install, verify or repair a game's files. Its life
 A record identifying a game installation whose required files were successfully installed. Partial download data is not an installation receipt.
 
 **Offer**:
-What a storefront says Obelisk can install of one game, with Steam's language, before any folder is chosen. The storefront picks its build as the Transfer starts: the Mac build when its game runs natively on Apple silicon, as its program's first bytes tell, else the Windows build. Until a download found that a Mac build's game does not run natively, the game's page shows the Mac build. A Mac build without an arm64 slice, Intel or 32-bit, is never installed, nor launched. A new installation starts from an offer; an installed game launches, updates and uninstalls from its Installation receipt alone.
+What a storefront says Obelisk can install of one game, with Steam's language, before any folder is chosen. The storefront picks its build as the Transfer starts: the Mac build when its game runs natively on Apple silicon, as its program's first bytes tell, else the Windows build. A Mac build its storefront refuses, or that holds what Obelisk cannot install, gives way to the Windows build like one whose game does not run natively; a failure that may pass, such as an outage, stops the Transfer instead. Until a download found that a Mac build's game does not run natively, the game's page shows the Mac build. A Mac build without an arm64 slice, Intel or 32-bit, is never installed, nor launched. A new installation starts from an offer; an installed game launches, updates and uninstalls from its Installation receipt alone.
 _Avoid_: download request, install target
 
 **Platform**:
@@ -34,8 +34,12 @@ _Avoid_: bandwidth cap, throttle
 One storefront account's signed-in connection to its storefront, from sign-in or restoration until sign-out. The account's library, Transfers, launches, friends and chat go through it. Steam's connects again by itself when its CM connection drops: six attempts over about a minute, after growing waits, then only the player's retry or the Mac's wake tries again, and never once Steam asked the account to sign in again. A Transfer whose turn comes meanwhile waits for the new connection, and the download queue waits with it. Each CM connection of a session is numbered, 0 for the first: its transport, in the code.
 _Avoid_: login, CM connection (one connection of an account session)
 
+**Web account session**:
+The Account session of a storefront whose account signs in on its web page and whose credentials rotate: Epic's and GOG's. One session serves both: a storefront supplies only how its requests name a game for playtimes and achievements, its game record and its extras, Epic's friends, status and web sign-in address, GOG's avatar. It holds an access token, renewed once it lapsed or the storefront rejected it: a renewal may rotate the credentials the Keychain keeps, and a request answered after sign-out is refused. It tells playtimes in seconds.
+_Avoid_: Epic session, GOG session
+
 **Library cache**:
-The last library each storefront account loaded, with everything the storefront returned for each game and the game's last launch from Obelisk. The library shows from it while the account's session connects; the session keeps it as it loads, and signing the account out forgets it. It is not the catalog of games added by hand.
+The last library each storefront account loaded, with everything the storefront returned for each game and the game's last launch from Obelisk. The library shows from it while the account's session connects; the session keeps it as it loads, and signing the account out forgets it. It keeps each playtime as its storefront told it, Epic's in seconds and GOG's in minutes, and Obelisk reads both in seconds. It is not the catalog of games added by hand.
 _Avoid_: launch history file
 
 **Account library**:
@@ -125,6 +129,10 @@ _Avoid_: sign-out cancel, logout kill
 **Game action**:
 What the player can do with one game of an account now, as its button shows it: download, resume or update it, launch it, wait for its queued Transfer, follow its Transfer, wait while it is uninstalled, launched or its session closes, follow a step outside any Transfer (a runtime its launch waits for, or a Cloud sync), or end its running game. A game's page and its library show the same action, except for an installed game whose storefront offers a newer build: the page offers the update alone, while the library launches it and the launch installs the update first. A Game session of another account is not this account's running game.
 _Avoid_: primary action, card action
+
+**Update watch**:
+What Obelisk knows of the newer builds a storefront offers of one account's installations, and when it asks. An update check asks about every installation at once: as the account connects and each time Obelisk becomes the active app, at most every ten minutes, and at once when the account's session connects again. A launch asks about its own game. With automatic updates on, a newer build's Transfer queues as soon as it is known, once per update check: one that failed or was stopped waits for the next.
+_Avoid_: update poll, updater (Sparkle updates Obelisk itself)
 
 **Game note**:
 What Obelisk tells players about one game on its page, whatever its storefront or build, such as what works of it and what does not yet: a few sentences in Obelisk's language, else in English. Obelisk writes it, not the storefront, and it changes nothing about how the game runs, which its profile decides.

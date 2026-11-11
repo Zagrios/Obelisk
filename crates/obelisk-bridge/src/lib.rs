@@ -18,6 +18,8 @@ mod epic_friends;
 pub use epic_friends::*;
 mod gog;
 pub use gog::*;
+mod web_account;
+pub use web_account::*;
 mod cloud;
 pub use cloud::*;
 mod game_session;

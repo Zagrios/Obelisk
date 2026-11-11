@@ -3,11 +3,14 @@ use std::sync::Arc;
 
 use tokio::sync::Notify;
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum FakeError {
     Cancelled,
     Unavailable(Unavailable),
+    /// An outage, or anything else asking again may change.
     Failed,
+    /// What asking again does not change.
+    Refused,
 }
 
 impl From<Cancelled> for FakeError {
@@ -22,15 +25,22 @@ impl From<Unavailable> for FakeError {
     }
 }
 
+/// A program for Apple silicon, then one for Intel, as their first bytes
+/// tell.
+const ARM64: [u8; 8] = [0xcf, 0xfa, 0xed, 0xfe, 0x0c, 0x00, 0x00, 0x01];
+const INTEL: [u8; 8] = [0xcf, 0xfa, 0xed, 0xfe, 0x07, 0x00, 0x00, 0x01];
+
 /// A game whose storefront answers as scripted, and logs what it was asked.
 struct FakeGame {
     offered: (Option<&'static str>, Option<&'static str>),
     key: Result<Option<u8>, ()>,
-    /// What reading the Mac build tells: what it keeps when native, `None`
-    /// when not.
-    inspection: Result<Option<&'static str>, ()>,
+    /// What reading the Mac build's program gives: one for Apple silicon,
+    /// with what the build keeps, `None` for one for Intel, or a failure.
+    program: Result<Option<&'static str>, FakeError>,
     /// Holds `inspect` until notified.
     gate: Option<Arc<Notify>>,
+    /// Stops the pick as `inspect` answers.
+    stopped: Option<Arc<Choice>>,
     log: Mutex<Vec<&'static str>>,
 }
 
@@ -39,8 +49,9 @@ impl FakeGame {
         Self {
             offered: (mac, windows),
             key: Ok(Some(1)),
-            inspection: Ok(Some("read")),
+            program: Ok(Some("read")),
             gate: None,
+            stopped: None,
             log: Mutex::new(Vec::new()),
         }
     }
@@ -48,7 +59,7 @@ impl FakeGame {
     fn native(key: u8, kept: &'static str) -> Self {
         Self {
             key: Ok(Some(key)),
-            inspection: Ok(Some(kept)),
+            program: Ok(Some(kept)),
             ..Self::new(Some("mac"), Some("windows"))
         }
     }
@@ -56,7 +67,7 @@ impl FakeGame {
     fn not_native(key: u8) -> Self {
         Self {
             key: Ok(Some(key)),
-            inspection: Ok(None),
+            program: Ok(None),
             ..Self::new(Some("mac"), Some("windows"))
         }
     }
@@ -80,6 +91,7 @@ impl GameBuilds for FakeGame {
     type Key = u8;
     type Kept = &'static str;
     type Error = FakeError;
+    type Failure = FakeError;
 
     async fn builds(&self) -> Result<Offered<&'static str>, FakeError> {
         self.note("builds");
@@ -105,10 +117,27 @@ impl GameBuilds for FakeGame {
         if let Some(gate) = &self.gate {
             gate.notified().await;
         }
-        match self.inspection.map_err(|()| FakeError::Failed)? {
-            Some(kept) => Ok(Inspection::Native(kept)),
-            None => Ok(Inspection::NotNative),
+        if let Some(choice) = &self.stopped {
+            choice.cancel();
         }
+        let mut listing = Listing::default();
+        listing.file("Game", (), ARM64.len() as u64);
+        let launch = Launch {
+            executable: "Game",
+            libraries: &[],
+        };
+        let read = |(), _| async {
+            self.program.map(|kept| match kept {
+                Some(_) => ARM64.to_vec(),
+                None => INTEL.to_vec(),
+            })
+        };
+        let verdict = Verdict::of(&listing, launch, read).await?;
+        Ok(verdict.keeping(|| self.program.unwrap().unwrap()))
+    }
+
+    fn is_refusal(failure: &FakeError) -> bool {
+        *failure == FakeError::Refused
     }
 }
 
@@ -145,7 +174,8 @@ async fn reads(choice: &Choice, key: u8, native: bool) -> bool {
 
 const MAC: Option<&str> = Some("mac");
 const WINDOWS: Option<&str> = Some("windows");
-/// What reading a native Mac build keeps.
+/// A Mac build whose program is for Apple silicon, and what reading it
+/// keeps; then one whose program is for Intel.
 const NATIVE: Option<&str> = Some("read");
 const NOT_NATIVE: Option<&str> = None;
 
@@ -154,7 +184,7 @@ async fn a_download_installs_the_mac_build_when_its_game_runs_natively_else_the_
     use Platform::{Mac, Windows};
     let no_build = Err(FakeError::Unavailable(Unavailable::NoBuild));
     let not_native = Err(FakeError::Unavailable(Unavailable::NotNative));
-    // (mac, windows, what reading the Mac build tells, picked, whether it was read)
+    // (mac, windows, the Mac build's program, picked, whether it was read)
     let cases = [
         (None, None, NATIVE, no_build, false),
         (None, WINDOWS, NATIVE, Ok(Windows), false),
@@ -163,13 +193,13 @@ async fn a_download_installs_the_mac_build_when_its_game_runs_natively_else_the_
         (MAC, WINDOWS, NOT_NATIVE, Ok(Windows), true),
         (MAC, None, NOT_NATIVE, not_native, true),
     ];
-    for (mac, windows, inspection, expected, inspected) in cases {
+    for (mac, windows, program, expected, inspected) in cases {
         let game = FakeGame {
-            inspection: Ok(inspection),
+            program: Ok(program),
             ..FakeGame::new(mac, windows)
         };
         let choice = Choice::default();
-        let case = (mac, windows, inspection);
+        let case = (mac, windows, program);
         assert_eq!(pick(&choice, &game).await, expected, "{case:?}");
         assert_eq!(game.asked("inspect"), usize::from(inspected), "{case:?}");
         if mac.is_none() {
@@ -245,7 +275,7 @@ async fn a_mac_build_is_read_once_per_key() {
     assert_eq!(pick(&choice, &failing_key).await, Err(FakeError::Failed));
     assert_eq!(failing_key.asked("inspect"), 0);
     let failing_read = FakeGame {
-        inspection: Err(()),
+        program: Err(FakeError::Failed),
         ..FakeGame::not_native(3)
     };
     assert_eq!(pick(&choice, &failing_read).await, Err(FakeError::Failed));
@@ -309,6 +339,109 @@ async fn a_native_pick_hands_what_it_read_to_that_build_s_download_once() {
 }
 
 #[tokio::test]
+async fn a_mac_build_its_storefront_refuses_gives_way_to_the_windows_build_and_keeps_that_verdict()
+{
+    let choice = Choice::default();
+    assert_eq!(
+        pick(&choice, &FakeGame::native(5, "five")).await,
+        Ok(Platform::Mac)
+    );
+    let refused = FakeGame {
+        program: Err(FakeError::Refused),
+        ..FakeGame::native(1, "one")
+    };
+    assert_eq!(pick(&choice, &refused).await, Ok(Platform::Windows));
+    assert_eq!(pick(&choice, &refused).await, Ok(Platform::Windows));
+    assert_eq!(refused.asked("inspect"), 1, "the verdict of key 1 is kept");
+    // As for a game that does not run natively: its page shows the Windows
+    // build, and no download starts from what another build's pick read.
+    assert_eq!(
+        shown(&choice, &refused).await,
+        Some((Platform::Windows, "windows"))
+    );
+    assert_eq!(choice.take(&5), None);
+    assert_eq!(choice.take(&1), None);
+
+    // Without a Windows build to give way to, the game cannot be installed.
+    let mac_only = FakeGame {
+        key: Ok(Some(2)),
+        program: Err(FakeError::Refused),
+        ..FakeGame::new(MAC, None)
+    };
+    assert_eq!(
+        pick(&choice, &mac_only).await,
+        Err(FakeError::Unavailable(Unavailable::NotNative))
+    );
+}
+
+#[tokio::test]
+async fn a_failure_that_is_no_refusal_fails_the_pick_and_keeps_no_verdict() {
+    let choice = Choice::default();
+    assert_eq!(
+        pick(&choice, &FakeGame::native(5, "five")).await,
+        Ok(Platform::Mac)
+    );
+    // Falling back on an outage could install the Windows build of a game
+    // that runs natively.
+    let unreachable = FakeGame {
+        program: Err(FakeError::Failed),
+        ..FakeGame::native(1, "one")
+    };
+    assert_eq!(pick(&choice, &unreachable).await, Err(FakeError::Failed));
+    assert_eq!(
+        shown(&choice, &unreachable).await,
+        Some((Platform::Mac, "mac")),
+        "the page still shows the Mac build"
+    );
+    assert_eq!(choice.take(&5), Some("five"), "what was kept is left alone");
+    assert!(
+        reads(&choice, 1, true).await,
+        "the next pick reads it again"
+    );
+}
+
+#[tokio::test]
+async fn a_refusal_answered_as_the_pick_is_stopped_ends_cancelled() {
+    let choice = Arc::new(Choice::default());
+    let refused = FakeGame {
+        program: Err(FakeError::Refused),
+        stopped: Some(Arc::clone(&choice)),
+        ..FakeGame::native(1, "one")
+    };
+    assert_eq!(pick(&choice, &refused).await, Err(FakeError::Cancelled));
+    assert!(
+        reads(&choice, 1, true).await,
+        "a stopped pick keeps no verdict"
+    );
+}
+
+#[tokio::test]
+async fn a_build_keeps_what_its_download_starts_from_only_when_its_game_runs_natively() {
+    let mut listing = Listing::default();
+    listing.file("Game.app/Contents/MacOS/Game", ARM64, ARM64.len() as u64);
+    listing.file("Game.app/Contents/Frameworks/libapi.dylib", INTEL, 8);
+    let read = |head: [u8; 8], _| async move { Ok::<_, FakeError>(head.to_vec()) };
+    let launch = |libraries| Launch {
+        executable: "Game.app/Contents/MacOS/Game",
+        libraries,
+    };
+    let alone = Verdict::of(&listing, launch(&[]), read).await.unwrap();
+    assert_eq!(alone.keeping(|| "kept").into_kept(), Some("kept"));
+    // The library a launch pairs with the program must run natively too.
+    let paired = Verdict::of(&listing, launch(&["libapi.dylib"]), read)
+        .await
+        .unwrap();
+    let kept =
+        paired.keeping(|| -> &str { panic!("nothing is kept of a build that is not picked") });
+    assert_eq!(kept.into_kept(), None);
+    assert_eq!(Inspection::<&str>::no_program().into_kept(), None);
+
+    let failing = |_: [u8; 8], _| async { Err::<Vec<u8>, _>(FakeError::Failed) };
+    let failed = Verdict::of(&listing, launch(&[]), failing).await;
+    assert_eq!(failed.map(|_| ()), Err(FakeError::Failed));
+}
+
+#[tokio::test]
 async fn cancel_stops_a_pick_and_forgets_what_it_read() {
     let choice = Choice::default();
     // Harmless with nothing in flight.
@@ -350,7 +483,7 @@ async fn cancel_stops_a_pick_and_forgets_what_it_read() {
 async fn a_pick_runs_inside_what_the_storefront_wraps_around_it() {
     let choice = Choice::default();
     let failing = FakeGame {
-        inspection: Err(()),
+        program: Err(FakeError::Failed),
         ..FakeGame::native(1, "one")
     };
     let gated = FakeGame {

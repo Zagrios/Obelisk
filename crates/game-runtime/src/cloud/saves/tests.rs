@@ -1,14 +1,18 @@
-//! Each game's Cloud record through its interface, once for every storefront,
-//! on the Cloud sync's harnesses: the uninstall archive, the removal, pending
-//! discovery and the indicators.
+//! An account's Cloud saves between Game sessions through their interface,
+//! once for every storefront, on the Cloud sync's harnesses: the uninstall
+//! archive, the removal, Cloud maintenance, pending discovery and the
+//! indicators.
 use super::*;
+use crate::cloud::Choice;
 use crate::cloud::sync::tests::{
-    Harness, Of, RecordOf, indicator, listed, pending, played_offline, synced, uninstall,
+    Harness, Of, RecordOf, archive, idle_guard_released, indicator, listed, maintain,
+    next_question, pending, played_offline, player_sees, record_removal, synced, uninstall,
     uploading, vault, work,
 };
 use crate::cloud_status::SavedState;
 use crate::supervisor::client::no_other_session;
-use cloud_vault::{EpicScope, Scope};
+use cloud_vault::{EpicScope, Manifest, Scope};
+use std::{path::PathBuf, time::Duration};
 
 /// Beside `scope`: another game of the same account, the same game of another
 /// account, and a game of the other storefront.
@@ -57,21 +61,16 @@ fn account(scope: &StoreScope) -> AccountIdentity {
 
 /// The games of `account` whose Cloud indicator shows: those `requested`,
 /// and those pending discovery finds.
-fn shown<H: Harness>(
+fn listing<H: Harness>(
     game: &H,
     account: &AccountIdentity,
     requested: &[StoreScope],
 ) -> Vec<StoreScope> {
-    indicators::<RecordOf<H>>(&game.root(), account, requested)
+    discovered::<RecordOf<H>>(&game.root(), account, requested)
         .unwrap()
         .into_iter()
         .map(|(scope, _)| scope)
         .collect()
-}
-
-/// The removal of `game`'s installation, recorded.
-fn record_removal<H: Harness>(game: &H) -> Result<(), Of<H>> {
-    removed::<RecordOf<H>>(&game.configuration(), game.account_id())
 }
 
 pub(crate) async fn pending_discovery_includes_uploads_the_vault_still_holds<H: Harness>() {
@@ -210,11 +209,11 @@ pub(crate) async fn an_uninstall_keeps_the_exit_save_and_the_upload_still_waitin
     drop(held);
     fs::write(game.save(), b"edited before uninstall").unwrap();
 
-    game.archive().await.unwrap();
-    game.archive().await.unwrap();
+    archive(&game).await.unwrap();
+    archive(&game).await.unwrap();
     fs::remove_dir_all(game.install()).unwrap();
-    record_removal(&game).unwrap();
-    record_removal(&game).unwrap();
+    record_removal(&game).await.unwrap();
+    record_removal(&game).await.unwrap();
 
     let work = work(&game).unwrap();
     assert!(work.installation_removed);
@@ -242,16 +241,16 @@ pub(crate) async fn an_interrupted_uninstall_keeps_the_saves_it_already_removed<
     let other_slot = game.slot().replace("slot.sav", "other.sav");
     fs::write(game.save(), b"original slot").unwrap();
     fs::write(&other, b"original other").unwrap();
-    game.archive().await.unwrap();
+    archive(&game).await.unwrap();
     // The removal deleted one save, then failed with the installation and
     // another save, edited meanwhile, still there.
     fs::remove_file(game.save()).unwrap();
     fs::write(&other, b"edited survivor").unwrap();
 
-    let refused = record_removal(&game).unwrap_err();
-    game.archive().await.unwrap();
+    let refused = record_removal(&game).await.unwrap_err();
+    archive(&game).await.unwrap();
 
-    assert_eq!(refused.key(), Of::<H>::recovery().key());
+    assert_eq!(refused, player_sees::<H>(Of::<H>::recovery()));
     let work = work(&game).unwrap();
     assert!(work.installation_removed);
     assert_eq!(work.pending, None);
@@ -293,9 +292,9 @@ pub(crate) async fn a_failed_uninstall_archive_leaves_the_record_as_it_was<H: Ha
     let linux = game.root().with_file_name("Prefixes/game-linux/prefix");
     game.run_in(&linux);
 
-    let refused = game.archive().await.unwrap_err();
+    let refused = archive(&game).await.unwrap_err();
 
-    assert_eq!(refused.key(), Of::<H>::from(cloud_vault::Error::Busy).key());
+    assert_eq!(refused, player_sees::<H>(cloud_vault::Error::Busy.into()));
     assert_eq!(fs::read(&record).unwrap(), before);
 }
 
@@ -305,16 +304,139 @@ pub(crate) async fn an_uninstall_needs_only_its_storefronts_lock<H: Harness>() {
     let [same_storefront, _, other_storefront] = neighbours(&game.scope());
     let held = Vault::open(&game.root(), other_storefront).unwrap();
 
-    game.archive().await.unwrap();
+    archive(&game).await.unwrap();
     fs::remove_dir_all(game.install()).unwrap();
-    record_removal(&game).unwrap();
+    record_removal(&game).await.unwrap();
 
     assert!(work(&game).unwrap().installation_removed);
-    let busy = Of::<H>::from(cloud_vault::Error::Busy).key();
+    let busy = player_sees::<H>(cloud_vault::Error::Busy.into());
     let other_game = Vault::open(&game.root(), same_storefront).unwrap();
-    assert_eq!(game.archive().await.unwrap_err().key(), busy);
-    assert_eq!(record_removal(&game).unwrap_err().key(), busy);
+    assert_eq!(archive(&game).await.unwrap_err(), busy);
+    assert_eq!(record_removal(&game).await.unwrap_err(), busy);
     drop((held, other_game));
+}
+
+pub(crate) async fn an_uninstall_goes_on_when_the_storefront_keeps_no_saves_of_this_build<
+    H: Harness,
+>() {
+    // Without Cloud rules, then with rules for the game's other build only.
+    for other_build in [false, true] {
+        let game = H::game();
+        fs::write(game.save(), b"progress").unwrap();
+        if other_build {
+            game.set_rules_of_another_build();
+        } else {
+            game.set_rules(false);
+        }
+
+        uninstall(&game).await;
+
+        assert!(!game.install().exists());
+        assert_eq!(work(&game), None, "nothing was archived: no record");
+        assert!(vault(&game).local().is_none());
+        assert!(!listed(&game));
+    }
+}
+
+/// The Wine prefix a Windows build of the game runs in without a choice of
+/// engine: the one named after its folder.
+fn wine_prefix<H: Harness>(game: &H) -> PathBuf {
+    let prefixes = game.root().with_file_name("Prefixes");
+    prefixes.join(game.install().file_name().unwrap())
+}
+
+pub(crate) async fn an_uninstall_archives_the_saves_where_its_receipts_build_keeps_them<
+    H: Harness,
+>() {
+    // A Mac build, then a Windows build, whose saves live in its Wine prefix.
+    for windows in [false, true] {
+        let mut game = H::game();
+        if windows {
+            game.run_in(&wine_prefix(&game));
+        }
+        fs::write(game.save(), b"progress").unwrap();
+        let cloud = of(game.saves());
+
+        cloud.archive(&game.receipt()).await.unwrap();
+
+        let vault = vault(&game);
+        let archived = vault.local().unwrap();
+        assert_eq!(
+            vault.read_content(&archived.0[game.slot()]).unwrap(),
+            b"progress"
+        );
+        assert!(work(&game).unwrap().installation_removed);
+    }
+}
+
+pub(crate) async fn a_removal_is_recorded_once_the_folder_its_receipt_names_is_gone<H: Harness>() {
+    let game = H::game();
+    synced(&game, b"progress").await;
+    let (cloud, receipt) = (of(game.saves()), game.receipt());
+
+    // The folder is still there: nothing was removed.
+    let refused = cloud.removed(&receipt).await.unwrap_err();
+
+    assert_eq!(refused, player_sees::<H>(Of::<H>::recovery()));
+    assert!(!work(&game).unwrap().installation_removed);
+    fs::remove_dir_all(game.install()).unwrap();
+    cloud.removed(&receipt).await.unwrap();
+    assert!(work(&game).unwrap().installation_removed);
+}
+
+pub(crate) async fn maintenance_syncs_the_saves_where_its_installed_receipts_build_keeps_them<
+    H: Harness,
+>() {
+    let mut game = H::game();
+    game.run_in(&wine_prefix(&game));
+    synced(&game, b"old").await;
+    game.publish(b"from another device");
+    idle_guard_released(game.saves().sessions().0);
+    let (library_game, receipt) = (game.library_game(), game.receipt());
+    let cloud = of(game.saves());
+
+    let maintenance = cloud.maintain(&library_game, Some(&receipt), Arc::clone(game.control()));
+    tokio::time::timeout(Duration::from_secs(20), maintenance)
+        .await
+        .expect("maintenance finished")
+        .unwrap();
+
+    assert_eq!(fs::read(game.save()).unwrap(), b"from another device");
+}
+
+pub(crate) async fn maintenance_keeps_every_launch_of_its_storefront_out_until_it_ends<
+    H: Harness,
+>() {
+    let game = H::game();
+    synced(&game, b"old").await;
+    fs::write(game.save(), b"played here").unwrap();
+    game.publish(b"played elsewhere");
+    let (sessions, helper) = game.saves().sessions();
+    let (sessions, helper) = (sessions.to_owned(), helper.to_owned());
+    let launch_could_start = move || {
+        supervisor::Client::<<H::Saves as Storefront>::Of>::idle_guard(&sessions, &helper).is_ok()
+    };
+    let control = Arc::clone(game.control());
+    let asked = control.status().decision_id;
+    let answering = std::thread::spawn({
+        let launch_could_start = launch_could_start.clone();
+        move || {
+            // The sync waits on its question: it still holds the idle guard.
+            let question = next_question(&control, asked);
+            let could_start = launch_could_start();
+            control.answer(question.decision_id, Choice::Local).unwrap();
+            could_start
+        }
+    });
+
+    maintain(&game).await.unwrap();
+
+    assert!(
+        !answering.join().unwrap(),
+        "maintenance holds its storefront's idle guard"
+    );
+    idle_guard_released(game.saves().sessions().0);
+    assert!(launch_could_start(), "the guard goes with the maintenance");
 }
 
 pub(crate) async fn an_unreadable_record_neither_hides_nor_fakes_another_games_pending_work<
@@ -333,11 +455,11 @@ pub(crate) async fn an_unreadable_record_neither_hides_nor_fakes_another_games_p
         fs::set_permissions(&broken, fs::Permissions::from_mode(0o600)).unwrap();
     }
 
-    let discovered = shown(&game, &game.account(), &[]);
+    let found = listing(&game, &game.account(), &[]);
 
-    assert_eq!(discovered, [game.scope()]);
+    assert_eq!(found, [game.scope()]);
     assert_eq!(
-        shown(&game, &game.account(), &[other_game]),
+        listing(&game, &game.account(), &[other_game]),
         [game.scope()],
         "an unreadable record shows no indicator"
     );
@@ -363,14 +485,15 @@ pub(crate) async fn a_record_copied_into_another_account_or_game_is_never_read_a
         assert!(saved::<RecordOf<H>>(&game.root(), copy).is_err());
     }
 
-    assert_eq!(shown(&game, &game.account(), &[]), [game.scope()]);
-    assert!(shown(&game, &account(&other_account), &[]).is_empty());
+    assert_eq!(listing(&game, &game.account(), &[]), [game.scope()]);
+    assert!(listing(&game, &account(&other_account), &[]).is_empty());
 }
 
-/// Instantiates every Cloud record scenario for one storefront's harness.
-macro_rules! record_suite {
+/// Instantiates every scenario of the Cloud saves between Game sessions for
+/// one storefront's harness.
+macro_rules! saves_suite {
     ($harness:ty) => {
-        $crate::cloud::record::tests::record_suite!(
+        $crate::cloud::saves::tests::saves_suite!(
             $harness;
             pending_discovery_includes_uploads_the_vault_still_holds,
             indicators_follow_installed_and_uninstalled_games_without_locking,
@@ -381,6 +504,11 @@ macro_rules! record_suite {
             an_interrupted_uninstall_keeps_the_saves_it_already_removed,
             a_failed_uninstall_archive_leaves_the_record_as_it_was,
             an_uninstall_needs_only_its_storefronts_lock,
+            an_uninstall_goes_on_when_the_storefront_keeps_no_saves_of_this_build,
+            an_uninstall_archives_the_saves_where_its_receipts_build_keeps_them,
+            a_removal_is_recorded_once_the_folder_its_receipt_names_is_gone,
+            maintenance_syncs_the_saves_where_its_installed_receipts_build_keeps_them,
+            maintenance_keeps_every_launch_of_its_storefront_out_until_it_ends,
             an_unreadable_record_neither_hides_nor_fakes_another_games_pending_work,
             a_record_copied_into_another_account_or_game_is_never_read_as_its_own,
         );
@@ -389,9 +517,9 @@ macro_rules! record_suite {
         $(
             #[tokio::test]
             async fn $scenario() {
-                $crate::cloud::record::tests::$scenario::<$harness>().await
+                $crate::cloud::saves::tests::$scenario::<$harness>().await
             }
         )*
     };
 }
-pub(crate) use record_suite;
+pub(crate) use saves_suite;

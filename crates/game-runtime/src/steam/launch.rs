@@ -169,7 +169,6 @@ impl<M: Machine> session::Launch for Launch<M> {
         &mut self,
         _: &Arc<Session<Steam>>,
         target: &Target,
-        architecture: Option<Architecture>,
         cloud: Option<&Box<dyn SteamCloud>>,
     ) -> Result<Prepared<Host>, Error> {
         let storage = match cloud {
@@ -180,13 +179,6 @@ impl<M: Machine> session::Launch for Launch<M> {
         let host = tokio::task::spawn_blocking(move || M::prepare(&startup, config, storage))
             .await
             .map_err(|_| Error::StartFailed)??;
-        // The Intel helper comes from the prepared host's components; arm64
-        // games use the bundled host's gated exec.
-        let (helper, subcommand) = if architecture == Some(Architecture::Intel) {
-            (host.directory().join(package::SDK_INTEL), "exec-game")
-        } else {
-            (self.request.config.helpers.join(package::HOST), "game-exec")
-        };
         let mut environment = target.environment.clone();
         environment.extend(host.environment());
         game_environment(
@@ -197,8 +189,7 @@ impl<M: Machine> session::Launch for Launch<M> {
         );
         Ok(Prepared {
             host,
-            helper,
-            subcommand,
+            helper: self.request.config.helpers.join(package::HOST),
             environment,
         })
     }

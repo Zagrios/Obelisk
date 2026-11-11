@@ -232,43 +232,6 @@ impl HostCommand {
     }
 }
 
-/// Reply of an exec helper whose preparation or exec failed. A helper that
-/// replaced itself with the game instead closes its confirmation pipe silently.
-pub const EXEC_FAILED: &[u8] = b"exec-failed\n";
-
-/// Runs an exec helper's preparation and exec. The supervisor treats EOF as a
-/// successful exec, which never returns here; every other outcome sends
-/// `EXEC_FAILED` before the confirmation pipe closes.
-pub fn exec_or_report<E: From<std::io::Error>>(
-    exec: impl FnOnce() -> Result<(), E>,
-) -> Result<(), E> {
-    exec_or_report_to(exec_confirmation()?, exec)
-}
-
-/// `confirmation` must close on exec.
-fn exec_or_report_to<E>(
-    mut confirmation: std::fs::File,
-    exec: impl FnOnce() -> Result<(), E>,
-) -> Result<(), E> {
-    let result = exec();
-    let _ = confirmation.write_all(EXEC_FAILED);
-    result
-}
-
-/// A CLOEXEC duplicate of stdout that closes atomically on a successful exec.
-/// When even that fails, the marker still reaches the supervisor through stdout.
-fn exec_confirmation() -> std::io::Result<std::fs::File> {
-    use std::os::fd::AsFd;
-    let stdout = std::io::stdout();
-    stdout
-        .as_fd()
-        .try_clone_to_owned()
-        .map(std::fs::File::from)
-        .inspect_err(|_| {
-            let _ = stdout.lock().write_all(EXEC_FAILED);
-        })
-}
-
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 #[serde(tag = "event", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Event {

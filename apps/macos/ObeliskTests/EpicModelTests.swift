@@ -16,25 +16,11 @@ final class EpicModelTests: XCTestCase {
         model.open(owned)
         try await eventually { !model.isLoadingGameDetails }
         let requests = await session.detailsCalls
-        XCTAssertEqual(requests, [EpicDetailsRequest(namespace: "fixture", catalogItemId: "one", appName: "one")])
+        let product = GameOffer.epic(namespace: "fixture", catalogItemId: "one", appName: "one", title: "One")
+        XCTAssertEqual(requests, [WebDetailsRequest(offer: product, language: "en-US")])
     }
 
-    func testPlaytimesMapAppNamesToEveryLibraryEntry() async throws {
-        var first = EpicGames.game("shared", title: "First")
-        first.namespace = "first"
-        var second = first
-        second.namespace = "second"
-        second.title = "Second"
-        let session = EpicTestSession(credentials: EpicGames.credentials("current"), games: [first, second],
-                                      playtimes: [EpicPlaytime(appName: "shared", seconds: 600)])
-        let model = await connectedModel(session)
-        defer { model.signOut() }
-
-        try await eventually { model.library.playtime(of: first) == .seconds(600) }
-        XCTAssertEqual(model.library.playtime(of: second), .seconds(600), "Epic counts an app name's time for each of its entries")
-    }
-
-    func testAchievementsAskEpicForTheNamespaceAndBareLanguage() async throws {
+    func testAchievementsAskForTheGameInABareLanguage() async throws {
         let owned = EpicGames.game("one", title: "One")
         let session = EpicTestSession(credentials: EpicGames.credentials("current"), games: [owned])
         let model = await connectedModel(session, language: "fr-FR")
@@ -43,7 +29,7 @@ final class EpicModelTests: XCTestCase {
         model.open(owned)
         try await eventually { model.achievements.items != nil }
         let reads = await session.achievementReads
-        XCTAssertTrue(reads.contains(AchievementRead(ids: ["fixture"], locale: "fr", fresh: false)))
+        XCTAssertTrue(reads.contains(AchievementRead(ids: ["fixture:one"], locale: "fr", fresh: false)))
         XCTAssertTrue(reads.allSatisfy { $0.locale == "fr" })
     }
 

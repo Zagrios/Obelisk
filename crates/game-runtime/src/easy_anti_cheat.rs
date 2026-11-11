@@ -132,8 +132,39 @@ fn game(anti_cheat: &Path) -> Option<PathBuf> {
     let bytes = obelisk_core::install::read_file_bounded(&file, SETTINGS_SIZE).ok()??;
     // ELDEN RING's starts with a byte order mark, which JSON does not allow.
     let json = bytes.strip_prefix(b"\xef\xbb\xbf").unwrap_or(&bytes);
-    let settings: Settings = serde_json::from_slice(json).ok()?;
+    let settings: Settings = serde_json::from_slice(&separators_escaped(json)).ok()?;
     obelisk_core::install::safe_relative_path(&settings.executable).ok()
+}
+
+/// `json` with each backslash a publisher wrote as a path separator doubled,
+/// as JSON wants it. Halo Infinite's settings name `game\HaloInfinite.exe`
+/// with a single one, which the bootstrapper reads as that path and JSON
+/// refuses. A backslash stays as written before another one, a quote, a
+/// slash or a `uXXXX` code, the escapes a path can hold. Before any other
+/// character it is a separator, even where JSON has an escape, as the `\b`
+/// of `game\bin`.
+fn separators_escaped(json: &[u8]) -> Vec<u8> {
+    let mut escaped = Vec::with_capacity(json.len());
+    let mut rest = json;
+    while let Some((&byte, after)) = rest.split_first() {
+        escaped.push(byte);
+        rest = after;
+        if byte != b'\\' {
+            continue;
+        }
+        match after {
+            [next @ (b'\\' | b'"' | b'/'), tail @ ..] => {
+                escaped.push(*next);
+                rest = tail;
+            }
+            [b'u', code @ ..]
+                if code
+                    .get(..4)
+                    .is_some_and(|code| code.iter().all(u8::is_ascii_hexdigit)) => {}
+            _ => escaped.push(b'\\'),
+        }
+    }
+    escaped
 }
 
 #[cfg(test)]

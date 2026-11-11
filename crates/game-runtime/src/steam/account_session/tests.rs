@@ -173,7 +173,7 @@ impl Network for Connection {
     }
     fn maintain(
         &self,
-        _: steam_cloud::MaintenanceTarget,
+        _: steam_cloud::Config,
         _: &Credentials,
         _: Arc<Control>,
         _: &IdleGuard,

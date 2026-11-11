@@ -24,9 +24,9 @@ class WebAccountModelTests: XCTestCase {
                      S.game("d", title: "Delta")]
         let stored = S.credentials("current")
         let session = WebTestSession<S>(credentials: stored, games: games, playtimes: [
-            S.playtime("c", minutes: 600), S.playtime("b", minutes: 10), S.playtime("a", minutes: 0),
+            games[2].id: 36_000, games[1].id: 600, games[0].id: 0,
         ])
-        let model = webModel(S.self, MemoryStore(stored), restore: { _ in S.session(session) })
+        let model = webModel(S.self, MemoryStore(stored), restore: { _ in session })
         await model.start()
         defer { model.signOut() }
         try await eventually { model.library.playtime(of: games[2]) == .seconds(36_000) }
@@ -36,11 +36,23 @@ class WebAccountModelTests: XCTestCase {
         XCTAssertEqual(model.library.shown.map(\.title), ["Gamma", "Beta", "Alpha", "Delta"])
         XCTAssertNil(model.library.pendingMetadata)
         XCTAssertNil(model.library.missingMetadata)
-        let calls = await session.playtimeCalls
-        XCTAssertEqual(calls, 1, "One request reads every game's playtime")
+        let asked = await session.playtimeRequests
+        XCTAssertEqual(asked, [games.map(\.id)], "One request names every game, as the library names it")
 
         model.signOut()
         XCTAssertNil(model.library.playtime(of: games[2]))
+    }
+
+    func testAnAbsurdPlaytimeSaturates() async throws {
+        try await absurdPlaytime(Self.store!)
+    }
+    private func absurdPlaytime<S: WebStoreFixture>(_: S.Type) async throws {
+        let owned = S.game("a", title: "Alpha")
+        let session = WebTestSession<S>(credentials: S.credentials("current"), games: [owned],
+                                        playtimes: [owned.id: .max])
+        let model = await connectedModel(session)
+        defer { model.signOut() }
+        try await eventually { model.library.playtime(of: owned) == .seconds(Int64.max) }
     }
 
     func testAFailedPlaytimeRequestKeepsTheLibraryAndOffersARetry() async throws {
@@ -49,7 +61,7 @@ class WebAccountModelTests: XCTestCase {
     private func failedPlaytimes<S: WebStoreFixture>(_: S.Type) async throws {
         let games = [S.game("a", title: "Alpha"), S.game("b", title: "Beta")]
         let stored = S.credentials("current")
-        let session = WebTestSession<S>(credentials: stored, games: games, playtimes: [S.playtime("b", minutes: 1)])
+        let session = WebTestSession<S>(credentials: stored, games: games, playtimes: [games[1].id: 60])
         await session.failNextPlaytimes()
         let model = await connectedModel(session)
         defer { model.signOut() }
@@ -87,7 +99,7 @@ class WebAccountModelTests: XCTestCase {
         let history = LaunchHistory(cache: LibraryCache(directory: directory.path))
         let stored = S.credentials("current")
         let session = WebTestSession<S>(credentials: stored, games: games)
-        let model = webModel(S.self, MemoryStore(stored), restore: { _ in S.session(session) },
+        let model = webModel(S.self, MemoryStore(stored), restore: { _ in session },
                              gameSessions: GameSessions(FakeSessions(), history: history))
         await model.start()
 
@@ -107,14 +119,14 @@ class WebAccountModelTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appending(path: "ObeliskWebCache-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }
         let cached = S.game("7", title: "Cached game")
-        let cache = try S.cache([(cached, 120)], account: S.fixtureAccount, in: directory)
+        let cache = try S.cache([(cached, 7200)], account: S.fixtureAccount, in: directory)
         let stored = S.credentials("current")
-        let session = WebTestSession<S>(credentials: stored, games: [S.game("1", title: "Alpha")],
-                                        playtimes: [S.playtime("1", minutes: 1)])
+        let listed = S.game("1", title: "Alpha")
+        let session = WebTestSession<S>(credentials: stored, games: [listed], playtimes: [listed.id: 60])
         let history = LaunchHistory(cache: cache)
         let launched = Date(timeIntervalSince1970: 1_790_000_000)
         history.record(cached.id, account: S.fixtureAccount, in: S.self, at: launched)
-        let restoration = GameSessionGate<S.Session>()
+        let restoration = GameSessionGate<WebSession>()
         let model = webModel(S.self, MemoryStore(stored), restore: { _ in try await restoration.wait() },
                              gameSessions: GameSessions(FakeSessions(), history: history), libraryCache: cache)
         let start = Task { await model.start() }
@@ -122,10 +134,11 @@ class WebAccountModelTests: XCTestCase {
         try await eventually { model.showsLibrary }
         XCTAssertFalse(model.isConnected, "The cached library shows before the storefront answers")
         XCTAssertEqual(model.library.games, [cached])
-        XCTAssertEqual(model.library.playtime(of: cached), .seconds(7200), "The cached playtime shows too")
+        XCTAssertEqual(model.library.playtime(of: cached), .seconds(7200),
+                       "The cached playtime shows too, whatever unit the storefront's file keeps")
         XCTAssertEqual(model.library.lastPlayed(of: cached), launched, "The cached account's launches already count")
         XCTAssertEqual(model.library.featured, cached, "The last game launched from Obelisk leads the library")
-        await restoration.resolve(S.session(session))
+        await restoration.resolve(session)
         await start.value
         try await eventually {
             model.library.games.map(\.title) == ["Alpha"] && model.library.playtime(of: model.library.games[0]) == .seconds(60)
@@ -143,8 +156,8 @@ class WebAccountModelTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appending(path: "ObeliskWebCache-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }
         let cached = S.game("7", title: "Cached game")
-        let cache = try S.cache([(cached, 120)], account: S.fixtureAccount, in: directory)
-        let restoration = GameSessionGate<S.Session>()
+        let cache = try S.cache([(cached, 7200)], account: S.fixtureAccount, in: directory)
+        let restoration = GameSessionGate<WebSession>()
         let model = webModel(S.self, MemoryStore(S.credentials("current")),
                              restore: { _ in try await restoration.wait() }, libraryCache: cache)
         let start = Task { await model.start() }
@@ -167,19 +180,19 @@ class WebAccountModelTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appending(path: "ObeliskWebCache-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }
         let cached = S.game("7", title: "A's game")
-        let cache = try S.cache([(cached, 30)], account: "A", in: directory)
+        let cache = try S.cache([(cached, 1800)], account: "A", in: directory)
         let restored = S.game("1", title: "B's game")
         let session = WebTestSession<S>(credentials: S.credentials("t", account: "B"), games: [restored])
         await session.holdNextGames()
-        let restoration = GameSessionGate<S.Session>()
+        let restoration = GameSessionGate<WebSession>()
         let model = webModel(S.self, MemoryStore(S.credentials("t", account: "A")),
                              restore: { _ in try await restoration.wait() }, libraryCache: cache)
         let start = Task { await model.start() }
 
         try await eventually { model.showsLibrary }
         XCTAssertEqual(model.library.games, [cached])
-        XCTAssertEqual(model.library.playtime(of: cached), .seconds(30 * 60))
-        await restoration.resolve(S.session(session))
+        XCTAssertEqual(model.library.playtime(of: cached), .seconds(1800))
+        await restoration.resolve(session)
         try await eventually { model.isConnected }
         XCTAssertTrue(model.library.games.isEmpty, "Another account's cached games never show as this one's")
         XCTAssertEqual(model.accountName, "Name of B")
@@ -228,7 +241,7 @@ class WebAccountModelTests: XCTestCase {
         let rotated = S.credentials("rotated")
         let store = MemoryStore(original)
         let session = WebTestSession<S>(credentials: original, games: [S.game("1", title: "One")], rotated: rotated)
-        let model = webModel(S.self, store, restore: { _ in S.session(session) })
+        let model = webModel(S.self, store, restore: { _ in session })
 
         await model.start()
         await model.start()
@@ -248,7 +261,7 @@ class WebAccountModelTests: XCTestCase {
     private func restoreNotifies<S: WebStoreFixture>(_: S.Type) async throws {
         let store = MemoryStore(S.credentials("saved"))
         let session = WebTestSession<S>(credentials: S.credentials("restored"), games: [S.game("1", title: "One")])
-        let model = webModel(S.self, store, restore: { _ in S.session(session) })
+        let model = webModel(S.self, store, restore: { _ in session })
         let changed = expectation(description: "The disconnected view observes the restored session")
         withObservationTracking {
             XCTAssertFalse(model.isConnected)
@@ -268,7 +281,7 @@ class WebAccountModelTests: XCTestCase {
     }
     private func signInNotifies<S: WebStoreFixture>(_: S.Type) async throws {
         let session = WebTestSession<S>(credentials: S.credentials("signed-in"), games: [S.game("1", title: "One")])
-        let model = webModel(S.self, MemoryStore(nil), signIn: { _ in S.session(session) })
+        let model = webModel(S.self, MemoryStore(nil), signIn: { _ in session })
         await model.start()
         let changed = expectation(description: "The login view observes the new session")
         withObservationTracking {
@@ -291,7 +304,7 @@ class WebAccountModelTests: XCTestCase {
         let original = S.credentials("original")
         let store = MemoryStore(original)
         let session = WebTestSession<S>(credentials: original, games: [S.game("1", title: "One")])
-        let attempt = RestoreAttempt(session: S.session(session), failure: S.network)
+        let attempt = RestoreAttempt(session: session, failure: S.network)
         let model = webModel(S.self, store, restore: { _ in try await attempt.restore() })
 
         await model.start()
@@ -311,8 +324,8 @@ class WebAccountModelTests: XCTestCase {
     private func retryReserves<S: WebStoreFixture>(_: S.Type) async throws {
         let original = S.credentials("original")
         let session = WebTestSession<S>(credentials: original, games: [S.game("1", title: "One")])
-        let attempt = RestoreAttempt(session: S.session(session), failure: S.network)
-        let login = SignInCounter(session: S.session(session))
+        let attempt = RestoreAttempt(session: session, failure: S.network)
+        let login = SignInCounter(session: session)
         let model = webModel(S.self, MemoryStore(original), signIn: { _ in await login.signIn() },
                              restore: { _ in try await attempt.restore() })
         await model.start()
@@ -346,7 +359,7 @@ class WebAccountModelTests: XCTestCase {
         let rotated = S.credentials("rotated")
         let store = MemoryStore(original)
         let session = WebTestSession<S>(credentials: original, games: [S.game("1", title: "One")])
-        let model = webModel(S.self, store, restore: { _ in S.session(session) })
+        let model = webModel(S.self, store, restore: { _ in session })
         await model.start()
         await session.failNextGames(rotated: rotated)
 
@@ -369,7 +382,7 @@ class WebAccountModelTests: XCTestCase {
         let original = S.credentials("original")
         let store = MemoryStore(original)
         let session = WebTestSession<S>(credentials: original, games: [S.game("1", title: "One")])
-        let model = webModel(S.self, store, restore: { _ in S.session(session) })
+        let model = webModel(S.self, store, restore: { _ in session })
         await model.start()
         await session.holdNextGames()
         model.refresh()
@@ -399,7 +412,7 @@ class WebAccountModelTests: XCTestCase {
         let store = MemoryStore(original)
         let owned = S.game("1", title: "One")
         let session = WebTestSession<S>(credentials: original, games: [owned])
-        let model = webModel(S.self, store, restore: { _ in S.session(session) })
+        let model = webModel(S.self, store, restore: { _ in session })
         await model.start()
         model.open(owned)
         model.library.searchText = "one"
@@ -419,14 +432,14 @@ class WebAccountModelTests: XCTestCase {
         try await cancelledLogin(Self.store!)
     }
     private func cancelledLogin<S: WebStoreFixture>(_: S.Type) async throws {
-        let store = MemoryStore<S.Credentials>(nil)
+        let store = MemoryStore<WebAccountCredentials>(nil)
         let session = WebTestSession<S>(credentials: S.credentials("late"), games: [S.game("1", title: "Late")])
-        let login = GameSessionGate<S.Session>()
+        let login = GameSessionGate<WebSession>()
         let model = webModel(S.self, store, signIn: { _ in try await login.wait() })
         model.signIn()
         try await eventually { await login.requests == 1 }
         model.cancelSignIn()
-        await login.resolve(S.session(session))
+        await login.resolve(session)
         try await eventually { await session.disconnections == 1 }
         XCTAssertFalse(model.isConnected)
         XCTAssertFalse(model.isConnecting)
@@ -439,10 +452,10 @@ class WebAccountModelTests: XCTestCase {
         try await cancelledCredentials(Self.store!)
     }
     private func cancelledCredentials<S: WebStoreFixture>(_: S.Type) async throws {
-        let store = MemoryStore<S.Credentials>(nil)
+        let store = MemoryStore<WebAccountCredentials>(nil)
         let session = WebTestSession<S>(credentials: S.credentials("late"), games: [S.game("1", title: "Late")])
         await session.holdNextCredentials()
-        let model = webModel(S.self, store, signIn: { _ in S.session(session) })
+        let model = webModel(S.self, store, signIn: { _ in session })
         model.signIn()
         try await eventually { await session.waitingForCredentials }
 
@@ -460,10 +473,10 @@ class WebAccountModelTests: XCTestCase {
         try await cancelledFailingCredentials(Self.store!)
     }
     private func cancelledFailingCredentials<S: WebStoreFixture>(_: S.Type) async throws {
-        let store = MemoryStore<S.Credentials>(nil)
+        let store = MemoryStore<WebAccountCredentials>(nil)
         let session = WebTestSession<S>(credentials: S.credentials("late"), games: [S.game("1", title: "Late")])
         await session.holdNextCredentials()
-        let model = webModel(S.self, store, signIn: { _ in S.session(session) })
+        let model = webModel(S.self, store, signIn: { _ in session })
         model.signIn()
         try await eventually { await session.waitingForCredentials }
 
@@ -482,10 +495,10 @@ class WebAccountModelTests: XCTestCase {
         try await automaticLogin(Self.store!)
     }
     private func automaticLogin<S: WebStoreFixture>(_: S.Type) async throws {
-        let store = MemoryStore<S.Credentials>(nil)
+        let store = MemoryStore<WebAccountCredentials>(nil)
         let current = S.credentials("current")
         let session = WebTestSession<S>(credentials: current, games: [S.game("1", title: "One")])
-        let login = SignInCounter(session: S.session(session))
+        let login = SignInCounter(session: session)
         let model = webModel(S.self, store, authorize: { "browser-authorization-code" },
                              signIn: { await login.signIn(code: $0) })
 
@@ -509,7 +522,7 @@ class WebAccountModelTests: XCTestCase {
     private func duplicateClicks<S: WebStoreFixture>(_: S.Type) async throws {
         let session = WebTestSession<S>(credentials: S.credentials("current"), games: [])
         let browser = AuthorizationGate()
-        let login = SignInCounter(session: S.session(session))
+        let login = SignInCounter(session: session)
         let model = webModel(S.self, MemoryStore(nil), authorize: { try await browser.wait() },
                              signIn: { await login.signIn(code: $0) })
 
@@ -529,7 +542,7 @@ class WebAccountModelTests: XCTestCase {
     }
     private func closedWindow<S: WebStoreFixture>(_: S.Type) async throws {
         let session = WebTestSession<S>(credentials: S.credentials("unused"), games: [])
-        let login = SignInCounter(session: S.session(session))
+        let login = SignInCounter(session: session)
         let model = webModel(S.self, MemoryStore(nil), authorize: { throw CancellationError() },
                              signIn: { await login.signIn(code: $0) })
 
@@ -547,7 +560,7 @@ class WebAccountModelTests: XCTestCase {
     }
     private func authorizationFailure<S: WebStoreFixture>(_: S.Type) async throws {
         let session = WebTestSession<S>(credentials: S.credentials("unused"), games: [])
-        let login = SignInCounter(session: S.session(session))
+        let login = SignInCounter(session: session)
         let model = webModel(S.self, MemoryStore(nil), authorize: { throw WebAuthenticationError.network(S.webSignIn.store) },
                              signIn: { await login.signIn(code: $0) })
 
@@ -564,11 +577,11 @@ class WebAccountModelTests: XCTestCase {
         try await cancelledAuthorization(Self.store!)
     }
     private func cancelledAuthorization<S: WebStoreFixture>(_: S.Type) async throws {
-        let store = MemoryStore<S.Credentials>(nil)
+        let store = MemoryStore<WebAccountCredentials>(nil)
         let current = S.credentials("current")
         let session = WebTestSession<S>(credentials: current, games: [S.game("1", title: "One")])
         let browser = AuthorizationGate()
-        let login = SignInCounter(session: S.session(session))
+        let login = SignInCounter(session: session)
         let model = webModel(S.self, store, authorize: { try await browser.wait() }, signIn: { await login.signIn(code: $0) })
 
         model.signIn()
@@ -602,7 +615,7 @@ class WebAccountModelTests: XCTestCase {
         let original = S.credentials("original")
         let store = MemoryStore(original)
         let session = WebTestSession<S>(credentials: original, games: [S.game("1", title: "One")])
-        let model = webModel(S.self, store, restore: { _ in S.session(session) })
+        let model = webModel(S.self, store, restore: { _ in session })
         await model.start()
 
         model.rememberSession = false
@@ -621,7 +634,7 @@ class WebAccountModelTests: XCTestCase {
     private func unrememberedLogin<S: WebStoreFixture>(_: S.Type) async throws {
         let store = MemoryStore(S.credentials("previous"))
         let session = WebTestSession<S>(credentials: S.credentials("current"), games: [S.game("1", title: "One")])
-        let model = webModel(S.self, store, signIn: { _ in S.session(session) })
+        let model = webModel(S.self, store, signIn: { _ in session })
         model.rememberSession = false
         model.signIn()
         try await eventually { model.isConnected && !model.isLoadingGames }
@@ -634,10 +647,10 @@ class WebAccountModelTests: XCTestCase {
         try await signOutDuringLogin(Self.store!)
     }
     private func signOutDuringLogin<S: WebStoreFixture>(_: S.Type) async throws {
-        let store = MemoryStore<S.Credentials>(nil)
+        let store = MemoryStore<WebAccountCredentials>(nil)
         await store.holdNextSave()
         let session = WebTestSession<S>(credentials: S.credentials("current"), games: [S.game("1", title: "One")])
-        let model = webModel(S.self, store, signIn: { _ in S.session(session) })
+        let model = webModel(S.self, store, signIn: { _ in session })
         model.signIn()
         try await eventually { await store.waitingForSave }
 
@@ -656,10 +669,10 @@ class WebAccountModelTests: XCTestCase {
         try await storageFailure(Self.store!)
     }
     private func storageFailure<S: WebStoreFixture>(_: S.Type) async throws {
-        let store = MemoryStore<S.Credentials>(nil)
+        let store = MemoryStore<WebAccountCredentials>(nil)
         await store.rejectSaves()
         let session = WebTestSession<S>(credentials: S.credentials("current"), games: [S.game("1", title: "One")])
-        let model = webModel(S.self, store, signIn: { _ in S.session(session) })
+        let model = webModel(S.self, store, signIn: { _ in session })
         model.signIn()
         try await eventually { model.isConnected && !model.isLoadingGames }
         XCTAssertNotNil(model.storageWarning)
@@ -671,7 +684,7 @@ class WebAccountModelTests: XCTestCase {
     }
     private func unconfirmedRevocation<S: WebStoreFixture>(_: S.Type) async throws {
         let session = WebTestSession<S>(credentials: S.credentials("current"), games: [S.game("1", title: "One")])
-        let model = webModel(S.self, MemoryStore(nil), signIn: { _ in S.session(session) })
+        let model = webModel(S.self, MemoryStore(nil), signIn: { _ in session })
         model.signIn()
         try await eventually { model.isConnected && !model.isLoadingGames }
         await session.failNextDisconnect()
@@ -691,7 +704,7 @@ class WebAccountModelTests: XCTestCase {
         let session = WebTestSession<S>(credentials: stored, games: [S.game("1", title: "One")])
         let browser = AuthorizationGate()
         let model = webModel(S.self, MemoryStore(stored), authorize: { try await browser.wait() },
-                             restore: { _ in S.session(session) })
+                             restore: { _ in session })
         await model.start()
         XCTAssertTrue(model.isConnected)
         await session.holdNextDisconnect()
@@ -721,9 +734,9 @@ class WebAccountModelTests: XCTestCase {
     private func playtimesAfterGames<S: WebStoreFixture>(_: S.Type) async throws {
         let games = [S.game("1", title: "One")]
         let session = WebTestSession<S>(credentials: S.credentials("current"), games: games,
-                                        playtimes: [S.playtime("1", minutes: 5)])
+                                        playtimes: [games[0].id: 300])
         await session.holdNextGames()
-        let model = webModel(S.self, MemoryStore(nil), signIn: { _ in S.session(session) })
+        let model = webModel(S.self, MemoryStore(nil), signIn: { _ in session })
         model.signIn()
         defer { model.signOut() }
         try await eventually { await session.waitingForGames }
@@ -734,7 +747,7 @@ class WebAccountModelTests: XCTestCase {
 
         await session.completeGames(games)
         try await eventually { await session.playtimeCalls == 1 && model.library.pendingMetadata == nil }
-        XCTAssertEqual(model.library.playtime(of: games[0]), .seconds(5 * 60))
+        XCTAssertEqual(model.library.playtime(of: games[0]), .seconds(300))
     }
 
     // MARK: Game page
@@ -748,7 +761,7 @@ class WebAccountModelTests: XCTestCase {
         let store = MemoryStore(original)
         let owned = S.game("1", title: "One")
         let session = WebTestSession<S>(credentials: original, games: [owned])
-        let model = webModel(S.self, store, restore: { _ in S.session(session) })
+        let model = webModel(S.self, store, restore: { _ in session })
         await model.start()
         await session.rotateOnPrepare(prepared)
         await session.holdNextDetails()
@@ -772,7 +785,7 @@ class WebAccountModelTests: XCTestCase {
         let first = S.game("1", title: "One")
         let second = S.game("2", title: "Two")
         let session = WebTestSession<S>(credentials: S.credentials("current"), games: [first, second])
-        let model = webModel(S.self, MemoryStore(S.credentials("current")), restore: { _ in S.session(session) })
+        let model = webModel(S.self, MemoryStore(S.credentials("current")), restore: { _ in session })
         await model.start()
         await session.holdNextDetails()
         model.open(first)
@@ -796,7 +809,7 @@ class WebAccountModelTests: XCTestCase {
     private func reopenedDetails<S: WebStoreFixture>(_: S.Type) async throws {
         let owned = S.game("1", title: "One")
         let session = WebTestSession<S>(credentials: S.credentials("current"), games: [owned])
-        let model = webModel(S.self, MemoryStore(S.credentials("current")), restore: { _ in S.session(session) })
+        let model = webModel(S.self, MemoryStore(S.credentials("current")), restore: { _ in session })
         await model.start()
         await session.holdNextDetails()
         model.open(owned)
@@ -825,7 +838,7 @@ class WebAccountModelTests: XCTestCase {
         let owned = S.game("1", title: "One")
         let store = MemoryStore(S.credentials("current"))
         let session = WebTestSession<S>(credentials: S.credentials("current"), games: [owned])
-        let model = webModel(S.self, store, restore: { _ in S.session(session) })
+        let model = webModel(S.self, store, restore: { _ in session })
         await model.start()
         await session.holdNextDetails()
         model.open(owned)
@@ -853,7 +866,7 @@ class WebAccountModelTests: XCTestCase {
         let owned = S.game("1", title: "One")
         let store = MemoryStore(S.credentials("current"))
         let session = WebTestSession<S>(credentials: S.credentials("current"), games: [owned])
-        let model = webModel(S.self, store, restore: { _ in S.session(session) })
+        let model = webModel(S.self, store, restore: { _ in session })
         await model.start()
         await session.holdNextDetails()
         model.open(owned)
@@ -877,7 +890,7 @@ class WebAccountModelTests: XCTestCase {
         let rotation = S.credentials("rotated-details")
         let store = MemoryStore(S.credentials("current"))
         let session = WebTestSession<S>(credentials: S.credentials("current"), games: [owned])
-        let model = webModel(S.self, store, restore: { _ in S.session(session) })
+        let model = webModel(S.self, store, restore: { _ in session })
         await model.start()
         await session.failNextDetails(rotated: rotation)
         model.open(owned)
@@ -897,13 +910,13 @@ class WebAccountModelTests: XCTestCase {
         XCTAssertEqual(calls.count, 3)
     }
 
-    /// Each store's tests check how its request names the game and the player's language.
+    /// Each store's tests check how its request names the player's language.
     func testOpeningAGameLoadsItsAchievements() async throws {
         try await achievements(Self.store!)
     }
     private func achievements<S: WebStoreFixture>(_: S.Type) async throws {
         let session = WebTestSession<S>(credentials: S.credentials("current"), games: [S.game("1", title: "One")])
-        let model = webModel(S.self, MemoryStore(nil), signIn: { _ in S.session(session) })
+        let model = webModel(S.self, MemoryStore(nil), signIn: { _ in session })
         model.signIn()
         defer { model.signOut() }
         try await eventually { model.isConnected && !model.isLoadingGames }

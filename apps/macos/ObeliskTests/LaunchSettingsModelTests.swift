@@ -157,14 +157,208 @@ final class LaunchSettingsModelTests: XCTestCase {
         )
         await model.appear()
 
-        model.setArguments("   ")
-        model.setArguments("  -dx11 \"+exec auto exec.cfg\" ")
-        try await waitUntil { model.settings?.choices.arguments != nil }
-        model.setArguments("-dx11 \"+exec auto exec.cfg\"")
-        model.setArguments("")
-        try await waitUntil { saved.count == 2 }
+        model.arguments = "   "
+        XCTAssertEqual(model.arguments, "   ", "the field shows what is typed")
+        model.keepArguments()
+        XCTAssertEqual(model.arguments, "")
 
+        model.arguments = "  -dx11 \"+exec auto exec.cfg\" "
+        model.keepArguments()
+        XCTAssertEqual(model.arguments, "-dx11 \"+exec auto exec.cfg\"", "before Rust kept them")
+        model.arguments = "-dx11 \"+exec auto exec.cfg\""
+        model.keepArguments()
+        try await waitUntil { model.settings?.choices.arguments != nil }
+        XCTAssertEqual(saved.map(\.arguments), ["-dx11 \"+exec auto exec.cfg\""])
+
+        model.arguments = ""
+        model.keepArguments()
+        try await waitUntil { saved.count == 2 }
         XCTAssertEqual(saved.map(\.arguments), ["-dx11 \"+exec auto exec.cfg\"", nil])
+    }
+
+    @MainActor
+    func testAChoiceMadeBeforeRustKeptTheLastOneAddsToIt() async throws {
+        var saved: [LaunchChoices] = []
+        let model = LaunchSettingsModel(
+            load: { Self.settings() },
+            save: { choices in
+                saved.append(choices)
+                return Self.settings(choices: choices, engine: choices.engine ?? .rosetta)
+            }
+        )
+        await model.appear()
+
+        model.choose { $0.performanceHud = true }
+        model.choose { $0.engine = .linux }
+
+        let both = LaunchChoices(engine: .linux, performanceHud: true)
+        try await waitUntil { model.settings?.choices == both }
+        XCTAssertEqual(saved.last, both)
+    }
+
+    @MainActor
+    func testRustKeepsOneChangeAtATimeAndOnlyTheLatestOfThoseThatWaited() async throws {
+        var saved: [LaunchChoices] = []
+        var keeping = 0
+        var release: CheckedContinuation<Void, Never>?
+        let model = LaunchSettingsModel(
+            load: { Self.settings() },
+            save: { choices in
+                keeping += 1
+                XCTAssertEqual(keeping, 1, "an earlier save could come back over a later one")
+                saved.append(choices)
+                if saved.count == 1 { await withCheckedContinuation { release = $0 } }
+                keeping -= 1
+                return Self.settings(choices: choices, engine: choices.engine ?? .rosetta)
+            }
+        )
+        await model.appear()
+
+        model.choose { $0.engine = .linux }
+        try await waitUntil { release != nil }
+        model.choose { $0.renderPercent = 75 }
+        model.choose { $0.renderPercent = 50 }
+        model.choose { $0.performanceHud = true }
+        XCTAssertEqual(saved, [LaunchChoices(engine: .linux)])
+        release?.resume()
+
+        let latest = LaunchChoices(engine: .linux, renderPercent: 50, performanceHud: true)
+        try await waitUntil { model.settings?.choices == latest }
+        XCTAssertEqual(saved, [LaunchChoices(engine: .linux), latest])
+    }
+
+    @MainActor
+    func testAChangeRustCouldNotKeepIsNotSentAgainWithTheNextOne() async throws {
+        struct NotSaved: LocalizedError { var errorDescription: String? { "not saved" } }
+        var saved: [LaunchChoices] = []
+        let model = LaunchSettingsModel(
+            load: { Self.settings() },
+            save: { choices in
+                saved.append(choices)
+                if choices.rayTracing == false { throw NotSaved() }
+                return Self.settings(choices: choices)
+            }
+        )
+        await model.appear()
+
+        model.choose { $0.rayTracing = false }
+        try await waitUntil { model.error != nil }
+        model.choose { $0.performanceHud = true }
+
+        try await waitUntil { model.settings?.choices == LaunchChoices(performanceHud: true) }
+        XCTAssertEqual(saved.last, LaunchChoices(performanceHud: true))
+        XCTAssertNil(model.error)
+    }
+
+    @MainActor
+    func testArgumentsRustCouldNotKeepStayInTheFieldToBeKeptAgain() async throws {
+        struct NotSaved: LocalizedError { var errorDescription: String? { "not saved" } }
+        var saved: [LaunchChoices] = []
+        var fails = true
+        let model = LaunchSettingsModel(
+            load: { Self.settings() },
+            save: { choices in
+                saved.append(choices)
+                if fails { throw NotSaved() }
+                return Self.settings(choices: choices)
+            }
+        )
+        await model.appear()
+
+        model.arguments = "-windowed"
+        model.keepArguments()
+        try await waitUntil { model.error != nil }
+        XCTAssertEqual(model.arguments, "-windowed")
+        XCTAssertNil(model.settings?.choices.arguments)
+
+        fails = false
+        model.keepArguments()
+        try await waitUntil { model.settings?.choices.arguments == "-windowed" }
+        XCTAssertEqual(saved.map(\.arguments), ["-windowed", "-windowed"])
+    }
+
+    @MainActor
+    func testAHeldThumbShowsItsSnappedShareAndKeepsItOnceLetGo() async throws {
+        var saved: [LaunchChoices] = []
+        var release: CheckedContinuation<Void, Never>?
+        let model = LaunchSettingsModel(
+            load: { Self.settings(choices: LaunchChoices(engine: .linux), engine: .linux) },
+            save: { choices in
+                saved.append(choices)
+                await withCheckedContinuation { release = $0 }
+                return Self.settings(choices: choices, engine: .linux)
+            }
+        )
+        await model.appear()
+        XCTAssertEqual(model.renderPercent, RenderPercent.native)
+
+        model.holdRenderPercent()
+        model.moveRenderPercent(to: 62)
+        XCTAssertEqual(model.renderPercent, 62)
+        model.moveRenderPercent(to: 51)
+        XCTAssertEqual(model.renderPercent, 50, "within two points of a stop")
+        XCTAssertEqual(saved, [], "nothing is kept while the thumb is held")
+
+        model.letGoOfRenderPercent()
+        try await waitUntil { release != nil }
+        XCTAssertEqual(saved, [LaunchChoices(engine: .linux, renderPercent: 50)])
+        XCTAssertEqual(model.settings?.renderPercent, RenderPercent.native)
+        XCTAssertEqual(model.renderPercent, 50, "the thumb does not jump back while Rust keeps the share")
+
+        release?.resume()
+        try await waitUntil { model.settings?.renderPercent == 50 }
+        XCTAssertEqual(model.renderPercent, 50)
+        XCTAssertFalse(model.holdsRenderPercent)
+    }
+
+    @MainActor
+    func testAKeyboardStepIsKeptAtOnceAndTheNextOneStartsFromIt() async throws {
+        var saved: [LaunchChoices] = []
+        var release: CheckedContinuation<Void, Never>?
+        let model = LaunchSettingsModel(
+            load: { Self.settings(choices: LaunchChoices(engine: .linux), engine: .linux) },
+            save: { choices in
+                saved.append(choices)
+                if saved.count == 1 { await withCheckedContinuation { release = $0 } }
+                return Self.settings(choices: choices, engine: .linux)
+            }
+        )
+        await model.appear()
+
+        model.moveRenderPercent(to: 90)
+        try await waitUntil { release != nil }
+        XCTAssertEqual(model.renderPercent, 90)
+        model.moveRenderPercent(to: 80)
+        XCTAssertEqual(model.renderPercent, 80, "the second step shows before the first is kept")
+        release?.resume()
+
+        try await waitUntil { model.settings?.renderPercent == 80 }
+        XCTAssertEqual(saved.map(\.renderPercent), [90, 80])
+        XCTAssertEqual(model.renderPercent, 80)
+    }
+
+    @MainActor
+    func testRestoringDefaultsWhileAStepWaitsBringsTheShareBackToNative() async throws {
+        var saved: [LaunchChoices] = []
+        var release: CheckedContinuation<Void, Never>?
+        let model = LaunchSettingsModel(
+            load: { Self.settings(choices: LaunchChoices(engine: .linux), engine: .linux) },
+            save: { choices in
+                saved.append(choices)
+                if saved.count == 1 { await withCheckedContinuation { release = $0 } }
+                return Self.settings(choices: choices, engine: choices.engine ?? .rosetta)
+            }
+        )
+        await model.appear()
+
+        model.moveRenderPercent(to: 50)
+        try await waitUntil { release != nil }
+        model.reset()
+        release?.resume()
+
+        try await waitUntil { saved.count == 2 && !model.isCustomized }
+        XCTAssertEqual(saved.last, LaunchChoices())
+        XCTAssertEqual(model.renderPercent, RenderPercent.native)
     }
 
     @MainActor

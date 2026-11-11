@@ -69,9 +69,7 @@ impl Server {
 /// A content client that reaches `servers`.
 fn client(servers: &[&Server]) -> ContentClient {
     let cdns: Vec<_> = servers.iter().map(|server| &*server.cdn).collect();
-    ContentClient {
-        cdn: reaching(&cdns),
-    }
+    ContentClient::over(reaching(&cdns))
 }
 
 /// A manifest of `app_name` whose `files` are cut into `chunks`, at the
@@ -94,7 +92,8 @@ fn manifest(
     }
 }
 
-fn chunk(data: &[u8], index: u32, compressed: bool) -> (Chunk, Vec<u8>) {
+/// A chunk holding `data`, and the bytes a CDN serves for it.
+pub(crate) fn chunk(data: &[u8], index: u32, compressed: bool) -> (Chunk, Vec<u8>) {
     let guid = [1, 2, 3, index];
     let hash = rolling_hash(data);
     let sha1: [u8; 20] = Sha1::digest(data).into();

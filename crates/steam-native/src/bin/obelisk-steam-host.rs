@@ -17,10 +17,10 @@ fn run() -> i32 {
         Some("supervise") => return supervise(),
         Some("epic-supervise") => return epic_supervise(),
         Some("gog-supervise") => return gog_supervise(),
-        Some("game-exec") => {
-            return i32::from(
-                game_runtime::supervisor::exec::game_exec(std::io::stdin().lock()).is_err(),
-            );
+        Some(game_runtime::supervisor::exec::SUBCOMMAND) => {
+            // It returns only when this helper did not become the game.
+            let _ = game_runtime::supervisor::exec::game_exec(std::io::stdin().lock());
+            return 1;
         }
         _ => {}
     }
