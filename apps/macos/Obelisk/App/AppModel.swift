@@ -111,7 +111,7 @@ final class AppModel {
         self.performance = performance
         self.thermal = thermal
         self.estimates = estimates ?? PerformanceEstimates()
-        self.updates = updates ?? AppUpdates()
+        self.updates = updates ?? AppUpdates(defaults: defaults)
         self.downloads.progress = { [weak self] item in self?.downloadTransfer(item) }
         applyAutomaticUpdates()
         reportPerformance()

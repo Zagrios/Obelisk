@@ -19258,6 +19258,121 @@
         }
       }
     },
+    "ui.settings.beta_releases": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Beta versions"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Versions bêta"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Versioni beta"
+          }
+        }
+      }
+    },
+    "ui.settings.beta_releases_description": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Get the latest beta versions of %1$@ and Voile right away. Betas are not tested yet and may have bugs: if you find one, please report it. Turn this off to go back to the stable versions."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recevez directement les dernières versions bêta d’%1$@ et de Voile. Attention : elles ne sont pas encore testées et peuvent contenir des bugs. Si c’est le cas, signalez-les-nous. Désactivez l’option pour revenir aux versions stables."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ricevi subito le ultime versioni beta di %1$@ e Voile. Attenzione: non sono ancora testate e possono contenere bug. Se ne trovi, segnalaceli. Disattiva l’opzione per tornare alle versioni stabili."
+          }
+        }
+      }
+    },
+    "ui.settings.release_return_title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back to %1$@ %2$@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retour à %1$@ %2$@"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ritorno a %1$@ %2$@"
+          }
+        }
+      }
+    },
+    "ui.settings.release_return": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ puts its latest release back when it quits, or now if you restart it."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ remettra sa dernière version stable en quittant, ou tout de suite si vous le redémarrez."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ rimetterà la sua ultima versione stabile alla chiusura, o subito se lo riavvii."
+          }
+        }
+      }
+    },
+    "ui.settings.release_return_unwritable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ cannot replace itself where it is. Download version %2$@ and put it in place of this one."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ ne peut pas se remplacer là où il se trouve. Téléchargez la version %2$@ et mettez-la à la place de celle-ci."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ non può sostituirsi dove si trova. Scarica la versione %2$@ e mettila al posto di questa."
+          }
+        }
+      }
+    },
     "ui.settings.version_description": {
       "extractionState": "manual",
       "localizations": {

@@ -32,8 +32,9 @@ base64 --decode < "$work/feed.json.sig" > "$work/feed.sig"
 
 [[ "$(jq .format "$work/feed.json")" == 1 ]] || fail "The feed is of a format Obelisk does not read."
 contract="$(jq .contract "$PIN")"
+# Obelisk is built with a release, never a beta.
 entry="$(jq -c --argjson contract "$contract" '
-    [.releases[] | select(.contract == $contract and (.withdrawn | not))]
+    [.releases[] | select(.contract == $contract and (.withdrawn | not) and (.version | test("beta") | not))]
     | sort_by(.version | ltrimstr("v") | [splits("[.-]")] | map(tonumber)) | last // empty' "$work/feed.json")"
 [[ -n "$entry" ]] || fail "The feed offers no release of contract $contract."
 jq --argjson entry "$entry" '{contract} + ($entry | {version, url, size, sha256})' "$PIN" > "$work/pin.json"

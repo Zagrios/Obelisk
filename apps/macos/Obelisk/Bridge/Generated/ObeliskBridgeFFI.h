@@ -1139,6 +1139,11 @@ RustBuffer uniffi_obelisk_bridge_fn_func_installed_voile_release(RustBuffer loca
 RustBuffer uniffi_obelisk_bridge_fn_func_obelisk_locations(RustBuffer library, RustBuffer bundle, RustBuffer home, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_FUNC_TAKE_VOILE_PRERELEASES
+#define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_FUNC_TAKE_VOILE_PRERELEASES
+int8_t uniffi_obelisk_bridge_fn_func_take_voile_prereleases(RustBuffer locations, int8_t take, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_FUNC_STEAM_LANGUAGE
 #define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_FUNC_STEAM_LANGUAGE
 RustBuffer uniffi_obelisk_bridge_fn_func_steam_language(RustBuffer locale, RustCallStatus *_Nonnull out_status
@@ -1489,6 +1494,12 @@ uint16_t uniffi_obelisk_bridge_checksum_func_installed_voile_release(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_FUNC_OBELISK_LOCATIONS
 #define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_FUNC_OBELISK_LOCATIONS
 uint16_t uniffi_obelisk_bridge_checksum_func_obelisk_locations(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_FUNC_TAKE_VOILE_PRERELEASES
+#define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_FUNC_TAKE_VOILE_PRERELEASES
+uint16_t uniffi_obelisk_bridge_checksum_func_take_voile_prereleases(void
     
 );
 #endif

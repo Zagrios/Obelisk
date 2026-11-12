@@ -15102,6 +15102,21 @@ public func obeliskLocations(library: String, bundle: String, home: String) -> O
     )
 })
 }
+/**
+ * Whether Windows games run in Voile's pre-releases too, as Settings' beta
+ * releases choose: the next launch takes the newest release or pre-release,
+ * else it leaves a pre-release in place for the newest release. Returns
+ * whether the choice was kept.
+ */
+public func takeVoilePrereleases(locations: ObeliskLocations, take: Bool) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_obelisk_bridge_fn_func_take_voile_prereleases(
+        FfiConverterTypeObeliskLocations_lower(locations),
+        FfiConverterBool.lower(take),uniffiCallStatus
+    )
+})
+}
 public func steamLanguage(locale: String) -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
         uniffiCallStatus in
@@ -15189,6 +15204,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_func_obelisk_locations() != 18961) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_func_take_voile_prereleases() != 22977) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_func_steam_language() != 20076) {

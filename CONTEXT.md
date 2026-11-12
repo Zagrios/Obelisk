@@ -82,6 +82,10 @@ _Avoid_: redistributable (Steam's name for the package, not the run), dependency
 What Obelisk downloads beside a game's own files for it to run: Voile for a Windows build, Valve's Steam components for every Steam game. A Transfer gets the missing ones before the game's files, and a launch that still misses one gets it after its Admission, before its game is prepared. A launch that finds a newer Voile release asks the player there, with what it brings: they take it before the game starts, or skip it for that launch, unless the game needs it. A Voile release a newer one replaced goes only once no game of any storefront may still run from it.
 _Avoid_: dependency, prerequisite (a Prerequisite runs inside a Wine prefix)
 
+**Beta releases**:
+The player's choice, in Settings, to take the pre-releases of Obelisk and Voile too: GitHub releases published with the pre-release box ticked, the betas such as Obelisk 0.6.3.beta1 or Voile v26.3.0-26.beta1 that the Beta workflows build every two hours when main changed. Obelisk and Voile then each run the newest version, pre-release or release. Turned off, each goes back to its latest release: Obelisk as it next quits, having got and checked that release itself, since Sparkle never installs an older version; Voile at the next Windows launch, which leaves a pre-release in place as it leaves a withdrawn release.
+_Avoid_: beta channel (the feed's list Sparkle reads), nightly
+
 **Steam host**:
 The sandboxed process that holds a Steam game's Steam session beside it, run from Valve's Steam components: it signs in as the account, proves the game's license, and carries what the game asks of Steam, its overlays, invitations and purchases. Each Steam Game session has one; losing it never ends the game.
 _Avoid_: runtime (what Obelisk downloads), native runtime

@@ -70,8 +70,23 @@ struct SettingsView: View {
                         ObeliskCard {
                             installUpdates
                             ObeliskCardDivider()
+                            betaReleases
+                            switch model.updates.returnStanding {
+                            case .ready(let release):
+                                ObeliskCardDivider()
+                                releaseReturn(release.displayVersion)
+                                    .transition(.opacity)
+                            case .unreachable(let release):
+                                ObeliskCardDivider()
+                                releaseUnreachable(release)
+                                    .transition(.opacity)
+                            case nil:
+                                EmptyView()
+                            }
+                            ObeliskCardDivider()
                             version
                         }
+                        .animation(.easeInOut(duration: 0.2), value: model.updates.returnStanding)
                     }
                     GamePageSection(title: L10n.string("ui.settings.help")) {
                         ObeliskCard {
@@ -224,6 +239,48 @@ struct SettingsView: View {
                 .labelsHidden()
                 .pointerCursor()
                 .accessibilityIdentifier("settings-install-updates")
+        }
+    }
+
+    private var betaReleases: some View {
+        ObeliskRow(title: L10n.string("ui.settings.beta_releases")) {
+            SymbolTile(name: "flask.fill", colors: TileColors.gold)
+        } detail: {
+            Text(L10n.string("ui.settings.beta_releases_description", AppIdentity.name))
+        } accessory: {
+            Toggle(L10n.string("ui.settings.beta_releases"), isOn: Bindable(model.updates).takesBetaReleases)
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .pointerCursor()
+                .accessibilityIdentifier("settings-beta-releases")
+        }
+    }
+
+    /// The latest release Obelisk goes back to when it quits, which a restart
+    /// puts in place now.
+    private func releaseReturn(_ release: String) -> some View {
+        ObeliskRow(title: L10n.string("ui.settings.release_return_title", AppIdentity.name, release)) {
+            SymbolTile(name: "arrow.uturn.backward", colors: TileColors.gold)
+        } detail: {
+            Text(L10n.string("ui.settings.release_return", AppIdentity.name))
+        } accessory: {
+            AccentCapsuleButton(title: L10n.string("ui.settings.restart"), identifier: "settings-release-return",
+                                 action: { model.restart() })
+        }
+    }
+
+    /// The latest release Obelisk cannot put back by itself where it is,
+    /// which the player downloads and installs.
+    private func releaseUnreachable(_ release: FeedRelease) -> some View {
+        ObeliskRow(title: L10n.string("ui.settings.release_return_title", AppIdentity.name, release.displayVersion)) {
+            SymbolTile(name: "exclamationmark.triangle.fill", colors: TileColors.gold)
+        } detail: {
+            Text(L10n.string("ui.settings.release_return_unwritable", AppIdentity.name, release.displayVersion))
+        } accessory: {
+            GlassCapsuleButton(title: L10n.string("model.game.download"), systemImage: "arrow.down",
+                                identifier: "settings-release-download") {
+                NSWorkspace.shared.open(release.url)
+            }
         }
     }
 

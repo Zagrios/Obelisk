@@ -79,7 +79,7 @@ Windows games play too. Obelisk sets everything up for you: no bottles to create
 
 Obelisk is signed and notarized by Apple, so it opens without a security warning.
 
-**Updating Obelisk:** Obelisk looks for a new version by itself. It downloads it in the background and installs it the next time you quit Obelisk. If you rarely do, it offers the new version in a window after a while. **Check for Updates…** in the Obelisk menu looks right away, and **Settings → Updates** lets Obelisk ask before downloading instead. Your games, saves and sign-ins stay where they are.
+**Updating Obelisk:** Obelisk looks for a new version by itself. It downloads it in the background and installs it the next time you quit Obelisk. If you rarely do, it offers the new version in a window after a while. **Check for Updates…** in the Obelisk menu looks right away, and **Settings → Updates** lets Obelisk ask before downloading instead. **Beta versions**, in the same place, also gets the pre-releases of Obelisk and of the Voile engine, whichever version is newest. Turned off, Obelisk goes back to its latest release when you quit it, and Voile at the next Windows game launch. Your games, saves and sign-ins stay where they are.
 
 ## Getting started
 
