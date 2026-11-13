@@ -25394,7 +25394,19 @@
     "ui.library.demo": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Demo"
+          }
+        },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Demo"
+          }
+        },
+        "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Demo"
@@ -25411,13 +25423,43 @@
             "state": "translated",
             "value": "Demo"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "体験版"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Demo"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "试玩版"
+          }
         }
       }
     },
     "ui.library.beta": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Beta"
+          }
+        },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Beta"
+          }
+        },
+        "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Beta"
@@ -25434,13 +25476,43 @@
             "state": "translated",
             "value": "Beta"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ベータ"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Beta"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "测试版"
+          }
         }
       }
     },
     "ui.library.playtest": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Playtest"
+          }
+        },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Playtest"
+          }
+        },
+        "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Playtest"
@@ -25456,6 +25528,24 @@
           "stringUnit": {
             "state": "translated",
             "value": "Playtest"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プレイテスト"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Playtest"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "游戏测试"
           }
         }
       }
@@ -46445,10 +46535,22 @@
     "ui.launch_settings.game_mode": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Spielmodus"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Game Mode"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modo Juego"
           }
         },
         "fr": {
@@ -46462,16 +46564,46 @@
             "state": "translated",
             "value": "Modalità Gioco"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ゲームモード"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modo de Jogo"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "游戏模式"
+          }
         }
       }
     },
     "ui.launch_settings.game_mode_detail": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS gibt dem Spiel im Vollbildmodus Vorrang vor Hintergrundaufgaben. Deaktivieren Sie dies für ein Spiel, das damit langsamer läuft."
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "macOS gives the game priority over background tasks while it is full screen. Turn this off for a game that runs slower with it."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS da prioridad al juego sobre las tareas en segundo plano mientras está a pantalla completa. Desactívalo para un juego que vaya más lento con él."
           }
         },
         "fr": {
@@ -46484,6 +46616,24 @@
           "stringUnit": {
             "state": "translated",
             "value": "macOS dà priorità al gioco rispetto alle attività in background mentre è a schermo intero. Disattivala per un gioco che gira più lentamente con la Modalità Gioco."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フルスクリーン表示中は、macOSがバックグラウンドタスクよりもゲームを優先します。有効にすると動作が遅くなるゲームでは、この設定をオフにしてください。"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O macOS dá prioridade ao jogo sobre as tarefas em segundo plano enquanto ele está em tela cheia. Desative esta opção para um jogo que fique mais lento com ela."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全屏时，macOS 会优先运行游戏，而非后台任务。如果游戏因此变慢，请关闭此项。"
           }
         }
       }
