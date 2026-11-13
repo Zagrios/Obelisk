@@ -13,6 +13,8 @@ struct SettingsView: View {
     @State private var showsTitle = false
     /// The player picks another folder for the games.
     @State private var picksGamesFolder = false
+    /// The player picks another folder for the library.
+    @State private var picksLibraryFolder = false
 
     /// The hero's height below the bar it reaches under.
     private static var heroHeight: CGFloat { 210 }
@@ -397,19 +399,55 @@ struct SettingsView: View {
     }
 
     private var libraryFolder: some View {
-        ObeliskRow(title: L10n.string("ui.settings.library_folder")) {
-            SymbolTile(name: "folder.fill", colors: TileColors.blue)
+        let library = model.libraryFolder
+        let canMove = model.libraryCanMove
+        return ObeliskRow(title: L10n.string("ui.settings.library_folder")) {
+            SymbolTile(name: library.isDefault ? "folder.fill" : "externaldrive.fill", colors: TileColors.blue)
         } detail: {
             VStack(alignment: .leading, spacing: 4) {
-                Text(L10n.string("ui.settings.library_folder_description", AppIdentity.name))
-                FolderPath(path: model.libraryDirectory)
+                Text(L10n.string(library.isDefault ? "ui.settings.library_folder_description"
+                                                   : "ui.settings.library_folder_description_moved",
+                                 AppIdentity.name))
+                if !canMove {
+                    Text(L10n.string("ui.settings.library_folder_busy"))
+                        .foregroundStyle(.secondary)
+                }
+                FolderPath(path: library.path)
             }
         } accessory: {
-            GlassCapsuleButton(title: L10n.string("ui.settings.show_in_finder"), systemImage: "folder",
-                                identifier: "settings-show-library-folder") {
-                NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: model.libraryDirectory)
+            HStack(spacing: 8) {
+                StorefrontGlassButton(systemName: "folder", size: 13, label: L10n.string("ui.settings.show_in_finder"),
+                                      identifier: "settings-show-library-folder") {
+                    NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: library.path)
+                }
+                .help(L10n.string("ui.settings.show_in_finder"))
+                if library.isMovable {
+                    Group {
+                        if library.isDefault {
+                            GlassCapsuleButton(title: L10n.string("ui.settings.library_folder_move"),
+                                               identifier: "settings-move-library-folder") { picksLibraryFolder = true }
+                        } else {
+                            GlassCapsuleMenu(title: L10n.string("ui.settings.library_folder_move"),
+                                             identifier: "settings-move-library-folder") {
+                                Button(L10n.string("ui.settings.games_folder_choose")) { picksLibraryFolder = true }
+                                Button(L10n.string("ui.settings.library_folder_back")) { library.proposeDefault() }
+                            }
+                        }
+                    }
+                    .disabled(!canMove)
+                }
             }
         }
+        .fileImporter(isPresented: $picksLibraryFolder, allowedContentTypes: [.folder]) { result in
+            if case let .success(folder) = result { library.propose(folder) }
+        }
+        .fileDialogMessage(L10n.string("ui.settings.library_folder_pick", AppIdentity.name))
+        .fileDialogConfirmationLabel(L10n.string("ui.settings.games_folder_pick_confirm"))
+        .fileDialogDefaultDirectory(URL(filePath: "/Volumes", directoryHint: .isDirectory))
+        .sheet(item: Bindable(library).proposal) { proposal in
+            LibraryFolderSheet(model: library, proposal: proposal)
+        }
+        .errorAlert(L10n.string("ui.settings.library_folder_failed"), message: Bindable(library).failure)
     }
 }
 

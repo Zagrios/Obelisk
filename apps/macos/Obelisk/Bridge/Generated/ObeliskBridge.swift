@@ -2134,6 +2134,231 @@ public func FfiConverterTypeLibraryCache_lower(_ value: LibraryCache) -> UInt64 
 
 
 /**
+ * Obelisk's library, which the player may move.
+ */
+public protocol LibraryFolderProtocol: AnyObject, Sendable {
+    
+    /**
+     * Stops the running copy: the library stays where it was.
+     */
+    func cancel() 
+    
+    /**
+     * What moving the library into the folder the player chose would do.
+     * It reads the disk.
+     */
+    func inspect(chosen: String)  -> LibraryFolderInspection
+    
+    /**
+     * What moving the library to exactly `destination`, such as Obelisk's
+     * own folder on this Mac, would do. It reads the disk.
+     */
+    func inspectDestination(destination: String)  -> LibraryFolderInspection
+    
+    /**
+     * Moves the library to `destination`, a path an inspection gave, and
+     * returns where it went. No game may run, and no Transfer go,
+     * meanwhile; Obelisk then restarts there.
+     */
+    func moveTo(destination: String) async throws  -> String
+    
+    /**
+     * What the running move copied so far.
+     */
+    func progress()  -> LibraryMoveProgress
+    
+}
+/**
+ * Obelisk's library, which the player may move.
+ */
+open class LibraryFolder: LibraryFolderProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_obelisk_bridge_fn_clone_libraryfolder(self.handle, $0) }
+    }
+    /**
+     * The library in `library`.
+     */
+public convenience init(library: String) {
+    let handle =
+        try! rustCall() {
+        uniffiCallStatus in
+    uniffi_obelisk_bridge_fn_constructor_libraryfolder_new(
+        FfiConverterString.lower(library),uniffiCallStatus
+    )
+}
+    self.init(unsafeFromHandle: handle)
+}
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_obelisk_bridge_fn_free_libraryfolder(handle, $0) }
+    }
+
+    
+
+    
+    /**
+     * Stops the running copy: the library stays where it was.
+     */
+open func cancel()  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_obelisk_bridge_fn_method_libraryfolder_cancel(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * What moving the library into the folder the player chose would do.
+     * It reads the disk.
+     */
+open func inspect(chosen: String) -> LibraryFolderInspection  {
+    return try!  FfiConverterTypeLibraryFolderInspection_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_obelisk_bridge_fn_method_libraryfolder_inspect(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(chosen),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * What moving the library to exactly `destination`, such as Obelisk's
+     * own folder on this Mac, would do. It reads the disk.
+     */
+open func inspectDestination(destination: String) -> LibraryFolderInspection  {
+    return try!  FfiConverterTypeLibraryFolderInspection_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_obelisk_bridge_fn_method_libraryfolder_inspect_destination(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(destination),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Moves the library to `destination`, a path an inspection gave, and
+     * returns where it went. No game may run, and no Transfer go,
+     * meanwhile; Obelisk then restarts there.
+     */
+open func moveTo(destination: String)async throws  -> String  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_obelisk_bridge_fn_method_libraryfolder_move_to(
+                        self.uniffiCloneHandle(),FfiConverterString.lower(destination)
+                )
+            },
+            pollFunc: ffi_obelisk_bridge_rust_future_poll_rust_buffer,
+            completeFunc: ffi_obelisk_bridge_rust_future_complete_rust_buffer,
+            freeFunc: ffi_obelisk_bridge_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterString.lift,
+            errorHandler: FfiConverterTypeGameSessionError_lift
+        )
+}
+    
+    /**
+     * What the running move copied so far.
+     */
+open func progress() -> LibraryMoveProgress  {
+    return try!  FfiConverterTypeLibraryMoveProgress_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_obelisk_bridge_fn_method_libraryfolder_progress(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeLibraryFolder: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = LibraryFolder
+
+    public static func lift(_ handle: UInt64) throws -> LibraryFolder {
+        return LibraryFolder(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: LibraryFolder) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LibraryFolder {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: LibraryFolder, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibraryFolder_lift(_ handle: UInt64) throws -> LibraryFolder {
+    return try FfiConverterTypeLibraryFolder.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibraryFolder_lower(_ value: LibraryFolder) -> UInt64 {
+    return FfiConverterTypeLibraryFolder.lower(value)
+}
+
+
+
+
+
+
+/**
  * Debug-only controlled chat and own-game sources. They use the production
  * decoders and observation, letting macOS tests drive both streams.
  */
@@ -7489,6 +7714,63 @@ public func FfiConverterTypeLibraryAchievement_lower(_ value: LibraryAchievement
 
 
 /**
+ * The bytes a move copied of its total.
+ */
+public struct LibraryMoveProgress: Equatable, Hashable {
+    public var copiedBytes: UInt64
+    public var totalBytes: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(copiedBytes: UInt64, totalBytes: UInt64) {
+        self.copiedBytes = copiedBytes
+        self.totalBytes = totalBytes
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension LibraryMoveProgress: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeLibraryMoveProgress: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LibraryMoveProgress {
+        return
+            try LibraryMoveProgress(
+                copiedBytes: FfiConverterUInt64.read(from: &buf), 
+                totalBytes: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: LibraryMoveProgress, into buf: inout [UInt8]) {
+        FfiConverterUInt64.write(value.copiedBytes, into: &buf)
+        FfiConverterUInt64.write(value.totalBytes, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibraryMoveProgress_lift(_ buf: RustBuffer) throws -> LibraryMoveProgress {
+    return try FfiConverterTypeLibraryMoveProgress.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibraryMoveProgress_lower(_ value: LibraryMoveProgress) -> RustBuffer {
+    return FfiConverterTypeLibraryMoveProgress.lower(value)
+}
+
+
+/**
  * Where Obelisk keeps everything, derived from its library directory, its
  * application bundle and the user's home.
  */
@@ -11797,6 +12079,137 @@ public func FfiConverterTypeLaunchTranslator_lower(_ value: LaunchTranslator) ->
 
 
 /**
+ * What moving the library would do.
+ */
+
+public enum LibraryFolderInspection: Equatable, Hashable {
+    
+    /**
+     * The library goes to `path`: it `copies` `copied_bytes` to another
+     * disk, or only changes its place on its own.
+     */
+    case ready(path: String, copiedBytes: UInt64, copies: Bool
+    )
+    /**
+     * The folder is gone.
+     */
+    case missing
+    /**
+     * The folder is the library, inside it or holds it.
+     */
+    case inside
+    /**
+     * A folder that is not empty is already where the library would go.
+     */
+    case occupied
+    /**
+     * Games are installed in Obelisk's own games folder, inside the library.
+     */
+    case holdsGames
+    /**
+     * The folder is inside the games folder or a game's installation.
+     */
+    case games
+    /**
+     * Obelisk cannot write to the folder.
+     */
+    case unwritable
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension LibraryFolderInspection: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeLibraryFolderInspection: FfiConverterRustBuffer {
+    typealias SwiftType = LibraryFolderInspection
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LibraryFolderInspection {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .ready(path: try FfiConverterString.read(from: &buf), copiedBytes: try FfiConverterUInt64.read(from: &buf), copies: try FfiConverterBool.read(from: &buf)
+        )
+        
+        case 2: return .missing
+        
+        case 3: return .inside
+        
+        case 4: return .occupied
+        
+        case 5: return .holdsGames
+        
+        case 6: return .games
+        
+        case 7: return .unwritable
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: LibraryFolderInspection, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .ready(path,copiedBytes,copies):
+            writeInt(&buf, Int32(1))
+            FfiConverterString.write(path, into: &buf)
+            FfiConverterUInt64.write(copiedBytes, into: &buf)
+            FfiConverterBool.write(copies, into: &buf)
+            
+        
+        case .missing:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .inside:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .occupied:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .holdsGames:
+            writeInt(&buf, Int32(5))
+        
+        
+        case .games:
+            writeInt(&buf, Int32(6))
+        
+        
+        case .unwritable:
+            writeInt(&buf, Int32(7))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibraryFolderInspection_lift(_ buf: RustBuffer) throws -> LibraryFolderInspection {
+    return try FfiConverterTypeLibraryFolderInspection.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibraryFolderInspection_lower(_ value: LibraryFolderInspection) -> RustBuffer {
+    return FfiConverterTypeLibraryFolderInspection.lower(value)
+}
+
+
+
+/**
  * The status the player picks for a storefront account.
  */
 
@@ -15209,6 +15622,31 @@ public func gogLoginUrl() -> String  {
 })
 }
 /**
+ * Whether `folder` looks like an Obelisk library, such as one the player
+ * moved and points Obelisk to again. It reads the disk.
+ */
+public func isObeliskLibrary(folder: String) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_obelisk_bridge_fn_func_is_obelisk_library(
+        FfiConverterString.lower(folder),uniffiCallStatus
+    )
+})
+}
+/**
+ * Removes the library Obelisk left at `left` once it started in `library`,
+ * its new place. It blocks on the disk; false when something stayed.
+ */
+public func removeLeftLibrary(left: String, library: String) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_obelisk_bridge_fn_func_remove_left_library(
+        FfiConverterString.lower(left),
+        FfiConverterString.lower(library),uniffiCallStatus
+    )
+})
+}
+/**
  * Ends the Windows game processes an Obelisk that died left frozen. Runs
  * once at startup, before any launch.
  */
@@ -15335,6 +15773,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_func_gog_login_url() != 21271) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_func_is_obelisk_library() != 15630) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_func_remove_left_library() != 12604) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_func_end_orphaned_windows_games() != 9000) {
@@ -15518,6 +15962,21 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_method_librarycache_steam_library() != 28886) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_method_libraryfolder_cancel() != 30683) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_method_libraryfolder_inspect() != 48864) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_method_libraryfolder_inspect_destination() != 8979) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_method_libraryfolder_move_to() != 47881) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_method_libraryfolder_progress() != 13951) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_method_steamlogin_challenge() != 44547) {
@@ -15743,6 +16202,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_constructor_librarycache_new() != 37002) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_constructor_libraryfolder_new() != 1286) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_constructor_steamlogin_begin_credentials() != 63849) {

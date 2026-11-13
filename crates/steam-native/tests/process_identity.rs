@@ -73,6 +73,7 @@ fn native_supervisor_acknowledges_and_reports_preparation_failure_without_valve(
                 steam_api: Some(root.0.join("missing-api.dylib")),
                 wine: None,
                 home: root.0.clone(),
+                library: Default::default(),
             },
             target: Target {
                 executable: root.0.join("must-not-run"),

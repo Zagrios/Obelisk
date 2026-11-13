@@ -16,7 +16,7 @@ use std::{
 use tokio::sync::watch;
 
 /// Obelisk's own games folder, inside its library.
-const DEFAULT_DIRECTORY: &str = "Games";
+pub(crate) const DEFAULT_DIRECTORY: &str = "Games";
 /// The folder Obelisk makes inside the one the player chooses.
 pub const CHOSEN_DIRECTORY: &str = "Obelisk Games";
 /// The player's games folder, inside Obelisk's library; absent for its own.
@@ -135,6 +135,17 @@ impl GamesFolder {
     /// Where new installations go.
     pub fn path(&self) -> PathBuf {
         self.published.borrow().path.clone()
+    }
+
+    /// Whether `path` lies inside the games folder or inside a connected
+    /// installation, which an uninstall or a move takes along.
+    pub fn holds(&self, path: &Path) -> bool {
+        path.starts_with(self.path())
+            || self
+                .residents()
+                .iter()
+                .flat_map(|resident| resident.installations())
+                .any(|(installation, _)| path.starts_with(installation))
     }
 
     /// Whether new installations can go there now: Obelisk's own folder is

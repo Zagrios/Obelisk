@@ -219,7 +219,7 @@ Obelisk has no account of its own and does not track what you do in it. It talks
 ## Known limitations
 
 - Only games you own through Steam, Epic Games or GOG appear. Adding other games by hand is not supported yet.
-- Games install in Obelisk's library folder, shown in **Settings → Storage**. Another location cannot be chosen yet.
+- Obelisk's library, which keeps your saves, its runtimes and your Windows games' environments, can move to another folder, such as on an external disk, in **Settings → Storage**. Obelisk then needs that disk connected to start.
 - Steam: Workshop content and beta branches are not available yet.
 - GOG: Cloud saves, friends and GOG Galaxy's online features are not available yet. Games only offered in GOG's older download format cannot be installed yet.
 - Games whose anti-cheat does not accept Wine or Linux do not run yet (see [Windows games](#windows-games)).
@@ -282,6 +282,7 @@ Deleting the app alone leaves your games and settings on the Mac. To remove ever
 1. Quit Obelisk and move it from Applications to the Trash.
 2. In Finder, choose **Go → Go to Folder…**, enter `~/Library`, and delete:
    - `Application Support/com.zagrios.obelisk`: your games, their Windows environments and [Voile](https://github.com/Zagrios/voile),
+   - the `Obelisk Library` folder, if you moved the library in **Settings → Storage**,
    - `Caches/com.zagrios.obelisk`, `HTTPStorages/com.zagrios.obelisk` and `WebKit/com.zagrios.obelisk`,
    - `Preferences/com.zagrios.obelisk.plist`,
    - `Logs/Obelisk`.

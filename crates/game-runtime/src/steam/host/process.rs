@@ -186,6 +186,7 @@ mod tests {
             ],
         };
         let config = Config {
+            library: Default::default(),
             cloud_save_roots: vec![],
             helpers: temporary.path().into(),
             package: temporary.path().join("runtime.zip"),
