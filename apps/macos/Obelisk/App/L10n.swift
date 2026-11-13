@@ -8,12 +8,17 @@ enum L10n {
     static let locale = formattingLocale(language: languageCode, region: Locale.current.region?.identifier)
     private static let strings = LocalizedStrings(language: languageCode)
 
-    /// Regional variants share translations. An unsupported system language uses English.
+    /// Regional variants share translations. A language written in several scripts is translated
+    /// per script, as Chinese is in `zh-Hans`: `zh-CN` takes it, `zh-TW` does not. One translated
+    /// for a single region is that region's alone, as Portuguese is in `pt-BR`. An unsupported
+    /// system language uses English.
     static func resolvedLanguage(preferredLanguages: [String], available: [String] = L10n.available) -> String {
-        guard let first = preferredLanguages.first,
-              let code = Locale(identifier: first).language.languageCode?.identifier,
-              available.contains(code) else { return "en" }
-        return code
+        guard let first = preferredLanguages.first else { return "en" }
+        let language = Locale.Language(identifier: first)
+        guard let code = language.languageCode?.identifier else { return "en" }
+        let likely = Locale.Language(identifier: language.maximalIdentifier)
+        let variants = [likely.script?.identifier, likely.region?.identifier].compactMap { $0 }.map { "\(code)-\($0)" }
+        return (variants + [code]).first(where: available.contains) ?? "en"
     }
 
     static func formattingLocale(language: String, region: String?) -> Locale {
@@ -81,9 +86,10 @@ enum AppLanguage: Hashable, Identifiable {
             .map(AppLanguage.language)
     }
 
-    /// The countries whose flags stand for a language several of them speak;
-    /// any other language shows the flag its own code names.
-    static let countries = ["en": ["us", "gb"]]
+    /// The countries whose flags stand for a language: several for one they
+    /// share, one for a language whose code is not its country's. Any other
+    /// language shows the flag its own code names.
+    static let countries = ["en": ["us", "gb"], "ja": ["jp"], "pt-BR": ["br"], "zh-Hans": ["cn"]]
 
     /// The flags that stand for this translation, as asset names: one, or two
     /// split across the diagonal. The Mac's language has none.
@@ -95,7 +101,7 @@ enum AppLanguage: Hashable, Identifiable {
     /// A language's name in itself, as language menus show it: "Français".
     static func name(of code: String) -> String {
         let locale = Locale(identifier: code)
-        return locale.localizedString(forLanguageCode: code)?.capitalized(with: locale) ?? code
+        return locale.localizedString(forIdentifier: code)?.capitalized(with: locale) ?? code
     }
 
     /// The Mac's own languages, whatever Obelisk's choice.
