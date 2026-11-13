@@ -11,6 +11,66 @@ final class GameOverlayTests: XCTestCase {
                                                     bundleIdentifier: "com.zagrios.obelisk")
 
     @MainActor
+    func testAKeyPressChoosesTheShortcutUnlessItsGameWouldLoseAKeyAlone() throws {
+        func pressed(_ keyCode: UInt16, _ modifiers: NSEvent.ModifierFlags, _ characters: String) throws -> NSEvent {
+            try XCTUnwrap(NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0, windowNumber: 0,
+                context: nil, characters: characters, charactersIgnoringModifiers: characters, isARepeat: false,
+                keyCode: keyCode
+            ))
+        }
+        XCTAssertNil(OverlayShortcut(try pressed(48, [], "\t")), "Tab alone")
+        XCTAssertNil(OverlayShortcut(try pressed(46, [], "m")), "A letter alone")
+        XCTAssertEqual(OverlayShortcut(try pressed(48, .shift, "\t")), .shiftTab)
+        XCTAssertEqual(OverlayShortcut(try pressed(48, .option, "\t"))?.name, "⌥⇥")
+        XCTAssertEqual(OverlayShortcut(try pressed(100, [], "\u{F70B}"))?.name, "F8", "A function key alone")
+        let controlShiftM = try XCTUnwrap(OverlayShortcut(try pressed(46, [.control, .shift], "M")))
+        XCTAssertEqual(controlShiftM.name, "⌃⇧M")
+        XCTAssertEqual(controlShiftM.caps, ["⌃", L10n.string("ui.settings.key_shift"), "M"])
+    }
+
+    @MainActor
+    func testThePlayersShortcutReplacesShiftTabAndIsKept() async throws {
+        let fixture = OverlayFixture()
+        let overlay = fixture.overlay
+        XCTAssertEqual(overlay.shortcut, .shiftTab)
+        XCTAssertEqual(overlay.hint("ui.overlay.closeHint", chosen: "ui.overlay.closeHint_keys"),
+                       L10n.string("ui.overlay.closeHint"))
+        fixture.frontmost = Self.game
+        fixture.steamSessions.fake.show(.steam(appID: 620, id: "portal"))
+        try await eventually { overlay.session != nil && fixture.hotKey.isRegistered }
+        XCTAssertEqual(fixture.hotKey.shortcut, .shiftTab)
+
+        // Chosen while the game is in front, the new keys take the hot key at once.
+        let optionTab = OverlayShortcut(keyCode: 48, modifiers: 0x0800, key: "")
+        overlay.shortcut = optionTab
+        XCTAssertEqual(fixture.hotKey.shortcut, optionTab)
+        XCTAssertEqual(optionTab.name, "⌥⇥")
+        XCTAssertEqual(overlay.hint("ui.overlay.closeHint", chosen: "ui.overlay.closeHint_keys"),
+                       L10n.string("ui.overlay.closeHint_keys", "⌥⇥"))
+        fixture.hotKey.press()
+        XCTAssertTrue(overlay.isPresented)
+        fixture.hotKey.press()
+        XCTAssertFalse(overlay.isPresented)
+
+        // Voile's Wine only tells of Shift-Tab, which is the game's again.
+        overlay.overlayKeyPressed(in: Self.game)
+        XCTAssertFalse(overlay.isPresented)
+
+        // Kept from one launch to the next; Shift-Tab is kept as no choice.
+        let suite = "ObeliskTests.Overlay.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        XCTAssertEqual(OverlayShortcut(defaults: defaults), .shiftTab)
+        let controlF8 = OverlayShortcut(keyCode: 100, modifiers: 0x1000, key: "F8")
+        controlF8.save(in: defaults)
+        XCTAssertEqual(OverlayShortcut(defaults: defaults), controlF8)
+        XCTAssertEqual(controlF8.name, "⌃F8")
+        OverlayShortcut.shiftTab.save(in: defaults)
+        XCTAssertNil(defaults.object(forKey: "overlay.shortcut"))
+    }
+
+    @MainActor
     func testTheOverlayShowsOnlyOverARunningGameAndGivesItsFocusBack() async throws {
         let fixture = OverlayFixture()
         let overlay = fixture.overlay
@@ -303,16 +363,20 @@ final class OverlayFixture {
 @MainActor
 final class RecordingOverlayHotKey: OverlayHotKey {
     private(set) var isRegistered = false
+    /// The keys it holds while it is registered.
+    private(set) var shortcut: OverlayShortcut?
     private var action: (@MainActor () -> Void)?
 
-    func register(_ action: @escaping @MainActor () -> Void) {
+    func register(_ shortcut: OverlayShortcut, _ action: @escaping @MainActor () -> Void) {
         guard !isRegistered else { return }
         isRegistered = true
+        self.shortcut = shortcut
         self.action = action
     }
 
     func unregister() {
         isRegistered = false
+        shortcut = nil
         action = nil
     }
 
