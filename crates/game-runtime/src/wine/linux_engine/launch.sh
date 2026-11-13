@@ -14,6 +14,7 @@
 #   --graphics dxmt|d3dmetal  what renders the game's Direct3D (default dxmt)
 #   --render-percent N        the share of the screen's pixels per axis that the game sees (default 100, all of them;
 #                             wsd keeps it from 1 to 100): macOS scales the picture up to the screen
+#   --game-mode on|off        whether macOS turns Game Mode on while the game is full screen (default on)
 #   --bind GUEST=HOST[:ro]    a folder the guest also sees, at GUEST, whose parent exists in the root
 #   --env NAME=VALUE          a variable of the guest
 #   --pass NAME               this script's variable NAME, when set, as a variable of the guest
@@ -24,12 +25,13 @@ set -u
 unset DYLD_INSERT_LIBRARIES
 runtime=$1 home=$2 install=$3 cwd=$4
 shift 4
-graphics=dxmt render_percent= binds= guest_env=()
+graphics=dxmt render_percent= game_mode=on binds= guest_env=()
 while [ $# -gt 0 ] && [ "$1" != "--" ]; do
     [ $# -ge 2 ] || exit 2
     case $1 in
     --graphics) graphics=$2 ;;
     --render-percent) render_percent=$2 ;;
+    --game-mode) game_mode=$2 ;;
     --bind) binds="$binds;$2" ;;
     --env) guest_env+=(--env "$2") ;;
     --pass)
@@ -96,6 +98,9 @@ mkdir -p "$app/Contents/MacOS" || exit 1
 rm -f "$app/Contents/MacOS/wsd"
 cp -c "$runtime/engine/wsd" "$app/Contents/MacOS/wsd" 2>/dev/null || cp "$runtime/engine/wsd" "$app/Contents/MacOS/wsd" || exit 1
 xml_name=$(printf '%s' "$app_name" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g')
+# macOS turns Game Mode on for a full-screen app of the games category, unless the app says it does not support it.
+game_mode_key=
+[ "$game_mode" = off ] && game_mode_key=$'\n  <key>LSSupportsGameMode</key><false/>'
 cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -106,11 +111,14 @@ cat > "$app/Contents/Info.plist" <<PLIST
   <key>CFBundleName</key><string>$xml_name</string>
   <key>CFBundleDisplayName</key><string>$xml_name</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>LSApplicationCategoryType</key><string>public.app-category.games</string>
+  <key>LSApplicationCategoryType</key><string>public.app-category.games</string>$game_mode_key
   <key>NSHighResolutionCapable</key><true/>
 </dict>
 </plist>
 PLIST
+# macOS keeps what it read of a bundle at its first launch, and reads it again only once the bundle's folder has a
+# newer date: with the Info.plist alone rewritten, a game kept the Game Mode of its first launch.
+touch "$app"
 
 # The render server runs from a helper bundle inside the game's, one per graphics backend: Metal keeps its compiled
 # shaders per bundle identifier. Outside a bundle every render server shared one cache, and each start of DXMT's arm64

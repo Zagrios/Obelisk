@@ -25391,6 +25391,75 @@
         }
       }
     },
+    "ui.library.demo": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Demo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Démo"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Demo"
+          }
+        }
+      }
+    },
+    "ui.library.beta": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Beta"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bêta"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Beta"
+          }
+        }
+      }
+    },
+    "ui.library.playtest": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Playtest"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Playtest"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Playtest"
+          }
+        }
+      }
+    },
     "ui.steam.guard_code": {
       "extractionState": "manual",
       "localizations": {
@@ -46369,6 +46438,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "无论使用哪个后端渲染，Metal 的 HUD 都会在游戏画面上显示帧率和每帧耗时。"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.game_mode": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Game Mode"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mode Jeu"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modalità Gioco"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.game_mode_detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS gives the game priority over background tasks while it is full screen. Turn this off for a game that runs slower with it."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS donne la priorité au jeu sur les tâches en arrière-plan tant qu'il est en plein écran. Désactivez cette option pour un jeu qui tourne moins vite avec."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS dà priorità al gioco rispetto alle attività in background mentre è a schermo intero. Disattivala per un gioco che gira più lentamente con la Modalità Gioco."
           }
         }
       }

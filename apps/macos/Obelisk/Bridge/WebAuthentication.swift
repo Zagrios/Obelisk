@@ -68,8 +68,8 @@ enum WebAuthenticationError: LocalizedError {
 struct WebSignIn: Sendable {
     let store: WebSignInStore
     let loginURL: @Sendable () -> URL
-    /// Fixed for the protocol, including its popups, when the storefront
-    /// recognizes its launcher by it.
+    /// What follows WebKit's own user agent, in its popups too, when the
+    /// storefront recognizes its launcher by it.
     var userAgent: String?
     /// The code a main-frame navigation carries, or nil when it carries
     /// none; it throws when the navigation is the callback but malformed.
@@ -85,7 +85,7 @@ struct WebSignIn: Sendable {
         loginURL: { URL(string: epicLoginUrl())! },
         // Epic uses the launcher marker to return an authorization code to
         // localhost.
-        userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) EpicGamesLauncher",
+        userAgent: "EpicGamesLauncher",
         code: EpicAuthorizationCallback.code(from:),
         isJSONEndpoint: EpicAuthorizationCallback.isJSONEndpoint,
         codeFromJSON: EpicAuthorizationCallback.code(fromJSON:at:)
@@ -137,6 +137,8 @@ final class WebAuthentication: NSObject, WKNavigationDelegate, WKUIDelegate, NSW
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = flow.store.dataStore
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
+        // A popup's configuration keeps it.
+        configuration.applicationNameForUserAgent = flow.userAgent
         let window = makeWindow(configuration: configuration, primary: true)
         load(window.webView)
     }
@@ -146,7 +148,6 @@ final class WebAuthentication: NSObject, WKNavigationDelegate, WKUIDelegate, NSW
         window.delegate = self
         window.webView.navigationDelegate = self
         window.webView.uiDelegate = self
-        window.webView.customUserAgent = flow.userAgent
         windows.append(window)
         window.center()
         window.makeKeyAndOrderFront(nil)

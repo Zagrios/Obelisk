@@ -208,6 +208,10 @@ impl Adapter for LinuxEngine {
             arguments.push("--render-percent".to_owned());
             arguments.push(config.settings.render_percent.to_string());
         }
+        // Without it, macOS turns Game Mode on while the game is full screen.
+        if !config.settings.game_mode {
+            arguments.extend(["--game-mode".to_owned(), "off".to_owned()]);
+        }
         for (path, folder) in &guest.binds {
             arguments.push("--bind".to_owned());
             arguments.push(format!("{path}={}:ro", folder.display()));
