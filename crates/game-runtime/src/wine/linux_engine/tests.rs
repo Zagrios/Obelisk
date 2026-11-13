@@ -194,6 +194,30 @@ fn a_render_resolution_below_all_pixels_follows_the_graphics_pair_to_the_launche
     assert_eq!(without, full.arguments);
 }
 
+#[test]
+fn game_mode_kept_off_reaches_the_launcher() {
+    let (_directory, root) = installation();
+    let install = root.join("install");
+    fs::create_dir_all(&install).unwrap();
+    fs::write(install.join("Game.exe"), pe()).unwrap();
+    let mut config = linux_config(&root);
+    let mut started = |game_mode| {
+        config.settings.game_mode = game_mode;
+        wine::target::<Plain>(
+            &config,
+            &game(&install),
+            &launch_target(&install.join("Game.exe"), &[]),
+            HashMap::new(),
+        )
+        .unwrap()
+    };
+
+    let (on, off) = (started(true), started(false));
+
+    assert!(options(&on, "--game-mode").is_empty());
+    assert_eq!(options(&off, "--game-mode"), ["off"]);
+}
+
 /// A Steam game whose program is `Game/start_protected_game.exe`, in a
 /// runtime that carries steam-hostpid.so when `host_pid`.
 fn steam_target(root: &Path, host_pid: bool) -> (wine::Config, Target) {
@@ -329,14 +353,22 @@ exec /usr/bin/nc -lU "$4""#;
 /// Runs the launcher with `options` and the program `Game.exe`, from an
 /// environment with `variables` and the Finder's 256 open files.
 fn run_launcher(root: &Path, options: &[&str], variables: &[(&str, &str)]) -> (String, String) {
-    let runtime = recording_runtime(root);
+    run_launcher_of(&recording_runtime(root), root, options, variables);
+    (
+        fs::read_to_string(root.join("engine.txt")).unwrap(),
+        fs::read_to_string(root.join("server.txt")).unwrap(),
+    )
+}
+
+/// Runs the launcher of `runtime` so, to its end.
+fn run_launcher_of(runtime: &Path, root: &Path, options: &[&str], variables: &[(&str, &str)]) {
     let mut command = Command::new("/bin/bash");
     command
         .arg("-c")
         .arg(r#"ulimit -S -n 256; exec /bin/bash -c "$0" "$@""#)
         .arg(LAUNCHER)
         .arg("obelisk-linux-engine")
-        .arg(&runtime)
+        .arg(runtime)
         .arg(root.join("home"))
         .arg(root.join("install"))
         .arg("/opt/game")
@@ -349,10 +381,6 @@ fn run_launcher(root: &Path, options: &[&str], variables: &[(&str, &str)]) -> (S
         .envs(variables.iter().copied());
     let status = command.stdin(Stdio::null()).status().unwrap();
     assert!(status.success(), "{status:?}");
-    (
-        fs::read_to_string(root.join("engine.txt")).unwrap(),
-        fs::read_to_string(root.join("server.txt")).unwrap(),
-    )
 }
 
 #[test]
@@ -433,6 +461,24 @@ fn the_launcher_starts_the_window_server_with_the_render_resolution_it_was_given
         // The render resolution is the window server's alone: the guest and
         // its Wine never see it.
         assert!(!engine.contains("--render-percent"), "{engine}");
+    }
+}
+
+#[test]
+fn the_launcher_s_game_bundle_is_a_game_that_says_when_game_mode_is_kept_off() {
+    for (options, off) in [(&[][..], false), (&["--game-mode", "off"], true)] {
+        let (_directory, root) = installation();
+
+        run_launcher(&root, options, &[("OBELISK_APP_NAME", "My Game")]);
+
+        let bundle = root.join("obelisk-apps/My-Game/My Game.app");
+        let plist = fs::read_to_string(bundle.join("Contents/Info.plist")).unwrap();
+        assert!(plist.contains("public.app-category.games"), "{plist}");
+        assert_eq!(
+            plist.contains("<key>LSSupportsGameMode</key><false/>"),
+            off,
+            "{plist}"
+        );
     }
 }
 
@@ -712,6 +758,63 @@ fn a_failed_translation_is_tried_again_and_a_dxmt_game_needs_none() {
     };
     translate_d3dmetal(&dxmt, &helpers);
     assert!(!calls.exists());
+}
+
+/// macOS itself follows the switch from one launch of a game to the next,
+/// which it did not while the launcher only rewrote the bundle's Info.plist.
+/// The window server here is an app that goes full screen, and the engine
+/// asks `gamepolicyctl`, which Xcode ships, whether Game Mode is on. It takes
+/// the screen for a few seconds at each launch.
+#[test]
+#[ignore]
+fn macos_follows_game_mode_from_one_launch_to_the_next() {
+    use std::os::unix::fs::PermissionsExt;
+    let (_directory, root) = installation();
+    let runtime = recording_runtime(&root);
+    let source = root.join("wsd.swift");
+    fs::write(
+        &source,
+        r#"import AppKit
+let app = NSApplication.shared
+app.setActivationPolicy(.regular)
+let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
+                      styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+window.collectionBehavior = [.fullScreenPrimary]
+window.makeKeyAndOrderFront(nil)
+app.activate(ignoringOtherApps: true)
+DispatchQueue.main.asyncAfter(deadline: .now() + 1) { window.toggleFullScreen(nil) }
+app.run()
+"#,
+    )
+    .unwrap();
+    let wsd = runtime.join("engine/wsd");
+    let built = Command::new("/usr/bin/xcrun")
+        .args(["swiftc", "-O", "-o"])
+        .args([&wsd, &source])
+        .status()
+        .unwrap();
+    assert!(built.success(), "{built:?}");
+    // This window server listens on no socket: the launcher waits its five
+    // seconds for one, by when the window is full screen.
+    let engine = runtime.join("engine/fexdarwin-run");
+    fs::write(
+        &engine,
+        "#!/bin/sh\nsleep 2\n/usr/bin/xcrun gamepolicyctl game-mode status > \"$OBELISK_TEST_ROOT/game-mode.txt\"\n",
+    )
+    .unwrap();
+    fs::set_permissions(&engine, fs::Permissions::from_mode(0o755)).unwrap();
+
+    for (options, on) in [
+        (&[][..], true),
+        (&["--game-mode", "off"], false),
+        (&[], true),
+    ] {
+        run_launcher_of(&runtime, &root, options, &[("OBELISK_APP_NAME", "My Game")]);
+
+        let status = fs::read_to_string(root.join("game-mode.txt")).unwrap();
+        let first = status.lines().next().unwrap_or_default();
+        assert_eq!(first.contains("on"), on, "{options:?}: {status}");
+    }
 }
 
 /// End to end on an installed engine runtime, through `prepare` and the
