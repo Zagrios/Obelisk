@@ -18,7 +18,7 @@ use super::{Client, endpoint, validate_identity};
 use crate::{
     EpicError,
     auth::{bounded_bytes, check_status, credential_free},
-    cloud::{CloudGame, CloudListing, CloudRules, codec, identity, relative_path},
+    cloud::{CloudCatalog, CloudGame, CloudListing, CloudRules, codec, identity, relative_path},
     content,
     content_manifest::{Chunk, ChunkGuid},
 };
@@ -100,45 +100,7 @@ impl Client {
         catalog_item_id: &str,
         app_name: &str,
         platform: Platform,
-    ) -> Result<Option<CloudRules>, EpicError> {
-        let attributes = self
-            .catalog_attributes(namespace, catalog_item_id, app_name)
-            .await?;
-        CloudRules::from_attributes(&attributes, platform)
-    }
-
-    /// What the catalog says of the game's Cloud, to tell why a game has
-    /// none: each attribute whose name mentions it, with its value.
-    pub async fn cloud_attributes(
-        &self,
-        namespace: &str,
-        catalog_item_id: &str,
-        app_name: &str,
-    ) -> Result<BTreeMap<String, String>, EpicError> {
-        let attributes = self
-            .catalog_attributes(namespace, catalog_item_id, app_name)
-            .await?;
-        Ok(attributes
-            .into_iter()
-            .filter(|(name, _)| name.to_ascii_lowercase().contains("cloud"))
-            .map(|(name, value)| {
-                let text = match value.get("value") {
-                    Some(serde_json::Value::String(text)) => text.clone(),
-                    Some(other) => other.to_string(),
-                    None => value.to_string(),
-                };
-                (name, text.chars().take(400).collect())
-            })
-            .collect())
-    }
-
-    /// The custom attributes of the game's catalog item.
-    async fn catalog_attributes(
-        &self,
-        namespace: &str,
-        catalog_item_id: &str,
-        app_name: &str,
-    ) -> Result<BTreeMap<String, serde_json::Value>, EpicError> {
+    ) -> Result<CloudCatalog, EpicError> {
         validate_identity(namespace, catalog_item_id, app_name)?;
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]
@@ -169,7 +131,7 @@ impl Client {
                 .append_pair("locale", "en");
             let mut catalog: BTreeMap<String, Catalog> = self.api.get(url, &token).await?;
             let item = catalog.remove(catalog_item_id).ok_or(EpicError::Protocol)?;
-            Ok(item.custom_attributes)
+            CloudCatalog::from_attributes(&item.custom_attributes, platform)
         })
         .await
     }

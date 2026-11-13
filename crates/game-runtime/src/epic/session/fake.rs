@@ -123,9 +123,12 @@ impl CloudRemote for FakeCloud {
         _catalog_item_id: &str,
         _app_name: &str,
         _platform: Platform,
-    ) -> std::result::Result<Option<CloudRules>, EpicError> {
+    ) -> std::result::Result<CloudCatalog, EpicError> {
         self.failure(Call::Configuration)?;
-        Ok(self.rules.lock().unwrap().clone())
+        Ok(CloudCatalog {
+            rules: self.rules.lock().unwrap().clone(),
+            attributes: BTreeMap::new(),
+        })
     }
 
     async fn cloud_list(
@@ -238,7 +241,8 @@ impl Network for FakeCloud {
                 &config.app_name,
                 config.platform,
             )
-            .await?)
+            .await?
+            .rules)
         })
     }
     fn maintain<'a>(
