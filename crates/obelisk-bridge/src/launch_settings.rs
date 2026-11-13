@@ -20,6 +20,8 @@ pub struct LaunchSettings {
     pub render_percent: u32,
     /// Metal's Performance HUD shows over the game, whatever renders it.
     pub performance_hud: bool,
+    /// macOS may turn its Game Mode on for the game.
+    pub game_mode: bool,
     /// What the player changed from what Obelisk knows of the game.
     pub choices: LaunchChoices,
     /// The engine the game runs on without choices.
@@ -45,6 +47,8 @@ pub struct LaunchChoices {
     pub render_percent: Option<u32>,
     #[uniffi(default = false)]
     pub performance_hud: bool,
+    #[uniffi(default = None)]
+    pub game_mode: Option<bool>,
 }
 
 /// What runs a Windows game's Wine.
@@ -86,6 +90,8 @@ pub struct LaunchEngineOffer {
     /// The lowest render resolution it offers, up to 100; None when it offers
     /// none.
     pub lowest_render_percent: Option<u32>,
+    /// Whether it can keep macOS's Game Mode off a game.
+    pub game_mode: bool,
 }
 
 /// One backend's offer on one engine.
@@ -103,6 +109,7 @@ impl From<View> for LaunchSettings {
             ray_tracing: view.settings.options.ray_tracing,
             render_percent: view.settings.render_percent,
             performance_hud: view.settings.performance_hud,
+            game_mode: view.settings.game_mode,
             choices: view.choices.into(),
             default_engine: view.default_engine.into(),
             engines: ENGINES
@@ -124,6 +131,7 @@ fn engine_offer(offer: &EngineOffer, default: Graphics) -> LaunchEngineOffer {
         default_graphics: default.into(),
         graphics: offer.graphics.iter().map(graphics_offer).collect(),
         lowest_render_percent: offer.lowest_render_percent,
+        game_mode: offer.game_mode,
     }
 }
 
@@ -149,6 +157,7 @@ impl From<Choices> for LaunchChoices {
             ray_tracing: choices.ray_tracing,
             render_percent: choices.render_percent,
             performance_hud: choices.performance_hud,
+            game_mode: choices.game_mode,
         }
     }
 }
@@ -162,6 +171,7 @@ impl From<LaunchChoices> for launch_settings::Choices {
             ray_tracing: choices.ray_tracing,
             render_percent: choices.render_percent,
             performance_hud: choices.performance_hud,
+            game_mode: choices.game_mode,
         }
     }
 }

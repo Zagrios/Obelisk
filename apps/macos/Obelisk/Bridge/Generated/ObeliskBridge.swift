@@ -7053,19 +7053,21 @@ public struct LaunchChoices: Equatable, Hashable {
     public var rayTracing: Bool?
     public var renderPercent: UInt32?
     public var performanceHud: Bool
+    public var gameMode: Bool?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
     public init(
         /**
          * What the player adds to the game's command line, as typed.
-         */arguments: String? = nil, engine: LaunchEngine? = nil, graphics: LaunchGraphics? = nil, rayTracing: Bool? = nil, renderPercent: UInt32? = nil, performanceHud: Bool = false) {
+         */arguments: String? = nil, engine: LaunchEngine? = nil, graphics: LaunchGraphics? = nil, rayTracing: Bool? = nil, renderPercent: UInt32? = nil, performanceHud: Bool = false, gameMode: Bool? = nil) {
         self.arguments = arguments
         self.engine = engine
         self.graphics = graphics
         self.rayTracing = rayTracing
         self.renderPercent = renderPercent
         self.performanceHud = performanceHud
+        self.gameMode = gameMode
     }
 
     
@@ -7089,7 +7091,8 @@ public struct FfiConverterTypeLaunchChoices: FfiConverterRustBuffer {
                 graphics: FfiConverterOptionTypeLaunchGraphics.read(from: &buf), 
                 rayTracing: FfiConverterOptionBool.read(from: &buf), 
                 renderPercent: FfiConverterOptionUInt32.read(from: &buf), 
-                performanceHud: FfiConverterBool.read(from: &buf)
+                performanceHud: FfiConverterBool.read(from: &buf), 
+                gameMode: FfiConverterOptionBool.read(from: &buf)
         )
     }
 
@@ -7100,6 +7103,7 @@ public struct FfiConverterTypeLaunchChoices: FfiConverterRustBuffer {
         FfiConverterOptionBool.write(value.rayTracing, into: &buf)
         FfiConverterOptionUInt32.write(value.renderPercent, into: &buf)
         FfiConverterBool.write(value.performanceHud, into: &buf)
+        FfiConverterOptionBool.write(value.gameMode, into: &buf)
     }
 }
 
@@ -7135,6 +7139,10 @@ public struct LaunchEngineOffer: Equatable, Hashable {
      * none.
      */
     public var lowestRenderPercent: UInt32?
+    /**
+     * Whether it can keep macOS's Game Mode off a game.
+     */
+    public var gameMode: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -7145,12 +7153,16 @@ public struct LaunchEngineOffer: Equatable, Hashable {
         /**
          * The lowest render resolution it offers, up to 100; None when it offers
          * none.
-         */lowestRenderPercent: UInt32?) {
+         */lowestRenderPercent: UInt32?, 
+        /**
+         * Whether it can keep macOS's Game Mode off a game.
+         */gameMode: Bool) {
         self.engine = engine
         self.translator = translator
         self.defaultGraphics = defaultGraphics
         self.graphics = graphics
         self.lowestRenderPercent = lowestRenderPercent
+        self.gameMode = gameMode
     }
 
     
@@ -7173,7 +7185,8 @@ public struct FfiConverterTypeLaunchEngineOffer: FfiConverterRustBuffer {
                 translator: FfiConverterTypeLaunchTranslator.read(from: &buf), 
                 defaultGraphics: FfiConverterTypeLaunchGraphics.read(from: &buf), 
                 graphics: FfiConverterSequenceTypeLaunchGraphicsOffer.read(from: &buf), 
-                lowestRenderPercent: FfiConverterOptionUInt32.read(from: &buf)
+                lowestRenderPercent: FfiConverterOptionUInt32.read(from: &buf), 
+                gameMode: FfiConverterBool.read(from: &buf)
         )
     }
 
@@ -7183,6 +7196,7 @@ public struct FfiConverterTypeLaunchEngineOffer: FfiConverterRustBuffer {
         FfiConverterTypeLaunchGraphics.write(value.defaultGraphics, into: &buf)
         FfiConverterSequenceTypeLaunchGraphicsOffer.write(value.graphics, into: &buf)
         FfiConverterOptionUInt32.write(value.lowestRenderPercent, into: &buf)
+        FfiConverterBool.write(value.gameMode, into: &buf)
     }
 }
 
@@ -7279,6 +7293,10 @@ public struct LaunchSettings: Equatable, Hashable {
      */
     public var performanceHud: Bool
     /**
+     * macOS may turn its Game Mode on for the game.
+     */
+    public var gameMode: Bool
+    /**
      * What the player changed from what Obelisk knows of the game.
      */
     public var choices: LaunchChoices
@@ -7305,6 +7323,9 @@ public struct LaunchSettings: Equatable, Hashable {
          * Metal's Performance HUD shows over the game, whatever renders it.
          */performanceHud: Bool, 
         /**
+         * macOS may turn its Game Mode on for the game.
+         */gameMode: Bool, 
+        /**
          * What the player changed from what Obelisk knows of the game.
          */choices: LaunchChoices, 
         /**
@@ -7319,6 +7340,7 @@ public struct LaunchSettings: Equatable, Hashable {
         self.rayTracing = rayTracing
         self.renderPercent = renderPercent
         self.performanceHud = performanceHud
+        self.gameMode = gameMode
         self.choices = choices
         self.defaultEngine = defaultEngine
         self.engines = engines
@@ -7345,6 +7367,7 @@ public struct FfiConverterTypeLaunchSettings: FfiConverterRustBuffer {
                 rayTracing: FfiConverterBool.read(from: &buf), 
                 renderPercent: FfiConverterUInt32.read(from: &buf), 
                 performanceHud: FfiConverterBool.read(from: &buf), 
+                gameMode: FfiConverterBool.read(from: &buf), 
                 choices: FfiConverterTypeLaunchChoices.read(from: &buf), 
                 defaultEngine: FfiConverterTypeLaunchEngine.read(from: &buf), 
                 engines: FfiConverterSequenceTypeLaunchEngineOffer.read(from: &buf)
@@ -7357,6 +7380,7 @@ public struct FfiConverterTypeLaunchSettings: FfiConverterRustBuffer {
         FfiConverterBool.write(value.rayTracing, into: &buf)
         FfiConverterUInt32.write(value.renderPercent, into: &buf)
         FfiConverterBool.write(value.performanceHud, into: &buf)
+        FfiConverterBool.write(value.gameMode, into: &buf)
         FfiConverterTypeLaunchChoices.write(value.choices, into: &buf)
         FfiConverterTypeLaunchEngine.write(value.defaultEngine, into: &buf)
         FfiConverterSequenceTypeLaunchEngineOffer.write(value.engines, into: &buf)

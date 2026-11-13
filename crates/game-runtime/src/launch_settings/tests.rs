@@ -115,6 +115,7 @@ fn every_kind_of_choices() -> [Choices; 5] {
             ray_tracing: Some(true),
             render_percent: Some(100),
             performance_hud: false,
+            game_mode: Some(true),
         },
         Choices {
             arguments: Some("-dx11 \"+exec autoexec.cfg\"".into()),
@@ -317,6 +318,31 @@ fn a_render_resolution_the_linux_engine_offers_applies_and_is_kept_but_all_pixel
     let view = chosen(OTHER, linux(100));
     assert_eq!(view.settings.render_percent, 100);
     assert_eq!(view.choices.render_percent, None);
+}
+
+#[test]
+fn only_the_linux_engine_keeps_game_mode_off_and_only_off_is_kept() {
+    let off = |engine| Choices {
+        engine: Some(engine),
+        game_mode: Some(false),
+        ..Choices::default()
+    };
+
+    let linux = chosen(OTHER, off(Engine::Linux));
+    assert!(!linux.settings.game_mode);
+    assert_eq!(linux.choices, off(Engine::Linux));
+
+    let rosetta = chosen(OTHER, off(Engine::Rosetta));
+    assert!(rosetta.settings.game_mode);
+    assert_eq!(rosetta.choices, Choices::default());
+
+    let on = Choices {
+        game_mode: Some(true),
+        ..off(Engine::Linux)
+    };
+    let view = chosen(OTHER, on);
+    assert!(view.settings.game_mode);
+    assert_eq!(view.choices.game_mode, None);
 }
 
 #[test]
