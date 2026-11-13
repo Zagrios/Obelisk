@@ -200,8 +200,31 @@ export FEXDARWIN_LKD=1 FEXDARWIN_ROOT="$runtime/root" FEXDARWIN_ROOT_RO=1 FEXDAR
 export FEXDARWIN_BIND="/opt/wine=$runtime/wine:ro;/home/user=$home;/opt/game=$install;/run/obelisk=$sockets_root/$sockets$binds"
 # wineserver writes the registry only when it exits: wait for it inside the guest before the game ends. Started
 # with -p0, it stops Wine's own processes as soon as the game's last process ends, instead of 3 seconds later.
+# For native Linux executables and scripts, make executable and execute directly under fexdarwin-run.
 "$runtime/engine/fexdarwin-run" --cwd "$cwd" ${guest_env[@]+"${guest_env[@]}"} \
-    /bin/sh -c '/opt/wine/bin/wineserver -p0; /opt/wine/bin/wine "$@"; status=$?; /opt/wine/bin/wineserver -w; exit $status' sh "$@" &
+    /bin/sh -c '
+        prog="$1"
+        is_windows=0
+        case "$prog" in
+            *.exe|*.EXE|*.bat|*.BAT) is_windows=1 ;;
+            *)
+                if [ -f "$prog" ] && head -c 2 "$prog" 2>/dev/null | grep -q "^MZ"; then
+                    is_windows=1
+                fi
+                ;;
+        esac
+        if [ "$is_windows" -eq 1 ]; then
+            /opt/wine/bin/wineserver -p0
+            /opt/wine/bin/wine "$@"
+            status=$?
+            /opt/wine/bin/wineserver -w
+            exit $status
+        else
+            chmod +x "$prog" 2>/dev/null
+            "$@"
+            exit $?
+        fi
+    ' sh "$@" &
 game=$!
 wait "$game"
 status=$?

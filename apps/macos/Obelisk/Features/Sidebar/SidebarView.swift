@@ -10,6 +10,7 @@ struct SidebarView: View {
 
             Section {
                 ForEach(LibrarySection.storefronts) { row($0) }
+                row(.custom)
             } header: {
                 Text(L10n.string("ui.library.title"))
                     .font(.system(size: 13, weight: .semibold))

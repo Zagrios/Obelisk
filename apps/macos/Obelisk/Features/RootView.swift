@@ -18,6 +18,7 @@ struct RootView: View {
                 case .steam: SteamView(model: model.steam)
                 case .epic: EpicView(model: model.epic)
                 case .gog: GogView(model: model.gog)
+                case .custom: CustomGamesView(model: model.custom)
                 case .settings: SettingsView(model: model)
                 }
             }

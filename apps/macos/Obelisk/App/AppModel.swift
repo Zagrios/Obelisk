@@ -12,6 +12,7 @@ final class AppModel {
     let steam: SteamModel
     let epic: EpicModel
     let gog: GogModel
+    let custom: CustomGamesModel
     /// The in-game overlay, over whichever storefront's game runs.
     let overlay: GameOverlayController
     /// Every storefront's Transfers, in their one queue.
@@ -78,7 +79,7 @@ final class AppModel {
     /// no notification.
     init(directory: URL = AppIdentity.libraryDirectory, defaults: UserDefaults = .standard,
          defaultsDomain: String = Bundle.main.bundleIdentifier ?? AppIdentity.storageIdentifier, steam: SteamModel? = nil,
-         epic: EpicModel? = nil, gog: GogModel? = nil, downloads: DownloadsModel? = nil,
+         epic: EpicModel? = nil, gog: GogModel? = nil, custom: CustomGamesModel? = nil, downloads: DownloadsModel? = nil,
          gamesFolder: GamesFolderModel? = nil,
          performance: PerformanceReports? = nil, estimates: PerformanceEstimates? = nil, updates: AppUpdates? = nil,
          thermal: ThermalLog = .shared,
@@ -101,6 +102,7 @@ final class AppModel {
             directory: directory, libraryCache: libraryCache,
             onlineStatus: OnlineStatusChoice(storeID: EpicGames.storeID, defaults: defaults))
         self.gog = gog ?? GogModel(directory: directory, libraryCache: libraryCache)
+        self.custom = custom ?? CustomGamesModel(directory: directory)
         self.overlay = GameOverlayController(steam: self.steam, epic: self.epic, gog: self.gog, environment: overlay)
         self.steam.overlay = self.overlay
         self.steam.notifier = overlay.notifier
@@ -179,7 +181,11 @@ final class AppModel {
     /// Returns a storefront from its game page, which Home shows too when it
     /// opened it.
     private func closeGame(of section: LibrarySection) {
-        account(section)?.closeGamePage()
+        if section == .custom {
+            custom.selectedGame = nil
+        } else {
+            account(section)?.closeGamePage()
+        }
         if homeGame?.section == section { homeGame = nil }
     }
 
@@ -210,7 +216,7 @@ final class AppModel {
         case .steam: steam
         case .epic: epic
         case .gog: gog
-        case .home, .settings: nil
+        case .home, .settings, .custom: nil
         }
     }
 
@@ -233,7 +239,7 @@ final class AppModel {
     enum HomeContent: Equatable { case libraries, restoring, signIn }
 
     var homeContent: HomeContent {
-        if accounts.contains(where: { $0.showsLibrary }) { return .libraries }
+        if accounts.contains(where: { $0.showsLibrary }) || !custom.games.isEmpty { return .libraries }
         return restoringStorefronts.isEmpty ? .signIn : .restoring
     }
 
