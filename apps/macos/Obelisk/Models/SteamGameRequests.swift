@@ -268,7 +268,7 @@ final class SteamReceivedInvitations {
             return .running
         }
         guard installations.isConnected else { return .unavailable }
-        guard installations.receipt(for: appId, preferring: .mac) != nil else { return .notInstalled }
+        guard installations.receiptToLaunch(for: appId, preferring: .mac) != nil else { return .notInstalled }
         return installations.canLaunch(appId) ? .launch : .unavailable
     }
 
@@ -332,7 +332,7 @@ final class SteamReceivedInvitations {
                 return false
             }
         case .launch:
-            guard let receipt = installations.receipt(for: invite.appId, preferring: .mac) else {
+            guard let receipt = installations.receiptToLaunch(for: invite.appId, preferring: .mac) else {
                 return false
             }
             if failures[key] != nil { failures[key] = nil }

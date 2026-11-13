@@ -163,14 +163,20 @@ final class GameActionTests: XCTestCase {
         installations.chooseBuild(.mac)
         XCTAssertEqual(installations.selectedAction?.kind, .download(.resume))
 
-        // The Mac build Rust refused stays on the page, and is no longer chosen.
+        // The Mac build the pick refused fails its Transfer: the page reads the game's details again,
+        // which then show the Windows build alone, as for a Mac build that does not run natively.
         fixture.backend.publish {
             $0.resumable = nil
             $0.resumableBuild = nil
-            $0.macRefused = [620]
+            $0.transferGame = 620
+            $0.transfer = GameTransfer(game: "620", state: .failed, completedBytes: 0, totalBytes: 0,
+                                       networkBytes: 0, contentBytes: 0, currentFile: "",
+                                       message: "backend.install.macBuildUnavailable")
         }
-        try await eventually { installations.selectedBuildChoice?.macRefused == true }
-        XCTAssertEqual(installations.selectedBuildChoice?.chosen, .windows)
+        try await eventually { fixture.failedTransfers == [620] }
+        both.platform = .windows
+        XCTAssertNil(installations.selectedBuildChoice)
+        XCTAssertEqual(installations.selectedAction?.kind, .download(.install))
     }
 
     func testAGameSyncsItsInstalledBuildsCloudSavesWhileItsOtherBuildIsChosen() async throws {
@@ -214,7 +220,7 @@ final class GameActionTests: XCTestCase {
         library(fixture.selection(620)).perform()
         XCTAssertEqual(fixture.backend.actions, [.launch(fixture.receipt), .launch(windows), .launch(windows)])
         XCTAssertEqual(GameActions(installations, in: .library)(fixture.selection(620)).build, .windows)
-        XCTAssertEqual(installations.receipt(for: 620, preferring: .mac), windows)
+        XCTAssertEqual(installations.receiptToLaunch(for: 620, preferring: .mac), windows)
     }
 
     func testALibraryDownloadNeedsAnOffer() async throws {

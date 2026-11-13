@@ -75,9 +75,6 @@ struct InstallationSelection<Store: InstallationStorefront> {
 struct GameBuildChoice: Equatable {
     var chosen: GamePlatform
     var installed: Set<GamePlatform>
-    /// Whether a download found that Obelisk cannot install the Mac build:
-    /// it stays in sight, and can no longer be chosen.
-    var macRefused = false
     /// Whether a Transfer of the game runs: the build it installs stays the
     /// one shown until it ends. One that waits in the queue locks nothing.
     var isLocked = false
@@ -138,6 +135,9 @@ struct InstallationPort<Store: InstallationStorefront> {
     var warn: @MainActor (String) -> Void
     /// The game's last installation left the receipts.
     var uninstalled: @MainActor (Store.GameID) -> Void = { _ in }
+    /// A Transfer of the game failed: the build its storefront picks may have
+    /// changed, as when it refused the Mac build its player chose.
+    var transferFailed: @MainActor (Store.GameID) -> Void = { _ in }
 }
 
 /// Everything one account's installations present, as Rust keeps them.
@@ -153,8 +153,8 @@ struct InstallationsSnapshot<Store: InstallationStorefront>: Equatable {
     var uninstallGame: Store.GameID?
     /// The game whose Transfer stopped before its receipt.
     var resumable: Store.GameID?
-    /// The build of that Transfer, or of the game's Transfer under way,
-    /// where it is known before the storefront picks.
+    /// The build of that Transfer, as far as it is known: the one settled,
+    /// else the one its player chose. It is also the Transfer under way.
     var resumableBuild: GamePlatform?
     var report: InstallationReport?
     var warning: InstallationWarning?
@@ -165,9 +165,6 @@ struct InstallationsSnapshot<Store: InstallationStorefront>: Equatable {
     /// The build each of those Transfers installs, where it is known before
     /// the storefront picks.
     var queuedBuilds: [Store.GameID: GamePlatform] = [:]
-    /// The games whose Mac build the storefront's pick refused since Obelisk
-    /// started.
-    var macRefused: [Store.GameID] = []
     /// The new installations whose Transfer has not succeeded yet. None is an
     /// installed game.
     var incomplete: [InstallationReceipt<Store.GameID>] = []
@@ -280,14 +277,10 @@ final class GameInstallations<Store: InstallationStorefront> {
     /// The build of each game its player last launched while both were
     /// installed, by the game's name in Rust: its library and its
     /// invitations play that one, and its page starts on it. Kept from one
-    /// launch of Obelisk to the next.
-    private var lastPlayed: [String: String]
+    /// launch of Obelisk to the next, for the games with both installed.
+    private var lastPlayed: [String: GamePlatform]
     @ObservationIgnored private let defaults: UserDefaults
     private static var lastPlayedKey: String { "lastPlayedBuild.\(Store.storefront)" }
-    /// The games whose Mac build a download found Obelisk cannot install:
-    /// their page no longer lets it be chosen. Rust keeps them until Obelisk
-    /// quits.
-    private var refusedMacBuilds: Set<Store.GameID> = []
 
     let sessions: GameSessions<Store>
     let cloud: CloudModel<Store>
@@ -307,7 +300,8 @@ final class GameInstallations<Store: InstallationStorefront> {
         self.sessions = sessions
         self.cloud = cloud
         self.defaults = defaults
-        lastPlayed = defaults.dictionary(forKey: Self.lastPlayedKey) as? [String: String] ?? [:]
+        let saved = defaults.dictionary(forKey: Self.lastPlayedKey) as? [String: String] ?? [:]
+        lastPlayed = saved.compactMapValues(GamePlatform.init(preferenceName:))
         if Store.syncsCloud { observeSessions() }
     }
 
@@ -374,7 +368,6 @@ final class GameInstallations<Store: InstallationStorefront> {
         incompleteReceipts = []
         queuedGames = []
         queuedBuilds = [:]
-        refusedMacBuilds = []
         chosenBuild = nil
         gate = .closed
         isDownloading = false
@@ -389,6 +382,8 @@ final class GameInstallations<Store: InstallationStorefront> {
         revision = snapshot.revision
         // Repeated snapshots do not invalidate unchanged presentation.
         if receipts != snapshot.receipts { receipts = snapshot.receipts }
+        // A Transfer that failed since the last snapshot.
+        let failed = snapshot.transfer != transfer && snapshot.transfer?.state == .failed ? snapshot.transferGame : nil
         if transfer != snapshot.transfer { transfer = snapshot.transfer }
         if transferGame != snapshot.transferGame { transferGame = snapshot.transferGame }
         if isDownloading != snapshot.downloading { isDownloading = snapshot.downloading }
@@ -403,8 +398,6 @@ final class GameInstallations<Store: InstallationStorefront> {
         if incompleteReceipts != snapshot.incomplete { incompleteReceipts = snapshot.incomplete }
         if queuedGames != snapshot.queued { queuedGames = snapshot.queued }
         if queuedBuilds != snapshot.queuedBuilds { queuedBuilds = snapshot.queuedBuilds }
-        let refused = Set(snapshot.macRefused)
-        if refusedMacBuilds != refused { refusedMacBuilds = refused }
         if gate != snapshot.gate { gate = snapshot.gate }
         if cloud.sync != snapshot.cloudSync { cloud.sync = snapshot.cloudSync }
         if report != snapshot.report {
@@ -419,6 +412,7 @@ final class GameInstallations<Store: InstallationStorefront> {
             warning = snapshot.warning
             if let warning { port?.warn(L10n.string(warning.key)) }
         }
+        if let failed { port?.transferFailed(failed) }
     }
 
     private static func failure(_ report: InstallationReport) -> Error {
@@ -487,20 +481,16 @@ final class GameInstallations<Store: InstallationStorefront> {
         transferGame == game ? transfer : nil
     }
 
-    /// The game's installation its player last launched, else the one for
-    /// `platform`, else its other one.
-    func receipt(for game: Store.GameID, preferring platform: GamePlatform) -> Receipt? {
+    /// The game's installation a launch outside its page starts: the one its
+    /// player last launched, else the one for `platform`, else its other one.
+    func receiptToLaunch(for game: Store.GameID, preferring platform: GamePlatform) -> Receipt? {
         Receipt.preferred(among: receipts.filter { $0.gameID == game },
                           platform: lastPlayedBuild(of: game) ?? platform)
     }
 
     /// The build of `game` its player last launched while both were installed.
     func lastPlayedBuild(of game: Store.GameID) -> GamePlatform? {
-        switch lastPlayed[Store.name(game)] {
-        case "mac": .mac
-        case "windows": .windows
-        default: nil
-        }
+        lastPlayed[Store.name(game)]
     }
 
     // MARK: The game on screen
@@ -529,23 +519,27 @@ final class GameInstallations<Store: InstallationStorefront> {
     private func buildChoice(of selection: InstallationSelection<Store>) -> GameBuildChoice? {
         let own = receipts.filter { $0.gameID == selection.game }
         let installed = Set(own.map(\.platform))
-        if refusedMacBuilds.contains(selection.game), !installed.contains(.mac) {
-            return GameBuildChoice(chosen: .windows, installed: installed, macRefused: true)
-        }
-        guard installed.count == 2 || (selection.bothBuilds && (selection.platform == .mac || installed.contains(.mac)))
-        else { return nil }
-        // The build whose files download now, which the page follows; else
-        // the one chosen, the installed one last played, the installed one,
-        // the one whose download stopped.
-        let downloading = isDownloading && transferGame == selection.game && resumableGame == selection.game
-            ? resumableBuild : nil
-        let stopped = incompleteReceipts.filter { $0.gameID == selection.game }
-        let chosen = downloading
-            ?? chosenBuild.flatMap { $0.game == selection.game ? $0.platform : nil }
-            ?? lastPlayedBuild(of: selection.game).flatMap { installed.contains($0) ? $0 : nil }
-            ?? Receipt.preferred(among: own, platform: selection.platform)?.platform
-            ?? Receipt.preferred(among: stopped, platform: selection.platform)?.platform ?? selection.platform
-        return GameBuildChoice(chosen: chosen, installed: installed)
+        // Both installed, or both offered while the storefront shows its Mac
+        // build, or the Windows build beside an installed Mac build.
+        let choosable = installed.count == 2
+            || (selection.bothBuilds && (selection.platform == .mac || installed.contains(.mac)))
+        guard choosable else { return nil }
+        return GameBuildChoice(chosen: shownBuild(of: selection, own: own), installed: installed)
+    }
+
+    /// The build the page of a game with both shows: the one whose files
+    /// download now, which the page follows; else the one its player chose;
+    /// else the installed one last played, the installed one, the one whose
+    /// download stopped; else the storefront's.
+    private func shownBuild(of selection: InstallationSelection<Store>, own: [Receipt]) -> GamePlatform {
+        let game = selection.game
+        if isDownloading, transferGame == game, resumableGame == game, let build = resumableBuild { return build }
+        if let chosen = chosenBuild, chosen.game == game { return chosen.platform }
+        if let played = lastPlayedBuild(of: game), own.contains(where: { $0.platform == played }) { return played }
+        let stopped = incompleteReceipts.filter { $0.gameID == game }
+        let settled = Receipt.preferred(among: own, platform: selection.platform)
+            ?? Receipt.preferred(among: stopped, platform: selection.platform)
+        return settled?.platform ?? selection.platform
     }
 
     /// Shows `build` of the game on screen: its page then plays, installs
@@ -645,12 +639,19 @@ final class GameInstallations<Store: InstallationStorefront> {
     /// Launches an installation, from its game's page or from the library.
     func launch(_ receipt: Receipt) {
         guard account != nil, canLaunch(receipt.gameID), receipts.contains(receipt) else { return }
-        // Of two installed builds, the one launched is the one played next.
-        if receipts.contains(where: { $0.gameID == receipt.gameID && $0.platform != receipt.platform }) {
-            lastPlayed[Store.name(receipt.gameID)] = receipt.platform == .mac ? "mac" : "windows"
-            defaults.set(lastPlayed, forKey: Self.lastPlayedKey)
-        }
+        rememberLaunch(of: receipt)
         act { $0.launch(receipt) }
+    }
+
+    /// Of two installed builds, the one launched is the one played next. Only
+    /// the games with both installed keep one.
+    private func rememberLaunch(of receipt: Receipt) {
+        let names = Dictionary(grouping: receipts, by: \.gameID).filter { $0.value.count > 1 }.keys.map { Store.name($0) }
+        var kept = lastPlayed.filter { names.contains($0.key) }
+        if names.contains(Store.name(receipt.gameID)) { kept[Store.name(receipt.gameID)] = receipt.platform }
+        guard kept != lastPlayed else { return }
+        lastPlayed = kept
+        defaults.set(lastPlayed.mapValues(\.preferenceName), forKey: Self.lastPlayedKey)
     }
 
     /// Whether `game` may be installed: no build of it is installed, or not
@@ -877,12 +878,26 @@ final class RustInstallations<Store: InstallationStorefront>: InstallationsBacke
                                   question: sync.question)
                 }
             },
-            queued: state.queued.compactMap(Store.game),
+            queued: state.queued.compactMap { Store.game($0.game) },
             queuedBuilds: Dictionary(
-                state.queuedBuilds.compactMap { build in Store.game(build.game).map { ($0, build.platform) } },
+                state.queued.compactMap { queued in
+                    Store.game(queued.game).flatMap { game in queued.build.map { (game, $0) } }
+                },
                 uniquingKeysWith: { first, _ in first }),
-            macRefused: state.macRefused.compactMap(Store.game),
             incomplete: receipts(state.incomplete)
         )
+    }
+}
+
+private extension GamePlatform {
+    /// How the preferences spell the build.
+    var preferenceName: String { self == .mac ? "mac" : "windows" }
+
+    init?(preferenceName: String) {
+        switch preferenceName {
+        case "mac": self = .mac
+        case "windows": self = .windows
+        default: return nil
+        }
     }
 }

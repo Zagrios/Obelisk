@@ -70,7 +70,7 @@ struct GameAction {
     let place: GameActionPlace
     /// The build it acts on, of a game with both installed: a library card
     /// has no switch, and names the build its button launches.
-    var build: GamePlatform?
+    let build: GamePlatform?
     /// The game's Transfer, read only in the body of the view showing its
     /// progress, so a progress tick redraws that view alone.
     let transfer: @MainActor () -> GameTransfer?
@@ -84,7 +84,7 @@ struct GameAction {
     var needsConfirmation: Bool { kind == .running(.forceQuit) }
 
     init(kind: Kind, title: String, isAvailable: Bool, launches: Bool, isCancellable: Bool = false,
-         place: GameActionPlace = .page,
+         place: GameActionPlace = .page, build: GamePlatform? = nil,
          transfer: @escaping @MainActor () -> GameTransfer? = { nil },
          stepFraction: @escaping @MainActor () -> Double? = { nil },
          perform: @escaping @MainActor () -> Void = {}, cancel: @escaping @MainActor () -> Void = {}) {
@@ -94,6 +94,7 @@ struct GameAction {
         self.launches = launches
         self.isCancellable = isCancellable
         self.place = place
+        self.build = build
         self.transfer = transfer
         self.stepFraction = stepFraction
         self.perform = perform
@@ -167,22 +168,11 @@ struct GameActions<Store: InstallationStorefront> {
                                     lastPlayed: installations.lastPlayedBuild(of: game))
         let update = place == .page && receipt?.updateAvailable == true
         let ownSession = session?.game == game ? session : nil
-        // Of a game whose player chooses its build, only the build whose
-        // download stopped resumes; one that stopped before its build was
-        // known resumes as either.
-        let begun = incomplete[game] ?? []
-        let resumes = selection.choosesBuild
-            ? begun.contains(selection.platform) || (stopped?.game == game
-                && (stopped?.build == selection.platform || (stopped?.build == nil && begun.isEmpty)))
-            : resumable.contains(game)
-        // A queued Transfer of the game's other build leaves this one free
-        // to launch; one whose build is not known holds both.
-        let isQueued = queued.contains(game)
-            && (!selection.choosesBuild || queuedBuilds[game].map { $0 == selection.platform } ?? true)
-        let kind = self.kind(of: game, session: ownSession, receipt: receipt, update: update, resumes: resumes,
-                             isQueued: isQueued)
+        let isQueued = isQueued(selection)
+        let kind = self.kind(of: game, session: ownSession, receipt: receipt, update: update,
+                             resumes: resumes(selection), isQueued: isQueued)
         let installations = installations
-        var action = GameAction(
+        return GameAction(
             kind: kind,
             title: title(of: kind),
             isAvailable: isAvailable(kind, of: selection),
@@ -190,6 +180,7 @@ struct GameActions<Store: InstallationStorefront> {
             isCancellable: cancellableSync == game || transferring == game || launching == game
                 || isQueued,
             place: place,
+            build: (receipts[game]?.count ?? 0) > 1 ? receipt?.platform : nil,
             transfer: { installations.transfer(for: game) },
             stepFraction: {
                 guard installations.accountSession?.game == game else { return nil }
@@ -204,8 +195,27 @@ struct GameActions<Store: InstallationStorefront> {
                 }
             }
         )
-        action.build = (receipts[game]?.count ?? 0) > 1 ? receipt?.platform : nil
-        return action
+    }
+
+    /// Whether installing `selection` resumes a Transfer that stopped. Of a
+    /// game whose player chooses its build, only one of that build does, or
+    /// one that stopped before its build was known.
+    private func resumes(_ selection: InstallationSelection<Store>) -> Bool {
+        let game = selection.game
+        guard selection.choosesBuild else { return resumable.contains(game) }
+        let begun = incomplete[game] ?? []
+        if begun.contains(selection.platform) { return true }
+        guard let stopped, stopped.game == game else { return false }
+        return stopped.build.map { $0 == selection.platform } ?? begun.isEmpty
+    }
+
+    /// Whether a Transfer of `selection` waits in the queue. Of a game whose
+    /// player chooses its build, one of the other build leaves this one free
+    /// to launch; one whose build is not known holds both.
+    private func isQueued(_ selection: InstallationSelection<Store>) -> Bool {
+        guard queued.contains(selection.game) else { return false }
+        guard selection.choosesBuild, let build = queuedBuilds[selection.game] else { return true }
+        return build == selection.platform
     }
 
     /// The one order every place reads a game's state in. `session` is this

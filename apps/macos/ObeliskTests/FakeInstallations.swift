@@ -219,6 +219,8 @@ final class InstallationsFixture {
     let installations: SteamInstallations
     private(set) var backend = FakeInstallations<SteamGames>()
     private(set) var reported: [String] = []
+    /// The games whose Transfer the installations told failed.
+    private(set) var failedTransfers: [UInt32] = []
     private let installed: Bool
     /// The preferences of this fixture alone.
     private let suite = "ObeliskTests.Installations.\(UUID().uuidString)"
@@ -257,7 +259,8 @@ final class InstallationsFixture {
         backend = FakeInstallations(receipts: installed ? [receipt] : [])
         installations.connect(account: 42, backend: backend, port: InstallationPort(
             report: { [unowned self] error in if let error { reported.append(SteamModel.message(error)) } },
-            warn: { _ in }
+            warn: { _ in },
+            transferFailed: { [unowned self] in failedTransfers.append($0) }
         ))
         return installations
     }

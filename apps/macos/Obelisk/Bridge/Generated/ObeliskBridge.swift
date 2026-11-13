@@ -6918,13 +6918,13 @@ public struct InstallationsState: Equatable, Hashable {
     public var launchGame: String?
     public var uninstallGame: String?
     /**
-     * The game whose Transfer stopped before its receipt: the player can
-     * resume it.
+     * The game of the last Transfer begun that has no receipt yet: the one
+     * under way, or one that stopped, which the player can resume.
      */
     public var resumable: String?
     /**
-     * The build of that Transfer, or of the game's Transfer under way,
-     * where it is known before the storefront picks.
+     * The build of that Transfer, as far as it is known: the one settled,
+     * else the one its player chose.
      */
     public var resumableBuild: GamePlatform?
     /**
@@ -6939,17 +6939,7 @@ public struct InstallationsState: Equatable, Hashable {
     /**
      * The games whose Transfer waits in the download queue.
      */
-    public var queued: [String]
-    /**
-     * The build each of those Transfers installs, where it is known before
-     * the storefront picks.
-     */
-    public var queuedBuilds: [QueuedBuild]
-    /**
-     * The games whose Mac build the storefront's pick refused since Obelisk
-     * started.
-     */
-    public var macRefused: [String]
+    public var queued: [QueuedTransfer]
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -6961,12 +6951,12 @@ public struct InstallationsState: Equatable, Hashable {
          * The game the last Transfer progress belongs to.
          */transferGame: String?, downloading: Bool, launching: Bool, verifyingBeforeLaunch: Bool, launchGame: String?, uninstallGame: String?, 
         /**
-         * The game whose Transfer stopped before its receipt: the player can
-         * resume it.
+         * The game of the last Transfer begun that has no receipt yet: the one
+         * under way, or one that stopped, which the player can resume.
          */resumable: String?, 
         /**
-         * The build of that Transfer, or of the game's Transfer under way,
-         * where it is known before the storefront picks.
+         * The build of that Transfer, as far as it is known: the one settled,
+         * else the one its player chose.
          */resumableBuild: GamePlatform? = nil, 
         /**
          * The new installations whose Transfer has not succeeded yet: the player
@@ -6974,15 +6964,7 @@ public struct InstallationsState: Equatable, Hashable {
          */incomplete: [Installation], report: InstallationReport?, warning: InstallationWarning?, gate: InstallationGate, cloudSync: CloudSync?, 
         /**
          * The games whose Transfer waits in the download queue.
-         */queued: [String], 
-        /**
-         * The build each of those Transfers installs, where it is known before
-         * the storefront picks.
-         */queuedBuilds: [QueuedBuild] = [], 
-        /**
-         * The games whose Mac build the storefront's pick refused since Obelisk
-         * started.
-         */macRefused: [String] = []) {
+         */queued: [QueuedTransfer]) {
         self.revision = revision
         self.installations = installations
         self.transfer = transfer
@@ -7000,8 +6982,6 @@ public struct InstallationsState: Equatable, Hashable {
         self.gate = gate
         self.cloudSync = cloudSync
         self.queued = queued
-        self.queuedBuilds = queuedBuilds
-        self.macRefused = macRefused
     }
 
     
@@ -7036,9 +7016,7 @@ public struct FfiConverterTypeInstallationsState: FfiConverterRustBuffer {
                 warning: FfiConverterOptionTypeInstallationWarning.read(from: &buf), 
                 gate: FfiConverterTypeInstallationGate.read(from: &buf), 
                 cloudSync: FfiConverterOptionTypeCloudSync.read(from: &buf), 
-                queued: FfiConverterSequenceString.read(from: &buf), 
-                queuedBuilds: FfiConverterSequenceTypeQueuedBuild.read(from: &buf), 
-                macRefused: FfiConverterSequenceString.read(from: &buf)
+                queued: FfiConverterSequenceTypeQueuedTransfer.read(from: &buf)
         )
     }
 
@@ -7059,9 +7037,7 @@ public struct FfiConverterTypeInstallationsState: FfiConverterRustBuffer {
         FfiConverterOptionTypeInstallationWarning.write(value.warning, into: &buf)
         FfiConverterTypeInstallationGate.write(value.gate, into: &buf)
         FfiConverterOptionTypeCloudSync.write(value.cloudSync, into: &buf)
-        FfiConverterSequenceString.write(value.queued, into: &buf)
-        FfiConverterSequenceTypeQueuedBuild.write(value.queuedBuilds, into: &buf)
-        FfiConverterSequenceString.write(value.macRefused, into: &buf)
+        FfiConverterSequenceTypeQueuedTransfer.write(value.queued, into: &buf)
     }
 }
 
@@ -7664,17 +7640,23 @@ public func FfiConverterTypeObeliskLocations_lower(_ value: ObeliskLocations) ->
 
 
 /**
- * The build a queued Transfer of `game` installs.
+ * A game whose Transfer waits in the download queue.
  */
-public struct QueuedBuild: Equatable, Hashable {
+public struct QueuedTransfer: Equatable, Hashable {
     public var game: String
-    public var platform: GamePlatform
+    /**
+     * The build it installs, where it is known before the storefront picks.
+     */
+    public var build: GamePlatform?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(game: String, platform: GamePlatform) {
+    public init(game: String, 
+        /**
+         * The build it installs, where it is known before the storefront picks.
+         */build: GamePlatform?) {
         self.game = game
-        self.platform = platform
+        self.build = build
     }
 
     
@@ -7683,24 +7665,24 @@ public struct QueuedBuild: Equatable, Hashable {
 }
 
 #if compiler(>=6)
-extension QueuedBuild: Sendable {}
+extension QueuedTransfer: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypeQueuedBuild: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> QueuedBuild {
+public struct FfiConverterTypeQueuedTransfer: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> QueuedTransfer {
         return
-            try QueuedBuild(
+            try QueuedTransfer(
                 game: FfiConverterString.read(from: &buf), 
-                platform: FfiConverterTypeGamePlatform.read(from: &buf)
+                build: FfiConverterOptionTypeGamePlatform.read(from: &buf)
         )
     }
 
-    public static func write(_ value: QueuedBuild, into buf: inout [UInt8]) {
+    public static func write(_ value: QueuedTransfer, into buf: inout [UInt8]) {
         FfiConverterString.write(value.game, into: &buf)
-        FfiConverterTypeGamePlatform.write(value.platform, into: &buf)
+        FfiConverterOptionTypeGamePlatform.write(value.build, into: &buf)
     }
 }
 
@@ -7708,15 +7690,15 @@ public struct FfiConverterTypeQueuedBuild: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeQueuedBuild_lift(_ buf: RustBuffer) throws -> QueuedBuild {
-    return try FfiConverterTypeQueuedBuild.lift(buf)
+public func FfiConverterTypeQueuedTransfer_lift(_ buf: RustBuffer) throws -> QueuedTransfer {
+    return try FfiConverterTypeQueuedTransfer.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeQueuedBuild_lower(_ value: QueuedBuild) -> RustBuffer {
-    return FfiConverterTypeQueuedBuild.lower(value)
+public func FfiConverterTypeQueuedTransfer_lower(_ value: QueuedTransfer) -> RustBuffer {
+    return FfiConverterTypeQueuedTransfer.lower(value)
 }
 
 
@@ -14721,23 +14703,23 @@ fileprivate struct FfiConverterSequenceTypeLibraryAchievement: FfiConverterRustB
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterSequenceTypeQueuedBuild: FfiConverterRustBuffer {
-    typealias SwiftType = [QueuedBuild]
+fileprivate struct FfiConverterSequenceTypeQueuedTransfer: FfiConverterRustBuffer {
+    typealias SwiftType = [QueuedTransfer]
 
-    public static func write(_ value: [QueuedBuild], into buf: inout [UInt8]) {
+    public static func write(_ value: [QueuedTransfer], into buf: inout [UInt8]) {
         let len = Int32(value.count)
         writeInt(&buf, len)
         for item in value {
-            FfiConverterTypeQueuedBuild.write(item, into: &buf)
+            FfiConverterTypeQueuedTransfer.write(item, into: &buf)
         }
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [QueuedBuild] {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [QueuedTransfer] {
         let len: Int32 = try readInt(&buf)
-        var seq = [QueuedBuild]()
+        var seq = [QueuedTransfer]()
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeQueuedBuild.read(from: &buf))
+            seq.append(try FfiConverterTypeQueuedTransfer.read(from: &buf))
         }
         return seq
     }

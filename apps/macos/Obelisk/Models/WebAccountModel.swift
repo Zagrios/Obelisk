@@ -167,6 +167,14 @@ final class WebAccountModel<Store: WebStorefront> {
     private(set) var selectedGame: Game?
     /// What the game's page reads besides its library entry.
     private(set) var selectedGameDetails: WebGameDetails?
+    /// The size of the build the game's page shows, which its details give
+    /// for the storefront's build alone: none for the other one, which its
+    /// player chose.
+    var selectedBuildBytes: UInt64? {
+        guard let details = selectedGameDetails else { return nil }
+        let chosen = installations.selectedBuildChoice?.chosen
+        return chosen == nil || chosen == details.platform ? details.installationBytes : nil
+    }
     private(set) var isLoadingGameDetails = false
     private(set) var isRestoring = false
     private(set) var isConnecting = false
@@ -526,6 +534,14 @@ final class WebAccountModel<Store: WebStorefront> {
         detailsTask = Task { await loadDetails(game, session: session) }
     }
 
+    /// Reads the details of `game` again while it is on screen; the ones
+    /// shown stay until they arrive.
+    private func reloadDetails(of game: Store.GameID) {
+        guard let selectedGame, selectedGame.id == game, let session else { return }
+        detailsTask?.cancel()
+        detailsTask = Task { await loadDetails(selectedGame, session: session) }
+    }
+
     func closeGame() {
         achievements.reset()
         detailsTask?.cancel()
@@ -597,7 +613,8 @@ final class WebAccountModel<Store: WebStorefront> {
                 guard let error else { return errorMessage = nil }
                 report(error)
             },
-            warn: { [weak self] in self?.storageWarning = $0 }
+            warn: { [weak self] in self?.storageWarning = $0 },
+            transferFailed: { [weak self] game in self?.reloadDetails(of: game) }
         )
     }
 }

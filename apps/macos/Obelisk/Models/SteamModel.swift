@@ -1006,6 +1006,9 @@ final class SteamModel {
             warn: { [weak self] in self?.storageWarning = $0 },
             uninstalled: { [weak self] game in
                 if self?.selectedGame?.appId == game { self?.reloadDetails() }
+            },
+            transferFailed: { [weak self] game in
+                if self?.selectedGame?.appId == game { self?.reloadDetails() }
             }
         )
     }

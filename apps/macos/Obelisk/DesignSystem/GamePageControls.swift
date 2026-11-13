@@ -77,9 +77,8 @@ struct GameManagementButton: View {
 
 /// The builds of a game its storefront offers both of, beside its launch
 /// button: the page plays, installs and manages the one chosen, and a check
-/// marks each installed one. A Mac build Obelisk could not install stays in
-/// sight, dimmed, and the switch holds still while a Transfer of the game
-/// runs.
+/// marks each installed one. The switch holds still while a Transfer of the
+/// game runs.
 struct GameBuildSwitch: View {
     let choice: GameBuildChoice
     let choose: (GamePlatform) -> Void
@@ -102,7 +101,6 @@ struct GameBuildSwitch: View {
     private func segment(_ build: GamePlatform, title: String) -> some View {
         let isChosen = choice.chosen == build
         let isInstalled = choice.installed.contains(build)
-        let isRefused = build == .mac && choice.macRefused
         return Button {
             withAnimation(.snappy(duration: 0.2)) { choose(build) }
         } label: {
@@ -110,9 +108,8 @@ struct GameBuildSwitch: View {
                 if isInstalled {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 12, weight: .bold))
-                        // A deeper green where the chosen build's pill is light.
-                        .foregroundStyle(isChosen && colorScheme == .dark
-                            ? Color(red: 0.10, green: 0.50, blue: 0.16) : ObeliskStyle.launchGradient[0])
+                        // The gradient's deeper green where the chosen build's pill is light.
+                        .foregroundStyle(ObeliskStyle.launchGradient[isChosen && colorScheme == .dark ? 1 : 0])
                         .accessibilityHidden(true)
                 }
                 Text(title).font(.system(size: 12, weight: .semibold))
@@ -131,13 +128,12 @@ struct GameBuildSwitch: View {
             }
             .contentShape(.capsule)
         }
-        .buttonStyle(.plain)
-        .disabled(isRefused || choice.isLocked)
-        .opacity(isRefused || (choice.isLocked && !isChosen) ? 0.45 : 1)
+        .obeliskButtonStyle(.plain)
+        .disabled(choice.isLocked)
+        .opacity(choice.isLocked && !isChosen ? 0.45 : 1)
         .accessibilityAddTraits(isChosen ? .isSelected : [])
         .accessibilityValue(isInstalled ? L10n.string("ui.game.build_installed") : "")
-        .help(isRefused ? L10n.string("ui.game.build_mac_refused")
-            : isInstalled ? L10n.string("ui.game.build_installed") : title)
+        .help(isInstalled ? L10n.string("ui.game.build_installed") : title)
     }
 }
 

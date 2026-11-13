@@ -20644,10 +20644,22 @@
     "ui.game.launch_named_build": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ starten (%2$@)"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Launch %1$@ (%2$@)"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Iniciar %1$@ (%2$@)"
           }
         },
         "fr": {
@@ -20660,6 +20672,24 @@
           "stringUnit": {
             "state": "translated",
             "value": "Avvia %1$@ (%2$@)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@を起動（%2$@）"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Iniciar %1$@ (%2$@)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "启动 %1$@（%2$@）"
           }
         }
       }
@@ -49390,10 +49420,22 @@
     "ui.game.build": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Spielversion"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Game version"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Versión del juego"
           }
         },
         "fr": {
@@ -49407,13 +49449,43 @@
             "state": "translated",
             "value": "Versione del gioco"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ゲームのバージョン"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Versão do jogo"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "游戏版本"
+          }
         }
       }
     },
     "ui.game.build_mac": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mac"
+          }
+        },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mac"
+          }
+        },
+        "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Mac"
@@ -49426,6 +49498,24 @@
           }
         },
         "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mac"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mac"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mac"
+          }
+        },
+        "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "Mac"
@@ -49436,7 +49526,19 @@
     "ui.game.build_windows": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Windows"
+          }
+        },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Windows"
+          }
+        },
+        "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Windows"
@@ -49453,16 +49555,46 @@
             "state": "translated",
             "value": "Windows"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Windows"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Windows"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Windows"
+          }
         }
       }
     },
     "ui.game.build_installed": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Installiert"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Installed"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instalada"
           }
         },
         "fr": {
@@ -49476,16 +49608,46 @@
             "state": "translated",
             "value": "Installata"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "インストール済み"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instalada"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已安装"
+          }
         }
       }
     },
     "backend.install.macBuildUnavailable": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obelisk kann die Mac-Version dieses Spiels nicht installieren. Verwenden Sie stattdessen die Windows-Version."
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Obelisk cannot install this game’s Mac build. Use its Windows build instead."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obelisk no puede instalar la versión para Mac de este juego. Usa su versión para Windows en su lugar."
           }
         },
         "fr": {
@@ -49499,28 +49661,23 @@
             "state": "translated",
             "value": "Obelisk non può installare la versione per Mac di questo gioco. Usa invece la versione Windows."
           }
-        }
-      }
-    },
-    "ui.game.build_mac_refused": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
+        },
+        "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Obelisk cannot install this game’s Mac build."
+            "value": "ObeliskはこのゲームのMac版をインストールできません。代わりにWindows版を使用してください。"
           }
         },
-        "fr": {
+        "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Obelisk ne peut pas installer la version Mac de ce jeu."
+            "value": "O Obelisk não pode instalar a versão para Mac deste jogo. Use a versão para Windows."
           }
         },
-        "it": {
+        "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Obelisk non può installare la versione per Mac di questo gioco."
+            "value": "Obelisk 无法安装此游戏的 Mac 版本。请改用它的 Windows 版本。"
           }
         }
       }
