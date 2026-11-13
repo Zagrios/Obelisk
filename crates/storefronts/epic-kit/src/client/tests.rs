@@ -344,8 +344,8 @@ async fn cloud_configuration_requires_ownership_and_reads_the_rules_of_the_platf
             .cloud_configuration("space", "item", "app", platform)
             .await;
         match expected {
-            "none" => assert!(result.unwrap().is_none()),
-            "some" => assert!(result.unwrap().is_some()),
+            "none" => assert!(result.unwrap().rules.is_none()),
+            "some" => assert!(result.unwrap().rules.is_some()),
             _ => assert!(result.is_err()),
         }
     }

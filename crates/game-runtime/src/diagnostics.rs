@@ -79,6 +79,11 @@ pub fn game_log(home: &Path, game: Game<'_>, build: Platform) -> PathBuf {
     folder(home, game.store()).join(format!("{}-{}.log", word(build), game.id()))
 }
 
+/// The note of why `game` has no Cloud.
+pub(crate) fn cloud_note(home: &Path, game: Game<'_>) -> PathBuf {
+    folder(home, game.store()).join(format!("cloud-{}.log", game.id()))
+}
+
 /// Opens `log` empty for a new launch. The last launch's log stays beside it
 /// as `<name>.previous.log`: a player who relaunches a game that crashed
 /// still has the crash's log to send.
@@ -129,7 +134,7 @@ fn report_start(word: &str) -> String {
 
 /// The diagnostics a bug report attaches, most telling first. For `game`:
 /// the logs of the build it launched last, then its newest launch and
-/// failure report. For Obelisk: every launch and failure report of the day
+/// failure report, then the note of why it has no Cloud. For Obelisk: every launch and failure report of the day
 /// before `now`, newest first. What cannot be read is left out.
 pub fn files(home: &Path, game: Option<Game<'_>>, now: SystemTime) -> Vec<PathBuf> {
     match game {
@@ -178,6 +183,10 @@ fn game_files(home: &Path, game: Game<'_>) -> Vec<PathBuf> {
             }
         }
         files.extend(newest.map(|(_, path, _)| path.clone()));
+    }
+    let note = cloud_note(home, game);
+    if note.exists() {
+        files.push(note);
     }
     files
 }
