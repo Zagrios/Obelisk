@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check that every application translation key has complete en/fr/it resources."""
+"""Check that every application translation key has complete resources in every language."""
 
 import json
 import re
@@ -8,7 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG = ROOT / "apps/macos/Obelisk/Resources/Localizable.xcstrings"
-LANGUAGES = ("en", "fr", "it")
+LANGUAGES = ("de", "en", "es", "fr", "it", "ja", "pt-BR", "zh-Hans")
 PLACEHOLDER = re.compile(r"%(?:(\d+)\$)?([-+0 #]*\d*(?:\.\d+)?(?:ll|l)?[@diufgs])")
 UI_LITERAL = re.compile(
     r'\b(?:Text|Button|Label|Window|Toggle|Picker|TextField|SecureField|ProgressView|'
@@ -57,7 +57,7 @@ def main():
         referenced.update(re.findall(r'"(backend\.[a-zA-Z0-9_.]+)"', path.read_text()))
     missing = referenced - entries.keys()
     assert not missing, f"Untranslated keys: {sorted(missing)}"
-    print(f"Localization verified: {len(entries)} keys, complete English/French/Italian text and matching placeholders.")
+    print(f"Localization verified: {len(entries)} keys, complete text in {len(LANGUAGES)} languages and matching placeholders.")
 
 
 if __name__ == "__main__":
