@@ -14,7 +14,7 @@ use std::{
 use crate::{
     EpicError,
     auth::{self, Api, credential_free},
-    client::{PLATFORM, validate_identity},
+    client::{GameDetails, PLATFORM, validate_identity},
     content_manifest::Manifest,
     manifest,
 };
@@ -69,15 +69,15 @@ fn build_key(identity: [&str; 4], asset: &Asset) -> Option<BuildKey> {
 /// its download starts from.
 pub(crate) type BuildChoice = obelisk_core::build_choice::BuildChoice<BuildKey, FetchedManifest>;
 
-/// The build a game's page shows before any download, whether Epic offers
-/// both, and its size: the Mac build, unless a download found that its game
-/// does not run natively and Epic has a Windows build of it. None of the
-/// build's files is read.
+/// What a game's page shows before any download: the Mac build, unless a
+/// download found that its game does not run natively and Epic has a
+/// Windows build of it, whether Epic offers both, and the size of the one
+/// shown. None of the build's files is read.
 pub(crate) async fn shown_build(
     game: &LiveBuilds<'_>,
     choice: &BuildChoice,
     sizes: &InstallationSizes,
-) -> Result<(Platform, bool, Option<u64>), EpicError> {
+) -> Result<GameDetails, EpicError> {
     let (api, namespace, catalog_item_id, app_name) = (
         game.api,
         game.namespace,
@@ -86,7 +86,7 @@ pub(crate) async fn shown_build(
     );
     let identity = |platform| [namespace, catalog_item_id, app_name, platform];
     let offered = game.builds().await?;
-    let both = offered.both();
+    let both_builds = offered.both();
     let (platform, asset) = choice
         .shown(game, offered)
         .await
@@ -94,7 +94,11 @@ pub(crate) async fn shown_build(
     let label = PLATFORM.name(platform);
     let mut trace = trace(namespace, catalog_item_id, app_name, label);
     let size = asset_size(api, &asset, identity(label), sizes, &mut trace).await;
-    Ok((platform, both, reported(&mut trace, size).ok()))
+    Ok(GameDetails {
+        platform: Some(platform),
+        both_builds,
+        installation_bytes: reported(&mut trace, size).ok(),
+    })
 }
 
 /// The size of the build `asset` describes, from its manifest, read once

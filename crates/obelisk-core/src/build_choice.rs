@@ -26,6 +26,10 @@ mod tests;
 /// on every storefront.
 pub const NOT_NATIVE: &str = "backend.install.macBuildNotNative";
 
+/// The message key of a Mac build its player chose that the pick refuses,
+/// the same on every storefront.
+pub const MAC_REFUSED: &str = "backend.install.macBuildUnavailable";
+
 /// The builds a storefront offers the account of one game, as it lists them.
 pub struct Offered<B> {
     pub mac: Option<B>,
@@ -115,6 +119,9 @@ pub enum Unavailable {
     NoBuild,
     /// Only a Mac build, whose game does not run natively.
     NotNative,
+    /// The Mac build its player chose, which the pick does not take: its
+    /// game does not run natively, or its storefront refuses it.
+    MacRefused,
 }
 
 /// One game's builds at one storefront, as the build choice asks for them.
@@ -276,6 +283,29 @@ impl<K: Clone + Eq + Hash, V> Pick<'_, K, V> {
             (_, Some(_)) => Ok(Platform::Windows),
             (Some(_), None) => Err(Unavailable::NotNative.into()),
             (None, None) => Err(Unavailable::NoBuild.into()),
+        }
+    }
+
+    /// The build its player chose, else the pick of [`of`](Self::of). The
+    /// Windows build is taken without reading the Mac build. The Mac build
+    /// is read as `of` reads it, and never gives way to the Windows build:
+    /// one the pick would not take is refused.
+    pub async fn of_choice<G: GameBuilds<Key = K, Kept = V>>(
+        &self,
+        game: &G,
+        chosen: Option<Platform>,
+    ) -> Result<Platform, G::Error> {
+        let Some(chosen) = chosen else {
+            return self.of(game).await;
+        };
+        let offered = game.builds().await?;
+        match (chosen, offered.mac, offered.windows) {
+            (Platform::Windows, _, Some(_)) => Ok(Platform::Windows),
+            (Platform::Mac, Some(mac), _) if self.runs_natively(game, &mac).await? => {
+                Ok(Platform::Mac)
+            }
+            (Platform::Mac, Some(_), _) => Err(Unavailable::MacRefused.into()),
+            _ => Err(Unavailable::NoBuild.into()),
         }
     }
 

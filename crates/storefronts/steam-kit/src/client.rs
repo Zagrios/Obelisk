@@ -9,7 +9,7 @@ use std::{
 
 use futures_util::future::BoxFuture;
 use obelisk_core::{
-    build_choice::{BuildChoice, NOT_NATIVE, Unavailable},
+    build_choice::{BuildChoice, MAC_REFUSED, NOT_NATIVE, Unavailable},
     installation::{self, Destination, InstallFailure, InstalledFiles, TransferError},
     platform::{Platform, Spelling},
     transfer::{
@@ -771,24 +771,28 @@ impl Client {
     }
 
     /// The build a download of the game installs: of those the account's
-    /// licenses grant, the Mac build when its game runs natively on Apple
-    /// silicon, else the Windows build. It asks Steam for the licenses, then
-    /// reads a few of the Mac build's files; `cancel_download` stops it.
-    pub async fn platform(&self, app_id: u32, language: &str) -> Result<Platform, ClientError> {
+    /// licenses grant, the one its player `chosen`, else the Mac build when
+    /// its game runs natively on Apple silicon, else the Windows build. It
+    /// asks Steam for the licenses, then reads a few of the Mac build's
+    /// files; `cancel_download` stops it.
+    pub async fn platform(
+        &self,
+        app_id: u32,
+        language: &str,
+        chosen: Option<Platform>,
+    ) -> Result<Platform, ClientError> {
         if !crate::language::is_supported(language) {
             return Err(ClientError::Failure(
                 "backend.steam.client.unsupportedPlatformOrLanguage".into(),
             ));
         }
+        let game = OwnedApp {
+            client: self,
+            app_id,
+            language,
+        };
         self.build_choice
-            .pick(async |pick| {
-                pick.of(&OwnedApp {
-                    client: self,
-                    app_id,
-                    language,
-                })
-                .await
-            })
+            .pick(async |pick| pick.of_choice(&game, chosen).await)
             .await
     }
 
@@ -1078,6 +1082,7 @@ impl From<Unavailable> for ClientError {
             match unavailable {
                 Unavailable::NoBuild => "backend.steam.client.noCompatibleDepot",
                 Unavailable::NotNative => NOT_NATIVE,
+                Unavailable::MacRefused => MAC_REFUSED,
             }
             .into(),
         )

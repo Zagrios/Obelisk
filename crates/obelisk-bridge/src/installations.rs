@@ -198,11 +198,11 @@ pub struct InstallationsState {
     pub verifying_before_launch: bool,
     pub launch_game: Option<String>,
     pub uninstall_game: Option<String>,
-    /// The game whose Transfer stopped before its receipt: the player can
-    /// resume it.
+    /// The game of the last Transfer begun that has no receipt yet: the one
+    /// under way, or one that stopped, which the player can resume.
     pub resumable: Option<String>,
-    /// The build of that Transfer, or of the game's Transfer under way,
-    /// where it is known before the storefront picks.
+    /// The build of that Transfer, as far as it is known: the one settled,
+    /// else the one its player chose.
     #[uniffi(default = None)]
     pub resumable_build: Option<GamePlatform>,
     /// The new installations whose Transfer has not succeeded yet: the player
@@ -213,22 +213,15 @@ pub struct InstallationsState {
     pub gate: InstallationGate,
     pub cloud_sync: Option<CloudSync>,
     /// The games whose Transfer waits in the download queue.
-    pub queued: Vec<String>,
-    /// The build each of those Transfers installs, where it is known before
-    /// the storefront picks.
-    #[uniffi(default = [])]
-    pub queued_builds: Vec<QueuedBuild>,
-    /// The games whose Mac build the storefront's pick refused since Obelisk
-    /// started.
-    #[uniffi(default = [])]
-    pub mac_refused: Vec<String>,
+    pub queued: Vec<QueuedTransfer>,
 }
 
-/// The build a queued Transfer of `game` installs.
+/// A game whose Transfer waits in the download queue.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
-pub struct QueuedBuild {
+pub struct QueuedTransfer {
     pub game: String,
-    pub platform: GamePlatform,
+    /// The build it installs, where it is known before the storefront picks.
+    pub build: Option<GamePlatform>,
 }
 
 /// How a storefront's games and offers cross UniFFI.
@@ -374,7 +367,7 @@ fn state<S: Named>(state: installations::State<S>) -> InstallationsState {
         resumable_build: state
             .last_download
             .as_ref()
-            .and_then(|last| last.platform)
+            .and_then(installations::Transfer::build)
             .map(Into::into),
         incomplete: state
             .incomplete
@@ -412,16 +405,14 @@ fn state<S: Named>(state: installations::State<S>) -> InstallationsState {
                 choices: question.choices.into_iter().map(Into::into).collect(),
             }),
         }),
-        queued: state.queued.iter().map(S::name).collect(),
-        queued_builds: state
-            .queued_builds
+        queued: state
+            .queued
             .iter()
-            .map(|(game, platform)| QueuedBuild {
-                game: S::name(game),
-                platform: (*platform).into(),
+            .map(|queued| QueuedTransfer {
+                game: S::name(&queued.game),
+                build: queued.build.map(Into::into),
             })
             .collect(),
-        mac_refused: state.mac_refused.iter().map(S::name).collect(),
     }
 }
 

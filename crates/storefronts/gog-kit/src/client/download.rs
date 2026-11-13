@@ -15,7 +15,7 @@ use obelisk_core::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::{Client, PLATFORM, content_platform, valid_product_id, write_platform};
+use super::{Client, GameDetails, PLATFORM, content_platform, valid_product_id, write_platform};
 use crate::{
     GogError,
     auth::Api,
@@ -334,47 +334,54 @@ impl Client {
     }
 
     /// The build a download of the game installs, with the depots of
-    /// `language`: the Mac build when its game runs natively on Apple
-    /// silicon, else the Windows build. `cancel_download` stops it.
-    pub async fn platform(&self, product_id: &str, language: &str) -> Result<Platform, GogError> {
+    /// `language`: the one its player `chosen`, else the Mac build when its
+    /// game runs natively on Apple silicon, else the Windows build.
+    /// `cancel_download` stops it.
+    pub async fn platform(
+        &self,
+        product_id: &str,
+        language: &str,
+        chosen: Option<Platform>,
+    ) -> Result<Platform, GogError> {
         self.build_choice
             .pick(async |pick| {
                 if !valid_product_id(product_id) || language.is_empty() || language.len() > 32 {
                     return Err(GogError::Protocol);
                 }
-                pick.of(&CurrentBuilds {
+                let game = CurrentBuilds {
                     client: self,
                     product_id,
                     language,
-                })
-                .await
+                };
+                pick.of_choice(&game, chosen).await
             })
             .await
     }
 
-    /// The build the game's page shows before any download, whether GOG
-    /// offers both, and its size with the depots of `language`: the Mac
-    /// build, unless a download found that its game does not run natively
-    /// and GOG has a Windows build of it. None of the build's files is read.
+    /// What the game's page shows before any download, with the depots of
+    /// `language`: the Mac build, unless a download found that its game does
+    /// not run natively and GOG has a Windows build of it, whether GOG offers
+    /// both, and the size of the one shown. None of the build's files is
+    /// read.
     pub(super) async fn shown_build(
         &self,
         access_token: &str,
         product_id: &str,
         language: &str,
-    ) -> Result<(Platform, bool, Option<u64>), GogError> {
+    ) -> Result<GameDetails, GogError> {
         let game = CurrentBuilds {
             client: self,
             product_id,
             language,
         };
         let offered = game.builds().await?;
-        let both = offered.both();
+        let both_builds = offered.both();
         let (platform, build) = self
             .build_choice
             .shown(&game, offered)
             .await
             .ok_or(GogError::NoBuild)?;
-        let size = match self
+        let installation_bytes = match self
             .build_size(access_token, product_id, &build, language)
             .await
         {
@@ -382,7 +389,11 @@ impl Client {
             Err(GogError::Unauthorized) => return Err(GogError::Unauthorized),
             Err(_) => None,
         };
-        Ok((platform, both, size))
+        Ok(GameDetails {
+            platform: Some(platform),
+            both_builds,
+            installation_bytes,
+        })
     }
 
     /// The size of the listed `build` an installation in `language` holds.

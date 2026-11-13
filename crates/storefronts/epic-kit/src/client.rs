@@ -200,24 +200,18 @@ impl Client {
                 }
             })
             .await?;
-        Ok(match shown {
-            Some((platform, both_builds, size)) => GameDetails {
-                platform: Some(platform),
-                both_builds,
-                installation_bytes: size,
-            },
-            None => GameDetails::default(),
-        })
+        Ok(shown.unwrap_or_default())
     }
 
-    /// The build a download of the game installs: the Mac build when its
-    /// game runs natively on Apple silicon, else the Windows build.
-    /// `cancel_download` stops it.
+    /// The build a download of the game installs: the one its player
+    /// `chosen`, else the Mac build when its game runs natively on Apple
+    /// silicon, else the Windows build. `cancel_download` stops it.
     pub async fn platform(
         &self,
         namespace: &str,
         catalog_item_id: &str,
         app_name: &str,
+        chosen: Option<Platform>,
     ) -> Result<Platform, EpicError> {
         self.build_choice
             .pick(async |pick| {
@@ -225,7 +219,7 @@ impl Client {
                 let pick = &pick;
                 self.with_access_token(|token| async move {
                     let game = self.live_builds(&token, namespace, catalog_item_id, app_name);
-                    pick.of(&game).await
+                    pick.of_choice(&game, chosen).await
                 })
                 .await
             })

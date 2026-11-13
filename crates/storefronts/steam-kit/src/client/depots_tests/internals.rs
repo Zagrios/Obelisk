@@ -85,7 +85,7 @@ async fn a_manifest_that_moved_since_the_pick_hands_over_none_of_the_picks_manif
     let [windows, mac, shared] = game_depots(ARM64);
     let cdn = holding(&[windows, mac, shared, Held::data(103, 1103, GAME)]);
     let (client, mut steam) = account_served_by(&cdn).await;
-    let picked = steam.during(client.platform(GAME, ENGLISH)).await;
+    let picked = steam.during(client.platform(GAME, ENGLISH, None)).await;
     assert_eq!(picked.unwrap(), Platform::Mac);
     // Depot 103 published a new manifest, and the download reads PICS again,
     // as it does once the minute it remembers a game for is over.

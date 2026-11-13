@@ -23,12 +23,14 @@ use steam_kit::cloud::{CloudListing, CloudMetadata};
 /// wait on it.
 pub trait Network: Send + Sync + 'static {
     /// The build a Transfer without a platform installs, of those the
-    /// account's licenses grant: the Mac build when its game runs natively
-    /// on Apple silicon, else the Windows build.
+    /// account's licenses grant: the one its player `chosen`, else the Mac
+    /// build when its game runs natively on Apple silicon, else the Windows
+    /// build.
     fn platform<'a>(
         &'a self,
         app_id: u32,
         language: &'a str,
+        chosen: Option<Platform>,
     ) -> BoxFuture<'a, Result<Platform, Failure>>;
     /// Runs `transfer` into the folder it names.
     fn download<'a>(
@@ -77,9 +79,10 @@ impl Network for steam_kit::client::Client {
         &'a self,
         app_id: u32,
         language: &'a str,
+        chosen: Option<Platform>,
     ) -> BoxFuture<'a, Result<Platform, Failure>> {
         Box::pin(async move {
-            steam_kit::client::Client::platform(self, app_id, language)
+            steam_kit::client::Client::platform(self, app_id, language, chosen)
                 .await
                 .map_err(failed)
         })
@@ -221,7 +224,11 @@ impl<N: Network> installations::Content<Steam> for Content<N> {
                 Some(platform) => Ok(platform),
                 None => {
                     self.network
-                        .platform(transfer.product.app_id, &transfer.product.language)
+                        .platform(
+                            transfer.product.app_id,
+                            &transfer.product.language,
+                            transfer.chosen,
+                        )
                         .await
                 }
             }

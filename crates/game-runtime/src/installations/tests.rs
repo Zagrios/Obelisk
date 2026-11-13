@@ -158,7 +158,14 @@ impl super::Content<Steam> for Content {
                     return Err(failure);
                 }
                 let picked = script.picked.unwrap_or(Platform::Mac);
-                Ok(transfer.platform.unwrap_or(picked))
+                // As `Pick::of_choice`: a chosen build or none, never the other.
+                match (transfer.platform, transfer.chosen) {
+                    (Some(platform), _) => Ok(platform),
+                    (None, Some(Platform::Mac)) if picked == Platform::Windows => {
+                        Err(Failure::Failed(MAC_REFUSED.into()))
+                    }
+                    (None, chosen) => Ok(chosen.unwrap_or(picked)),
+                }
             })
         })
     }
@@ -601,6 +608,7 @@ impl Fixture {
             product: portal(),
             name: "Portal 2".into(),
             platform: Some(platform),
+            chosen: None,
             directory: self.root.join("Games/Steam"),
         }
     }
@@ -750,7 +758,7 @@ async fn an_offer_shows_its_transfer_at_once_and_keeps_the_build_steam_picked() 
     fixture.installations.install(fixture.offer());
     let state = fixture.installations.state();
     assert!(
-        state.queued == [620] || state.transfer_game == Some(620),
+        queued(&state) == [620] || state.transfer_game == Some(620),
         "the game waits on its Transfer at once"
     );
     eventually(|| fixture.installations.state().transfer_game == Some(620)).await;
@@ -1399,6 +1407,69 @@ async fn a_launch_that_needs_a_transfer_goes_first_and_pauses_the_one_under_way(
 }
 
 #[tokio::test]
+async fn a_launch_that_needs_a_transfer_keeps_the_queued_install_of_the_game_s_other_build() {
+    let fixture = Fixture::new(true).await;
+    let game = Game::running();
+    fixture.fake.with(|script| {
+        script
+            .launches
+            .push_back(Ok(Some(game.clone() as Arc<dyn Supervised<Steam>>)));
+        script.launches_free = true;
+        script.newer.push(620);
+    });
+    fixture.fake.hold();
+    fixture.installations.install(Offer {
+        product: Product {
+            app_id: 730,
+            ..portal()
+        },
+        ..fixture.offer()
+    });
+    eventually(|| fixture.fake.calls() == ["download:730"]).await;
+    fixture
+        .installations
+        .install_build(fixture.offer(), Platform::Windows);
+    assert_eq!(
+        fixture.installations.state().queued,
+        [QueuedTransfer {
+            game: 620,
+            build: Some(Platform::Windows)
+        }]
+    );
+
+    fixture.installations.launch("620-macos");
+    eventually(|| fixture.fake.calls() == ["download:730", "download:620"]).await;
+    let waiting: Vec<_> = fixture
+        .queue
+        .view()
+        .waiting
+        .into_iter()
+        .map(|item| item.game)
+        .collect();
+    assert!(
+        waiting.contains(&"620".to_owned()),
+        "the Windows build's install keeps its place: {waiting:?}"
+    );
+
+    // The game running holds its other build's install until it ends.
+    fixture.fake.release();
+    eventually(|| fixture.fake.calls().contains(&"launch:620".to_owned())).await;
+    game.end(None);
+    eventually(|| !fixture.sessions.state().busy()).await;
+    idle(&fixture.installations).await;
+    let mut platforms: Vec<_> = fixture
+        .installations
+        .state()
+        .receipts
+        .iter()
+        .filter(|receipt| receipt.product.app_id == 620)
+        .map(|receipt| receipt.platform)
+        .collect();
+    platforms.sort_by_key(|platform| *platform == Platform::Windows);
+    assert_eq!(platforms, [Platform::Mac, Platform::Windows]);
+}
+
+#[tokio::test]
 async fn downloads_queue_behind_the_transfer_under_way_and_cancelling_one_takes_it_out() {
     let fixture = Fixture::new(false).await;
     fixture.fake.hold();
@@ -1410,11 +1481,11 @@ async fn downloads_queue_behind_the_transfer_under_way_and_cancelling_one_takes_
             ..fixture.offer()
         });
     }
-    assert_eq!(fixture.installations.state().queued, [730, 440]);
+    assert_eq!(queued(&fixture.installations.state()), [730, 440]);
     assert_eq!(fixture.queue.view().waiting.len(), 2);
 
     fixture.installations.cancel(&730);
-    eventually(|| fixture.installations.state().queued == [440]).await;
+    eventually(|| queued(&fixture.installations.state()) == [440]).await;
     fixture.fake.release();
     idle(&fixture.installations).await;
     assert_eq!(fixture.fake.calls(), ["download:620", "download:440"]);
@@ -1441,7 +1512,7 @@ async fn a_running_game_holds_the_queued_automatic_updates() {
     fixture.queue.hold(&other, true);
     fixture.installations.set_automatic_updates(true);
     fixture.installations.check_updates();
-    eventually(|| fixture.installations.state().queued == [620]).await;
+    eventually(|| queued(&fixture.installations.state()) == [620]).await;
     tokio::time::sleep(Duration::from_millis(50)).await;
     assert_eq!(fixture.fake.calls(), Vec::<String>::new());
     assert!(fixture.queue.view().waiting[0].automatic);
@@ -2226,7 +2297,8 @@ async fn a_mac_build_steam_refuses_beside_the_windows_one_fails_and_leaves_it_ve
     assert!(!state.receipts[0].needs_verification);
     let transfer = state.transfer.unwrap();
     assert_eq!(transfer.state, TransferState::Failed);
-    assert_eq!(transfer.message, super::MAC_BUILD_UNAVAILABLE);
+    assert_eq!(transfer.message, MAC_REFUSED);
+    assert_eq!(state.report, Some(Report::Storefront(MAC_REFUSED.into())));
 }
 
 #[tokio::test]
@@ -2243,12 +2315,8 @@ async fn a_mac_build_steam_refuses_of_a_game_not_installed_installs_nothing() {
 
     let state = fixture.installations.state();
     assert!(state.receipts.is_empty());
-    assert!(state.last_download.is_none());
-    assert_eq!(state.mac_refused, [620]);
-    assert_eq!(
-        state.transfer.unwrap().message,
-        super::MAC_BUILD_UNAVAILABLE
-    );
+    assert!(state.last_download.is_none(), "nothing left to resume");
+    assert_eq!(state.transfer.unwrap().message, MAC_REFUSED);
 
     // Its Windows build, chosen next, installs.
     fixture
@@ -2641,3 +2709,8 @@ async fn a_move_still_waiting_goes_to_the_folder_chosen_last() {
 // MARK: The receipts an account keeps
 
 mod receipt_book;
+
+/// The games whose Transfer waits in the download queue.
+fn queued(state: &State<Steam>) -> Vec<u32> {
+    state.queued.iter().map(|queued| queued.game).collect()
+}
