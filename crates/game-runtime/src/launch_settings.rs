@@ -227,7 +227,8 @@ pub struct Choices {
     /// Metal's Performance HUD shows over the game, whatever renders it.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub performance_hud: bool,
-    /// Only ever false: Game Mode is macOS's to turn on.
+    /// False where the profile leaves Game Mode to macOS, true where the
+    /// profile keeps it off: only what differs from the profile is kept.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub game_mode: Option<bool>,
 }
@@ -358,7 +359,7 @@ impl Choices {
                 .render_percent
                 .filter(|percent| offered.offers_render_percent(*percent))
                 .unwrap_or(FULL_RENDER_PERCENT),
-            game_mode: !offered.game_mode || self.game_mode.unwrap_or(true),
+            game_mode: !offered.game_mode || self.game_mode.unwrap_or(profile.game_mode),
             locale: None,
         }
     }
@@ -383,7 +384,8 @@ impl Choices {
             render_percent: (applied.render_percent != FULL_RENDER_PERCENT)
                 .then_some(applied.render_percent),
             performance_hud: self.performance_hud,
-            game_mode: (!applied.game_mode).then_some(false),
+            game_mode: (applied.game_mode != default_game_mode(profile, applied.engine))
+                .then_some(applied.game_mode),
         }
     }
 
@@ -401,6 +403,13 @@ fn default_graphics(profile: &Profile, engine: Engine) -> Graphics {
     } else {
         Graphics::default_on(engine)
     }
+}
+
+/// Whether macOS may turn its Game Mode on for `profile`'s game on `engine`
+/// without choices: always on an engine that cannot keep it off, else as its
+/// profile says.
+fn default_game_mode(profile: &Profile, engine: Engine) -> bool {
+    !offer(engine).game_mode || profile.game_mode
 }
 
 /// The options the profile gives its own engine and backend; any other

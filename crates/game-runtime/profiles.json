@@ -383,6 +383,14 @@
       },
       "path": "APlagueTaleInnocence_x64.exe",
       "graphics": "Dxmt"
+    },
+    {
+      "name": "HELLDIVERS 2",
+      "note": "Easy Anti-Cheat, as Rocket League's. Its program imports no Direct3D, so nothing tells Obelisk to leave the engine's DXMT for D3DMetal, which runs it. It runs faster with macOS's Game Mode off.",
+      "steam": 553850,
+      "engine": "Linux",
+      "graphics": "D3DMetal",
+      "game_mode": false
     }
   ]
 }
