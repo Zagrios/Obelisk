@@ -131,6 +131,7 @@ impl Network for FakeSteamCloud {
         &'a self,
         _: u32,
         _: &'a str,
+        _: Option<Platform>,
     ) -> BoxFuture<'a, Result<Platform, sessions::Failure>> {
         unreachable!("Cloud saves pick no build")
     }

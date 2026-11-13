@@ -209,6 +209,44 @@ async fn a_download_installs_the_mac_build_when_its_game_runs_natively_else_the_
 }
 
 #[tokio::test]
+async fn a_build_its_player_chose_is_installed_or_refused_never_swapped_for_the_other() {
+    use Platform::{Mac, Windows};
+    let no_build = Err(FakeError::Unavailable(Unavailable::NoBuild));
+    let refused = Err(FakeError::Unavailable(Unavailable::MacRefused));
+    // (chosen, mac, windows, the Mac build's program, picked, whether it was read)
+    let cases = [
+        (Windows, MAC, WINDOWS, NATIVE, Ok(Windows), false),
+        (Windows, MAC, None, NATIVE, no_build, false),
+        (Mac, MAC, WINDOWS, NATIVE, Ok(Mac), true),
+        (Mac, MAC, WINDOWS, NOT_NATIVE, refused, true),
+        (Mac, None, WINDOWS, NATIVE, no_build, false),
+    ];
+    for (chosen, mac, windows, program, expected, inspected) in cases {
+        let game = FakeGame {
+            program: Ok(program),
+            ..FakeGame::new(mac, windows)
+        };
+        let choice = Choice::default();
+        let case = (chosen, mac, windows, program);
+        let picked = choice
+            .pick(async |pick| pick.of_choice(&game, Some(chosen)).await)
+            .await;
+        assert_eq!(picked, expected, "{case:?}");
+        assert_eq!(game.asked("inspect"), usize::from(inspected), "{case:?}");
+    }
+
+    // A refused Mac build keeps its verdict, as a pick of it does: the page
+    // then shows the Windows build.
+    let choice = Choice::default();
+    let game = FakeGame::not_native(1);
+    let picked = choice
+        .pick(async |pick| pick.of_choice(&game, Some(Mac)).await)
+        .await;
+    assert_eq!(picked, refused);
+    assert_eq!(shown(&choice, &game).await, Some((Windows, "windows")));
+}
+
+#[tokio::test]
 async fn a_page_shows_the_mac_build_until_a_pick_found_its_game_is_not_native() {
     use Platform::{Mac, Windows};
     let (shows_mac, shows_windows) = (Some((Mac, "mac")), Some((Windows, "windows")));

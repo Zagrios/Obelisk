@@ -26,6 +26,16 @@ struct LibraryCoverCard<Artwork: View>: View {
     private static var cornerRadius: CGFloat { ObeliskStyle.coverCornerRadius }
     private static var barInset: CGFloat { 8 }
 
+    /// Of two installed builds, the card names the one its button launches,
+    /// and goes on naming it while it launches, runs and closes; not while
+    /// the button follows a download, which may be the other build's.
+    private var namesBuild: Bool {
+        switch action.kind {
+        case .download, .queued, .transferring(.files), .waiting(.uninstall): false
+        case .launch, .transferring(.launch), .waiting, .step, .running: true
+        }
+    }
+
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
         return Button(action: open) {
@@ -39,15 +49,18 @@ struct LibraryCoverCard<Artwork: View>: View {
         .accessibilityLabel(accessibilityLabel)
         // The bar only shows under the pointer; its action stays reachable.
         .accessibilityActions {
-            if action.isAvailable, let name = label(action.kind, title: title) {
+            if action.isAvailable, let name = label(action, title: title) {
                 Button(name) { action.run(asking: $asking) }
             }
         }
         .overlay(alignment: .topLeading) {
-            if hovered, let logo = store?.logoAssetName {
-                LibraryCardBadge(logo: logo)
-                    .padding(Self.barInset + 2)
-                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
+            if hovered {
+                HStack(spacing: 6) {
+                    if let logo = store?.logoAssetName { LibraryCardBadge(logo: logo) }
+                    if namesBuild, let build = action.build { LibraryCardBuild(build: build) }
+                }
+                .padding(Self.barInset + 2)
+                .transition(.opacity.combined(with: .scale(scale: 0.85)))
             }
         }
         .overlay(alignment: .bottom) {
@@ -85,10 +98,13 @@ struct LibraryCoverCard<Artwork: View>: View {
 }
 
 /// What a card's button does for `title`, when it launches, downloads or ends
-/// the game.
-private func label(_ kind: GameAction.Kind, title: String) -> String? {
-    switch kind {
-    case .launch: L10n.string("ui.game.launch_named", title)
+/// the game. It names the build it launches of a game with both installed.
+@MainActor
+private func label(_ action: GameAction, title: String) -> String? {
+    switch action.kind {
+    case .launch:
+        action.build.map { L10n.string("ui.game.launch_named_build", title, $0.name) }
+            ?? L10n.string("ui.game.launch_named", title)
     case .download: L10n.string("ui.game.download_named", title)
     case let .running(stage): stage?.label(title: title)
     case .queued, .transferring, .waiting, .step: nil
@@ -182,7 +198,7 @@ private struct LibraryCardButton: View {
     /// Green launches, blue downloads, grey quits and red forces a quit, as on
     /// the game's page, through glass.
     private func button(symbol: String, colors: [Color], help: String? = nil) -> some View {
-        let name = label(action.kind, title: title) ?? title
+        let name = label(action, title: title) ?? title
         return Button(action: run) {
             Image(systemName: symbol)
                 .font(.system(size: 12, weight: .bold))
@@ -247,6 +263,24 @@ struct LibraryCardBadge: View {
             .frame(width: 12, height: 12)
             .frame(width: 26, height: 26)
             .glassEffect(.regular, in: .circle)
+            .environment(\.colorScheme, .dark)
+            .accessibilityHidden(true)
+            .allowsHitTesting(false)
+    }
+}
+
+/// The build a card's button launches, of a game with both installed, in
+/// glass beside its storefront.
+private struct LibraryCardBuild: View {
+    let build: GamePlatform
+
+    var body: some View {
+        Text(build.name)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 9)
+            .frame(height: 26)
+            .glassEffect(.regular, in: .capsule)
             .environment(\.colorScheme, .dark)
             .accessibilityHidden(true)
             .allowsHitTesting(false)

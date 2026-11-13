@@ -46,9 +46,10 @@ final class SteamPresentationTests: XCTestCase {
         await details.release(DetailsRequest(appId: 440, language: "french"), value: fixtureDetails(440))
         try await eventually { model.details != nil }
         XCTAssertEqual(model.installations.selectedAction?.isAvailable, true)
+        // An installed game's page reads them without waiting, to learn
+        // whether Steam offers its other build too.
         let portalRequested = await details.wasRequested(DetailsRequest(appId: 620, language: "french"))
-        let dotaRequested = await details.wasRequested(DetailsRequest(appId: 570, language: "french"))
-        XCTAssertFalse(portalRequested || dotaRequested, "Installed games never request remote details")
+        XCTAssertTrue(portalRequested)
     }
 
     @MainActor

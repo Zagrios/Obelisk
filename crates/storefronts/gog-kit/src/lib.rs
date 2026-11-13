@@ -39,7 +39,7 @@ pub enum GogError {
 }
 
 use obelisk_core::{
-    build_choice::{NOT_NATIVE, Unavailable},
+    build_choice::{MAC_REFUSED, NOT_NATIVE, Unavailable},
     install::InstallError,
     publish::PublishError,
     transfer::Cancelled,
@@ -57,6 +57,9 @@ impl From<Unavailable> for GogError {
             Unavailable::NoBuild => Self::NoBuild,
             Unavailable::NotNative => Self::Service {
                 message: NOT_NATIVE.into(),
+            },
+            Unavailable::MacRefused => Self::Service {
+                message: MAC_REFUSED.into(),
             },
         }
     }

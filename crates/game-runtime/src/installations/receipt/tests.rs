@@ -234,6 +234,7 @@ fn an_update_goes_over_its_installation_in_the_folder_it_sits_in() {
             },
             name: "Portal 2".into(),
             platform: Some(Platform::Mac),
+            chosen: None,
             directory: PREVIOUS.into(),
         },
     );
@@ -247,6 +248,7 @@ fn an_update_goes_over_its_installation_in_the_folder_it_sits_in() {
             },
             name: "Fixture".into(),
             platform: Some(Platform::Windows),
+            chosen: None,
             directory: PREVIOUS.into(),
         },
     );
@@ -258,6 +260,7 @@ fn an_update_goes_over_its_installation_in_the_folder_it_sits_in() {
             },
             name: "The Witcher".into(),
             platform: Some(Platform::Windows),
+            chosen: None,
             directory: PREVIOUS.into(),
         },
     );

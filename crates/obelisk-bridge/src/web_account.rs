@@ -61,6 +61,10 @@ pub enum WebAccountGames {
 pub struct WebGameDetails {
     /// Unknown when the storefront could not tell.
     pub platform: Option<GamePlatform>,
+    /// Whether the storefront offers the account both builds: its player
+    /// then chooses between them on the game's page.
+    #[uniffi(default = false)]
+    pub both_builds: bool,
     /// Unknown when the storefront serves no build to measure.
     pub installation_bytes: Option<u64>,
 }

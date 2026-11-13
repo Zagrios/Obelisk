@@ -743,6 +743,7 @@ mod game_page {
             .await
             .unwrap();
         assert_eq!(details.platform, Some(Platform::Mac));
+        assert!(details.both_builds);
         assert_eq!(details.windows_bytes, 10 + 60);
         assert_eq!(details.macos_bytes, 40 + 60);
         assert_eq!(steam.app_queries(), [vec![SHARED_GAME], vec![BASE]]);
@@ -759,6 +760,7 @@ mod game_page {
             .await
             .unwrap();
         assert_eq!(windows.platform, Some(Platform::Windows));
+        assert!(!windows.both_builds);
         assert_eq!(windows.macos_bytes, 0);
         assert_eq!(windows.windows_bytes, 50);
         let no_program = steam
@@ -788,7 +790,9 @@ mod mac_pick {
     #[tokio::test]
     async fn a_game_without_a_mac_program_is_installed_for_windows_with_no_depot_read() {
         let (client, mut steam) = account().await;
-        let platform = steam.during(client.platform(NO_LAUNCH, ENGLISH)).await;
+        let platform = steam
+            .during(client.platform(NO_LAUNCH, ENGLISH, None))
+            .await;
         assert_eq!(platform.unwrap(), Platform::Windows);
         assert_eq!(steam.app_queries(), [[NO_LAUNCH]]);
         assert!(steam.depot_keys().is_empty());
@@ -799,7 +803,9 @@ mod mac_pick {
     #[tokio::test]
     async fn a_game_with_only_a_windows_build_is_installed_for_windows_with_no_depot_read() {
         let (client, mut steam) = account().await;
-        let platform = steam.during(client.platform(REDIST_GAME, ENGLISH)).await;
+        let platform = steam
+            .during(client.platform(REDIST_GAME, ENGLISH, None))
+            .await;
         assert_eq!(platform.unwrap(), Platform::Windows);
         assert_eq!(steam.app_queries(), [[REDIST_GAME]]);
         assert!(steam.depot_keys().is_empty());
@@ -809,18 +815,20 @@ mod mac_pick {
     #[tokio::test]
     async fn a_game_the_account_cannot_install_has_no_pick() {
         let (client, mut steam) = account().await;
-        let unowned = steam.during(client.platform(UNOWNED, ENGLISH)).await;
+        let unowned = steam.during(client.platform(UNOWNED, ENGLISH, None)).await;
         assert_eq!(
             message(unowned.unwrap_err()),
             "backend.steam.client.gameNotOwned"
         );
         // Owned, but no depot the account holds.
-        let no_rights = steam.during(client.platform(NO_RIGHTS, ENGLISH)).await;
+        let no_rights = steam
+            .during(client.platform(NO_RIGHTS, ENGLISH, None))
+            .await;
         assert_eq!(
             message(no_rights.unwrap_err()),
             "backend.steam.client.noCompatibleDepot"
         );
-        let language = steam.during(client.platform(GAME, "klingon")).await;
+        let language = steam.during(client.platform(GAME, "klingon", None)).await;
         assert_eq!(
             message(language.unwrap_err()),
             "backend.steam.client.unsupportedPlatformOrLanguage"
@@ -834,7 +842,7 @@ mod mac_pick {
         let [_, mac, shared] = &depots;
         let cdn = holding(&depots);
         let (client, mut steam) = account_served_by(&cdn).await;
-        let platform = steam.during(client.platform(GAME, ENGLISH)).await;
+        let platform = steam.during(client.platform(GAME, ENGLISH, None)).await;
         assert_eq!(platform.unwrap(), Platform::Mac);
         // Each depot's manifest, then the first chunk of the program and the
         // library beside it: the rest of the program is not read.
@@ -849,7 +857,7 @@ mod mac_pick {
         );
         // The verdict is kept: the same build is not read again.
         steam.forget_requests();
-        let again = steam.during(client.platform(GAME, ENGLISH)).await;
+        let again = steam.during(client.platform(GAME, ENGLISH, None)).await;
         assert_eq!(again.unwrap(), Platform::Mac);
         assert!(steam.requests().is_empty());
         assert_eq!(requests(&cdn).len(), 4);
@@ -866,7 +874,7 @@ mod mac_pick {
         let (client, mut steam) = account_served_by(&cdn).await;
         let details = steam.during(client.details(GAME, ENGLISH)).await.unwrap();
         assert_eq!(details.platform, Some(Platform::Mac));
-        let platform = steam.during(client.platform(GAME, ENGLISH)).await;
+        let platform = steam.during(client.platform(GAME, ENGLISH, None)).await;
         assert_eq!(platform.unwrap(), Platform::Windows);
         // The program told: its library is not read.
         assert_eq!(
@@ -881,7 +889,7 @@ mod mac_pick {
         assert_eq!(details.platform, Some(Platform::Windows));
         // The verdict is kept: the same build is not read again.
         steam.forget_requests();
-        let again = steam.during(client.platform(GAME, ENGLISH)).await;
+        let again = steam.during(client.platform(GAME, ENGLISH, None)).await;
         assert_eq!(again.unwrap(), Platform::Windows);
         assert!(steam.requests().is_empty());
         assert_eq!(requests(&cdn).len(), 3);
@@ -895,7 +903,9 @@ mod mac_pick {
             Held::data(1403, 14_003, THREE_DEPOTS),
         ]);
         let (client, mut steam) = account_served_by(&cdn).await;
-        let platform = steam.during(client.platform(THREE_DEPOTS, ENGLISH)).await;
+        let platform = steam
+            .during(client.platform(THREE_DEPOTS, ENGLISH, None))
+            .await;
         assert_eq!(
             message(platform.unwrap_err()),
             "backend.install.macBuildNotNative"
@@ -907,7 +917,9 @@ mod mac_pick {
         let depots = shared_game_mac_depots();
         let cdn = holding(&depots);
         let (client, mut steam) = account_served_by(&cdn).await;
-        let platform = steam.during(client.platform(SHARED_GAME, ENGLISH)).await;
+        let platform = steam
+            .during(client.platform(SHARED_GAME, ENGLISH, None))
+            .await;
         assert_eq!(platform.unwrap(), Platform::Mac);
         // The game, then the app its shared depots come from, once for the
         // whole pick.
@@ -939,7 +951,9 @@ mod mac_pick {
     async fn a_mac_build_is_read_one_depot_at_a_time_after_its_sources_and_servers() {
         let cdn = holding(&shared_game_mac_depots());
         let (client, mut steam) = account_served_by(&cdn).await;
-        let platform = steam.during(client.platform(SHARED_GAME, ENGLISH)).await;
+        let platform = steam
+            .during(client.platform(SHARED_GAME, ENGLISH, None))
+            .await;
         assert_eq!(platform.unwrap(), Platform::Mac);
         // The sorted counts above cannot tell the order Steam is asked in: the
         // licenses, the game, the source app of the shared depots, the servers,
@@ -990,7 +1004,7 @@ mod mac_pick {
         let (client, mut steam) = account().await;
         for _ in 0..2 {
             steam.forget_requests();
-            let platform = steam.during(client.platform(GAME, ENGLISH)).await;
+            let platform = steam.during(client.platform(GAME, ENGLISH, None)).await;
             assert_eq!(message(platform.unwrap_err()), no_cdn_address());
             assert_eq!(steam.content_server_queries(), 1);
             assert_eq!(steam.depot_keys(), [(102, GAME), (103, GAME)]);
@@ -1004,14 +1018,14 @@ mod mac_pick {
     async fn a_mac_build_whose_manifest_steam_refuses_gives_way_to_the_windows_build_once() {
         let (client, mut steam) = account().await;
         steam.world.refused_manifests = vec![102];
-        let platform = steam.during(client.platform(GAME, ENGLISH)).await;
+        let platform = steam.during(client.platform(GAME, ENGLISH, None)).await;
         assert_eq!(platform.unwrap(), Platform::Windows);
         // The read ended on the first depot, whose manifest Steam refused.
         assert_eq!(steam.depot_keys(), [(102, GAME)]);
         assert_eq!(steam.manifest_codes(), [(102, GAME, 1002)]);
         // The verdict is kept: Steam is not asked for the same build again.
         steam.forget_requests();
-        let again = steam.during(client.platform(GAME, ENGLISH)).await;
+        let again = steam.during(client.platform(GAME, ENGLISH, None)).await;
         assert_eq!(again.unwrap(), Platform::Windows);
         assert!(steam.requests().is_empty());
     }
@@ -1422,7 +1436,7 @@ mod download {
 
     /// Picks the Mac build of `app_id`, whose game runs natively.
     async fn pick_mac_build(client: &Client, steam: &mut Steam, app_id: u32) {
-        let platform = steam.during(client.platform(app_id, ENGLISH)).await;
+        let platform = steam.during(client.platform(app_id, ENGLISH, None)).await;
         assert_eq!(platform.unwrap(), Platform::Mac);
         steam.forget_requests();
     }

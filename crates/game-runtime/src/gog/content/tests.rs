@@ -62,6 +62,7 @@ impl Network for Fake {
         &'a self,
         _: &'a Product,
         language: &'a str,
+        _: Option<Platform>,
     ) -> BoxFuture<'a, Result<Platform, Failure>> {
         Box::pin(async move {
             self.call(&format!("platform {language}"));
@@ -151,6 +152,7 @@ impl Fixture {
             product: witcher(),
             name: "The Witcher".into(),
             platform: Some(platform),
+            chosen: None,
             directory: self.locations.library.join("Games/GOG"),
         }
     }

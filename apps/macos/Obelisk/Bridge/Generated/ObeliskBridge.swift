@@ -707,9 +707,11 @@ public protocol AccountInstallationsProtocol: AnyObject, Sendable {
     /**
      * Installs what `offer` names, or updates the game's installation; a
      * Transfer of the game that stopped resumes instead. An offer of the
-     * other storefront does nothing.
+     * other storefront does nothing. `build` is the one its player chose
+     * on the game's page, beside the other when that one is installed;
+     * without it the storefront picks.
      */
-    func install(offer: GameOffer) 
+    func install(offer: GameOffer, build: GamePlatform?) 
     
     /**
      * Launches the Steam `installation` as `launch` does, its game joining
@@ -963,13 +965,16 @@ open func discard(installation: String)  {try! rustCall() {
     /**
      * Installs what `offer` names, or updates the game's installation; a
      * Transfer of the game that stopped resumes instead. An offer of the
-     * other storefront does nothing.
+     * other storefront does nothing. `build` is the one its player chose
+     * on the game's page, beside the other when that one is installed;
+     * without it the storefront picks.
      */
-open func install(offer: GameOffer)  {try! rustCall() {
+open func install(offer: GameOffer, build: GamePlatform?)  {try! rustCall() {
         uniffiCallStatus in
     uniffi_obelisk_bridge_fn_method_accountinstallations_install(
             self.uniffiCloneHandle(),
-        FfiConverterTypeGameOffer_lower(offer),uniffiCallStatus
+        FfiConverterTypeGameOffer_lower(offer),
+        FfiConverterOptionTypeGamePlatform.lower(build),uniffiCallStatus
     )
 }
 }
@@ -6913,10 +6918,15 @@ public struct InstallationsState: Equatable, Hashable {
     public var launchGame: String?
     public var uninstallGame: String?
     /**
-     * The game whose Transfer stopped before its receipt: the player can
-     * resume it.
+     * The game of the last Transfer begun that has no receipt yet: the one
+     * under way, or one that stopped, which the player can resume.
      */
     public var resumable: String?
+    /**
+     * The build of that Transfer, as far as it is known: the one settled,
+     * else the one its player chose.
+     */
+    public var resumableBuild: GamePlatform?
     /**
      * The new installations whose Transfer has not succeeded yet: the player
      * resumes or discards each. None is an installed game.
@@ -6929,7 +6939,7 @@ public struct InstallationsState: Equatable, Hashable {
     /**
      * The games whose Transfer waits in the download queue.
      */
-    public var queued: [String]
+    public var queued: [QueuedTransfer]
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -6941,16 +6951,20 @@ public struct InstallationsState: Equatable, Hashable {
          * The game the last Transfer progress belongs to.
          */transferGame: String?, downloading: Bool, launching: Bool, verifyingBeforeLaunch: Bool, launchGame: String?, uninstallGame: String?, 
         /**
-         * The game whose Transfer stopped before its receipt: the player can
-         * resume it.
+         * The game of the last Transfer begun that has no receipt yet: the one
+         * under way, or one that stopped, which the player can resume.
          */resumable: String?, 
+        /**
+         * The build of that Transfer, as far as it is known: the one settled,
+         * else the one its player chose.
+         */resumableBuild: GamePlatform? = nil, 
         /**
          * The new installations whose Transfer has not succeeded yet: the player
          * resumes or discards each. None is an installed game.
          */incomplete: [Installation], report: InstallationReport?, warning: InstallationWarning?, gate: InstallationGate, cloudSync: CloudSync?, 
         /**
          * The games whose Transfer waits in the download queue.
-         */queued: [String]) {
+         */queued: [QueuedTransfer]) {
         self.revision = revision
         self.installations = installations
         self.transfer = transfer
@@ -6961,6 +6975,7 @@ public struct InstallationsState: Equatable, Hashable {
         self.launchGame = launchGame
         self.uninstallGame = uninstallGame
         self.resumable = resumable
+        self.resumableBuild = resumableBuild
         self.incomplete = incomplete
         self.report = report
         self.warning = warning
@@ -6995,12 +7010,13 @@ public struct FfiConverterTypeInstallationsState: FfiConverterRustBuffer {
                 launchGame: FfiConverterOptionString.read(from: &buf), 
                 uninstallGame: FfiConverterOptionString.read(from: &buf), 
                 resumable: FfiConverterOptionString.read(from: &buf), 
+                resumableBuild: FfiConverterOptionTypeGamePlatform.read(from: &buf), 
                 incomplete: FfiConverterSequenceTypeInstallation.read(from: &buf), 
                 report: FfiConverterOptionTypeInstallationReport.read(from: &buf), 
                 warning: FfiConverterOptionTypeInstallationWarning.read(from: &buf), 
                 gate: FfiConverterTypeInstallationGate.read(from: &buf), 
                 cloudSync: FfiConverterOptionTypeCloudSync.read(from: &buf), 
-                queued: FfiConverterSequenceString.read(from: &buf)
+                queued: FfiConverterSequenceTypeQueuedTransfer.read(from: &buf)
         )
     }
 
@@ -7015,12 +7031,13 @@ public struct FfiConverterTypeInstallationsState: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.launchGame, into: &buf)
         FfiConverterOptionString.write(value.uninstallGame, into: &buf)
         FfiConverterOptionString.write(value.resumable, into: &buf)
+        FfiConverterOptionTypeGamePlatform.write(value.resumableBuild, into: &buf)
         FfiConverterSequenceTypeInstallation.write(value.incomplete, into: &buf)
         FfiConverterOptionTypeInstallationReport.write(value.report, into: &buf)
         FfiConverterOptionTypeInstallationWarning.write(value.warning, into: &buf)
         FfiConverterTypeInstallationGate.write(value.gate, into: &buf)
         FfiConverterOptionTypeCloudSync.write(value.cloudSync, into: &buf)
-        FfiConverterSequenceString.write(value.queued, into: &buf)
+        FfiConverterSequenceTypeQueuedTransfer.write(value.queued, into: &buf)
     }
 }
 
@@ -7619,6 +7636,69 @@ public func FfiConverterTypeObeliskLocations_lift(_ buf: RustBuffer) throws -> O
 #endif
 public func FfiConverterTypeObeliskLocations_lower(_ value: ObeliskLocations) -> RustBuffer {
     return FfiConverterTypeObeliskLocations.lower(value)
+}
+
+
+/**
+ * A game whose Transfer waits in the download queue.
+ */
+public struct QueuedTransfer: Equatable, Hashable {
+    public var game: String
+    /**
+     * The build it installs, where it is known before the storefront picks.
+     */
+    public var build: GamePlatform?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(game: String, 
+        /**
+         * The build it installs, where it is known before the storefront picks.
+         */build: GamePlatform?) {
+        self.game = game
+        self.build = build
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension QueuedTransfer: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeQueuedTransfer: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> QueuedTransfer {
+        return
+            try QueuedTransfer(
+                game: FfiConverterString.read(from: &buf), 
+                build: FfiConverterOptionTypeGamePlatform.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: QueuedTransfer, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.game, into: &buf)
+        FfiConverterOptionTypeGamePlatform.write(value.build, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeQueuedTransfer_lift(_ buf: RustBuffer) throws -> QueuedTransfer {
+    return try FfiConverterTypeQueuedTransfer.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeQueuedTransfer_lower(_ value: QueuedTransfer) -> RustBuffer {
+    return FfiConverterTypeQueuedTransfer.lower(value)
 }
 
 
@@ -8704,6 +8784,11 @@ public struct SteamGameDetails: Equatable, Hashable {
      * neither.
      */
     public var platform: GamePlatform?
+    /**
+     * Whether the account can install both builds: its player then chooses
+     * between them on the game's page.
+     */
+    public var bothBuilds: Bool
     public var windowsBytes: UInt64
     public var macosBytes: UInt64
 
@@ -8713,10 +8798,15 @@ public struct SteamGameDetails: Equatable, Hashable {
         /**
          * The build the game's page shows; none when the account can install
          * neither.
-         */platform: GamePlatform?, windowsBytes: UInt64, macosBytes: UInt64) {
+         */platform: GamePlatform?, 
+        /**
+         * Whether the account can install both builds: its player then chooses
+         * between them on the game's page.
+         */bothBuilds: Bool = false, windowsBytes: UInt64, macosBytes: UInt64) {
         self.appId = appId
         self.name = name
         self.platform = platform
+        self.bothBuilds = bothBuilds
         self.windowsBytes = windowsBytes
         self.macosBytes = macosBytes
     }
@@ -8740,6 +8830,7 @@ public struct FfiConverterTypeSteamGameDetails: FfiConverterRustBuffer {
                 appId: FfiConverterUInt32.read(from: &buf), 
                 name: FfiConverterString.read(from: &buf), 
                 platform: FfiConverterOptionTypeGamePlatform.read(from: &buf), 
+                bothBuilds: FfiConverterBool.read(from: &buf), 
                 windowsBytes: FfiConverterUInt64.read(from: &buf), 
                 macosBytes: FfiConverterUInt64.read(from: &buf)
         )
@@ -8749,6 +8840,7 @@ public struct FfiConverterTypeSteamGameDetails: FfiConverterRustBuffer {
         FfiConverterUInt32.write(value.appId, into: &buf)
         FfiConverterString.write(value.name, into: &buf)
         FfiConverterOptionTypeGamePlatform.write(value.platform, into: &buf)
+        FfiConverterBool.write(value.bothBuilds, into: &buf)
         FfiConverterUInt64.write(value.windowsBytes, into: &buf)
         FfiConverterUInt64.write(value.macosBytes, into: &buf)
     }
@@ -9812,6 +9904,11 @@ public struct WebGameDetails: Equatable, Hashable {
      */
     public var platform: GamePlatform?
     /**
+     * Whether the storefront offers the account both builds: its player
+     * then chooses between them on the game's page.
+     */
+    public var bothBuilds: Bool
+    /**
      * Unknown when the storefront serves no build to measure.
      */
     public var installationBytes: UInt64?
@@ -9823,9 +9920,14 @@ public struct WebGameDetails: Equatable, Hashable {
          * Unknown when the storefront could not tell.
          */platform: GamePlatform?, 
         /**
+         * Whether the storefront offers the account both builds: its player
+         * then chooses between them on the game's page.
+         */bothBuilds: Bool = false, 
+        /**
          * Unknown when the storefront serves no build to measure.
          */installationBytes: UInt64?) {
         self.platform = platform
+        self.bothBuilds = bothBuilds
         self.installationBytes = installationBytes
     }
 
@@ -9846,12 +9948,14 @@ public struct FfiConverterTypeWebGameDetails: FfiConverterRustBuffer {
         return
             try WebGameDetails(
                 platform: FfiConverterOptionTypeGamePlatform.read(from: &buf), 
+                bothBuilds: FfiConverterBool.read(from: &buf), 
                 installationBytes: FfiConverterOptionUInt64.read(from: &buf)
         )
     }
 
     public static func write(_ value: WebGameDetails, into buf: inout [UInt8]) {
         FfiConverterOptionTypeGamePlatform.write(value.platform, into: &buf)
+        FfiConverterBool.write(value.bothBuilds, into: &buf)
         FfiConverterOptionUInt64.write(value.installationBytes, into: &buf)
     }
 }
@@ -10901,7 +11005,8 @@ public enum GameOffer: Equatable, Hashable {
     /**
      * With the depots of `language`. Steam picks the build the account can
      * install as the Transfer starts: the Mac build when its game runs
-     * natively on Apple silicon, else the Windows build.
+     * natively on Apple silicon, else the Windows build. An install of the
+     * build its player chose takes that one instead.
      */
     case steam(appId: UInt32, name: String, language: String
     )
@@ -14598,6 +14703,31 @@ fileprivate struct FfiConverterSequenceTypeLibraryAchievement: FfiConverterRustB
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeQueuedTransfer: FfiConverterRustBuffer {
+    typealias SwiftType = [QueuedTransfer]
+
+    public static func write(_ value: [QueuedTransfer], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeQueuedTransfer.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [QueuedTransfer] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [QueuedTransfer]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeQueuedTransfer.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeSteamChatEventEntry: FfiConverterRustBuffer {
     typealias SwiftType = [SteamChatEventEntry]
 
@@ -15463,7 +15593,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_obelisk_bridge_checksum_method_accountinstallations_discard() != 52529) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_obelisk_bridge_checksum_method_accountinstallations_install() != 6039) {
+    if (uniffi_obelisk_bridge_checksum_method_accountinstallations_install() != 4815) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_method_accountinstallations_join() != 43648) {

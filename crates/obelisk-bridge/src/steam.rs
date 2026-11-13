@@ -294,6 +294,10 @@ pub struct SteamGameDetails {
     /// The build the game's page shows; none when the account can install
     /// neither.
     pub platform: Option<GamePlatform>,
+    /// Whether the account can install both builds: its player then chooses
+    /// between them on the game's page.
+    #[uniffi(default = false)]
+    pub both_builds: bool,
     pub windows_bytes: u64,
     pub macos_bytes: u64,
 }
@@ -514,6 +518,7 @@ impl SteamSession {
             app_id: details.app_id,
             name: details.name,
             platform: details.platform.map(Into::into),
+            both_builds: details.both_builds,
             windows_bytes: details.windows_bytes,
             macos_bytes: details.macos_bytes,
         })

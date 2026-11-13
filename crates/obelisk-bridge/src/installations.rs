@@ -43,6 +43,15 @@ pub enum GamePlatform {
     Windows,
 }
 
+impl From<GamePlatform> for Platform {
+    fn from(platform: GamePlatform) -> Self {
+        match platform {
+            GamePlatform::Mac => Self::Mac,
+            GamePlatform::Windows => Self::Windows,
+        }
+    }
+}
+
 impl From<Platform> for GamePlatform {
     fn from(platform: Platform) -> Self {
         match platform {
@@ -57,7 +66,8 @@ impl From<Platform> for GamePlatform {
 pub enum GameOffer {
     /// With the depots of `language`. Steam picks the build the account can
     /// install as the Transfer starts: the Mac build when its game runs
-    /// natively on Apple silicon, else the Windows build.
+    /// natively on Apple silicon, else the Windows build. An install of the
+    /// build its player chose takes that one instead.
     Steam {
         app_id: u32,
         name: String,
@@ -188,9 +198,13 @@ pub struct InstallationsState {
     pub verifying_before_launch: bool,
     pub launch_game: Option<String>,
     pub uninstall_game: Option<String>,
-    /// The game whose Transfer stopped before its receipt: the player can
-    /// resume it.
+    /// The game of the last Transfer begun that has no receipt yet: the one
+    /// under way, or one that stopped, which the player can resume.
     pub resumable: Option<String>,
+    /// The build of that Transfer, as far as it is known: the one settled,
+    /// else the one its player chose.
+    #[uniffi(default = None)]
+    pub resumable_build: Option<GamePlatform>,
     /// The new installations whose Transfer has not succeeded yet: the player
     /// resumes or discards each. None is an installed game.
     pub incomplete: Vec<Installation>,
@@ -199,7 +213,15 @@ pub struct InstallationsState {
     pub gate: InstallationGate,
     pub cloud_sync: Option<CloudSync>,
     /// The games whose Transfer waits in the download queue.
-    pub queued: Vec<String>,
+    pub queued: Vec<QueuedTransfer>,
+}
+
+/// A game whose Transfer waits in the download queue.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct QueuedTransfer {
+    pub game: String,
+    /// The build it installs, where it is known before the storefront picks.
+    pub build: Option<GamePlatform>,
 }
 
 /// How a storefront's games and offers cross UniFFI.
@@ -342,6 +364,11 @@ fn state<S: Named>(state: installations::State<S>) -> InstallationsState {
                 .as_ref()
                 .map(installations::Transfer::game),
         ),
+        resumable_build: state
+            .last_download
+            .as_ref()
+            .and_then(installations::Transfer::build)
+            .map(Into::into),
         incomplete: state
             .incomplete
             .into_iter()
@@ -378,13 +405,26 @@ fn state<S: Named>(state: installations::State<S>) -> InstallationsState {
                 choices: question.choices.into_iter().map(Into::into).collect(),
             }),
         }),
-        queued: state.queued.iter().map(S::name).collect(),
+        queued: state
+            .queued
+            .iter()
+            .map(|queued| QueuedTransfer {
+                game: S::name(&queued.game),
+                build: queued.build.map(Into::into),
+            })
+            .collect(),
     }
 }
 
-fn install<S: Named>(installations: &Installations<S>, offer: GameOffer) {
-    if let Some(offer) = S::offer(offer) {
-        installations.install(offer);
+fn install<S: Named>(
+    installations: &Installations<S>,
+    offer: GameOffer,
+    build: Option<GamePlatform>,
+) {
+    match (S::offer(offer), build) {
+        (Some(offer), Some(build)) => installations.install_build(offer, build.into()),
+        (Some(offer), None) => installations.install(offer),
+        (None, _) => {}
     }
 }
 
@@ -622,9 +662,11 @@ impl AccountInstallations {
 
     /// Installs what `offer` names, or updates the game's installation; a
     /// Transfer of the game that stopped resumes instead. An offer of the
-    /// other storefront does nothing.
-    pub fn install(&self, offer: GameOffer) {
-        each!(self, installations => install(installations, offer))
+    /// other storefront does nothing. `build` is the one its player chose
+    /// on the game's page, beside the other when that one is installed;
+    /// without it the storefront picks.
+    pub fn install(&self, offer: GameOffer, build: Option<GamePlatform>) {
+        each!(self, installations => install(installations, offer, build))
     }
 
     /// Verifies `installation`'s files and repairs or updates them in place;

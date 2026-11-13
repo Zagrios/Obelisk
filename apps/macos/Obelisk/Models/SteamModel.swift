@@ -39,6 +39,9 @@ final class SteamModel {
         didSet { if selectedGame?.appId != oldValue?.appId { achievements.reset() } }
     }
     private(set) var details: SteamGameDetails?
+    /// The games whose details last told Steam offers both builds: their
+    /// page keeps its switch while the details load again.
+    @ObservationIgnored private var bothBuildGames: Set<SteamGames.GameID> = []
     let achievements = GameAchievementsModel(storeID: LibrarySection.steam.rawValue, describe: SteamModel.message)
     private(set) var news: [SteamNews] = []
     private(set) var isLoadingDetails = false
@@ -210,7 +213,8 @@ final class SteamModel {
         guard let game = selectedGame else { return nil }
         let details = details?.appId == game.appId && !isLoadingDetails ? details : nil
         let offer = details.flatMap { $0.offer(for: game, language: language) }
-        return InstallationSelection(game: game.appId, platform: platform, offer: offer)
+        return InstallationSelection(game: game.appId, platform: platform, offer: offer,
+                                     bothBuilds: details?.bothBuilds ?? bothBuildGames.contains(game.appId))
     }
 
     /// The active session when it belongs to the game on screen.
@@ -905,7 +909,8 @@ final class SteamModel {
     }
 
     /// Remote details tell which builds the account can download, so an
-    /// installed game never waits for them.
+    /// installed game never waits for them: its page reads them without
+    /// showing it, only to learn whether Steam offers its other build too.
     func reloadDetails() {
         let transport = self.transport
         guard let game = selectedGame, let session, transport != nil else { return }
@@ -914,20 +919,25 @@ final class SteamModel {
         details = nil
         detailsError = nil
         isLoadingDetails = false
-        guard installations.selectedReceipt == nil else { return }
+        let installed = installations.receipts.contains { $0.gameID == game.appId }
         let selection = detailGeneration
         let current = generation
         let requestedLanguage = language
-        isLoadingDetails = true
+        isLoadingDetails = !installed
         Task {
             do {
                 let loaded = try await session.details(appId: game.appId, language: requestedLanguage)
                 guard current == generation && self.transport == transport && selection == detailGeneration && detailsRequest == detailsRequestGeneration else { return }
+                if loaded.bothBuilds {
+                    bothBuildGames.insert(game.appId)
+                } else {
+                    bothBuildGames.remove(game.appId)
+                }
                 details = loaded
                 isLoadingDetails = false
             } catch {
                 guard current == generation && self.transport == transport && selection == detailGeneration && detailsRequest == detailsRequestGeneration else { return }
-                detailsError = Self.message(error)
+                if !installed { detailsError = Self.message(error) }
                 isLoadingDetails = false
             }
         }
@@ -995,6 +1005,9 @@ final class SteamModel {
             report: { [weak self] error in self?.errorMessage = error.map(Self.message) },
             warn: { [weak self] in self?.storageWarning = $0 },
             uninstalled: { [weak self] game in
+                if self?.selectedGame?.appId == game { self?.reloadDetails() }
+            },
+            transferFailed: { [weak self] game in
                 if self?.selectedGame?.appId == game { self?.reloadDetails() }
             }
         )

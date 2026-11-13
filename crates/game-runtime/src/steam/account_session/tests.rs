@@ -95,7 +95,12 @@ impl Connection {
 }
 
 impl Network for Connection {
-    fn platform<'a>(&'a self, _: u32, _: &'a str) -> BoxFuture<'a, Result<Platform, Failure>> {
+    fn platform<'a>(
+        &'a self,
+        _: u32,
+        _: &'a str,
+        _: Option<Platform>,
+    ) -> BoxFuture<'a, Result<Platform, Failure>> {
         Box::pin(async move { self.serve("platform").map(|()| Platform::Mac) })
     }
     fn download<'a>(
@@ -315,6 +320,7 @@ fn transfer(app_id: u32) -> Transfer<Steam> {
         product: product(app_id),
         name: format!("Game {app_id}"),
         platform: Some(Platform::Mac),
+        chosen: None,
         directory: PathBuf::from("/Games/Steam"),
     }
 }
@@ -709,7 +715,7 @@ async fn a_transfer_waits_for_the_reconnection_and_downloads_through_the_new_con
 
     let picked = tokio::spawn({
         let session = session.clone();
-        async move { session.platform(620, "english").await }
+        async move { session.platform(620, "english", None).await }
     });
     assert_eq!(picked.await.unwrap(), Ok(Platform::Mac));
     assert_eq!(Instant::now() - dropped, Duration::from_secs(1));
@@ -780,7 +786,13 @@ async fn queued_transfers_wait_out_a_reconnection_and_download_through_the_new_c
     account.install(620);
     account.install(730);
     eventually(|| a.calls() == ["platform", "download:620"]).await;
-    assert_eq!(installations.state().queued, [730]);
+    assert_eq!(
+        installations.state().queued,
+        [crate::installations::QueuedTransfer {
+            game: 730,
+            build: None
+        }]
+    );
 
     // 620's download ends with its connection, as it always did. 730's turn
     // comes while the session reconnects, and it waits.

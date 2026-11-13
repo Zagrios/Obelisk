@@ -101,6 +101,8 @@ pub struct GameDetails {
     /// The Mac build, unless a download found that its game does not run
     /// natively. Unknown when GOG could not tell.
     pub platform: Option<Platform>,
+    /// Whether GOG offers the account both builds.
+    pub both_builds: bool,
     /// Unknown when GOG serves no build Obelisk installs.
     pub installation_bytes: Option<u64>,
 }
