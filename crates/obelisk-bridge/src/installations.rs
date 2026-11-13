@@ -5,11 +5,11 @@
 //! names them: a Steam app id, an Epic `namespace:app` pair or a GOG product
 //! id; installations as their receipt's id.
 use crate::{
-    CloudChoice, CloudIndicator, EpicSession, GameSessionError, GameTransfer, GogSession,
-    LaunchChoices, LaunchSettings, ObeliskLocations, SteamCredentials, SteamSession,
-    StorefrontSessions,
+    CloudChoice, CloudIndicator, GameSessionError, GameTransfer, LaunchChoices, LaunchSettings,
+    ObeliskLocations, SteamCredentials, SteamSession, StorefrontSessions, WebAccountSession,
     game_session::{Storefronts, blocking, shares_runtimes},
     steam_chat::SteamGameInvite,
+    web_account,
 };
 use game_runtime::{
     Locations, epic, gog,
@@ -549,63 +549,61 @@ impl AccountInstallations {
         }))
     }
 
-    /// The installations of the Epic account `account_id`, which `session`
-    /// signed in. `language` names the game's language at launch. The
+    /// The installations of the Epic or GOG account `account_id`, which
+    /// `session` signed in. `language` names an Epic game's language at
+    /// launch and the depots GOG's Transfers install, such as `fr-FR`. The
     /// session's own persistence saves the credentials their calls rotate.
     #[uniffi::constructor]
-    pub fn epic(
-        session: Arc<EpicSession>,
+    pub fn web(
+        session: Arc<WebAccountSession>,
         account_id: String,
         language: String,
         sessions: Arc<StorefrontSessions>,
         receipts: String,
         locations: ObeliskLocations,
     ) -> Result<Arc<Self>, GameSessionError> {
-        let Storefronts::Epic(sessions) = &*sessions.sessions else {
-            return Err(GameSessionError::new(epic::Epic::INVALID_SESSION));
-        };
         let locations: Locations = (&locations).into();
         // Every account call waits until the credentials it rotated are saved.
-        let content = epic::content::Content::new(
-            session.client.clone(),
-            session.persistence.waiter(session.client.clone()),
-            account_id.clone(),
-            language,
-            locations.clone(),
-        );
-        let installations = account(content, sessions.clone(), account_id, receipts, &locations);
-        Ok(Arc::new(Self {
-            account: Account::Epic(installations),
-        }))
-    }
-
-    /// The installations of the GOG account `user_id`, which `session`
-    /// signed in. `language` names the depots Transfers install, such as
-    /// `fr-FR`. The session's own persistence saves the credentials their
-    /// calls rotate.
-    #[uniffi::constructor]
-    pub fn gog(
-        session: Arc<GogSession>,
-        user_id: String,
-        language: String,
-        sessions: Arc<StorefrontSessions>,
-        receipts: String,
-        locations: ObeliskLocations,
-    ) -> Result<Arc<Self>, GameSessionError> {
-        let Storefronts::Gog(sessions) = &*sessions.sessions else {
-            return Err(GameSessionError::new(gog::Gog::INVALID_SESSION));
+        let account = match &session.account {
+            web_account::Account::Epic(session) => {
+                let Storefronts::Epic(sessions) = &*sessions.sessions else {
+                    return Err(GameSessionError::new(epic::Epic::INVALID_SESSION));
+                };
+                let content = epic::content::Content::new(
+                    session.client.clone(),
+                    session.persistence.waiter(session.client.clone()),
+                    account_id.clone(),
+                    language,
+                    locations.clone(),
+                );
+                Account::Epic(account(
+                    content,
+                    sessions.clone(),
+                    account_id,
+                    receipts,
+                    &locations,
+                ))
+            }
+            web_account::Account::Gog(session) => {
+                let Storefronts::Gog(sessions) = &*sessions.sessions else {
+                    return Err(GameSessionError::new(gog::Gog::INVALID_SESSION));
+                };
+                let content = gog::content::Content::new(
+                    session.client.clone(),
+                    session.persistence.waiter(session.client.clone()),
+                    language,
+                    locations.clone(),
+                );
+                Account::Gog(account(
+                    content,
+                    sessions.clone(),
+                    account_id,
+                    receipts,
+                    &locations,
+                ))
+            }
         };
-        let locations: Locations = (&locations).into();
-        let content = gog::content::Content::new(
-            session.client.clone(),
-            session.persistence.waiter(session.client.clone()),
-            language,
-            locations.clone(),
-        );
-        let installations = account(content, sessions.clone(), user_id, receipts, &locations);
-        Ok(Arc::new(Self {
-            account: Account::Gog(installations),
-        }))
+        Ok(Arc::new(Self { account }))
     }
 
     pub fn state(&self) -> InstallationsState {
@@ -630,7 +628,8 @@ impl AccountInstallations {
     }
 
     /// Verifies `installation`'s files and repairs or updates them in place;
-    /// a Transfer of the game that stopped resumes instead.
+    /// a Transfer of the game that stopped resumes instead. The player asked:
+    /// every file is hashed again, whatever the last Transfer recorded.
     pub fn update(&self, installation: String) {
         each!(self, installations => installations.update(&installation))
     }

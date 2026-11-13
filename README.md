@@ -79,7 +79,7 @@ Windows games play too. Obelisk sets everything up for you: no bottles to create
 
 Obelisk is signed and notarized by Apple, so it opens without a security warning.
 
-**Updating Obelisk:** Obelisk looks for a new version by itself. It downloads it in the background and installs it the next time you quit Obelisk. If you rarely do, it offers the new version in a window after a while. **Check for Updates…** in the Obelisk menu looks right away, and **Settings → Updates** lets Obelisk ask before downloading instead. Your games, saves and sign-ins stay where they are.
+**Updating Obelisk:** Obelisk looks for a new version by itself. It downloads it in the background and installs it the next time you quit Obelisk. If you rarely do, it offers the new version in a window after a while. **Check for Updates…** in the Obelisk menu looks right away, and **Settings → Updates** lets Obelisk ask before downloading instead. **Beta versions**, in the same place, also gets the pre-releases of Obelisk and of the Voile engine, whichever version is newest. Turned off, Obelisk goes back to its latest release when you quit it, and Voile at the next Windows game launch. Your games, saves and sign-ins stay where they are.
 
 ## Getting started
 
@@ -108,6 +108,7 @@ Obelisk is signed and notarized by Apple, so it opens without a security warning
 - **Download** picks the Mac version of a game when there is one, otherwise the Windows version.
 - Downloads wait in one queue, whatever their store, and run one at a time. The **downloads** button above Settings in the sidebar shows the download speed and lets you pause, resume, reorder or remove each download.
 - An interrupted download resumes where it stopped, even after quitting Obelisk.
+- To keep downloads from using your whole connection, limit their speed with **Download settings** in **Settings → Games**. The limit applies at once, whatever the store. The same row chooses whether speeds read in bytes or in megabits per second.
 - Games update automatically when a new version comes out. Updates wait while you play. To update only when you launch a game, turn off **Update games automatically** in **Settings → Games**.
 - You can play an installed game while another one downloads.
 - **Verify game files**, in the gear menu next to the **Play** button, repairs missing or damaged files. **Uninstall** is in the same menu.
@@ -163,7 +164,7 @@ When a game has no Mac version, Obelisk installs its Windows version and runs it
 - Each Windows game gets its own Windows environment. Uninstalling the game deletes it, after its Cloud saves are safe.
 - The software a game needs, such as DirectX or Visual C++, installs by itself before its first launch.
 - Direct3D 10, 11 and 12 games draw with Metal: 64-bit games through Apple's D3DMetal, 32-bit games through DXMT.
-- A Windows game's **Launch Settings**, in the gear menu of its page, add arguments to its command line and choose the engine that runs it and what draws its Direct3D: D3DMetal or DXMT. On D3DMetal, ray tracing can be turned off for a game that renders wrongly with it. Metal's performance HUD can show the frame rate over the game. DLSS is not supported yet.
+- A Windows game's **Launch Settings**, in the gear menu of its page, add arguments to its command line and choose the engine that runs it and what draws its Direct3D: D3DMetal or DXMT. On D3DMetal, ray tracing can be turned off for a game that renders wrongly with it. Metal's performance HUD can show the frame rate over the game. On the Linux engine, a game can render at any share of the Retina screen's pixels, from 1 % to Native: fewer pixels, more FPS, and macOS scales the picture up. DLSS is not supported yet.
 
 
 **Anti-cheat:** We already run games whose anti-cheat supports Linux, such as **Rocket League** and **ELDEN RING**, and more are coming. We are currently working on BattlEye support, and still studying how to run games whose anti-cheat only supports Windows, such as Easy Anti-Cheat on Windows, or works at a lower level of the system. We never modify or bypass an anti-cheat, so every game runs fully legitimately.

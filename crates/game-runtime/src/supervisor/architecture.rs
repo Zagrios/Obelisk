@@ -1,5 +1,5 @@
 //! Select supported Mach-O slices before launching native games or Steam SDK code.
-use crate::Error;
+use crate::launch::Error;
 use std::{
     fs::File,
     io::{Read, Seek, SeekFrom},

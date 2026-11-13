@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SidebarView: View {
     @Bindable var model: AppModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         List(selection: selection(where: { $0 != .settings })) {
@@ -44,8 +45,15 @@ struct SidebarView: View {
     private func selection(where owns: @escaping (LibrarySection) -> Bool) -> Binding<LibrarySection?> {
         Binding(
             get: { owns(model.selection) ? model.selection : nil },
-            set: { if let section = $0 { model.selection = section } }
+            set: { if let section = $0 { show(section) } }
         )
+    }
+
+    /// Shows the section at its first page. Picking the tab already shown
+    /// leaves its game page with the page's own motion.
+    private func show(_ section: LibrarySection) {
+        let animation = section == model.selection ? ObeliskStyle.pageAnimation(reduceMotion: reduceMotion) : nil
+        withAnimation(animation) { model.show(section) }
     }
 
     private func row(_ section: LibrarySection) -> some View {
@@ -55,6 +63,11 @@ struct SidebarView: View {
             sidebarIcon(section)
         }
         .listItemTint(section == .settings ? .monochrome : .fixed(ObeliskStyle.accent))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        // The list does not tell a click on the row already selected. A click
+        // on another row comes through both.
+        .simultaneousGesture(TapGesture().onEnded { show(section) })
         .pointerCursor()
         .tag(section)
     }

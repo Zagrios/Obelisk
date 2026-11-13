@@ -173,7 +173,7 @@ impl Network for Connection {
     }
     fn maintain(
         &self,
-        _: steam_cloud::MaintenanceTarget,
+        _: steam_cloud::Config,
         _: &Credentials,
         _: Arc<Control>,
         _: &IdleGuard,
@@ -193,6 +193,12 @@ impl Transport for Connection {
         self.ended.cancel();
         self.friends.disconnect(false);
     }
+    fn set_status(&self, status: OnlineStatus) -> BoxFuture<'_, Result<(), ClientError>> {
+        Box::pin(async move {
+            self.serve(format!("status:{status:?}"))
+                .map_err(|_| ClientError::Failure(DISCONNECTED.into()))
+        })
+    }
 }
 
 /// How the test's connector answers one attempt to connect.
@@ -210,6 +216,8 @@ struct Connector {
     answers: Mutex<VecDeque<Answer>>,
     /// When each attempt came.
     attempts: Mutex<Vec<Instant>>,
+    /// The status each attempt signed in showing.
+    statuses: Mutex<Vec<OnlineStatus>>,
 }
 
 impl Connector {
@@ -217,6 +225,7 @@ impl Connector {
         Arc::new(Self {
             answers: Mutex::new(answers.into_iter().collect()),
             attempts: Mutex::new(Vec::new()),
+            statuses: Mutex::new(Vec::new()),
         })
     }
     fn attempts(&self) -> Vec<Instant> {
@@ -232,8 +241,9 @@ impl Connector {
     }
     fn connect(self: &Arc<Self>) -> Connect<Connection> {
         let connector = self.clone();
-        Box::new(move || {
+        Box::new(move |status| {
             let connector = connector.clone();
+            connector.statuses.lock().unwrap().push(status);
             Box::pin(async move { connector.answer().await })
         })
     }
@@ -257,10 +267,17 @@ impl Connector {
     }
 }
 
+/// A failed attempt for every attempt the session makes before it gives up.
+fn failures() -> impl Iterator<Item = Answer> {
+    WAITS.iter().map(|_| Answer::Fails)
+}
+
 /// A session opened through `connector`'s first answer. The attempts it
 /// records start afterwards.
 async fn open(connector: &Arc<Connector>) -> Arc<AccountSession<Connection>> {
-    let session = AccountSession::open(connector.connect()).await.unwrap();
+    let session = AccountSession::open(connector.connect(), OnlineStatus::Online)
+        .await
+        .unwrap();
     connector.attempts.lock().unwrap().clear();
     session
 }
@@ -278,7 +295,7 @@ async fn changed(session: &AccountSession<Connection>) -> State {
 /// Lets the session's tasks run until `done`, time passing as they all
 /// wait.
 async fn until(done: impl Fn() -> bool) {
-    let deadline = Instant::now() + Duration::from_secs(60);
+    let deadline = Instant::now() + Duration::from_secs(300);
     while !done() {
         assert!(Instant::now() < deadline, "it never happened");
         tokio::time::sleep(Duration::from_millis(10)).await;
@@ -413,26 +430,59 @@ async fn a_dropped_connection_is_replaced_and_the_session_reaches_steam_through_
 }
 
 #[tokio::test(start_paused = true)]
-async fn reconnecting_waits_one_two_then_four_seconds_and_gives_up_after_three_attempts() {
-    let a = Connection::new();
+async fn the_chosen_status_is_shown_at_once_and_by_every_later_connection() {
+    let (a, b, c) = (Connection::new(), Connection::new(), Connection::new());
+    let held = CancelToken::new();
     let connector = Connector::new([
         Answer::Connects(a.clone()),
-        Answer::Fails,
-        Answer::Fails,
-        Answer::Fails,
-        Answer::Connects(Connection::new()),
+        Answer::Connects(b.clone()),
+        Answer::Holds(c.clone(), held.clone()),
     ]);
+    let session = open(&connector).await;
+
+    session.set_status(OnlineStatus::Invisible).await.unwrap();
+    assert_eq!(a.calls(), ["status:Invisible"]);
+    assert_eq!(session.status(), OnlineStatus::Invisible);
+
+    a.drops();
+    until(|| Arc::ptr_eq(&session.current(), &b)).await;
+    assert_eq!(
+        *connector.statuses.lock().unwrap(),
+        [OnlineStatus::Online, OnlineStatus::Invisible]
+    );
+    assert!(b.calls().is_empty(), "it signed in showing it");
+
+    // Changed while the next connection signs in: it shows it once it is in.
+    b.drops();
+    until(|| connector.statuses.lock().unwrap().len() == 3).await;
+    assert!(session.set_status(OnlineStatus::Away).await.is_err());
+    held.cancel();
+    until(|| c.calls() == ["status:Away"]).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn reconnecting_waits_longer_each_time_and_gives_up_after_about_a_minute() {
+    let a = Connection::new();
+    let connector = Connector::new(
+        [Answer::Connects(a.clone())]
+            .into_iter()
+            .chain(failures())
+            .chain([Answer::Connects(Connection::new())]),
+    );
     let session = open(&connector).await;
 
     let dropped = Instant::now();
     a.drops();
     until(|| state(&session).phase == Phase::Unreachable).await;
-    assert_eq!(connector.waits(dropped), [1, 3, 7].map(Duration::from_secs));
+    assert_eq!(
+        connector.waits(dropped),
+        [1, 3, 7, 15, 31, 61].map(Duration::from_secs)
+    );
 
-    tokio::time::sleep(Duration::from_secs(60)).await;
+    tokio::time::sleep(Duration::from_secs(600)).await;
     assert_eq!(
         connector.waits(dropped).len(),
-        3,
+        WAITS.len(),
         "only a retry tries again"
     );
     let unreachable = state(&session);
@@ -487,7 +537,7 @@ async fn steam_logging_the_account_off_requires_signing_in_again_without_reconne
 async fn a_refused_first_connection_fails_the_sign_in_without_retrying() {
     let connector = Connector::new([Answer::Refuses, Answer::Connects(Connection::new())]);
 
-    let opened = AccountSession::open(connector.connect()).await;
+    let opened = AccountSession::open(connector.connect(), OnlineStatus::Online).await;
     assert!(matches!(
         opened,
         Err(ClientConnectError::AuthenticationRequired(_))
@@ -524,13 +574,12 @@ async fn a_retry_replaces_a_live_connection_and_starts_again_after_one_second() 
 #[tokio::test(start_paused = true)]
 async fn a_retry_starts_again_once_reconnecting_gave_up() {
     let (a, b) = (Connection::new(), Connection::new());
-    let connector = Connector::new([
-        Answer::Connects(a.clone()),
-        Answer::Fails,
-        Answer::Fails,
-        Answer::Fails,
-        Answer::Connects(b.clone()),
-    ]);
+    let connector = Connector::new(
+        [Answer::Connects(a.clone())]
+            .into_iter()
+            .chain(failures())
+            .chain([Answer::Connects(b.clone())]),
+    );
     let session = open(&connector).await;
     a.drops();
     until(|| state(&session).phase == Phase::Unreachable).await;
@@ -687,12 +736,7 @@ async fn a_transfer_waiting_for_the_reconnection_stops_when_cancelled() {
 #[tokio::test(start_paused = true)]
 async fn a_transfer_waiting_when_reconnecting_gives_up_fails_through_the_dropped_connection() {
     let a = Connection::new();
-    let connector = Connector::new([
-        Answer::Connects(a.clone()),
-        Answer::Fails,
-        Answer::Fails,
-        Answer::Fails,
-    ]);
+    let connector = Connector::new([Answer::Connects(a.clone())].into_iter().chain(failures()));
     let session = open(&connector).await;
     a.drops();
     changed(&session).await;

@@ -86,7 +86,7 @@ final class StorefrontLibraryFilterTests: XCTestCase {
     }
 
     private func epicModel(root: URL, games: [EpicGame], receipts: [InstallationReceipt<String>]) -> EpicModel {
-        let credentials = EpicCredentials(accountId: "filters", displayName: "Filter fixture", refreshToken: "fixture-only-never-sent")
+        let credentials = WebAccountCredentials(accountId: "filters", name: "Filter fixture", refreshToken: "fixture-only-never-sent")
         let session = EpicTestSession(credentials: credentials, games: games)
         return EpicModel(directory: root, keychain: EpicMemoryStore(credentials), restore: { _ in session },
                          installations: EpicModel.installations(FakeInstallations(receipts: receipts)))

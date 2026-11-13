@@ -5,12 +5,15 @@ use super::fake::{Call, FakeCloud};
 use super::remote::EpicListing;
 use super::store::Pending;
 use super::*;
-use crate::cloud::record::tests::record_suite;
+use crate::Locations;
+use crate::cloud::saves::{self, tests::saves_suite};
 use crate::cloud::sync::{
     Work,
-    tests::{Harness, cloud_suite, synced},
+    tests::{self as cloud_tests, Harness, cloud_suite, synced},
 };
 use crate::cloud::view::{Listing as _, Views};
+use crate::epic::content::Content;
+use crate::installations::Receipt;
 use crate::supervisor::client::no_other_session;
 use cloud_vault::{AccountIdentity, StoreScope};
 use std::{
@@ -35,10 +38,13 @@ pub(crate) struct EpicGame {
     pub config: Configuration,
     pub cloud: Arc<FakeCloud>,
     pub control: Arc<Control>,
+    /// The account's installations, as they reach the same Epic Cloud.
+    saves: Content<FakeCloud>,
 }
 
 impl Harness for EpicGame {
     type Store = Adapter<FakeCloud>;
+    type Saves = Content<FakeCloud>;
     const NO_RULES: UnavailableReason = UnavailableReason::Unsupported;
 
     fn game() -> Self {
@@ -66,9 +72,24 @@ impl Harness for EpicGame {
         ] {
             fs::create_dir_all(directory).unwrap();
         }
+        let cloud = FakeCloud::new(ACCOUNT, Some(rules()));
+        let bundle = Path::new("/Applications/Obelisk.app");
+        let locations = Locations {
+            cloud_archive: config.root.clone(),
+            epic_sessions: config.session_directory.clone(),
+            helper: config.helper.clone(),
+            ..Locations::new(&root, bundle, &config.home)
+        };
         Self {
+            saves: Content::new(
+                Arc::clone(&cloud),
+                Arc::new(|| {}),
+                ACCOUNT.into(),
+                config.language.clone(),
+                locations,
+            ),
             control: Arc::new(Control::new(|_| {})),
-            cloud: FakeCloud::new(ACCOUNT, Some(rules())),
+            cloud,
             config,
             _temporary: temporary,
         }
@@ -128,12 +149,36 @@ impl Harness for EpicGame {
         self.config.prefix = Some(prefix.to_owned());
         fs::create_dir_all(Harness::save(self).parent().unwrap()).unwrap();
     }
-    async fn archive(&self) -> Result<()> {
-        archive_with(self.config.clone(), self.cloud.as_ref()).await
+    /// Rules with a folder in the Windows profile only: Epic keeps nothing
+    /// of a Mac build.
+    fn set_rules_of_another_build(&self) {
+        self.cloud.set_rules(Some(CloudRules {
+            cloud_save_folder_mac: None,
+            ..rules()
+        }));
     }
-    async fn maintain(&self, alive: &SessionAlive<'_>) -> Result<()> {
-        let control = Arc::clone(&self.control);
-        maintain_with(self.config.clone(), Arc::clone(&self.cloud), control, alive).await
+    fn saves(&self) -> &Content<FakeCloud> {
+        &self.saves
+    }
+    fn library_game(&self) -> Store {
+        Store {
+            namespace: self.config.namespace.clone(),
+            app_name: self.config.app_name.clone(),
+        }
+    }
+    fn receipt(&self) -> Receipt<Epic> {
+        Receipt {
+            product: Product {
+                namespace: self.config.namespace.clone(),
+                catalog_item_id: self.config.catalog_item_id.clone(),
+                app_name: self.config.app_name.clone(),
+            },
+            name: self.config.title.clone(),
+            directory: self.config.install.to_string_lossy().into_owned(),
+            platform: self.config.platform,
+            total_bytes: 100,
+            needs_verification: false,
+        }
     }
     fn configuration(&self) -> Configuration {
         self.config.clone()
@@ -154,7 +199,7 @@ impl Harness for EpicGame {
 
 mod suite {
     super::cloud_suite!(super::EpicGame);
-    super::record_suite!(super::EpicGame);
+    super::saves_suite!(super::EpicGame);
 }
 
 fn fixture() -> (tempfile::TempDir, Vault, Context) {
@@ -419,8 +464,119 @@ fn an_epic_cloud_record_keeps_epic_s_spelling() {
     assert_eq!(written["config"]["platform"], "Windows");
 }
 
+#[tokio::test]
+async fn maintenance_of_an_uninstalled_game_without_a_record_cannot_sync() {
+    let game = EpicGame::game();
+    fs::remove_dir_all(&game.config.install).unwrap();
+
+    let refused = cloud_tests::maintain(&game).await;
+
+    assert_eq!(
+        refused,
+        Err(cloud_tests::player_sees::<EpicGame>(Error::Failed))
+    );
+}
+
+#[tokio::test]
+async fn an_uninstall_archives_under_the_rules_its_record_saved_whatever_epic_gives_now() {
+    // Since the build last synced, Epic dropped the game's Cloud rules, or
+    // left a folder for its other build only.
+    let other_build = CloudRules {
+        cloud_save_folder_mac: None,
+        ..rules()
+    };
+    for now in [None, Some(other_build)] {
+        let game = EpicGame::game();
+        synced(&game, b"progress").await;
+        fs::write(Harness::save(&game), b"played since").unwrap();
+        game.cloud.set_rules(now);
+
+        cloud_tests::archive(&game).await.unwrap();
+
+        let vault = cloud_tests::vault(&game);
+        let archived = vault.local().unwrap();
+        assert_eq!(
+            vault.read_content(&archived.0["slot.sav"]).unwrap(),
+            b"played since"
+        );
+        assert!(cloud_tests::work(&game).unwrap().installation_removed);
+    }
+}
+
+#[tokio::test]
+async fn an_uninstall_of_a_build_its_saved_rules_name_no_folder_of_fences_what_the_other_build_archived()
+ {
+    let mut game = EpicGame::game();
+    game.set_rules_of_another_build();
+    let prefix = game.config.root.with_file_name("Prefixes/game");
+    game.run_in(&prefix);
+    synced(&game, b"progress").await;
+    // The same game's Mac build, whose saves Epic keeps none of: the rules
+    // its record saved name a folder in the Windows profile only.
+    game.config.platform = Platform::Mac;
+    game.config.prefix = None;
+
+    cloud_tests::archive(&game).await.unwrap();
+    assert!(
+        cloud_tests::work(&game).unwrap().installation_removed,
+        "the fence goes up before any file goes"
+    );
+    fs::remove_dir_all(&game.config.install).unwrap();
+    cloud_tests::record_removal(&game).await.unwrap();
+
+    let saved = Context::load(&game.config, ACCOUNT).unwrap().unwrap();
+    assert_eq!(saved.config.prefix.as_deref(), Some(prefix.as_path()));
+    assert_eq!(
+        cloud_tests::work(&game),
+        Some(Work {
+            pending: None,
+            installation_removed: true,
+        })
+    );
+    // A save the Windows build misses afterwards is restored from the
+    // archive, never sent as deleted.
+    game.run_in(&prefix);
+    fs::create_dir_all(&game.config.install).unwrap();
+    fs::remove_file(Harness::save(&game)).unwrap();
+
+    game.open().prepare(&no_other_session).await.unwrap();
+
+    assert_eq!(fs::read(Harness::save(&game)).unwrap(), b"progress");
+    assert_eq!(Harness::cloud(&game).unwrap(), b"progress");
+    assert_eq!(game.cloud.uploads(), 0);
+    assert!(!cloud_tests::work(&game).unwrap().installation_removed);
+}
+
+#[tokio::test]
+async fn an_uninstall_is_refused_when_obelisk_holds_saves_of_a_game_without_cloud_rules_or_a_record()
+ {
+    let game = EpicGame::game();
+    synced(&game, b"progress").await;
+    // The archive still holds the game's saves, and their record is gone.
+    fs::remove_file(Context::path(&game.config, ACCOUNT).unwrap()).unwrap();
+    game.cloud.set_rules(None);
+
+    let refused = cloud_tests::archive(&game).await.unwrap_err();
+
+    assert_eq!(
+        refused,
+        cloud_tests::player_sees::<EpicGame>(Error::Unsupported)
+    );
+    assert_eq!(cloud_tests::work(&game), None, "no record is made");
+    assert_eq!(fs::read(Harness::save(&game)).unwrap(), b"progress");
+}
+
 #[test]
-fn a_game_without_a_cloud_record_records_its_removal_even_behind_a_symbolic_link() {
+fn a_lost_archive_capture_is_a_failure_of_the_epic_session() {
+    use crate::cloud::saves::Storefront as _;
+    assert_eq!(
+        Content::<FakeCloud>::capture_lost(),
+        "backend.epic.cloud.session"
+    );
+}
+
+#[tokio::test]
+async fn a_game_without_a_cloud_record_records_its_removal_even_behind_a_symbolic_link() {
     let game = EpicGame::game();
     // The Cloud archive refuses a path through a symbolic link, but this
     // game never gave it saves to keep.
@@ -432,7 +588,7 @@ fn a_game_without_a_cloud_record_records_its_removal_even_behind_a_symbolic_link
     };
     fs::remove_dir_all(&game.config.install).unwrap();
 
-    record::removed::<Context>(&config, ACCOUNT).unwrap();
+    saves::removed(game.saves(), config.clone()).await.unwrap();
 
     assert!(Context::load(&config, ACCOUNT).unwrap().is_none());
 }

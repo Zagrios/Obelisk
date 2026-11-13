@@ -25,9 +25,8 @@ fn identity_helper_flushes_its_bounded_response_before_immediate_exit() {
 #[test]
 fn native_supervisor_acknowledges_and_reports_preparation_failure_without_valve() {
     use game_runtime::{
-        Config,
         protocol::Credentials,
-        steam::Request,
+        steam::{Request, host::Config},
         supervisor::{Phase, Target},
     };
     use obelisk_core::transfer::CancelToken;
@@ -61,6 +60,7 @@ fn native_supervisor_acknowledges_and_reports_preparation_failure_without_valve(
         &credentials,
         Request {
             cloud: None,
+            status: obelisk_core::OnlineStatus::default(),
             id: String::new(),
             root: root.0.join("sessions"),
             config: Config {

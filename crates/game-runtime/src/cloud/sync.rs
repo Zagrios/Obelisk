@@ -84,6 +84,17 @@ impl Pending {
             Self::Upload { desired } | Self::Applying { desired, .. } => Some(desired),
         }
     }
+    /// Every manifest this work references: staged bytes that garbage
+    /// collection must keep.
+    pub(crate) fn manifests(&self) -> Vec<&Manifest> {
+        match self {
+            Self::Capture => Vec::new(),
+            Self::Upload { desired } => vec![desired],
+            Self::Applying {
+                desired, remote, ..
+            } => vec![desired, &remote.files],
+        }
+    }
 }
 
 /// A storefront's durable Cloud facts about one game.

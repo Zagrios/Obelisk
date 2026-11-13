@@ -17,25 +17,23 @@ use std::{
     io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     sync::Arc,
-    time::Duration,
 };
 
 use futures_util::future::BoxFuture;
 use obelisk_core::{
     install::{
-        self, InstallError, PARTIAL_DIRECTORY, apply_permissions, checked_file_path,
-        ensure_directory, reject_link_or_special_file, safe_relative_path,
+        self, InstallError, PARTIAL_DIRECTORY, ensure_directory, reject_link_or_special_file,
+        safe_relative_path,
     },
     mac_build::Listing,
+    publish::{Assembled, Integrity, PublishError, Publisher},
     transfer::{
-        self, BodyError, BodySize, Cancelled, Chunks, Delivery, DownloadPhase, DownloadProgress,
-        DownloadSummary, Interrupted, Pipeline, Reporter,
+        self, BodySize, Cancelled, CdnClient, CdnError, Chunks, Delivery, DownloadPhase,
+        DownloadProgress, DownloadSummary, Interrupted, Pipeline, Reporter,
     },
 };
 use reqwest::{Client, Url};
 use sha1::{Digest, Sha1};
-#[cfg(test)]
-use std::sync::atomic::{AtomicBool, Ordering};
 use thiserror::Error;
 
 use crate::cm::ContentServer;
@@ -130,6 +128,9 @@ pub enum ContentError {
     Http(u16),
     #[error("{}", crate::message::format("backend.steam.content.invalid", std::slice::from_ref(.0)))]
     InvalidData(String),
+    /// Steam named no server Obelisk can reach.
+    #[error("{}", crate::message::format("backend.steam.content.invalid", &["backend.steam.content.invalidCdnAddress".to_owned()]))]
+    NoCdnAddress,
     #[error("{}", crate::message::format("backend.steam.content.unsafePath", std::slice::from_ref(.0)))]
     UnsafePath(String),
     #[error("{}", crate::message::format("backend.steam.content.unsupportedSymlink", std::slice::from_ref(.0)))]
@@ -152,12 +153,13 @@ impl From<Interrupted> for ContentError {
     }
 }
 
-impl From<BodyError> for ContentError {
-    fn from(error: BodyError) -> Self {
+impl From<CdnError> for ContentError {
+    fn from(error: CdnError) -> Self {
         match error {
-            BodyError::Network => Self::Network,
-            BodyError::Size => invalid("backend.steam.content.cdnResponseTooLarge"),
-            BodyError::Cancelled => Self::Cancelled,
+            CdnError::Network => Self::Network,
+            CdnError::Http(status) => Self::Http(status),
+            CdnError::Size => invalid("backend.steam.content.cdnResponseTooLarge"),
+            CdnError::Cancelled => Self::Cancelled,
         }
     }
 }
@@ -172,21 +174,49 @@ impl From<InstallError> for ContentError {
     }
 }
 
+impl From<PublishError> for ContentError {
+    fn from(error: PublishError) -> Self {
+        match error {
+            PublishError::Mismatch => invalid("backend.steam.content.assembledHashMismatch"),
+            PublishError::Install(error) => error.into(),
+        }
+    }
+}
+
+impl ContentError {
+    /// Whether the network or a server is failing rather than the chunk bad,
+    /// as [`CdnError::is_outage`] tells.
+    fn is_outage(&self) -> bool {
+        matches!(self, Self::Network)
+            || matches!(self, Self::Http(status) if transfer::is_outage_status(*status))
+    }
+
+    /// Whether asking again does not change the answer: the depot holds what
+    /// Obelisk cannot install, or its servers refuse it.
+    pub(crate) fn is_refusal(&self) -> bool {
+        matches!(
+            self,
+            Self::InvalidData(_) | Self::UnsafePath(_) | Self::UnsupportedSymlink(_)
+        ) || (matches!(self, Self::Http(_)) && !self.is_outage())
+    }
+}
+
 #[derive(Clone)]
 pub struct ContentClient {
-    client: Client,
-    /// Local servers standing in for CDN hosts; any other host is unreachable.
-    #[cfg(test)]
-    test_endpoints: HashMap<String, Url>,
+    cdn: CdnClient,
 }
 
 impl ContentClient {
     pub fn new(client: Client) -> Self {
         Self {
-            client,
-            #[cfg(test)]
-            test_endpoints: HashMap::new(),
+            cdn: CdnClient::new(client),
         }
+    }
+
+    /// Requests go through `cdn`, such as CDNs in memory.
+    #[cfg(test)]
+    pub(crate) fn over(cdn: CdnClient) -> Self {
+        Self { cdn }
     }
 
     /// Reads and validates the cache without issuing a CDN or authentication request.
@@ -468,35 +498,10 @@ impl ContentClient {
         cancel: &CancelToken,
         on_bytes: impl FnMut(u64),
     ) -> Result<(Vec<u8>, u64), ContentError> {
-        #[cfg(test)]
-        let url = if self.test_endpoints.is_empty() {
-            url
-        } else {
-            let Some(endpoint) = url
-                .host_str()
-                .and_then(|host| self.test_endpoints.get(host))
-            else {
-                return Err(ContentError::Network);
-            };
-            let mut local = endpoint.join(url.path()).expect("test URL");
-            local.set_query(url.query());
-            local
-        };
-        let response = cancel
-            .race(self.client.get(url).timeout(Duration::from_secs(45)).send())
-            .await?
-            .map_err(|_| ContentError::Network)?;
-        if !response.status().is_success() {
-            return Err(ContentError::Http(response.status().as_u16()));
-        }
-        let bytes = transfer::read_body(
-            response.content_length(),
-            response.bytes_stream(),
-            BodySize::AtMost(limit as u64),
-            cancel,
-            on_bytes,
-        )
-        .await?;
+        let bytes = self
+            .cdn
+            .get(url, BodySize::AtMost(limit as u64), cancel, on_bytes)
+            .await?;
         let size = bytes.len() as u64;
         Ok((bytes, size))
     }
@@ -616,8 +621,6 @@ struct DiskInstall {
 /// its chunks are present, so a chunk arriving late holds up only its file.
 struct PreparedFile<'a> {
     file: &'a ManifestFile,
-    relative: PathBuf,
-    target: PathBuf,
     partial_path: PathBuf,
     partial: File,
     /// Chunks in the partial file: verified from an earlier run, or written.
@@ -716,13 +719,7 @@ impl DiskInstall {
             verification::verify_files(&root, &manifest.files, &self.cancel, &self.reporter)?;
         let mut reused_bytes = verified.reused_bytes;
 
-        // Directory entries are synced once per run of files sharing a parent
-        // rather than after every rename; a lost rename is repaired next run
-        // from the partial file that is still on disk.
-        let mut pending_directory: Option<PathBuf> = None;
-        // Parents are created and checked once per distinct directory; every
-        // file's full path is still confined right before it is written.
-        let mut ensured_parents: HashSet<PathBuf> = HashSet::new();
+        let mut publisher = Publisher::new(&root, &self.cancel);
         let mut remaining = manifest.files.iter().enumerate();
         // Files being assembled, by manifest index.
         let mut assembling = HashMap::new();
@@ -744,25 +741,17 @@ impl DiskInstall {
                 if file.is_link() {
                     continue;
                 }
-                let relative = safe_relative_path(&file.name)?;
                 if file.is_directory() {
-                    ensure_directory(&root, &relative)?;
-                    ensured_parents.insert(relative);
+                    ensure_directory(&root, &safe_relative_path(&file.name)?)?;
                     continue;
                 }
-                let parent = relative.parent().unwrap_or(Path::new(""));
-                if !ensured_parents.contains(parent) {
-                    ensure_directory(&root, parent)?;
-                    ensured_parents.insert(parent.to_path_buf());
-                }
-                let target = checked_file_path(&root, &relative)?;
                 if verified.valid[index] {
-                    apply_permissions(&target, is_executable(file, &target)?)?;
+                    publisher.keep(&file.name, file.executable())?;
                     continue;
                 }
-                let prepared = self.prepare(&partial_root, index, file, relative, target)?;
+                let prepared = self.prepare(&partial_root, index, file)?;
                 if prepared.missing == 0 {
-                    reused_bytes += self.publish(prepared, &root, &mut pending_directory)?;
+                    reused_bytes += self.publish(prepared, &mut publisher)?;
                 } else {
                     queued += prepared.missing;
                     assembling.insert(index, prepared);
@@ -784,7 +773,7 @@ impl DiskInstall {
             if file.missing == 0
                 && let Some(file) = assembling.remove(&place.file)
             {
-                reused_bytes += self.publish(file, &root, &mut pending_directory)?;
+                reused_bytes += self.publish(file, &mut publisher)?;
             }
         }
         // Links come once every file is in place. Validation kept every file
@@ -797,9 +786,9 @@ impl DiskInstall {
                 Path::new(&file.link_target),
             )?;
         }
-        if let Some(directory) = pending_directory {
-            File::open(directory)?.sync_all()?;
-        }
+        // Every file is in place: durable before the receipt says so, and
+        // recorded whole for the next Transfer to skip.
+        publisher.complete(&manifest.files)?;
         Ok(reused_bytes)
     }
 
@@ -810,8 +799,6 @@ impl DiskInstall {
         partial_root: &Path,
         index: usize,
         file: &'a ManifestFile,
-        relative: PathBuf,
-        target: PathBuf,
     ) -> Result<PreparedFile<'a>, ContentError> {
         let partial_name = format!("{}.part", hex(&Sha1::digest(file.name.as_bytes())));
         let partial_path = partial_root.join(partial_name);
@@ -870,8 +857,6 @@ impl DiskInstall {
         }
         Ok(PreparedFile {
             file,
-            relative,
-            target,
             partial_path,
             partial,
             missing: present.iter().filter(|present| !**present).count(),
@@ -888,13 +873,10 @@ impl DiskInstall {
     fn publish(
         &mut self,
         prepared: PreparedFile<'_>,
-        root: &Path,
-        pending_directory: &mut Option<PathBuf>,
+        publisher: &mut Publisher,
     ) -> Result<u64, ContentError> {
         let PreparedFile {
             file,
-            relative,
-            target,
             partial_path,
             partial,
             present,
@@ -909,21 +891,20 @@ impl DiskInstall {
         // phase stays the network side's: chunks still arrive for other files.
         self.reporter
             .update(|status| status.current_file.clone_from(&file.name));
-        partial.sync_all()?;
-        drop(partial);
-        if hashed != present.len() || hasher.finalize()[..] != file.sha {
+        if hashed != present.len() {
             return Err(invalid("backend.steam.content.assembledHashMismatch"));
         }
-        apply_permissions(&partial_path, is_executable(file, &partial_path)?)?;
-        // Re-check parents before publishing; never follow existing symlinks under root.
-        checked_file_path(root, &relative)?;
-        let directory = target.parent().unwrap_or(root).to_path_buf();
-        fs::rename(&partial_path, target)?;
-        if pending_directory.as_ref() != Some(&directory)
-            && let Some(previous) = pending_directory.replace(directory)
-        {
-            File::open(previous)?.sync_all()?;
-        }
+        let digest = hasher.finalize();
+        publisher.publish(Assembled {
+            file: partial,
+            at: &partial_path,
+            name: &file.name,
+            program: file.executable(),
+            integrity: Integrity::Whole {
+                written: &digest,
+                expected: &file.sha,
+            },
+        })?;
         self.reporter.update(|status| status.completed_files += 1);
         Ok(reused_bytes)
     }
@@ -931,13 +912,6 @@ impl DiskInstall {
 
 fn invalid(reason: &str) -> ContentError {
     ContentError::InvalidData(reason.into())
-}
-
-/// Some depots flag only the launch executable: OpenFront's Electron helpers
-/// come unflagged. Programs are then recognised by their header, a Mach-O
-/// binary or a script.
-fn is_executable(file: &ManifestFile, path: &Path) -> std::io::Result<bool> {
-    Ok(file.flags & 32 != 0 || install::starts_as_program(path)?)
 }
 
 fn validate_manifest_files(files: &[ManifestFile]) -> Result<(), ContentError> {
@@ -1039,4 +1013,4 @@ fn link_stays_inside(path: &Path, target: &str) -> bool {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

@@ -2,13 +2,14 @@
 //! Cloud, the launch plan and its ownership token, and Epic presence.
 use super::session as cloud_session;
 use super::*;
+use crate::launch_shell::{ArgumentFile, Request, Started};
 use crate::supervisor::{
     Error as Core,
     architecture::Architecture,
-    session::{self as lifecycle, LaunchCloud, Opening, Prepared, Session},
-    storage,
+    session::{self as lifecycle, LaunchCloud, Opening, Prepared, Session, Shown},
 };
 use epic_kit::{client::LaunchPlan, friends::Activity};
+use obelisk_core::OnlineStatus;
 use std::{
     io::{Read, Write},
     path::Path,
@@ -20,7 +21,10 @@ pub(crate) trait Services: Sized + Send + Sync + 'static {
     /// Opens the launch's own Epic session; never the UI's remembered token.
     async fn login(exchange_code: &str, account_id: &str) -> Result<Arc<Self>>;
     async fn launch_plan(&self, config: &Configuration) -> Result<LaunchPlan>;
-    fn start_presence(&self, activity: Activity);
+    /// Advertises the game, showing the account as `status` says.
+    fn start_presence(&self, activity: Activity, status: OnlineStatus);
+    /// The player changed the status while the game runs.
+    fn presence_status(&self, status: OnlineStatus);
     fn stop_presence(&self);
     /// Stops the launch's Epic connections but never revokes its session:
     /// the game's own session came from it, and outlives the launch when the
@@ -56,9 +60,13 @@ impl Services for epic_kit::client::Client {
         )
         .await?)
     }
-    fn start_presence(&self, activity: Activity) {
+    fn start_presence(&self, activity: Activity, status: OnlineStatus) {
+        self.set_status(status);
         // Social availability never changes the game's lifetime.
         let _ = self.start_game_presence(activity);
+    }
+    fn presence_status(&self, status: OnlineStatus) {
+        self.set_status(status);
     }
     fn stop_presence(&self) {
         self.stop_friends();
@@ -82,7 +90,7 @@ impl Services for epic_kit::client::Client {
 }
 
 pub(crate) struct Launch<S: Services = epic_kit::client::Client> {
-    request: Request,
+    request: Request<Epic>,
     api: Option<Arc<S>>,
     activity: Option<Activity>,
     ownership: Option<tempfile::TempDir>,
@@ -110,25 +118,7 @@ impl<S: Services> lifecycle::Launch for Launch<S> {
     }
 
     fn open(input: &mut dyn Read) -> Result<(Opening<Epic>, Self)> {
-        let request: Request = storage::packet(input)?;
-        request.config.validate(&request.account_id)?;
-        if uuid::Uuid::parse_str(&request.id).is_err()
-            || !request.config.runs_in(request.wine.as_ref())
-        {
-            return Err(Error::Session);
-        }
-        let opening = Opening {
-            root: request.config.session_directory.clone(),
-            id: request.id.clone(),
-            account_id: request.account_id.clone(),
-            store: Store {
-                namespace: request.config.namespace.clone(),
-                app_name: request.config.app_name.clone(),
-            },
-            helpers: crate::supervisor::rosetta::helpers_of_host(&request.config.helper)
-                .ok_or(Error::Session)?
-                .into(),
-        };
+        let (opening, request) = Request::<Epic>::open(input)?;
         let launch = Self {
             request,
             api: None,
@@ -139,7 +129,11 @@ impl<S: Services> lifecycle::Launch for Launch<S> {
     }
 
     async fn authenticate(&mut self, _: &Arc<Session<Epic>>) -> Result<()> {
-        let api = S::login(&self.request.exchange_code, &self.request.account_id).await?;
+        let api = S::login(
+            &self.request.credential.exchange_code,
+            &self.request.account_id,
+        )
+        .await?;
         self.api = Some(api);
         Ok(())
     }
@@ -167,42 +161,38 @@ impl<S: Services> lifecycle::Launch for Launch<S> {
         let plan = self.api()?.launch_plan(&self.request.config).await?;
         session.cloud().check()?;
         // A fresh plan, after Rosetta was installed, drops the old token.
-        let request = &self.request;
-        let (target, architecture, ownership) = match &request.wine {
-            Some(wine) => windows_target(&plan, &request.config, wine, &request.environment)?,
-            None => native_target(&plan, &request.config, &request.environment)?,
-        };
+        let started = started(&self.request, &plan)?;
         self.activity = plan.activity;
-        self.ownership = ownership;
-        Ok((target, Some(architecture)))
+        self.ownership = started.kept;
+        Ok((started.target, Some(started.architecture)))
     }
 
     async fn prepare_host(
         &mut self,
         _: &Arc<Session<Epic>>,
         target: &Target,
-        _: Option<Architecture>,
         _: Option<&Box<dyn LaunchCloud<Error>>>,
     ) -> Result<Prepared<Host>> {
-        Ok(Prepared {
-            host: Host {
+        Ok(self.request.prepared(
+            Host {
                 _ownership: self.ownership.take(),
             },
-            helper: self.request.config.helper.clone(),
-            subcommand: "game-exec",
-            environment: target.environment.clone(),
-        })
+            target,
+        ))
     }
 
-    fn running(&self, _: &Arc<Host>, _: u32) -> Box<dyn Fn(bool) + Send + Sync> {
+    fn running(&self, _: &Arc<Host>, _: u32) -> lifecycle::Publish {
         let (Ok(api), activity) = (self.api(), self.activity.clone()) else {
             return Box::new(|_| {});
         };
         let api = api.clone();
-        Box::new(move |active| match (&activity, active) {
-            (Some(activity), true) => api.start_presence(activity.clone()),
-            (_, true) => {}
-            (_, false) => api.stop_presence(),
+        Box::new(move |shown| match (&activity, shown) {
+            (Some(activity), Shown::Started(status)) => {
+                api.start_presence(activity.clone(), status);
+            }
+            (Some(_), Shown::Changed(status)) => api.presence_status(status),
+            (None, Shown::Started(_) | Shown::Changed(_)) => {}
+            (_, Shown::Stopped) => api.stop_presence(),
         })
     }
 
@@ -231,64 +221,21 @@ impl<S: Services> lifecycle::Launch for Launch<S> {
     }
 }
 
-/// A Windows build, which Wine starts in its prefix, with the plan's
-/// ownership token where that Wine reads it.
-pub(super) fn windows_target(
-    plan: &LaunchPlan,
-    config: &Configuration,
-    wine: &crate::wine::Config,
-    environment: &std::collections::HashMap<String, String>,
-) -> Result<(Target, Architecture, Option<tempfile::TempDir>)> {
-    let mut target = crate::wine::target::<super::windows::Prefix<'_>>(
-        wine,
-        &config.game(),
-        &plan.target,
-        environment.clone(),
-    )?;
-    let ownership = match &plan.ownership_token {
-        Some(bytes) => {
-            let (directory, path) = crate::wine::private_file(wine, "ownership.bin", bytes)?;
-            target.arguments.push(format!("-epicovt={path}"));
-            Some(directory)
-        }
-        None => None,
-    };
-    Ok((target, wine.architecture(), ownership))
+/// What `request` starts of `plan`: its target, with the ownership token it
+/// carries.
+fn started(request: &Request<Epic>, plan: &LaunchPlan) -> Result<Started> {
+    request.target(&plan.target, ownership(plan))
 }
 
-/// A Mac build, with the plan's ownership token in a private folder that
-/// lives as long as the game.
-pub(super) fn native_target(
-    plan: &LaunchPlan,
-    config: &Configuration,
-    environment: &std::collections::HashMap<String, String>,
-) -> Result<(Target, Architecture, Option<tempfile::TempDir>)> {
-    let mut arguments = plan.target.arguments.clone();
-    let ownership = match &plan.ownership_token {
-        Some(bytes) => {
-            let (directory, path) = crate::files::private_temp_file(
-                &std::env::temp_dir(),
-                "obelisk-epic-ownership-",
-                "ownership.bin",
-                bytes,
-            )?;
-            arguments.push(format!("-epicovt={}", path.display()));
-            Some(directory)
-        }
-        None => None,
-    };
-    let (target, architecture) = crate::native::target(
-        &config.install,
-        &plan.target,
-        arguments,
-        environment.clone(),
-        crate::diagnostics::game_log(
-            &config.home,
-            config.profile_game().into(),
-            obelisk_core::Platform::Mac,
-        ),
-    )?;
-    Ok((target, architecture, ownership))
+/// The plan's ownership token, which the game reads from a private file its
+/// `-epicovt` argument names.
+fn ownership(plan: &LaunchPlan) -> Option<ArgumentFile<'_>> {
+    plan.ownership_token.as_deref().map(|bytes| ArgumentFile {
+        argument: "-epicovt",
+        folder: "obelisk-epic-ownership-",
+        name: "ownership.bin",
+        bytes,
+    })
 }
 
 /// The `obelisk-steam-host epic-supervise` entry point.

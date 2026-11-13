@@ -114,9 +114,11 @@ fn a_windows_launch_readies_the_installation_prefix_and_names_it_once() {
     let install = install.parent().unwrap().join("steam-42-windows");
     fs::rename(root.join("library/Games/Steam/game"), &install).unwrap();
 
+    let receipt = receipt(&install, 42, "Game");
     let request = crate::steam::prepare(
         &locations,
-        &receipt(&install, 42, "Game"),
+        &receipt,
+        receipt.windows(&locations).unwrap().as_ref(),
         &target(&install.join("Game.exe"), &[]),
     )
     .unwrap();
@@ -159,9 +161,11 @@ fn a_game_whose_profile_names_the_linux_engine_readies_the_engine_s_prefix_and_t
     fs::create_dir_all(prefix.join("drive_c/windows/system32")).unwrap();
     fs::write(prefix.join("system.reg"), "registry").unwrap();
 
+    let receipt = receipt(&install, 1245620, "ELDEN RING");
     let request = crate::steam::prepare(
         &locations,
-        &receipt(&install, 1245620, "ELDEN RING"),
+        &receipt,
+        receipt.windows(&locations).unwrap().as_ref(),
         &target(&install.join("Game.exe"), &[]),
     )
     .unwrap();
@@ -208,13 +212,15 @@ fn a_windows_launch_waits_for_voile_and_a_mac_one_never_does() {
     let locations = locations(&root);
     let install = steam_game(&root);
 
+    let receipt = receipt(&install, 42, "Game");
     assert!(matches!(
         crate::steam::prepare(
             &locations,
-            &receipt(&install, 42, "Game"),
+            &receipt,
+            receipt.windows(&locations).unwrap().as_ref(),
             &target(&install.join("Game.exe"), &[])
         ),
-        Err(Error::WineUnavailable)
+        Err(crate::steam::Error::Launch(Error::WineUnavailable))
     ));
     assert!(!locations.wine_prefixes.exists());
 }

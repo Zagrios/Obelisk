@@ -4,30 +4,27 @@
 //! that program needs besides (arguments, environment variables and DLL
 //! overrides), and the oldest Voile release it runs in. The table is
 //! `profiles.json`. Obelisk is built with it, and a release build reads it
-//! again from Obelisk's `main` as a Windows game launches, keeping the last
-//! one beside its library; a development build keeps the one it was built
-//! with. Each entry is checked as it is read, and one that sets what a
-//! profile may not is left out. It names a game by its storefronts' ids, or
-//! by a file of its installation, which finds the game whatever the
-//! storefront. Every game it does not name runs with the defaults, in
-//! Rosetta's Wine with D3DMetal. The player's launch settings apply over it.
-use crate::wine::{Engine, Graphics, GraphicsOptions};
-use serde::Deserialize;
-use std::{
-    collections::BTreeMap,
-    fs,
-    path::Path,
-    sync::{LazyLock, Mutex},
+//! again from Obelisk's `main` as Obelisk starts and as a Windows game
+//! launches, keeping the last one beside its library; a development build
+//! keeps the one it was built with. Each entry is checked as it is read, and
+//! one that sets what a profile may not is left out. It names a game by its
+//! storefronts' ids, or by a file of its installation, which finds the game
+//! whatever the storefront. A game it does not name whose installation holds
+//! Easy Anti-Cheat, which refuses Rosetta's Wine, runs on the Linux engine;
+//! every other one runs with the defaults, in Rosetta's Wine with D3DMetal.
+//! The player's launch settings apply over it.
+use crate::{
+    easy_anti_cheat::{self, EasyAntiCheat},
+    pe::Program,
+    remote::Table,
+    wine::{Engine, Graphics, GraphicsOptions},
 };
+use serde::Deserialize;
+use std::{collections::BTreeMap, path::Path, sync::LazyLock};
 
 const TABLE: &str = include_str!("../profiles.json");
-/// Where the table is on Obelisk's `main`.
-const URL: &str =
-    "https://raw.githubusercontent.com/Zagrios/Obelisk/main/crates/game-runtime/profiles.json";
-/// The table's format this Obelisk reads. Another one is a table it ignores.
-const FORMAT: u32 = 1;
-/// The last table read, in Obelisk's library.
-const KEPT: &str = "profiles.json";
+/// The table's file, on Obelisk's `main` and kept in the library.
+pub(crate) const NAME: &str = "profiles.json";
 /// How `WINEDLLOVERRIDES` loads a DLL: nothing for never.
 const MODES: [&str; 6] = ["", "n", "b", "n,b", "b,n", "d"];
 /// Variables that load code into the programs Wine starts, on macOS or in
@@ -69,7 +66,7 @@ impl Game<'_> {
 }
 
 /// How Obelisk runs one Windows game.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Profile {
     pub engine: Engine,
     /// What renders its Direct3D on that engine.
@@ -79,6 +76,10 @@ pub(crate) struct Profile {
     /// The program the game starts with instead of its publisher's, relative
     /// to the installation, when that one cannot run there.
     pub executable: Option<&'static str>,
+    /// Its installation's Easy Anti-Cheat bootstrapper, relative to it, which
+    /// starts instead of a publisher's program the engine cannot run: that
+    /// program would start it, and it starts the game.
+    pub bootstrapper: Option<String>,
     /// What it adds to the storefront's arguments, before the player's.
     pub arguments: &'static [String],
     /// The environment variables every Wine command of its prefix runs
@@ -102,20 +103,13 @@ impl Default for Profile {
             graphics: Graphics::default_on(Engine::Rosetta),
             options: GraphicsOptions::default(),
             executable: None,
+            bootstrapper: None,
             arguments: &[],
             variables: &NONE,
             dll_overrides: &NONE,
             minimum_voile: None,
         }
     }
-}
-
-/// The table, as `profiles.json` holds it: each game as written there, which
-/// `checked` reads.
-#[derive(Debug, Deserialize)]
-struct Table {
-    format: u32,
-    games: Vec<serde_json::Value>,
 }
 
 /// One game of the table: its name and why it runs so, for the table's
@@ -151,32 +145,8 @@ pub(crate) struct EpicGame {
     app_name: String,
 }
 
-/// The table launches read now.
-struct Current {
-    games: &'static [Known],
-    /// The table read last, as it came: none until one is read, which
-    /// leaves the one Obelisk was built with. A read that brings the same
-    /// leaves `games` in place.
-    read: Option<Vec<u8>>,
-}
-
-static CURRENT: LazyLock<Mutex<Current>> = LazyLock::new(|| {
-    Mutex::new(Current {
-        games: Vec::leak(parsed(TABLE.as_bytes()).expect("checked-in profiles")),
-        read: None,
-    })
-});
-
-fn table() -> &'static [Known] {
-    CURRENT.lock().unwrap().games
-}
-
-/// The entries of `table` that `checked` keeps, when it is a table of the
-/// format Obelisk reads.
-fn parsed(table: &[u8]) -> Option<Vec<Known>> {
-    let table: Table = serde_json::from_slice(table).ok()?;
-    (table.format == FORMAT).then(|| table.games.into_iter().filter_map(checked).collect())
-}
+/// The profiles Obelisk reads now.
+static PROFILES: LazyLock<Table<Known>> = LazyLock::new(|| Table::new(NAME, TABLE, checked));
 
 /// `entry` as Obelisk reads it, when it holds only what Obelisk reads and
 /// sets nothing a profile may not: a name and a note, a storefront's id or a
@@ -254,6 +224,7 @@ impl Known {
             graphics: self.graphics.unwrap_or(Graphics::default_on(engine)),
             options: GraphicsOptions::default(),
             executable: self.executable.as_deref(),
+            bootstrapper: None,
             arguments: &self.arguments,
             variables: &self.variables,
             dll_overrides: &self.dll_overrides,
@@ -269,23 +240,69 @@ impl Known {
     }
 }
 
-/// The profile of `game`, installed in `install`: the one the table gives
-/// its storefront's id, else the one whose file the installation holds, else
-/// the defaults.
-pub(crate) fn of(game: Game<'_>, install: &Path) -> Profile {
-    let table = table();
+/// The engine of a game the table does not name whose installation holds
+/// Easy Anti-Cheat, which refuses Rosetta's Wine.
+const PROTECTED: Engine = Engine::Linux;
+
+/// The profile the table gives `game`, installed in `install`: the one of
+/// its storefront's id, else the one whose file the installation holds.
+fn known(game: Game<'_>, install: &Path) -> Option<Profile> {
+    let table = PROFILES.entries();
     table
         .iter()
         .find(|known| known.names(game))
         .or_else(|| table.iter().find(|known| known.found_in(install)))
         .map(Known::profile)
-        .unwrap_or_default()
 }
 
-/// Every game the table launches read now names by a storefront's id, as
+/// The profile of `game`, installed in `install`: the table's, else the one
+/// of its Easy Anti-Cheat, else the defaults; with the installation's Easy
+/// Anti-Cheat bootstrapper in any case. `engine` gives its engine alone, in
+/// the same order.
+pub(crate) fn of(game: Game<'_>, install: &Path) -> Profile {
+    let easy_anti_cheat = easy_anti_cheat::of(install);
+    let profile = match (known(game, install), &easy_anti_cheat) {
+        (Some(profile), _) => profile,
+        (None, Some(found)) => protected(install, found),
+        (None, None) => Profile::default(),
+    };
+    Profile {
+        bootstrapper: easy_anti_cheat
+            .map(|found| found.bootstrapper.to_string_lossy().into_owned()),
+        ..profile
+    }
+}
+
+/// The engine `game`, installed in `install`, runs on without choices, as
+/// `of` gives it: the table's, else the Linux engine when the installation
+/// holds Easy Anti-Cheat, else Rosetta's Wine. Only an installation the table
+/// does not name is searched for its anti-cheat.
+pub(crate) fn engine(game: Game<'_>, install: &Path) -> Engine {
+    match known(game, install) {
+        Some(profile) => profile.engine,
+        None if easy_anti_cheat::of(install).is_some() => PROTECTED,
+        None => Profile::default().engine,
+    }
+}
+
+/// The profile of a game the table does not name whose installation in
+/// `install` holds `easy_anti_cheat`, which refuses Rosetta's Wine: the
+/// Linux engine, where the anti-cheat loads its Linux module, with the
+/// backend that renders the game's program there.
+fn protected(install: &Path, easy_anti_cheat: &EasyAntiCheat) -> Profile {
+    let engine = PROTECTED;
+    let program = Program::open(&install.join(&easy_anti_cheat.game));
+    Profile {
+        engine,
+        graphics: Graphics::default_for(engine, program.as_ref()),
+        ..Profile::default()
+    }
+}
+
+/// Every game the table Obelisk reads now names by a storefront's id, as
 /// its storefront names it.
 pub fn named() -> impl Iterator<Item = Game<'static>> {
-    table().iter().flat_map(|known| {
+    PROFILES.entries().iter().flat_map(|known| {
         let steam = known.steam.map(|app_id| Game::Steam { app_id });
         let epic = known.epic.as_ref().map(|epic| Game::Epic {
             namespace: &epic.namespace,
@@ -300,39 +317,8 @@ pub fn named() -> impl Iterator<Item = Game<'static>> {
 }
 
 /// Reads the table again from Obelisk's `main` and keeps it in `library`.
-/// Without the network, launches read the last one kept, else the one
-/// Obelisk was built with. A development build keeps the one it was built
-/// with, as edited.
-pub(crate) async fn refresh(library: &Path) {
-    if cfg!(debug_assertions) {
-        return;
-    }
-    let kept = library.join(KEPT);
-    match crate::remote::fetched(URL).await {
-        Some(table) if read(&table) => {
-            let _ = crate::remote::keep(&kept, &table);
-        }
-        _ => {
-            let unread = CURRENT.lock().unwrap().read.is_none();
-            if unread && let Ok(table) = fs::read(&kept) {
-                read(&table);
-            }
-        }
-    }
-}
-
-/// Makes `table` the one launches read, when it is a table Obelisk reads
-/// with at least one game. Whether it is.
-fn read(table: &[u8]) -> bool {
-    let mut current = CURRENT.lock().unwrap();
-    if current.read.as_deref().unwrap_or(TABLE.as_bytes()) != table {
-        let Some(games) = parsed(table).filter(|games| !games.is_empty()) else {
-            return false;
-        };
-        current.games = Vec::leak(games);
-    }
-    current.read = Some(table.to_vec());
-    true
+pub async fn refresh(library: &Path) {
+    PROFILES.refresh(library).await;
 }
 
 #[cfg(test)]

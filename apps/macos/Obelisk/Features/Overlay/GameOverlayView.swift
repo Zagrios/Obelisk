@@ -88,7 +88,7 @@ private struct OverlayTopBar: View {
                     .font(.system(size: 16, weight: .semibold))
                     .lineLimit(1)
                 HStack(spacing: 6) {
-                    if let store = overlay.session.flatMap({ LibrarySection(rawValue: $0.storeID) }) {
+                    if let store = overlay.session?.section {
                         if let logo = store.logoAssetName {
                             Image(logo).resizable().scaledToFit().frame(width: 13, height: 13).accessibilityHidden(true)
                         }

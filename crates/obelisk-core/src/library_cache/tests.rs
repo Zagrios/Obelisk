@@ -267,27 +267,3 @@ fn an_unreadable_file_has_no_library_and_the_next_change_replaces_it() {
         );
     }
 }
-
-#[test]
-fn the_cache_leaves_the_catalog_readable() {
-    let directory = TempDir::new().unwrap();
-    let catalog = crate::Library::open(directory.path()).unwrap();
-    let executable = directory.path().join("A game.exe");
-    fs::write(&executable, [0x4d, 0x5a]).unwrap();
-    let added = catalog.add_local_game(&executable).unwrap();
-
-    let cache = LibraryCache::open(directory.path());
-    cache
-        .account("steam", "7")
-        .replace(vec![entry(json!({"id": "620", "name": "Portal 2"}))], &[]);
-    cache.flush();
-
-    let games = crate::Library::open(directory.path())
-        .unwrap()
-        .games()
-        .unwrap();
-    assert_eq!(
-        games.iter().map(|game| &game.id).collect::<Vec<_>>(),
-        [&added.id]
-    );
-}

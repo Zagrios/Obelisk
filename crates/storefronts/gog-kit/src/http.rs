@@ -40,9 +40,10 @@ pub(crate) async fn bounded_bytes(
     )
     .await
     .map_err(|error| match error {
+        BodyError::Network => GogError::Network,
         // An oversized answer is malformed, unlike a chunk of the wrong size.
         BodyError::Size => GogError::Protocol,
-        error => error.into(),
+        BodyError::Cancelled => GogError::Cancelled,
     })
 }
 

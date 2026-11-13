@@ -1,11 +1,11 @@
 //! The Steam adapter of the Game session supervisor.
 use crate::{
-    Config, Error, HostState,
     installations::Receipt,
     protocol::Credentials,
     runtimes::Runtime,
     supervisor::{self, Record, Target},
 };
+use host::{Config, HostState};
 use obelisk_core::{Platform, transfer::CancelToken};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 pub mod account_session;
 pub mod cloud;
 pub mod content;
+pub mod host;
 pub(crate) mod launch;
 mod windows;
 pub use launch::serve;
@@ -25,7 +26,7 @@ pub struct Store {
     pub app_id: u32,
     pub host: HostState,
     #[serde(flatten)]
-    pub requests: crate::GameRequests,
+    pub requests: host::GameRequests,
 }
 impl Store {
     /// A new session of game `app_id`, its host online.
@@ -33,13 +34,81 @@ impl Store {
         Self {
             app_id,
             host: HostState::Online,
-            requests: crate::GameRequests::default(),
+            requests: host::GameRequests::default(),
         }
     }
     /// What the host tells now.
-    pub(crate) fn apply(&mut self, update: &crate::HostUpdate) {
+    pub(crate) fn apply(&mut self, update: &host::HostUpdate) {
         self.host = update.state;
         self.requests = update.requests.clone();
+    }
+}
+
+/// Why a Steam launch, its host or its Cloud failed, as a localization key.
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("{0}")]
+    Cloud(cloud::Failure),
+    #[error("backend.steam.runtime.sessionBusy")]
+    SessionBusy,
+    #[error("backend.steam.runtime.cancelled")]
+    Cancelled,
+    #[error("backend.steam.runtime.invalidSession")]
+    InvalidSession,
+    #[error("backend.steam.runtime.unavailable")]
+    Unavailable,
+    #[error("backend.steam.runtime.versionMismatch")]
+    VersionMismatch,
+    #[error("backend.steam.runtime.startFailed")]
+    StartFailed,
+    #[error("backend.steam.runtime.authenticationFailed")]
+    Authentication,
+    #[error("backend.steam.runtime.ownershipFailed")]
+    Ownership,
+    #[error("backend.steam.runtime.timeout")]
+    Timeout,
+    #[error("backend.steam.runtime.storageFailed")]
+    Storage,
+    #[error("backend.runtime.rosettaUnavailable")]
+    RosettaUnavailable,
+    #[error("backend.steam.runtime.apiMissing")]
+    ApiMissing,
+    /// What readying or starting the game failed with, shown as every
+    /// storefront shows it.
+    #[error("{0}")]
+    Launch(crate::launch::Error),
+}
+impl From<std::io::Error> for Error {
+    fn from(_: std::io::Error) -> Self {
+        Self::Storage
+    }
+}
+impl From<supervisor::Error> for Error {
+    fn from(error: supervisor::Error) -> Self {
+        use supervisor::Error as E;
+        match error {
+            E::Storage => Self::Storage,
+            E::InvalidSession => Self::InvalidSession,
+            E::NewerSession | E::Busy => Self::SessionBusy,
+            E::Unavailable => Self::Unavailable,
+            E::Cancelled => Self::Cancelled,
+            E::StartFailed => Self::StartFailed,
+            E::RosettaUnavailable => Self::RosettaUnavailable,
+        }
+    }
+}
+impl From<crate::launch::Error> for Error {
+    fn from(error: crate::launch::Error) -> Self {
+        use crate::launch::Error as E;
+        match error {
+            E::Storage => Self::Storage,
+            E::StartFailed => Self::StartFailed,
+            E::Unavailable => Self::Unavailable,
+            E::IncompatibleArchitecture
+            | E::InvalidApplication
+            | E::NotExecutable
+            | E::WineUnavailable => Self::Launch(error),
+        }
     }
 }
 
@@ -88,6 +157,9 @@ pub struct Request {
     pub target: Target,
     #[serde(default)]
     pub cloud: Option<cloud::Config>,
+    /// How the game shows the account to its friends.
+    #[serde(default)]
+    pub status: obelisk_core::OnlineStatus,
 }
 
 impl supervisor::Provider for Steam {
@@ -121,16 +193,19 @@ impl supervisor::Provider for Steam {
 
 /// The launch of the Steam game `receipt` installed, started as `target`
 /// says, with its Cloud, ready for its supervisor. A Windows game runs in
-/// Wine, in the installation's own prefix, which is readied first.
+/// Wine, in the installation's own prefix, which is readied first, as
+/// `windows` resolved it: the receipt's own `Receipt::windows`, None for a
+/// Mac build.
 pub fn prepare(
     locations: &crate::Locations,
     receipt: &Receipt<Steam>,
+    windows: Option<&crate::wine::Installation>,
     target: &obelisk_core::launch::LaunchTarget,
 ) -> Result<Request, Error> {
     let home = &locations.home;
     let install = Path::new(&receipt.directory);
     let app_id = receipt.product.app_id;
-    let (wine, target, steam_api) = match receipt.windows(locations)? {
+    let (wine, target, steam_api) = match windows {
         Some(windows) => {
             let wine = windows.ready(locations, target, &windows::Prefix { install })?;
             let launched = windows::target(&wine, &receipt.wine_game(), target, home)?;
@@ -167,6 +242,7 @@ pub fn prepare(
         },
         cloud: Some(cloud),
         target,
+        status: obelisk_core::OnlineStatus::default(),
     })
 }
 
@@ -372,6 +448,66 @@ mod join_tests {
             },
         ] {
             assert!(!invalid.valid(), "{invalid:?}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod error_tests {
+    use super::{Error, supervisor};
+    use crate::launch::Error as Launch;
+
+    #[test]
+    fn a_steam_launch_shows_every_failure_with_its_key() {
+        for (failure, key) in [
+            (
+                Launch::IncompatibleArchitecture,
+                "backend.runtime.macBuildNotNative",
+            ),
+            (
+                Launch::InvalidApplication,
+                "backend.runtime.invalidApplication",
+            ),
+            (Launch::NotExecutable, "backend.runtime.notExecutable"),
+            (Launch::WineUnavailable, "backend.runtime.wineUnavailable"),
+            (Launch::Storage, "backend.steam.runtime.storageFailed"),
+            (Launch::StartFailed, "backend.steam.runtime.startFailed"),
+            (Launch::Unavailable, "backend.steam.runtime.unavailable"),
+        ] {
+            assert_eq!(Error::from(failure).to_string(), key, "{failure:?}");
+        }
+        for (failure, key) in [
+            (
+                supervisor::Error::Storage,
+                "backend.steam.runtime.storageFailed",
+            ),
+            (
+                supervisor::Error::InvalidSession,
+                "backend.steam.runtime.invalidSession",
+            ),
+            (
+                supervisor::Error::NewerSession,
+                "backend.steam.runtime.sessionBusy",
+            ),
+            (supervisor::Error::Busy, "backend.steam.runtime.sessionBusy"),
+            (
+                supervisor::Error::Unavailable,
+                "backend.steam.runtime.unavailable",
+            ),
+            (
+                supervisor::Error::Cancelled,
+                "backend.steam.runtime.cancelled",
+            ),
+            (
+                supervisor::Error::StartFailed,
+                "backend.steam.runtime.startFailed",
+            ),
+            (
+                supervisor::Error::RosettaUnavailable,
+                "backend.runtime.rosettaUnavailable",
+            ),
+        ] {
+            assert_eq!(Error::from(failure).to_string(), key, "{failure:?}");
         }
     }
 }

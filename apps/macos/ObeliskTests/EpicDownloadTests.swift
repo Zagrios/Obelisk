@@ -254,7 +254,7 @@ final class EpicDownloadTests: XCTestCase {
         let owned = owned ?? game("one")
         let directory = FileManager.default.temporaryDirectory
             .appending(path: "ObeliskEpicDownloadTests-\(UUID().uuidString)", directoryHint: .isDirectory)
-        let credentials = EpicCredentials(accountId: Self.account, displayName: Self.account, refreshToken: "current")
+        let credentials = WebAccountCredentials(accountId: Self.account, name: Self.account, refreshToken: "current")
         let receipts = installed.map { [EpicDownloadFixture.receipt(owned, directory: directory, platform: $0)] } ?? []
         let backend = FakeInstallations<EpicGames>(receipts: receipts)
         let sessions = EpicGameSessions()

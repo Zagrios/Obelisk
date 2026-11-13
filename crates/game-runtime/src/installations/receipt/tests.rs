@@ -1,5 +1,7 @@
 //! The records every storefront's installations share, and what each
 //! storefront adds to them.
+mod wine_prefix;
+
 use super::*;
 use crate::{
     epic::{self, Epic},
@@ -311,4 +313,29 @@ fn an_uninstalled_windows_build_loses_its_prefix_and_a_mac_build_has_none() {
     removes_its_prefix(portal(Platform::Windows), portal(Platform::Mac));
     removes_its_prefix(sandbox_game(Platform::Windows), sandbox_game(Platform::Mac));
     removes_its_prefix(witcher(Platform::Windows), witcher(Platform::Mac));
+}
+
+/// Portal 2's Windows receipt, as Steam's app `app_id`.
+fn steam_app(app_id: u32) -> Receipt<Steam> {
+    let portal = portal(Platform::Windows);
+    Receipt {
+        product: steam::Product {
+            app_id,
+            ..portal.product.clone()
+        },
+        ..portal
+    }
+}
+
+#[test]
+fn a_windows_receipt_hands_its_profile_s_minimum_voile_to_its_launch() {
+    let (_directory, root) = crate::wine::tests::installation();
+    let locations = crate::wine::tests::locations(&root);
+    let minimum_voile = |receipt: Receipt<Steam>| {
+        let windows = receipt.windows(&locations).unwrap().unwrap();
+        windows.minimum_voile()
+    };
+
+    assert_eq!(minimum_voile(steam_app(252950)), Some("v26.3.0-18"));
+    assert_eq!(minimum_voile(portal(Platform::Windows)), None);
 }

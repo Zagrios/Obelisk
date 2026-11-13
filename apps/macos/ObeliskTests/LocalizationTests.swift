@@ -8,6 +8,9 @@ final class LocalizationTests: XCTestCase {
         for identifier in ["fr", "fr-FR", "fr_CA", "fr-BE"] {
             XCTAssertEqual(L10n.resolvedLanguage(preferredLanguages: [identifier]), "fr", identifier)
         }
+        for identifier in ["it", "it-IT", "it_CH"] {
+            XCTAssertEqual(L10n.resolvedLanguage(preferredLanguages: [identifier]), "it", identifier)
+        }
         for identifier in ["en", "en-US", "en_GB", "de-DE", "ja-JP", "zh-Hant", ""] {
             XCTAssertEqual(L10n.resolvedLanguage(preferredLanguages: [identifier]), "en", identifier)
         }
@@ -16,15 +19,38 @@ final class LocalizationTests: XCTestCase {
         XCTAssertEqual(L10n.resolvedLanguage(preferredLanguages: ["de-DE"], available: ["en", "fr", "de"]), "de")
     }
 
+    func testItalianIsTranslatedWithItsPlurals() {
+        let italian = LocalizedStrings(language: "it")
+        XCTAssertEqual(italian.string("app.library", arguments: [], locale: Locale(identifier: "it")), "Libreria")
+        for (count, expected) in [(1, "1 gioco"), (2, "2 giochi")] {
+            XCTAssertEqual(italian.string("ui.library.game_count", arguments: [Int64(count)],
+                                          locale: Locale(identifier: "it")), expected)
+        }
+    }
+
+    func testGamesStartInTheLanguageOfTheMacOrOfTheChoiceMadeForObelisk() {
+        XCTAssertEqual(GameLocale.variable(preferredLanguages: ["it-IT", "en-IT"]), "it_IT.UTF-8")
+        XCTAssertEqual(GameLocale.variable(preferredLanguages: ["fr_CA"]), "fr_CA.UTF-8")
+        XCTAssertEqual(GameLocale.variable(preferredLanguages: ["it"]), "it_IT.UTF-8", "the language Obelisk was given")
+        XCTAssertEqual(GameLocale.variable(preferredLanguages: ["en"]), "en_US.UTF-8")
+        XCTAssertEqual(GameLocale.variable(preferredLanguages: ["zh-Hans-CN"]), "zh_CN.UTF-8")
+        XCTAssertEqual(GameLocale.variable(preferredLanguages: ["zh-Hant"]), "zh_TW.UTF-8")
+        XCTAssertEqual(GameLocale.variable(preferredLanguages: ["xx"], region: "BE"), "xx_BE.UTF-8")
+        XCTAssertNil(GameLocale.variable(preferredLanguages: []))
+        XCTAssertNil(GameLocale.variable(preferredLanguages: [""]))
+    }
+
     func testTheLanguageChoicesAreTheMacsThenEveryTranslationByItsOwnName() {
-        XCTAssertEqual(AppLanguage.choices, [.system, .language("en"), .language("fr")])
+        XCTAssertEqual(AppLanguage.choices, [.system, .language("en"), .language("fr"), .language("it")])
         XCTAssertEqual(AppLanguage.name(of: "en"), "English")
         XCTAssertEqual(AppLanguage.name(of: "fr"), "Français")
+        XCTAssertEqual(AppLanguage.name(of: "it"), "Italiano")
         XCTAssertEqual(AppLanguage.language("fr").resolved(system: ["en-US"]), "fr")
         XCTAssertEqual(AppLanguage.system.resolved(system: ["fr-BE", "en"]), "fr")
         XCTAssertEqual(AppLanguage.system.resolved(system: ["ja-JP"]), "en")
         XCTAssertEqual(AppLanguage.language("en").flags, ["Flag-us", "Flag-gb"])
         XCTAssertEqual(AppLanguage.language("fr").flags, ["Flag-fr"])
+        XCTAssertEqual(AppLanguage.language("it").flags, ["Flag-it"])
         XCTAssertEqual(AppLanguage.system.flags, [])
         for code in L10n.available {
             let flags = AppLanguage.language(code).flags
@@ -38,9 +64,11 @@ final class LocalizationTests: XCTestCase {
     func testBothTranslationsArePackagedAndUnsupportedLanguagesUseEnglish() {
         XCTAssertTrue(Bundle.main.localizations.contains("en"))
         XCTAssertTrue(Bundle.main.localizations.contains("fr"))
+        XCTAssertTrue(Bundle.main.localizations.contains("it"))
         XCTAssertEqual(Bundle.main.developmentLocalization, "en")
         XCTAssertEqual(LocalizedStrings(language: "en").string("app.library"), "Library")
         XCTAssertEqual(LocalizedStrings(language: "fr-CA").string("app.library"), "Bibliothèque")
+        XCTAssertEqual(LocalizedStrings(language: "it-IT").string("app.library"), "Libreria")
         XCTAssertEqual(LocalizedStrings(language: "de-DE").string("app.library"), "Library")
     }
 

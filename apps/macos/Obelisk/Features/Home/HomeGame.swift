@@ -42,7 +42,6 @@ struct HomeLibrary {
     let verified: [HomeGame]
     /// The first games of its last played order, as its tile shows them.
     let covers: [HomeGame]
-    let count: Int
 }
 
 extension HomeGame {
@@ -66,8 +65,7 @@ extension HomeLibrary {
             recent: order.prefix { library.lastPlayed(of: $0) != nil }.prefix(HomeShelves.shelfLimit + 1).map(home),
             installed: library.games(by: .lastPlayed, filter: .installed).map(home),
             verified: order.lazy.filter { verified.contains($0.id) }.prefix(HomeShelves.shelfLimit).map(home),
-            covers: order.prefix(3).map(home),
-            count: library.games.count
+            covers: order.prefix(3).map(home)
         )
     }
 }
@@ -152,8 +150,9 @@ struct HomeShelves {
 }
 
 /// The games Obelisk was set up to run, as its profile table names them by
-/// their storefronts' ids: Home's Obelisk Verified shelf. Read as launches
-/// read the table, so a table a launch read again shows on the next pass.
+/// their storefronts' ids: Home's Obelisk Verified shelf. Read as Obelisk
+/// reads the table, as it starts and as a Windows game launches, so a table
+/// read again shows on the next pass.
 enum ObeliskVerified {
     /// `Store`'s games of the table.
     static func games<Store: InstallationStorefront>(of store: Store.Type) -> Set<Store.GameID> {

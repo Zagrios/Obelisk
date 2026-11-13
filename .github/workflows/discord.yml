@@ -18,7 +18,10 @@ permissions:
 
 jobs:
   announce:
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'v')
+    # Pre-releases, the betas built every two hours, are never posted.
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || (startsWith(github.event.release.tag_name, 'v') && !github.event.release.prerelease)
     runs-on: ubuntu-latest
     env:
       TAG: ${{ github.event.release.tag_name || inputs.tag }}

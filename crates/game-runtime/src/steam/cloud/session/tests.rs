@@ -3,15 +3,19 @@
 //! storage and upload transactions.
 use super::fake::{FakeSteamCloud, SLOT, save_rule};
 use super::*;
-use crate::cloud::record::tests::record_suite;
+use crate::Locations;
+use crate::cloud::saves::tests::saves_suite;
 use crate::cloud::sync::{
     Work,
-    tests::{Harness, answer, cloud_suite, listed, uninstall, work},
+    tests::{self as cloud_tests, Harness, answer, cloud_suite, listed, uninstall, work},
 };
 use crate::cloud::{Choice, Phase};
 use crate::cloud_status;
+use crate::installations::Receipt;
+use crate::steam::{Product, Steam, content::Content};
 use crate::supervisor::client::no_other_session;
 use cloud_vault::{AccountIdentity, RemoteView, StoreScope};
+use obelisk_core::Platform;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -36,15 +40,11 @@ pub(crate) struct SteamGame {
     pub config: Config,
     pub cloud: FakeSteamCloud,
     pub control: Arc<Control>,
+    /// The account's installations, as they reach the same Steam Cloud.
+    saves: Content<FakeSteamCloud>,
 }
 
 impl SteamGame {
-    fn uninstalled(&self) -> MaintenanceTarget {
-        MaintenanceTarget::Uninstalled {
-            root: self.config.root.clone(),
-            app_id: self.config.app_id,
-        }
-    }
     /// The adapter and its vault without a sync around them.
     pub(crate) fn adapter(&self) -> (Adapter<FakeSteamCloud>, Vault) {
         let (vault, context) = record::locked(&self.config, &ACCOUNT).unwrap();
@@ -67,6 +67,7 @@ impl SteamGame {
 
 impl Harness for SteamGame {
     type Store = Adapter<FakeSteamCloud>;
+    type Saves = Content<FakeSteamCloud>;
     const NO_RULES: UnavailableReason = UnavailableReason::NoCloud;
 
     fn game() -> Self {
@@ -82,8 +83,15 @@ impl Harness for SteamGame {
         for path in [&config.root, &config.home, &config.install] {
             crate::files::private_directory(path).unwrap();
         }
+        let cloud = FakeSteamCloud::new(ACCOUNT, config.app_id);
+        let bundle = Path::new("/Applications/Obelisk.app");
+        let locations = Locations {
+            cloud_archive: config.root.clone(),
+            ..Locations::new(&base, bundle, &config.home)
+        };
         Self {
-            cloud: FakeSteamCloud::new(ACCOUNT, config.app_id),
+            saves: Content::new(Arc::new(cloud.handle()), credentials(), locations),
+            cloud,
             control: Arc::new(Control::new(|_| {})),
             config,
             _temporary: temporary,
@@ -152,20 +160,32 @@ impl Harness for SteamGame {
         self.cloud.set_metadata(Some(roaming_rule()));
         fs::create_dir_all(Harness::save(self).parent().unwrap()).unwrap();
     }
-    async fn archive(&self) -> Result<(), Failure> {
-        match self.cloud.archive_rules() {
-            Some((metadata, listing)) => store::archive_with_rules(&self.config, metadata, listing),
-            None => Ok(()),
-        }
+    /// Rules in the Windows profile: Steam keeps nothing of a Mac build.
+    fn set_rules_of_another_build(&self) {
+        self.cloud.set_metadata(Some(roaming_rule()));
     }
-    async fn maintain(&self, alive: &SessionAlive<'_>) -> Result<(), Failure> {
-        let target = if self.config.install.exists() {
-            MaintenanceTarget::Installed(self.config.clone())
-        } else {
-            self.uninstalled()
+    fn saves(&self) -> &Content<FakeSteamCloud> {
+        &self.saves
+    }
+    fn library_game(&self) -> u32 {
+        self.config.app_id
+    }
+    fn receipt(&self) -> Receipt<Steam> {
+        let platform = match self.config.prefix {
+            Some(_) => Platform::Windows,
+            None => Platform::Mac,
         };
-        let control = Arc::clone(&self.control);
-        maintain_with(self.cloud.handle(), target, &credentials(), control, alive).await
+        Receipt {
+            product: Product {
+                app_id: self.config.app_id,
+                language: "english".into(),
+            },
+            name: "Game".into(),
+            directory: self.config.install.to_string_lossy().into_owned(),
+            platform,
+            total_bytes: 100,
+            needs_verification: false,
+        }
     }
     fn configuration(&self) -> Config {
         self.config.clone()
@@ -186,7 +206,7 @@ impl Harness for SteamGame {
 
 mod suite {
     super::cloud_suite!(super::SteamGame);
-    super::record_suite!(super::SteamGame);
+    super::saves_suite!(super::SteamGame);
 }
 
 async fn synced(game: &SteamGame, bytes: &[u8]) {
@@ -275,9 +295,12 @@ async fn maintenance_refuses_an_uninstalled_exit_save_after_its_cloud_rules_chan
     }
     game.cloud.set_metadata(Some(changed));
 
-    let refused = game.maintain(&no_other_session).await;
+    let refused = cloud_tests::maintain(&game).await;
 
-    assert!(matches!(refused, Err(Failure::RulesChanged)));
+    assert_eq!(
+        refused,
+        Err(cloud_tests::player_sees::<SteamGame>(Failure::RulesChanged))
+    );
     assert_eq!(game.cloud.file(SLOT).unwrap(), b"old");
     assert!(listed(&game));
     assert_eq!(
@@ -343,7 +366,7 @@ async fn a_windows_game_reads_its_sdk_saves_from_the_same_native_storage() {
     assert_eq!(fs::read(saved).unwrap(), b"windows progress");
     let index = storage.cache_directory();
     assert_eq!(
-        crate::native_cache_files(index, 42, storage.platforms)
+        crate::steam::host::native_cache_files(index, 42, storage.platforms)
             .unwrap()
             .len(),
         1
@@ -369,6 +392,82 @@ fn roaming_rule() -> CloudMetadata {
     )])
 }
 
+/// Rules for every platform in the game's install directory, as Quake's: the
+/// rules spell the directory `Id1`, the server's older files `id1`.
+fn all_platforms_install_rules() -> CloudMetadata {
+    let value = |text: &str| CloudMetadata::Value(text.into());
+    let rule = |pattern: &str| {
+        CloudMetadata::Object(vec![
+            ("root".into(), value("gameinstall")),
+            ("path".into(), value("Id1")),
+            ("pattern".into(), value(pattern)),
+            (
+                "platforms".into(),
+                CloudMetadata::Object(vec![("1".into(), value("all"))]),
+            ),
+        ])
+    };
+    CloudMetadata::Object(vec![(
+        "savefiles".into(),
+        CloudMetadata::Object(vec![
+            ("0".into(), rule("*.sav")),
+            ("1".into(), rule("config.cfg")),
+        ]),
+    )])
+}
+
+#[tokio::test]
+async fn rules_for_all_platforms_sync_files_the_server_spells_in_another_case() {
+    let mut game = SteamGame::game();
+    let prefix = game.config.root.join("fixture-prefix");
+    game.run_in(&prefix);
+    game.cloud.set_metadata(Some(all_platforms_install_rules()));
+    let local = game.config.install.join("Id1/test.sav");
+    fs::create_dir_all(local.parent().unwrap()).unwrap();
+    // Only a case-insensitive volume, macOS's default, reaches `Id1` as `id1`.
+    if !game.config.install.join("id1").is_dir() {
+        return;
+    }
+    fs::write(&local, b"synthetic initial progress").unwrap();
+    let remote = "%GameInstall%Id1/test.sav";
+    game.cloud
+        .publish_for(remote, b"synthetic initial progress", u32::MAX);
+    let config = game.config.install.join("Id1/config.cfg");
+    fs::write(&config, b"synthetic initial config").unwrap();
+    let historical_config = "%GameInstall%id1/config.cfg";
+    game.cloud
+        .publish_for(historical_config, b"synthetic initial config", u32::MAX);
+    let mut sync = game.open();
+    tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        sync.prepare(&no_other_session),
+    )
+    .await
+    .expect("rules for all platforms should not block on an unsupported-rule question")
+    .unwrap();
+    assert_eq!(game.control.status().phase, Phase::Ready);
+    assert_eq!(game.cloud.uploads(), 0);
+    sync.started().unwrap();
+    fs::write(&local, b"synthetic new progress").unwrap();
+    fs::write(&config, b"synthetic new config").unwrap();
+    fs::write(
+        game.config.install.join("Id1/new.sav"),
+        b"synthetic new file",
+    )
+    .unwrap();
+    sync.finished(true).await;
+    assert_eq!(game.control.status().phase, Phase::Synced);
+    assert_eq!(game.cloud.file(remote).unwrap(), b"synthetic new progress");
+    assert_eq!(
+        game.cloud.file(historical_config).unwrap(),
+        b"synthetic new config"
+    );
+    assert!(game.cloud.file("%GameInstall%Id1/config.cfg").is_none());
+    let new_remote = "%GameInstall%Id1/new.sav";
+    assert_eq!(game.cloud.file(new_remote).unwrap(), b"synthetic new file");
+    assert_eq!(game.cloud.file_platforms(new_remote), Some(u32::MAX));
+}
+
 #[tokio::test]
 async fn a_mac_build_whose_rules_are_all_for_windows_starts_without_cloud() {
     let game = SteamGame::game();
@@ -386,6 +485,179 @@ async fn a_mac_build_whose_rules_are_all_for_windows_starts_without_cloud() {
     assert_eq!(status.phase, Phase::Unsupported);
     assert_eq!(status.error, None);
     assert_eq!(game.unavailable(), Some(UnavailableReason::Unsupported));
+}
+
+#[tokio::test]
+async fn an_uninstall_of_a_build_steam_keeps_no_saves_of_fences_what_the_other_build_archived() {
+    let mut game = SteamGame::game();
+    let prefix = game.config.root.with_file_name("Prefixes/game");
+    game.run_in(&prefix);
+    cloud_tests::synced(&game, b"progress").await;
+    // The same game's Mac build, whose saves Steam keeps none of: its rules
+    // are all in the Windows profile.
+    game.config.prefix = None;
+
+    cloud_tests::archive(&game).await.unwrap();
+    assert!(
+        work(&game).unwrap().installation_removed,
+        "the fence goes up before any file goes"
+    );
+    fs::remove_dir_all(&game.config.install).unwrap();
+    cloud_tests::record_removal(&game).await.unwrap();
+
+    let saved = Context::load(&game.config, &ACCOUNT).unwrap().unwrap();
+    assert_eq!(saved.config.prefix.as_deref(), Some(prefix.as_path()));
+    assert_eq!(
+        saved.work(),
+        Work {
+            pending: None,
+            installation_removed: true,
+        }
+    );
+    assert!(!listed(&game));
+    // A save the Windows build misses afterwards is restored from the
+    // archive, never sent as deleted.
+    game.config.prefix = Some(prefix);
+    fs::create_dir_all(&game.config.install).unwrap();
+    fs::remove_file(Harness::save(&game)).unwrap();
+
+    game.open().prepare(&no_other_session).await.unwrap();
+
+    assert_eq!(fs::read(Harness::save(&game)).unwrap(), b"progress");
+    assert_eq!(game.cloud.file(ROAMING).unwrap(), b"progress");
+    assert_eq!(game.cloud.uploads(), 0);
+    assert!(!work(&game).unwrap().installation_removed);
+}
+
+#[tokio::test]
+async fn a_game_behind_an_app_id_redirect_starts_without_cloud_and_uninstalls_without_an_archive() {
+    let game = SteamGame::game();
+    let mut redirected = save_rule();
+    if let CloudMetadata::Object(fields) = &mut redirected {
+        fields.push(("appidredirect".into(), CloudMetadata::Value("480".into())));
+    }
+    game.cloud.set_metadata(Some(redirected));
+    fs::write(Harness::save(&game), b"progress").unwrap();
+
+    game.open().prepare(&no_other_session).await.unwrap();
+    assert_eq!(game.control.status().phase, Phase::Unsupported);
+    assert_eq!(game.unavailable(), Some(UnavailableReason::Unsupported));
+
+    uninstall(&game).await;
+
+    assert_eq!(work(&game), None);
+    assert!(!game.config.install.exists());
+}
+
+/// `rules`, once Steam redirects the game's Cloud to another app.
+fn redirected(mut rules: CloudMetadata) -> CloudMetadata {
+    if let CloudMetadata::Object(fields) = &mut rules {
+        fields.push(("appidredirect".into(), CloudMetadata::Value("480".into())));
+    }
+    rules
+}
+
+/// The file that holds the game's Cloud record.
+fn record_file(game: &SteamGame) -> PathBuf {
+    let directory = Harness::scope(game).directory(&game.config.root).unwrap();
+    directory.join(Context::FILE)
+}
+
+#[tokio::test]
+async fn an_uninstall_is_refused_once_steam_keeps_no_saves_of_the_build_that_synced_them() {
+    // Since the build last synced, Steam redirected the game's Cloud to
+    // another app, or left rules for its other build only.
+    for unfollowed in [redirected(save_rule()), roaming_rule()] {
+        let game = SteamGame::game();
+        synced(&game, b"progress").await;
+        fs::write(Harness::save(&game), b"played since").unwrap();
+        let before = fs::read(record_file(&game)).unwrap();
+        game.cloud.set_metadata(Some(unfollowed));
+
+        let refused = cloud_tests::archive(&game).await.unwrap_err();
+
+        assert_eq!(
+            refused,
+            cloud_tests::player_sees::<SteamGame>(Failure::Unsupported)
+        );
+        assert_eq!(
+            Failure::Unsupported.key(),
+            "backend.steam.cloud.unsupported"
+        );
+        assert_eq!(fs::read(record_file(&game)).unwrap(), before);
+        assert_eq!(fs::read(Harness::save(&game)).unwrap(), b"played since");
+        let vault = cloud_tests::vault(&game);
+        let archived = vault.local().unwrap();
+        assert_eq!(vault.read_content(&archived.0[SLOT]).unwrap(), b"progress");
+    }
+}
+
+#[tokio::test]
+async fn an_uninstall_is_refused_behind_a_redirect_though_the_engine_moved_the_build_that_synced() {
+    let mut game = SteamGame::game();
+    let rosetta = game.config.root.with_file_name("Prefixes/game");
+    game.run_in(&rosetta);
+    cloud_tests::synced(&game, b"progress").await;
+    fs::write(Harness::save(&game), b"played since").unwrap();
+    let played = Harness::save(&game);
+    let before = fs::read(record_file(&game)).unwrap();
+    // The Linux engine readied a prefix of its own for the same build, then
+    // Steam redirected the game's Cloud to another app.
+    let linux = game
+        .config
+        .root
+        .with_file_name("Prefixes/game-linux/prefix");
+    game.run_in(&linux);
+    game.cloud.set_metadata(Some(redirected(roaming_rule())));
+
+    let refused = cloud_tests::archive(&game).await.unwrap_err();
+
+    assert_eq!(
+        refused,
+        cloud_tests::player_sees::<SteamGame>(Failure::Unsupported)
+    );
+    assert_eq!(fs::read(record_file(&game)).unwrap(), before);
+    assert_eq!(fs::read(played).unwrap(), b"played since");
+}
+
+#[tokio::test]
+async fn an_uninstall_is_refused_when_obelisk_holds_saves_steam_keeps_none_of_without_a_record() {
+    let game = SteamGame::game();
+    synced(&game, b"progress").await;
+    // The archive still holds the game's saves, and their record is gone.
+    fs::remove_file(record_file(&game)).unwrap();
+    game.cloud.set_metadata(Some(roaming_rule()));
+
+    let refused = cloud_tests::archive(&game).await.unwrap_err();
+
+    assert_eq!(
+        refused,
+        cloud_tests::player_sees::<SteamGame>(Failure::Unsupported)
+    );
+    assert_eq!(work(&game), None, "no record is made");
+    assert_eq!(fs::read(Harness::save(&game)).unwrap(), b"progress");
+}
+
+#[test]
+fn a_lost_archive_capture_is_a_storage_failure_of_the_steam_runtime() {
+    use crate::cloud::saves::Storefront as _;
+    assert_eq!(
+        Content::<FakeSteamCloud>::capture_lost(),
+        "backend.steam.runtime.storageFailed"
+    );
+}
+
+#[tokio::test]
+async fn maintenance_of_an_uninstalled_game_without_a_record_has_nothing_to_sync() {
+    let game = SteamGame::game();
+    fs::remove_dir_all(&game.config.install).unwrap();
+
+    let refused = cloud_tests::maintain(&game).await;
+
+    assert_eq!(
+        refused,
+        Err(cloud_tests::player_sees::<SteamGame>(Failure::Unsupported))
+    );
 }
 
 #[tokio::test]

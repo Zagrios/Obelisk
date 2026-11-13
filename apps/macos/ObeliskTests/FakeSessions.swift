@@ -44,6 +44,7 @@ final class FakeSessions: StorefrontSessionsProtocol, @unchecked Sendable {
     private var _acceptedInvites: [AcceptedInvite] = []
     private var _microTxnAnswers: [MicroTxnAnswer] = []
     private var _voileAnswers: [VoileUpdateAnswer] = []
+    private var _statuses: [OnlineStatus] = []
     /// Steam's in-game calls fail with this key until the test clears it.
     private var steamFailure: String?
     /// Steam's in-game answers wait on it, when the test holds them.
@@ -58,6 +59,8 @@ final class FakeSessions: StorefrontSessionsProtocol, @unchecked Sendable {
     /// The player's answers to the newer Voile releases launches offered, in order.
     var voileAnswers: [VoileUpdateAnswer] { lock.withLock { _voileAnswers } }
     var revocations: [GameAccount] { lock.withLock { _revocations } }
+    /// How the player chose to show to their friends, in order.
+    var statuses: [OnlineStatus] { lock.withLock { _statuses } }
     var stops: Int { lock.withLock { _stops } }
     /// The sessions the player asked to quit, then to force quit, in order.
     var quits: [String] { lock.withLock { _quits } }
@@ -167,6 +170,8 @@ final class FakeSessions: StorefrontSessionsProtocol, @unchecked Sendable {
     func quit(sessionId: String) async throws { lock.withLock { _quits.append(sessionId) } }
 
     func forceQuit(sessionId: String) async throws { lock.withLock { _forceQuits.append(sessionId) } }
+
+    func setStatus(status: OnlineStatus) async { lock.withLock { _statuses.append(status) } }
 
     func overlayState(sessionId: String, active: Bool, userInitiated: Bool) async throws {
         let failure = lock.withLock {
@@ -397,7 +402,8 @@ extension LibraryCache {
                 ]
                 entry["imageUrl"] = game.imageUrl
                 entry["headerImageUrl"] = game.headerImageUrl
-                entry["playtimeMinutes"] = cached.playtimeMinutes
+                // The file keeps GOG's playtime as GOG tells it, in minutes.
+                entry["playtimeMinutes"] = cached.playtimeSeconds.map { $0 / 60 }
                 entry["achievements"] = cached.achievementShare.map(keptAchievements(share:))
                 return entry
             }

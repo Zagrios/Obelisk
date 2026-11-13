@@ -3,7 +3,6 @@
 //! stdin pipe; control uses session and account IDs. Each storefront plugs in
 //! as a `Provider`.
 pub(crate) mod architecture;
-mod child;
 pub(crate) mod client;
 pub mod exec;
 pub(crate) mod journal;
@@ -27,41 +26,6 @@ pub(crate) fn plain_absolute(path: &Path) -> bool {
     path.is_absolute() && !path.components().any(|c| c == Component::ParentDir)
 }
 
-/// The conversions a storefront's session `Error` makes from the
-/// supervisor's and the runtime's errors, alike for Epic and GOG: its
-/// `Session`, `Busy`, `Cancelled`, `Storage`, `Unsupported`, `NotNative`,
-/// `RosettaUnavailable` and `WineUnavailable` stand for them.
-macro_rules! session_error_conversions {
-    ($error:ty) => {
-        impl From<$crate::supervisor::Error> for $error {
-            fn from(error: $crate::supervisor::Error) -> Self {
-                use $crate::supervisor::Error as E;
-                match error {
-                    E::Storage => Self::Storage,
-                    E::NewerSession | E::Busy => Self::Busy,
-                    E::Cancelled => Self::Cancelled,
-                    E::RosettaUnavailable => Self::RosettaUnavailable,
-                    E::InvalidSession | E::Unavailable | E::StartFailed => Self::Session,
-                }
-            }
-        }
-        impl From<$crate::Error> for $error {
-            fn from(error: $crate::Error) -> Self {
-                match error {
-                    $crate::Error::RosettaUnavailable => Self::RosettaUnavailable,
-                    $crate::Error::WineUnavailable => Self::WineUnavailable,
-                    $crate::Error::IncompatibleArchitecture => Self::NotNative,
-                    $crate::Error::InvalidApplication | $crate::Error::NotExecutable => {
-                        Self::Unsupported
-                    }
-                    _ => Self::Session,
-                }
-            }
-        }
-    };
-}
-pub(crate) use session_error_conversions;
-
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Identity {
     pub pid: u32,
@@ -71,7 +35,7 @@ pub struct Identity {
     pub executable: String,
 }
 
-/// Durable ownership between spawning an architecture helper and observing its
+/// Durable ownership between spawning an exec helper and observing its
 /// replacement by the game. Missing inspection never proves that child exited.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum StartingGame {
@@ -286,6 +250,13 @@ pub(crate) enum Command<P: Provider> {
     ForceQuit {
         id: String,
     },
+    /// The player changed how the account shows to its friends: the game
+    /// shows it once it runs, at once if it already does.
+    Status {
+        id: String,
+        account_id: P::Account,
+        status: obelisk_core::OnlineStatus,
+    },
     /// The player's `control` of the running game, through its storefront.
     Control {
         id: String,
@@ -338,18 +309,5 @@ pub enum Error {
 impl From<std::io::Error> for Error {
     fn from(_: std::io::Error) -> Self {
         Self::Storage
-    }
-}
-impl From<Error> for crate::Error {
-    fn from(error: Error) -> Self {
-        match error {
-            Error::Storage => Self::Storage,
-            Error::InvalidSession => Self::InvalidSession,
-            Error::NewerSession | Error::Busy => Self::SessionBusy,
-            Error::Unavailable => Self::Unavailable,
-            Error::Cancelled => Self::Cancelled,
-            Error::StartFailed => Self::StartFailed,
-            Error::RosettaUnavailable => Self::RosettaUnavailable,
-        }
     }
 }

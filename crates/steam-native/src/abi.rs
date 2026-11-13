@@ -399,10 +399,12 @@ impl ClientMatchmaking {
 
 pub struct ClientFriends(Interface);
 impl ClientFriends {
-    pub fn set_presence(&self, online: bool) -> Result<()> {
+    /// `SetPersonaState(persona_state)`: the account shows as that
+    /// EPersonaState (0 offline, 1 online, 3 away, 7 invisible).
+    pub fn set_presence(&self, persona_state: u8) -> Result<()> {
         // The pinned proxy serializes one i32 and returns no value. Its server
         // dispatcher independently calls Friends slot 5 with that same scalar.
-        method!(self, 5, 0x8b23a0, (i32) -> (), i32::from(online));
+        method!(self, 5, 0x8b23a0, (i32) -> (), i32::from(persona_state));
         Ok(())
     }
     /// `GetFriendGamePlayed(friend)`: the game `friend` plays as this engine

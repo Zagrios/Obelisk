@@ -482,10 +482,12 @@ final class SteamChatIntegrationTests: XCTestCase {
     }
 
     @MainActor
-    func testAccountShowsOnlineAgainWhenItsSteamGameSessionEnds() async throws {
+    func testAccountShowsItsStatusAgainWhenItsSteamGameSessionEnds() async throws {
         let session = ChatBridgeTestSession()
         let sessions = SteamGameSessions()
-        let model = friendsTestModel(connect: { _ in session }, gameSessions: sessions)
+        let status = OnlineStatusChoice(storeID: "steam", defaults: isolatedDefaults())
+        status.choose(.away)
+        let model = friendsTestModel(connect: { _ in session }, gameSessions: sessions, onlineStatus: status)
         await model.start()
         defer { model.signOut() }
         try await eventually { model.isConnected }
@@ -495,13 +497,29 @@ final class SteamChatIntegrationTests: XCTestCase {
         sessions.fake.show(nil)
         try await eventually { sessions.active == nil }
         try await Task.sleep(for: .milliseconds(50))
-        XCTAssertEqual(session.onlineRequests, 0, "Another account's game leaves this one alone")
+        XCTAssertEqual(session.statusRequests, [], "Another account's game leaves this one alone")
 
         sessions.fake.show(.steam(appID: 620, accountID: FriendsWireFixture.accountID))
         try await eventually { sessions.active != nil }
-        XCTAssertEqual(session.onlineRequests, 0)
+        XCTAssertEqual(session.statusRequests, [])
         sessions.fake.show(nil)
-        try await eventually { session.onlineRequests == 1 }
+        try await eventually { session.statusRequests == [.away] }
+    }
+
+    @MainActor
+    func testPickingAStatusShowsItThroughTheSessionAndTheGames() async throws {
+        let session = ChatBridgeTestSession()
+        let sessions = SteamGameSessions()
+        let status = OnlineStatusChoice(storeID: "steam", defaults: isolatedDefaults())
+        let model = friendsTestModel(connect: { _ in session }, gameSessions: sessions, onlineStatus: status)
+        await model.start()
+        defer { model.signOut() }
+        try await eventually { model.isConnected }
+        try await eventually { sessions.fake.statuses == [.online] }
+
+        model.onlineStatus.choose(.invisible)
+        try await eventually { session.statusRequests == [.invisible] }
+        try await eventually { sessions.fake.statuses == [.online, .invisible] }
     }
 
     @MainActor
@@ -780,7 +798,7 @@ final class ChatBridgeTestSession: SteamSessionProtocol, @unchecked Sendable {
     private var _invites: [Invite] = []
     private var _reportedInvites: [ReportedInvite] = []
     private var _sent: [String] = []
-    private var _onlineRequests = 0
+    private var _statusRequests: [OnlineStatus] = []
     private var _historyRequests = 0
     private var _sessionRequests = 0
     private var _sessions: [SteamChatSession] = []
@@ -795,7 +813,7 @@ final class ChatBridgeTestSession: SteamSessionProtocol, @unchecked Sendable {
     /// Invitations into what the game reported itself, which skip the persona.
     var reportedInvites: [ReportedInvite] { lock.withLock { _reportedInvites } }
     var sent: [String] { lock.withLock { _sent } }
-    var onlineRequests: Int { lock.withLock { _onlineRequests } }
+    var statusRequests: [OnlineStatus] { lock.withLock { _statusRequests } }
     var historyRequests: Int { lock.withLock { _historyRequests } }
     var sessionRequests: Int { lock.withLock { _sessionRequests } }
     var sessions: [SteamChatSession] {
@@ -834,7 +852,7 @@ final class ChatBridgeTestSession: SteamSessionProtocol, @unchecked Sendable {
     func profile() async throws -> SteamProfile { SteamProfile(displayName: nil, avatarUrl: nil) }
     func details(appId: UInt32, language: String) async throws -> SteamGameDetails { throw FriendsTestFailure.unexpected }
 
-    func setOnline() async throws { lock.withLock { _onlineRequests += 1 } }
+    func setStatus(status: OnlineStatus) async throws { lock.withLock { _statusRequests.append(status) } }
     func nextChat(afterSequence: UInt64) async -> SteamChatEvents {
         await gate.pass()
         return await chat.nextChat(afterSequence: afterSequence)

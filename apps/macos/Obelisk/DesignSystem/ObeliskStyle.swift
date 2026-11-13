@@ -109,26 +109,3 @@ struct ObeliskPrimaryButtonStyle: ButtonStyle {
             .pointerCursor()
     }
 }
-
-struct StoreMark: View {
-    let section: LibrarySection
-    var size: CGFloat = 40
-
-    private var tint: Color {
-        switch section {
-        case .steam: Color(red: 0.36, green: 0.64, blue: 0.88)
-        case .epic: Color.secondary
-        case .gog: Color(red: 0.69, green: 0.43, blue: 0.91)
-        default: ObeliskStyle.accent
-        }
-    }
-
-    var body: some View {
-        Image(systemName: section.symbol)
-            .font(.system(size: size * 0.45, weight: .medium))
-            .foregroundStyle(tint)
-            .frame(width: size, height: size)
-            .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: size * 0.25))
-            .accessibilityHidden(true)
-    }
-}

@@ -75,6 +75,29 @@ struct LibraryGlassBar<Leading: View>: View {
     }
 }
 
+/// The account's name atop its menu. On a storefront with friends it also
+/// tells the account's status, and its submenu picks another.
+struct AccountMenuName: View {
+    let name: String
+    /// Nil on a storefront without friends.
+    let status: OnlineStatusChoice?
+
+    var body: some View {
+        if let status {
+            Picker(selection: Binding(get: { status.status }, set: { status.choose($0) })) {
+                ForEach(OnlineStatus.allCases) { Text($0.title).tag($0) }
+            } label: {
+                Text(L10n.string("ui.account.name_status", name,
+                                 status.status.title.lowercased(with: L10n.locale)))
+            }
+            .pickerStyle(.menu)
+            .accessibilityIdentifier("storefront-account-status")
+        } else {
+            Text(name)
+        }
+    }
+}
+
 /// The store and its signed-in account, opening the account menu.
 struct LibraryAccountPill<MenuContent: View>: View {
     let storeTitle: String

@@ -128,4 +128,10 @@ impl Downloads {
     pub fn move_to_top(&self, id: u64) {
         self.queue.move_to_top(id)
     }
+
+    /// Limits what every storefront downloads, in bytes per second: see
+    /// `obelisk_core::transfer::set_speed_limit`.
+    pub fn set_speed_limit(&self, bytes_per_second: u64) {
+        obelisk_core::transfer::set_speed_limit(bytes_per_second)
+    }
 }

@@ -3,8 +3,16 @@ import SwiftUI
 
 @main
 struct ObeliskApp: App {
-    @State private var model = AppModel()
+    @State private var model: AppModel
     @NSApplicationDelegateAdaptor(AppLifecycle.self) private var lifecycle
+
+    init() {
+        // setenv is only safe while no other thread reads the environment:
+        // before AppModel, whose Rust side starts threads. The test host
+        // starts no game, and its environment stays as it is.
+        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil { GameLocale.adopt() }
+        _model = State(wrappedValue: AppModel())
+    }
 
     var body: some Scene {
         Window(L10n.string("app.library"), id: "main") {

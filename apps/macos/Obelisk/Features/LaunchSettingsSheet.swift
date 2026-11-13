@@ -1,12 +1,24 @@
 import SwiftUI
 
 /// The launch settings of one installed Windows game, as its sheet shows
-/// them: read from Rust, and kept there at each change.
+/// them: read from Rust, and kept there at each change, one change at a time
+/// and each over the ones before it.
 @MainActor @Observable
 final class LaunchSettingsModel: Identifiable {
     private(set) var settings: LaunchSettings?
     private(set) var isLoading = true
     private(set) var error: String?
+    /// The choices as the player last made them, which Rust may not have kept yet.
+    private var chosen = LaunchChoices()
+    /// The choices still to keep. Only the latest wait: a change made while
+    /// Rust keeps an earlier one replaces those waiting.
+    private var waiting: LaunchChoices?
+    private var isKeeping = false
+    /// The arguments as the player types them, until the field is done.
+    private var typedArguments: String?
+    /// Where the player holds the render resolution's thumb, until they let go.
+    private var heldRenderPercent: UInt32?
+    private(set) var holdsRenderPercent = false
     @ObservationIgnored private let load: () async throws -> LaunchSettings?
     @ObservationIgnored private let save: (LaunchChoices) async throws -> LaunchSettings?
 
@@ -20,6 +32,7 @@ final class LaunchSettingsModel: Identifiable {
         isLoading = true
         do {
             settings = try await load()
+            if !isKeeping, let settings { chosen = settings.choices }
             error = nil
         } catch {
             self.error = error.localizedDescription
@@ -28,32 +41,92 @@ final class LaunchSettingsModel: Identifiable {
     }
 
     /// Changes one of the player's choices and keeps them: Rust drops those
-    /// the game already has by default.
+    /// the game already has by default. A change made before Rust kept the
+    /// last one adds to it.
     func choose(_ change: (inout LaunchChoices) -> Void) {
-        guard var choices = settings?.choices else { return }
-        change(&choices)
-        Task { await keep(choices) }
-    }
-
-    /// Keeps what the player typed as the game's launch arguments, when it
-    /// changed. Spaces alone are no arguments.
-    func setArguments(_ text: String) {
-        let arguments = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let settings, (settings.choices.arguments ?? "") != arguments else { return }
-        choose { $0.arguments = arguments.isEmpty ? nil : arguments }
+        guard settings != nil else { return }
+        let before = chosen
+        change(&chosen)
+        if chosen != before { keep() }
     }
 
     /// Forgets every choice: the game runs as Obelisk knows it best.
     func reset() {
-        Task { await keep(LaunchChoices()) }
+        chosen = LaunchChoices()
+        keep()
     }
 
-    private func keep(_ choices: LaunchChoices) async {
-        do {
-            if let saved = try await save(choices) { settings = saved }
-            error = nil
-        } catch {
-            self.error = error.localizedDescription
+    /// The game's launch arguments as the field shows them: what the player
+    /// types, else the ones last chosen.
+    var arguments: String {
+        get { typedArguments ?? chosen.arguments ?? "" }
+        set { typedArguments = newValue }
+    }
+
+    /// Keeps what the player typed as the game's launch arguments, when it
+    /// changed, once the field is done. Spaces alone are no arguments.
+    func keepArguments() {
+        guard let typed = typedArguments else { return }
+        typedArguments = nil
+        let arguments = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+        choose { $0.arguments = arguments.isEmpty ? nil : arguments }
+    }
+
+    /// The render resolution as the slider shows it: where the thumb is held,
+    /// else the share last chosen, before Rust kept it too.
+    var renderPercent: UInt32? {
+        if let heldRenderPercent { return heldRenderPercent }
+        if isKeeping, let percent = chosen.renderPercent { return percent }
+        return settings?.renderPercent
+    }
+
+    /// The player took the render resolution's thumb.
+    func holdRenderPercent() {
+        holdsRenderPercent = true
+    }
+
+    /// Moves the render resolution to `percent`, snapped to the stops. A held
+    /// thumb only shows it; a keyboard or VoiceOver step keeps it at once.
+    func moveRenderPercent(to percent: UInt32) {
+        let snapped = RenderPercent.snapped(percent)
+        if holdsRenderPercent {
+            heldRenderPercent = snapped
+        } else {
+            choose { $0.renderPercent = snapped }
+        }
+    }
+
+    /// The player let the thumb go: the share it was held at is kept.
+    func letGoOfRenderPercent() {
+        holdsRenderPercent = false
+        guard let held = heldRenderPercent else { return }
+        heldRenderPercent = nil
+        choose { $0.renderPercent = held }
+    }
+
+    /// Keeps the choices in Rust, one save at a time, so that an earlier save
+    /// never comes back over a later one.
+    private func keep() {
+        waiting = chosen
+        guard !isKeeping else { return }
+        isKeeping = true
+        Task {
+            while let choices = waiting {
+                waiting = nil
+                do {
+                    if let saved = try await save(choices) { settings = saved }
+                    error = nil
+                } catch {
+                    self.error = error.localizedDescription
+                    // The field keeps the arguments Rust could not keep, to try again.
+                    if waiting == nil, typedArguments == nil, choices.arguments != settings?.choices.arguments {
+                        typedArguments = choices.arguments ?? ""
+                    }
+                }
+                // Nothing newer waits: the choices are the ones Rust has.
+                if waiting == nil, let settings { chosen = settings.choices }
+            }
+            isKeeping = false
         }
     }
 
@@ -74,12 +147,11 @@ final class LaunchSettingsModel: Identifiable {
 /// The sheet behind a Windows game's Launch Settings: the arguments added to
 /// its command line, its engine, then the CPU translator that engine has,
 /// then the graphics backend and its options, each as the chosen engine
-/// allows, and Metal's Performance HUD, every one said in a sentence.
+/// allows, the render resolution where the engine offers one, and Metal's
+/// Performance HUD, every one said in a sentence.
 struct LaunchSettingsSheet: View {
-    let model: LaunchSettingsModel
+    @Bindable var model: LaunchSettingsModel
     let gameName: String
-    /// The arguments as the player types them, kept once the field is done.
-    @State private var arguments = ""
     @FocusState private var editsArguments: Bool
     @Environment(\.dismiss) private var dismiss
 
@@ -95,17 +167,11 @@ struct LaunchSettingsSheet: View {
         }
         .frame(width: 560, height: 680)
         .tint(ObeliskStyle.accent)
-        .task {
-            await model.appear()
-            arguments = model.settings?.choices.arguments ?? ""
-        }
-        .onChange(of: model.settings?.choices.arguments) { _, kept in
-            if !editsArguments { arguments = kept ?? "" }
-        }
+        .task { await model.appear() }
         .onChange(of: editsArguments) { _, editing in
-            if !editing { model.setArguments(arguments) }
+            if !editing { model.keepArguments() }
         }
-        .onDisappear { model.setArguments(arguments) }
+        .onDisappear { model.keepArguments() }
         .accessibilityIdentifier("launch-settings-sheet")
     }
 
@@ -126,7 +192,13 @@ struct LaunchSettingsSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     ObeliskCard { argumentsRow }
-                    ObeliskCard { engineRow(settings) }
+                    ObeliskCard {
+                        engineRow(settings)
+                        if model.engineOffer?.gameMode == true {
+                            ObeliskCardDivider()
+                            gameModeRow(settings)
+                        }
+                    }
                     SheetSection(title: L10n.string("ui.launch_settings.cpu")) {
                         ObeliskCard { translatorRow }
                     }
@@ -136,6 +208,10 @@ struct LaunchSettingsSheet: View {
                             if model.graphicsOffer?.options.contains(.rayTracing) == true {
                                 ObeliskCardDivider()
                                 rayTracingRow(settings)
+                            }
+                            if let lowest = model.engineOffer?.lowestRenderPercent {
+                                ObeliskCardDivider()
+                                renderPercentRow(settings, lowest: lowest)
                             }
                             ObeliskCardDivider()
                             performanceHudRow(settings)
@@ -151,30 +227,40 @@ struct LaunchSettingsSheet: View {
         }
     }
 
-    /// A whole command line: a field across the card, under its row.
-    private var argumentsRow: some View {
+    /// A row whose control spans the card, under it.
+    private func wideRow<Icon: View, Detail: View, Control: View>(
+        title: String,
+        @ViewBuilder icon: () -> Icon,
+        @ViewBuilder detail: () -> Detail,
+        @ViewBuilder control: () -> Control
+    ) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            ObeliskRow(title: L10n.string("ui.launch_settings.arguments")) {
-                SymbolTile(name: "terminal.fill", colors: TileColors.graphite)
-            } detail: {
-                Text(L10n.string("ui.launch_settings.arguments_detail"))
-            } accessory: {
-                EmptyView()
-            }
-            TextField(L10n.string("ui.launch_settings.arguments"), text: $arguments,
+            ObeliskRow(title: title, icon: icon, detail: detail) { EmptyView() }
+            control()
+                .padding(.leading, 64)
+                .padding(.trailing, 18)
+                .padding(.bottom, 16)
+        }
+    }
+
+    /// A whole command line.
+    private var argumentsRow: some View {
+        wideRow(title: L10n.string("ui.launch_settings.arguments")) {
+            SymbolTile(name: "terminal.fill", colors: TileColors.graphite)
+        } detail: {
+            Text(L10n.string("ui.launch_settings.arguments_detail"))
+        } control: {
+            TextField(L10n.string("ui.launch_settings.arguments"), text: $model.arguments,
                       prompt: Text(L10n.string("ui.launch_settings.arguments_placeholder")))
                 .textFieldStyle(.plain)
                 .font(.system(size: 13, design: .monospaced))
                 .labelsHidden()
                 .focused($editsArguments)
-                .onSubmit { model.setArguments(arguments) }
+                .onSubmit { model.keepArguments() }
                 .padding(.horizontal, 12)
                 .frame(height: 36)
                 .modifier(SignInWell(isFocused: editsArguments))
                 .accessibilityIdentifier("launch-settings-arguments")
-                .padding(.leading, 64)
-                .padding(.trailing, 18)
-                .padding(.bottom, 16)
         }
     }
 
@@ -195,6 +281,22 @@ struct LaunchSettingsSheet: View {
                         .tag(offer.engine)
                 }
             }
+        }
+    }
+
+    private func gameModeRow(_ settings: LaunchSettings) -> some View {
+        ObeliskRow(title: L10n.string("ui.launch_settings.game_mode")) {
+            SymbolTile(name: "gamecontroller.fill", colors: TileColors.green)
+        } detail: {
+            Text(L10n.string("ui.launch_settings.game_mode_detail"))
+        } accessory: {
+            Toggle(L10n.string("ui.launch_settings.game_mode"),
+                   isOn: Binding(get: { settings.gameMode },
+                                 set: { allowed in model.choose { $0.gameMode = allowed } }))
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .pointerCursor()
+                .accessibilityIdentifier("launch-settings-game-mode")
         }
     }
 
@@ -247,6 +349,16 @@ struct LaunchSettingsSheet: View {
                 .labelsHidden()
                 .pointerCursor()
                 .accessibilityIdentifier("launch-settings-ray-tracing")
+        }
+    }
+
+    private func renderPercentRow(_ settings: LaunchSettings, lowest: UInt32) -> some View {
+        wideRow(title: L10n.string("ui.launch_settings.render_percent")) {
+            SymbolTile(name: "display", colors: TileColors.blue)
+        } detail: {
+            Text(L10n.string("ui.launch_settings.render_percent_detail"))
+        } control: {
+            RenderPercentSlider(model: model, percent: model.renderPercent ?? settings.renderPercent, lowest: lowest)
         }
     }
 
@@ -324,6 +436,75 @@ struct LaunchSettingsSheet: View {
         switch graphics {
         case .d3dMetal: L10n.string("ui.launch_settings.graphics.d3dmetal_detail")
         case .dxmt: L10n.string("ui.launch_settings.graphics.dxmt_detail")
+        }
+    }
+}
+
+/// The render resolution's shares, in whole percent of the screen's pixels.
+enum RenderPercent {
+    /// All of the pixels.
+    static let native: UInt32 = 100
+    /// The shares the slider snaps to: three round ones and Native.
+    static let stops: [UInt32] = [25, 50, 75, native]
+
+    /// `percent`, or the stop within two points of it.
+    static func snapped(_ percent: UInt32) -> UInt32 {
+        stops.first { abs($0.distance(to: percent)) <= 2 } ?? percent
+    }
+
+    static func name(of percent: UInt32) -> String {
+        percent >= native ? L10n.string("ui.launch_settings.render_percent.native")
+                          : DownloadFormatting.percent(Double(percent) / 100)
+    }
+}
+
+/// A slider from the lowest share to Native, with the share beside it. Its
+/// model snaps it to the stops and keeps the share when the thumb is let go,
+/// or at once for a keyboard or VoiceOver step.
+private struct RenderPercentSlider: View {
+    let model: LaunchSettingsModel
+    /// The share to show.
+    let percent: UInt32
+    let lowest: UInt32
+
+    /// The stops, as the slider's own type has them.
+    private static let ticks = RenderPercent.stops.map { Double($0) }
+
+    var body: some View {
+        let title = L10n.string("ui.launch_settings.render_percent")
+        let value = RenderPercent.name(of: percent)
+        let position = Binding<Double>(get: { Double(percent) }, set: { move(to: UInt32($0.rounded())) })
+        let range = Double(lowest)...Double(RenderPercent.native)
+        HStack(spacing: 12) {
+            Slider(value: position,
+                   in: range,
+                   label: { Text(title) },
+                   ticks: {
+                       SliderTickContentForEach(Self.ticks, id: \.self) { stop in SliderTick(stop) }
+                   },
+                   onEditingChanged: { editing in
+                       if editing { model.holdRenderPercent() } else { model.letGoOfRenderPercent() }
+                   })
+                .labelsHidden()
+                .accessibilityLabel(title)
+                .accessibilityValue(value)
+                .accessibilityIdentifier("launch-settings-render-percent")
+            Text(value)
+                .font(.system(size: 13, weight: .medium))
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .frame(width: 56, alignment: .trailing)
+                .accessibilityHidden(true)
+        }
+    }
+
+    /// Moves the thumb, with a tap under the finger as a held thumb reaches a stop.
+    private func move(to position: UInt32) {
+        let before = model.renderPercent
+        model.moveRenderPercent(to: position)
+        if model.holdsRenderPercent, let now = model.renderPercent, now != before,
+           RenderPercent.stops.contains(now) {
+            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
         }
     }
 }

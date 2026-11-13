@@ -7,7 +7,7 @@
 //! installed copy, is reused once its MD5 matches, so a cancelled Transfer
 //! resumes and an update downloads only the chunks that changed.
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fs::{self, File, OpenOptions},
     io::{self, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
@@ -18,12 +18,13 @@ use std::{
 use md5::{Digest, Md5};
 use obelisk_core::{
     install::{
-        self, FileDigest, Md5Part, PARTIAL_DIRECTORY, apply_permissions, checked_file_path,
-        ensure_directory, hex, safe_relative_path, unhex,
+        self, FileDigest, Md5Part, PARTIAL_DIRECTORY, checked_file_path, ensure_directory, hex,
+        safe_relative_path, unhex,
     },
+    publish::{Assembled, Integrity, Publisher},
     transfer::{
-        self, BodyError, BodySize, CancelToken, Chunks, Delivery, DownloadPhase, DownloadProgress,
-        DownloadSummary, Interrupted, Pipeline, Reporter,
+        self, BodySize, CancelToken, CdnClient, CdnError, Chunks, Delivery, DownloadPhase,
+        DownloadProgress, DownloadSummary, Interrupted, Pipeline, Reporter,
     },
     verification::{self, VerificationError, VerificationFile},
 };
@@ -36,13 +37,23 @@ use crate::{
     manifest::{Chunk, Installed, InstalledFile, galaxy_path, relative_target},
 };
 
-const CHUNK_CONCURRENCY: usize = 12;
-/// Files whose chunks are requested ahead of the one being written.
-const FILE_PREFETCH: usize = 8;
+/// Chunk requests in flight. Chunks reach 10 MiB and arrive in request
+/// order, so one slow chunk holds up the ones after it: more in flight keep
+/// the link busy meanwhile.
+const CHUNK_CONCURRENCY: usize = 16;
+/// Decoded chunks waiting for the disk worker, which writes them as they
+/// come: few are enough, and each may hold 10 MiB.
+const WRITE_QUEUE: usize = 4;
+/// Chunks requested ahead of the disk worker: enough that requests in
+/// flight never wait for it to plan files. Small files hold one chunk each,
+/// so a count of files planned ahead left only a few requests in flight.
+const QUEUED_CHUNKS: usize = 2 * CHUNK_CONCURRENCY;
+/// Files whose chunks are requested ahead of the one being written, at most.
+const FILE_PREFETCH: usize = 256;
 const PIPELINE: Pipeline = Pipeline {
     delivery: Delivery::InOrder,
     fetches: CHUNK_CONCURRENCY,
-    queue: CHUNK_CONCURRENCY,
+    queue: WRITE_QUEUE,
 };
 
 /// One CDN a product's chunks come from, as its secure link describes it.
@@ -106,10 +117,9 @@ impl Endpoint {
 /// Only HTTPS locations without embedded credentials.
 pub(crate) fn checked_url(value: &str) -> Result<Url, GogError> {
     let url = Url::parse(value).map_err(|_| GogError::Protocol)?;
-    let secure = url.scheme() == "https";
-    // Tests serve their CDN on the loopback interface.
-    #[cfg(test)]
-    let secure = secure || url.scheme() == "http" && url.host_str() == Some("127.0.0.1");
+    // The tests' own GOG answers on a local socket, without TLS.
+    let secure = url.scheme() == "https"
+        || cfg!(test) && url.scheme() == "http" && url.host_str() == Some("127.0.0.1");
     if !secure
         || url.host_str().is_none()
         || !url.username().is_empty()
@@ -177,7 +187,7 @@ type ChunkResult = Result<Vec<u8>, GogError>;
 /// Installs `installed`, already validated, into `destination` and returns
 /// what the Transfer did.
 pub(crate) async fn download(
-    http: reqwest::Client,
+    cdn: CdnClient,
     links: Arc<SecureLinks>,
     installed: Arc<Installed>,
     key: String,
@@ -203,7 +213,7 @@ pub(crate) async fn download(
         Arc::clone(&reporter),
     );
     let reused_bytes = transfer::run_engine(PIPELINE, cancel, disk, |request| {
-        fetch_chunk(&http, &links, request, cancel, &reporter)
+        fetch_chunk(&cdn, &links, request, cancel, &reporter)
     })
     .await?;
     Ok(reporter.summary(reused_bytes))
@@ -212,7 +222,7 @@ pub(crate) async fn download(
 /// The first `bytes` of an installation's file, from the chunks that hold
 /// them, without installing it.
 pub(crate) async fn read(
-    http: &reqwest::Client,
+    cdn: &CdnClient,
     links: &SecureLinks,
     installed: &InstalledFile,
     bytes: u64,
@@ -228,14 +238,14 @@ pub(crate) async fn read(
             source: installed.source.clone(),
             chunk: chunk.clone(),
         };
-        output.extend(fetch_chunk(http, links, request, cancel, &reporter).await?);
+        output.extend(fetch_chunk(cdn, links, request, cancel, &reporter).await?);
     }
     output.truncate(usize::try_from(bytes).unwrap_or(usize::MAX));
     Ok(output)
 }
 
 async fn fetch_chunk(
-    http: &reqwest::Client,
+    cdn: &CdnClient,
     links: &SecureLinks,
     request: Request,
     cancel: &CancelToken,
@@ -244,14 +254,14 @@ async fn fetch_chunk(
     let path = galaxy_path(&request.chunk.compressed_md5)?;
     let mut failure = GogError::Network;
     let mut stale = false;
-    for attempt in 0..4 {
+    for attempt in 0_usize.. {
         cancel.check()?;
         let endpoints = links.endpoints(&request.source, stale).await?;
         stale = false;
         for endpoint in endpoints.iter() {
             let url = endpoint.chunk_url(&path)?;
             reporter.update(|status| status.phase = DownloadPhase::Downloading);
-            match fetch(http, url, request.chunk.compressed_size, cancel, reporter).await {
+            match fetch(cdn, url, request.chunk.compressed_size, cancel, reporter).await {
                 Ok(bytes) => {
                     let chunk = request.chunk.clone();
                     match cancel
@@ -273,49 +283,43 @@ async fn fetch_chunk(
                 Err(error) => failure = error,
             }
         }
-        if attempt < 3 {
-            cancel
-                .race(tokio::time::sleep(Duration::from_millis(
-                    250 * (attempt + 1),
-                )))
-                .await?;
+        // Three quick retries, then, while the network or the server fails,
+        // about a minute more.
+        let wait = match attempt.checked_sub(3) {
+            None => Some(Duration::from_millis(250 * (attempt as u64 + 1))),
+            Some(late) if failure.is_outage() => transfer::NETWORK_RETRY_WAITS.get(late).copied(),
+            Some(_) => None,
+        };
+        match wait {
+            Some(wait) => cancel.race(tokio::time::sleep(wait)).await?,
+            None => return Err(failure),
         }
     }
     Err(failure)
 }
 
 async fn fetch(
-    http: &reqwest::Client,
+    cdn: &CdnClient,
     url: Url,
     expected: u64,
     cancel: &CancelToken,
     reporter: &Reporter,
 ) -> ChunkResult {
-    let response = cancel
-        .race(http.get(url).timeout(Duration::from_secs(60)).send())
-        .await?
-        .map_err(|_| GogError::Network)?;
-    if !response.status().is_success() {
-        return Err(GogError::Http(response.status().as_u16()));
-    }
-    Ok(transfer::read_body(
-        response.content_length(),
-        response.bytes_stream(),
-        BodySize::Exactly(expected),
-        cancel,
-        |length| {
+    Ok(cdn
+        .get(url, BodySize::Exactly(expected), cancel, |length| {
             reporter.update(|status| {
                 status.network_bytes += length;
                 status.content_bytes += length;
             });
-        },
-    )
-    .await?)
+        })
+        .await?)
 }
 
-/// A chunk's zlib stream, checked before and after it inflates.
+/// A chunk's zlib stream, inflated within its size and checked by the MD5
+/// of what it holds. The MD5 of the stream itself, which names it on the
+/// CDN, would be another pass over every byte proving nothing more.
 pub(crate) fn decode_chunk(bytes: &[u8], chunk: &Chunk) -> ChunkResult {
-    if bytes.len() as u64 != chunk.compressed_size || !md5_is(bytes, &chunk.compressed_md5) {
+    if bytes.len() as u64 != chunk.compressed_size {
         return Err(GogError::Integrity);
     }
     let mut decoder = flate2::read::ZlibDecoder::new(bytes);
@@ -337,14 +341,24 @@ impl From<Interrupted> for GogError {
     }
 }
 
-impl From<BodyError> for GogError {
-    fn from(error: BodyError) -> Self {
+impl From<CdnError> for GogError {
+    fn from(error: CdnError) -> Self {
         match error {
-            BodyError::Network => Self::Network,
+            CdnError::Network => Self::Network,
+            CdnError::Http(status) => Self::Http(status),
             // The manifest names each chunk's exact size.
-            BodyError::Size => Self::Integrity,
-            BodyError::Cancelled => Self::Cancelled,
+            CdnError::Size => Self::Integrity,
+            CdnError::Cancelled => Self::Cancelled,
         }
+    }
+}
+
+impl GogError {
+    /// Whether the network or a server is failing rather than the chunk bad,
+    /// as [`CdnError::is_outage`] tells.
+    fn is_outage(&self) -> bool {
+        matches!(self, Self::Network)
+            || matches!(self, Self::Http(status) if transfer::is_outage_status(*status))
     }
 }
 
@@ -467,17 +481,11 @@ impl DiskInstall {
             ensure_directory(&root, &safe_relative_path(directory)?)?;
         }
         self.plan_ahead(&verified, &checked, &partial_root, &root)?;
-        let mut ensured_parents: HashSet<PathBuf> = HashSet::new();
+        let mut publisher = Publisher::new(&root, &self.cancel);
         for (index, (file, valid)) in checked.iter().zip(&verified.valid).enumerate() {
             self.cancel.check()?;
-            let relative = safe_relative_path(&file.installed.path)?;
-            let parent = relative.parent().unwrap_or(Path::new(""));
-            if ensured_parents.insert(parent.to_path_buf()) {
-                ensure_directory(&root, parent)?;
-            }
-            let target = checked_file_path(&root, &relative)?;
             if *valid {
-                apply_permissions(&target, is_executable(&file.installed.file, &target)?)?;
+                publisher.keep(&file.installed.path, file.installed.file.executable())?;
                 continue;
             }
             self.reporter.update(|status| {
@@ -487,7 +495,7 @@ impl DiskInstall {
             if plan.index != index {
                 return Err(GogError::Protocol);
             }
-            reused_bytes += self.assemble(file, &plan, &partial_root, &target)?;
+            reused_bytes += self.assemble(file, &plan, &partial_root, &mut publisher)?;
             self.reporter.update(|status| status.completed_files += 1);
             self.plan_ahead(&verified, &checked, &partial_root, &root)?;
         }
@@ -495,6 +503,9 @@ impl DiskInstall {
         for link in &installed.links {
             place_link(&root, &link.path, &link.target)?;
         }
+        // Every file is in place: durable before the receipt says so, and
+        // recorded whole for the next Transfer to skip.
+        publisher.complete(&checked)?;
         // Partial copies stay only after a failure or a cancellation.
         fs::remove_dir_all(partial_root)?;
         Ok(reused_bytes)
@@ -511,6 +522,7 @@ impl DiskInstall {
         root: &Path,
     ) -> Result<(), GogError> {
         while self.planned.len() < FILE_PREFETCH
+            && self.requested() < QUEUED_CHUNKS
             && self.next_file < files.len()
             && !self.chunks.refused()
         {
@@ -557,6 +569,16 @@ impl DiskInstall {
         Ok(())
     }
 
+    /// The chunks the planned files requested, none of which has arrived:
+    /// the file being written was planned too and left the plan already.
+    fn requested(&self) -> usize {
+        self.planned
+            .iter()
+            .flat_map(|plan| &plan.sources)
+            .filter(|source| matches!(source, Source::Download))
+            .count()
+    }
+
     /// Writes the file's chunks in order into a fresh partial copy, checks
     /// each one, then publishes the file atomically.
     fn assemble(
@@ -564,7 +586,7 @@ impl DiskInstall {
         file: &Verified<'_>,
         plan: &PlannedFile,
         partial_root: &Path,
-        target: &Path,
+        publisher: &mut Publisher,
     ) -> Result<u64, GogError> {
         let name = partial_name(&file.installed.path);
         let partial = checked_file_path(partial_root, Path::new(&name))?;
@@ -598,13 +620,18 @@ impl DiskInstall {
                 .update(|status| status.completed_bytes += chunk.size);
         }
         self.cancel.check()?;
-        output.sync_all()?;
-        drop(output);
+        // The finished copy is the one to reuse if publishing it fails. Its
+        // write-out to the drive comes with publishing, after this rename: a
+        // copy a power loss tore is reused chunk by chunk, each checked by its
+        // MD5.
         fs::rename(&next, &partial)?;
-        apply_permissions(&partial, is_executable(&file.installed.file, &partial)?)?;
-        self.cancel.check()?;
-        fs::rename(&partial, target)?;
-        File::open(target.parent().ok_or(GogError::Protocol)?)?.sync_all()?;
+        publisher.publish(Assembled {
+            file: output,
+            at: &partial,
+            name: &file.installed.path,
+            program: file.installed.file.executable(),
+            integrity: Integrity::PartsChecked,
+        })?;
         Ok(reused_bytes)
     }
 }
@@ -655,12 +682,6 @@ fn place_link(root: &Path, path: &str, target: &str) -> Result<(), GogError> {
     safe_relative_path(target)?;
     install::place_link(root, &relative, Path::new(&relative_target(path, target)))?;
     Ok(())
-}
-
-/// Galaxy flags executables, but some builds miss the flag on helpers their
-/// game starts: programs are also recognised by their header.
-fn is_executable(file: &crate::manifest::File, path: &Path) -> std::io::Result<bool> {
-    Ok(file.executable() || install::starts_as_program(path)?)
 }
 
 #[cfg(test)]

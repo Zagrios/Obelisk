@@ -123,6 +123,26 @@ final class AccountLibraryTests: XCTestCase {
         try await eventually { library.shown.map(\.appName) == ["absent", "large", "small"] }
     }
 
+    func testTheInstalledCountIsWhatTheInstalledFilterKeeps() async throws {
+        let root = try temporaryDirectory()
+        let both = epicGame("both", title: "Both", macOS: true), one = epicGame("one", title: "One")
+        let absent = epicGame("absent", title: "Absent"), delisted = epicGame("delisted", title: "Delisted")
+        let fake = FakeInstallations<EpicGames>(receipts: [
+            epicReceipt(both, platform: .windows, root: root), epicReceipt(both, platform: .mac, root: root),
+            epicReceipt(delisted, platform: .windows, root: root),
+        ])
+        let library = epicLibrary(root: root, installations: fake)
+        XCTAssertEqual(library.installedCount, 0, "No game is listed yet")
+
+        library.show([both, one, absent])
+        XCTAssertEqual(library.installedCount, 1, "A game installed for two platforms counts once, an unlisted one never")
+        XCTAssertEqual(library.installedCount, library.games(by: .lastPlayed, filter: .installed).count)
+
+        fake.publish { $0.receipts.append(self.epicReceipt(one, platform: .windows, root: root)) }
+        try await eventually { library.installedCount == 2 }
+        XCTAssertEqual(library.installedCount, library.games(by: .lastPlayed, filter: .installed).count)
+    }
+
     // MARK: Facts
 
     func testLastPlayedIsTheLaterOfTheStorefrontAndThisAccountsLaunch() throws {
@@ -382,7 +402,7 @@ final class AccountLibraryTests: XCTestCase {
         library.sort = .name
         library.filter = .played
         XCTAssertNotNil(library.pendingMetadata)
-        await failing.fail(EpicError.Network)
+        await failing.fail(WebAccountError.Network)
         try await eventually { library.missingMetadata != nil }
         XCTAssertNil(library.pendingMetadata)
         XCTAssertEqual(ended.loads, ["failing"], "A failed load still ends")
@@ -418,7 +438,7 @@ final class AccountLibraryTests: XCTestCase {
         let count = await reads.count
         XCTAssertEqual(count, 1, "A load already running is not asked again")
 
-        library.load(.dateAdded) { await reads.add(); throw EpicError.Network }
+        library.load(.dateAdded) { await reads.add(); throw WebAccountError.Network }
         try await eventually { await reads.count == 2 }
         await drainMainQueue(times: 3)
         XCTAssertEqual(library.value(of: portal, for: .dateAdded), 1_300_000_000, "A failure keeps what showed")

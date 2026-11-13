@@ -4,9 +4,9 @@
 //! anti-cheat then loads its Linux module. Only the games whose Launch settings
 //! name the engine run there, by their profile's choice or their player's;
 //! every other Windows game keeps Rosetta's Wine.
-use super::{Adapter, Additions, Config, Facts, Furnisher, Game, Graphics};
+use super::{Adapter, Additions, Config, Facts, Furnisher, Game, Graphics, Programs};
 use crate::{
-    Error,
+    launch::Error,
     supervisor::{Target, architecture::Architecture},
 };
 use obelisk_core::launch::LaunchTarget;
@@ -95,6 +95,7 @@ static FACTS: Facts = Facts {
             "LOGNAME",
             "PATH",
             "LANG",
+            "LC_ALL",
             "WINEPREFIX",
             "WINEARCH",
             "WINEDEBUG",
@@ -112,6 +113,7 @@ static FACTS: Facts = Facts {
             "d3d12",
         ],
     },
+    programs: Programs::X86_64,
 };
 
 impl Adapter for LinuxEngine {
@@ -201,6 +203,15 @@ impl Adapter for LinuxEngine {
             "--graphics".to_owned(),
             config.settings.graphics.name().to_owned(),
         ];
+        // Without it, the window server shows all of the screen's pixels.
+        if config.settings.render_percent != crate::launch_settings::FULL_RENDER_PERCENT {
+            arguments.push("--render-percent".to_owned());
+            arguments.push(config.settings.render_percent.to_string());
+        }
+        // Without it, macOS turns Game Mode on while the game is full screen.
+        if !config.settings.game_mode {
+            arguments.extend(["--game-mode".to_owned(), "off".to_owned()]);
+        }
         for (path, folder) in &guest.binds {
             arguments.push("--bind".to_owned());
             arguments.push(format!("{path}={}:ro", folder.display()));
@@ -325,8 +336,18 @@ fn installed(config: &Config) -> bool {
 }
 
 /// What every Wine command of the engine runs with in the guest, then the
-/// variables the game's profile adds.
+/// variables the game's profile adds. Wine takes its Windows locale from the
+/// guest's `LC_ALL`, and only from it: not from `LANG`, nor from the
+/// `WINEUSERLOCALE` its own sources name. The guest holds no locale but
+/// `C.utf8`, which Wine does not need. The locale is the player's, from the
+/// launch settings: a supervisor, which builds the target of an Epic or GOG
+/// game, starts with no environment to read it from.
 fn guest_environment(config: &Config) -> Vec<(String, String)> {
+    let locale = config
+        .settings
+        .locale
+        .as_deref()
+        .map(|locale| ("LC_ALL".to_owned(), format!("{locale}.UTF-8")));
     let own = [
         ("HOME", HOME.into()),
         ("USER", "user".into()),
@@ -346,6 +367,7 @@ fn guest_environment(config: &Config) -> Vec<(String, String)> {
     ];
     own.into_iter()
         .map(|(name, value)| (name.to_owned(), value))
+        .chain(locale)
         .chain(config.settings.variables.clone())
         .collect()
 }

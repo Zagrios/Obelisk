@@ -1,9 +1,10 @@
 // Display identity can change without moving the user's library.
 PRODUCT_NAME = Obelisk
 PRODUCT_BUNDLE_IDENTIFIER = com.zagrios.obelisk
-MARKETING_VERSION = 0.4.0
+MARKETING_VERSION = 0.6.3
 // Sparkle compares the build version: each release must raise it, so it follows the version.
 CURRENT_PROJECT_VERSION = $(MARKETING_VERSION)
 INFOPLIST_KEY_CFBundleDisplayName = Obelisk
-INFOPLIST_KEY_LSApplicationCategoryType = public.app-category.games
+// No LSApplicationCategoryType: with the games category macOS registers Obelisk itself as a game for as long as it
+// runs and turns Game Mode on when its window is full screen. Only the games it starts carry the category.
 

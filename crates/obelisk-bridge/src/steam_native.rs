@@ -1,13 +1,6 @@
 //! What Steam's Game sessions and Cloud share across UniFFI.
 use crate::SteamError;
-
-impl From<game_runtime::Error> for SteamError {
-    fn from(error: game_runtime::Error) -> Self {
-        Self::Failure {
-            reason: error.to_string(),
-        }
-    }
-}
+use game_runtime::steam::host::HostState;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum SteamHostState {
@@ -17,13 +10,13 @@ pub enum SteamHostState {
     Stopped,
 }
 
-impl From<game_runtime::HostState> for SteamHostState {
-    fn from(value: game_runtime::HostState) -> Self {
+impl From<HostState> for SteamHostState {
+    fn from(value: HostState) -> Self {
         match value {
-            game_runtime::HostState::Online => Self::Online,
-            game_runtime::HostState::Disconnected => Self::Disconnected,
-            game_runtime::HostState::Lost => Self::Lost,
-            game_runtime::HostState::Stopped => Self::Stopped,
+            HostState::Online => Self::Online,
+            HostState::Disconnected => Self::Disconnected,
+            HostState::Lost => Self::Lost,
+            HostState::Stopped => Self::Stopped,
         }
     }
 }

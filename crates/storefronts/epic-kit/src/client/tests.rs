@@ -9,6 +9,7 @@ use std::{
     time::Duration,
 };
 
+use obelisk_core::testing::{Cdn, Reply as CdnReply, reaching_as, serves};
 use serde_json::{Value, json};
 
 use super::*;
@@ -18,6 +19,8 @@ struct Reply {
     path: String,
     status: u16,
     body: String,
+    /// Bytes served in place of `body`, as a CDN serves a chunk.
+    raw: Option<Vec<u8>>,
     bearer: Option<&'static str>,
     delay_ms: u64,
 }
@@ -27,6 +30,7 @@ fn reply(path: &str, status: u16, body: Value) -> Reply {
         path: path.into(),
         status,
         body: body.to_string(),
+        raw: None,
         bearer: None,
         delay_ms: 0,
     }
@@ -127,17 +131,22 @@ impl Mock {
                                 .is_none_or(|token| request.contains(&format!("Bearer {token}")))
                     })
                     .unwrap_or_else(|| panic!("unexpected fixture request {path}"));
-                let mut response = replies.remove(index);
-                response.body = response.body.replace("FIXTURE_BASE", &fixture_base);
+                let response = replies.remove(index);
+                let body = response.raw.unwrap_or_else(|| {
+                    response
+                        .body
+                        .replace("FIXTURE_BASE", &fixture_base)
+                        .into_bytes()
+                });
                 captured.lock().unwrap().push(request);
                 thread::sleep(Duration::from_millis(response.delay_ms));
-                let output = format!(
-                    "HTTP/1.1 {} Fixture\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                let head = format!(
+                    "HTTP/1.1 {} Fixture\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
                     response.status,
-                    response.body.len(),
-                    response.body
+                    body.len(),
                 );
-                let _ = socket.write_all(output.as_bytes());
+                let _ = socket.write_all(head.as_bytes());
+                let _ = socket.write_all(&body);
             }
         });
         let mut api = Api::new().unwrap();
@@ -156,18 +165,14 @@ impl Mock {
     }
 
     fn client(&self, expired: bool) -> Client {
-        Client::from_session(
-            self.api.clone(),
-            Session {
-                credentials: credentials(),
-                access_token: "access-old".into(),
-                expires_at: if expired {
-                    Instant::now()
-                } else {
-                    Instant::now() + Duration::from_secs(3600)
-                },
-            },
-        )
+        Client::from_session(self.api.clone(), session(expired))
+    }
+
+    /// A client whose chunks `cdn` serves, in memory, in place of the host
+    /// the manifests come from.
+    fn client_served_by(&self, cdn: &Cdn) -> Client {
+        let content = ContentClient::over(reaching_as(&[("127.0.0.1", cdn)]));
+        Client::with_content(self.api.clone(), session(false), content)
     }
 
     fn requests(&self) -> Vec<String> {
@@ -179,6 +184,18 @@ impl Drop for Mock {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::SeqCst);
         self.handle.take().unwrap().join().unwrap();
+    }
+}
+
+fn session(expired: bool) -> Session {
+    Session {
+        credentials: credentials(),
+        access_token: "access-old".into(),
+        expires_at: if expired {
+            Instant::now()
+        } else {
+            Instant::now() + Duration::from_secs(3600)
+        },
     }
 }
 
@@ -405,25 +422,33 @@ async fn game_details_name_the_build_a_download_installs_whose_manifest_may_be_u
     assert_eq!(details.installation_bytes, None);
 }
 
-/// A Mac build whose launch executable its manifest does not hold.
-fn mac_build_without_program() -> Vec<Reply> {
+/// A number or a hash as a JSON manifest writes it: each byte in three
+/// decimal digits.
+fn blob(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:03}")).collect()
+}
+
+/// The manifest of a Mac build whose launch executable it does not hold.
+fn manifest_without_program() -> Value {
     use sha1::{Digest, Sha1};
-    let empty_hash: String = Sha1::digest([])
-        .iter()
-        .map(|byte| format!("{byte:03}"))
-        .collect();
+    json!({
+        "AppNameString": "game", "BuildVersionString": "1.0", "LaunchExeString":"Game.app",
+        "FileManifestList":[{"Filename":"Game.app/Contents/empty", "FileHash":blob(&Sha1::digest([])), "FileChunkParts":[]}],
+        "ChunkFilesizeList":{}, "ChunkHashList":{}, "ChunkShaList":{}, "DataGroupList":{}
+    })
+}
+
+/// What Epic answers a pick about a Mac build of `manifest`.
+fn mac_build(manifest: Value) -> Vec<Reply> {
     vec![
         reply(MANIFEST_PATH, 200, live_asset("mac.manifest")),
-        reply(
-            "/mac.manifest",
-            200,
-            json!({
-                "AppNameString": "game", "BuildVersionString": "1.0", "LaunchExeString":"Game.app",
-                "FileManifestList":[{"Filename":"Game.app/Contents/empty", "FileHash":empty_hash, "FileChunkParts":[]}],
-                "ChunkFilesizeList":{}, "ChunkHashList":{}, "ChunkShaList":{}, "DataGroupList":{}
-            }),
-        ),
+        reply("/mac.manifest", 200, manifest),
     ]
+}
+
+/// A Mac build whose launch executable its manifest does not hold.
+fn mac_build_without_program() -> Vec<Reply> {
+    mac_build(manifest_without_program())
 }
 
 #[tokio::test]
@@ -465,29 +490,137 @@ async fn a_game_s_page_shows_its_mac_build_until_a_download_found_it_is_not_nati
     assert_eq!(mock.requests().len(), 9);
 }
 
+const PROGRAM: &str = "Game.app/Contents/MacOS/Game";
+/// What `PROGRAM` holds: the start of a program for Apple silicon.
+const ARM64_HEAD: [u8; 8] = [0xcf, 0xfa, 0xed, 0xfe, 0x0c, 0x00, 0x00, 0x01];
+
+/// A Mac build whose program is the first bytes of its one chunk: its
+/// manifest, the chunk's path on a CDN and what the CDN serves there.
+fn program_build() -> (String, String, Vec<u8>) {
+    use sha1::{Digest, Sha1};
+    // A JSON manifest's chunks are a mebibyte each.
+    let mut window = ARM64_HEAD.to_vec();
+    window.resize(1024 * 1024, 0);
+    let (chunk, served) = crate::content::tests::chunk(&window, 1, true);
+    let guid: String = chunk
+        .guid
+        .iter()
+        .map(|word| format!("{word:08X}"))
+        .collect();
+    let sha1: String = chunk
+        .sha1
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    let manifest = json!({
+        "AppNameString": "game", "BuildVersionString": "1.0", "LaunchExeString": PROGRAM,
+        "FileManifestList": [
+            {"Filename": "Game.app/Contents/empty", "FileHash": blob(&Sha1::digest([])), "FileChunkParts": []},
+            {"Filename": PROGRAM, "FileHash": blob(&Sha1::digest(ARM64_HEAD)),
+             "FileChunkParts": [{"Guid": guid, "Offset": blob(&0_u32.to_le_bytes()), "Size": blob(&8_u32.to_le_bytes())}]},
+        ],
+        "ChunkFilesizeList": {&guid: blob(&chunk.file_size.to_le_bytes())},
+        "ChunkHashList": {&guid: blob(&chunk.hash.to_le_bytes())},
+        "ChunkShaList": {&guid: sha1},
+        "DataGroupList": {&guid: blob(&[chunk.group])},
+    })
+    .to_string();
+    (manifest, format!("/{}", chunk.relative_path(13)), served)
+}
+
 #[tokio::test]
-async fn a_mac_build_that_does_not_run_natively_leaves_the_download_to_the_windows_build() {
-    let mut replies = mac_build_without_program();
-    replies.push(reply(
-        WINDOWS_MANIFEST_PATH,
-        200,
-        live_asset("windows.manifest"),
-    ));
-    let mock = Mock::new(replies);
+async fn a_mac_build_whose_program_holds_an_arm64_slice_is_picked_and_keeps_its_manifest() {
+    use sha1::{Digest, Sha1};
+    let (manifest, chunk_path, served) = program_build();
+    let hash: String = Sha1::digest(manifest.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    let mut asset = live_asset("mac.manifest");
+    asset["elements"][0]["hash"] = json!(hash);
+    let mut found = reply("/mac.manifest", 200, Value::Null);
+    found.body = manifest.clone();
+    let mut program_chunk = reply(&chunk_path, 200, Value::Null);
+    program_chunk.raw = Some(served);
+    let mock = Mock::new(vec![
+        reply(MANIFEST_PATH, 200, asset),
+        reply(WINDOWS_MANIFEST_PATH, 200, live_asset("windows.manifest")),
+        found,
+        program_chunk,
+    ]);
     let client = mock.client(false);
     assert_eq!(
         client.platform("space", "base", "game").await.unwrap(),
-        Platform::Windows
+        Platform::Mac
     );
-    // Without a Windows build, the game cannot be installed.
-    let mut replies = mac_build_without_program();
-    replies.push(reply(WINDOWS_MANIFEST_PATH, 404, json!({})));
-    let mock = Mock::new(replies);
-    let client = mock.client(false);
-    assert!(matches!(
-        client.platform("space", "base", "game").await,
-        Err(EpicError::Service { message }) if message == "backend.install.macBuildNotNative"
-    ));
+    assert_eq!(mock.requests().len(), 4, "only the program's chunk is read");
+    // The download of that build starts from the manifest the pick read.
+    let build = (["space", "base", "game", "Mac"].map(String::from), hash);
+    let kept = client
+        .build_choice
+        .take(&build)
+        .expect("the pick's manifest");
+    assert_eq!(kept.bytes, manifest.as_bytes());
+    assert_eq!(kept.manifest.unwrap().launch_executable, PROGRAM);
+}
+
+#[tokio::test]
+async fn a_download_takes_its_chunks_through_the_cdn_its_client_was_built_with() {
+    let (manifest, chunk_path, served) = program_build();
+    let mut found = reply("/mac.manifest", 200, Value::Null);
+    found.body = manifest;
+    let mock = Mock::new(vec![
+        reply(
+            "/library/api/public/items",
+            200,
+            json!({"records":[item("game", "base")],"responseMetadata":{}}),
+        ),
+        reply(MANIFEST_PATH, 200, live_asset("mac.manifest")),
+        found,
+    ]);
+    let cdn = Cdn::in_memory(serves(&chunk_path, &served));
+    let client = mock.client_served_by(&cdn);
+    let parent = tempfile::tempdir().unwrap();
+    let installed = client
+        .download("space", "base", "game", Platform::Mac, parent.path())
+        .await
+        .unwrap();
+    let directory = std::path::Path::new(&installed.directory);
+    assert_eq!(std::fs::read(directory.join(PROGRAM)).unwrap(), ARM64_HEAD);
+    let chunks: Vec<_> = cdn
+        .arrivals()
+        .iter()
+        .map(|arrival| arrival.path().to_owned())
+        .collect();
+    assert_eq!(chunks, [chunk_path]);
+    // Epic's services took the ownership check, the build and its manifest.
+    assert_eq!(mock.requests().len(), 3);
+    let progress = client.progress().unwrap();
+    assert_eq!(progress.state, TransferState::Complete);
+    assert_eq!(progress.content_bytes, served.len() as u64);
+}
+
+#[tokio::test]
+async fn only_a_mac_build_in_a_form_obelisk_does_not_install_gives_way_to_the_windows_build() {
+    let pick = async |manifest: Value| {
+        let mut replies = mac_build(manifest);
+        replies.push(reply(
+            WINDOWS_MANIFEST_PATH,
+            200,
+            live_asset("windows.manifest"),
+        ));
+        let mock = Mock::new(replies);
+        mock.client(false).platform("space", "base", "game").await
+    };
+    // A manifest older than those Obelisk installs.
+    let mut old = manifest_without_program();
+    old["ManifestFileVersion"] = json!(blob(&11_u32.to_le_bytes()));
+    assert_eq!(pick(old).await.unwrap(), Platform::Windows);
+    // One that lists a path twice may be a mistake of the moment.
+    let mut twice = manifest_without_program();
+    let file = twice["FileManifestList"][0].clone();
+    twice["FileManifestList"].as_array_mut().unwrap().push(file);
+    assert!(matches!(pick(twice).await, Err(EpicError::Protocol)));
 }
 
 #[tokio::test]
@@ -555,36 +688,6 @@ async fn game_details_retry_auth_once_and_keep_rotated_credentials() {
 }
 
 #[tokio::test]
-async fn disconnect_discards_in_flight_game_details() {
-    let mut slow = reply(MANIFEST_PATH, 404, json!({}));
-    slow.delay_ms = 200;
-    let mock = Mock::new(vec![
-        slow,
-        reply(WINDOWS_MANIFEST_PATH, 404, json!({})),
-        reply(
-            "/account/api/oauth/sessions/kill/access-old",
-            204,
-            Value::Null,
-        ),
-    ]);
-    let client = Arc::new(mock.client(false));
-    let reader = client.clone();
-    let reading = tokio::spawn(async move { reader.game_details("space", "base", "game").await });
-    tokio::time::timeout(Duration::from_secs(2), async {
-        while mock.requests().is_empty() {
-            tokio::time::sleep(Duration::from_millis(1)).await;
-        }
-    })
-    .await
-    .unwrap();
-    client.disconnect().await.unwrap();
-    assert!(matches!(
-        reading.await.unwrap(),
-        Err(EpicError::Unauthorized)
-    ));
-}
-
-#[tokio::test]
 async fn authorization_and_restore_use_form_grants_and_rotated_identity() {
     let mock = Mock::new(vec![
         reply("/account/api/oauth/token", 200, token("account-a")),
@@ -637,30 +740,12 @@ async fn rotated_credentials_survive_a_failed_library_refresh() {
     let client = mock.client(true);
     let error = client.games().await.unwrap_err();
     assert!(matches!(error, EpicError::Service { .. }));
+    // What Epic answered is not shown: it may name the account's secrets.
     assert!(!error.to_string().contains("secret"));
     assert_eq!(
         client.credentials().await.unwrap().refresh_token,
         "refresh-new"
     );
-}
-
-#[tokio::test]
-async fn rejected_access_token_is_refreshed_only_once() {
-    let mock = Mock::new(vec![reply(
-        "/account/api/oauth/token",
-        200,
-        token("account-a"),
-    )]);
-    let client = mock.client(false);
-    assert_eq!(
-        client.access_token(Some("access-old")).await.unwrap(),
-        "access-new"
-    );
-    assert_eq!(
-        client.access_token(Some("access-old")).await.unwrap(),
-        "access-new"
-    );
-    assert_eq!(mock.requests().len(), 1);
 }
 
 #[tokio::test]
@@ -861,6 +946,7 @@ async fn oversized_token_response_is_rejected() {
         path: "/account/api/oauth/token".into(),
         status: 200,
         body: " ".repeat(1024 * 1024 + 1),
+        raw: None,
         bearer: None,
         delay_ms: 0,
     }]);
@@ -1110,8 +1196,11 @@ async fn unowned_games_never_create_an_installation() {
 
 #[tokio::test]
 async fn download_refreshes_rejected_session_once_before_fetching_content() {
+    // Epic rejects a token that has not lapsed.
+    let mut rejected = reply("/library/api/public/items", 401, json!({}));
+    rejected.bearer = Some("access-old");
     let mut replies = vec![
-        reply("/library/api/public/items", 401, json!({})),
+        rejected,
         reply("/account/api/oauth/token", 200, token("account-a")),
     ];
     replies.extend(download_replies("game"));
@@ -1126,13 +1215,103 @@ async fn download_refreshes_rejected_session_once_before_fetching_content() {
         client.credentials().await.unwrap().refresh_token,
         "refresh-new"
     );
+    let requests = mock.requests();
     assert_eq!(
-        mock.requests()
+        requests
             .iter()
             .filter(|request| request.contains("POST /account/api/oauth/token"))
             .count(),
         1
     );
+    // The ownership check and the build are asked for with the new token.
+    assert!(requests[1].starts_with("POST /account/api/oauth/token "));
+    assert!(requests[2].starts_with("GET /library/api/public/items"));
+    assert!(requests[2].contains("Bearer access-new"));
+    assert!(requests[3].contains("Bearer access-new"));
+    assert_eq!(requests.len(), 5);
+}
+
+/// What Epic answers a download of `program_build`'s game, and what a CDN
+/// serves for its one chunk.
+fn program_download() -> (Vec<Reply>, Vec<u8>) {
+    let (manifest, _, served) = program_build();
+    let mut found = reply("/mac.manifest", 200, Value::Null);
+    found.body = manifest;
+    let replies = vec![
+        reply(
+            "/library/api/public/items",
+            200,
+            json!({"records":[item("game", "base")],"responseMetadata":{}}),
+        ),
+        reply(MANIFEST_PATH, 200, live_asset("mac.manifest")),
+        found,
+    ];
+    (replies, served)
+}
+
+/// Where a download of the game's Mac build under `parent` writes its receipt.
+fn receipt_of_the_mac_build(parent: &std::path::Path) -> std::path::PathBuf {
+    parent
+        .join(installation_directory_name(
+            "space",
+            "base",
+            "game",
+            Platform::Mac,
+        ))
+        .join(obelisk_core::install::RECEIPT_FILE)
+}
+
+#[tokio::test]
+async fn signing_out_during_a_download_cancels_its_transfer_which_writes_no_receipt() {
+    let (mut replies, _) = program_download();
+    replies.push(reply(
+        "/account/api/oauth/sessions/kill/access-old",
+        204,
+        Value::Null,
+    ));
+    let mock = Mock::new(replies);
+    // The chunk never comes: only the sign-out ends the download.
+    let cdn = Cdn::in_memory(|_| CdnReply::Silent);
+    let client = mock.client_served_by(&cdn);
+    let parent = tempfile::tempdir().unwrap();
+    let download = client.download("space", "base", "game", Platform::Mac, parent.path());
+    let sign_out = async {
+        cdn.taken(1).await;
+        client.disconnect().await
+    };
+    let (installed, signed_out) = tokio::join!(download, sign_out);
+    signed_out.unwrap();
+    // The Transfer reports its cancellation before the session it lost.
+    assert!(matches!(installed, Err(EpicError::Cancelled)));
+    assert_eq!(client.progress().unwrap().state, TransferState::Cancelled);
+    assert!(!receipt_of_the_mac_build(parent.path()).exists());
+}
+
+#[tokio::test]
+async fn a_download_whose_session_ended_before_its_last_chunk_writes_no_receipt() {
+    use futures_util::FutureExt;
+    let (replies, served) = program_download();
+    let mock = Mock::new(replies);
+    // A sign-out whose cancellation came before the Transfer began ends the
+    // session without stopping the Transfer: here, as the chunk is asked for.
+    let session = Arc::new(std::sync::OnceLock::<OAuthSession<Api>>::new());
+    let ending = Arc::clone(&session);
+    let cdn = Cdn::in_memory(move |_| {
+        let session = ending.get().expect("the client's session");
+        let ended = session.discard().now_or_never();
+        assert!(ended.is_some(), "nothing else holds the session");
+        CdnReply::ok(served.clone())
+    });
+    let client = mock.client_served_by(&cdn);
+    assert!(session.set(client.session.clone()).is_ok());
+    let parent = tempfile::tempdir().unwrap();
+    let installed = client
+        .download("space", "base", "game", Platform::Mac, parent.path())
+        .await;
+    assert!(matches!(installed, Err(EpicError::Unauthorized)));
+    assert_eq!(cdn.arrivals().len(), 1, "the chunk came all the same");
+    assert_eq!(client.progress().unwrap().state, TransferState::Failed);
+    assert!(!receipt_of_the_mac_build(parent.path()).exists());
 }
 
 #[tokio::test]
@@ -1856,66 +2035,6 @@ async fn launch_rechecks_ownership_before_issuing_an_exchange_code() {
 }
 
 #[tokio::test]
-async fn launch_retries_rejected_exchange_once_and_keeps_rotated_credentials() {
-    for retry_status in [200, 401] {
-        let temporary = tempfile::tempdir().unwrap();
-        launch_installation(temporary.path());
-        let mut replies = launch_replies(false);
-        for reply in &mut replies {
-            reply.bearer = Some("access-old");
-            if reply.path == EXCHANGE_PATH {
-                reply.status = 401;
-            }
-        }
-        replies.push(reply("/account/api/oauth/token", 200, token("account-a")));
-        let mut retry = launch_replies(false);
-        for reply in &mut retry {
-            reply.bearer = Some("access-new");
-            if reply.path == EXCHANGE_PATH {
-                reply.status = retry_status;
-            }
-        }
-        replies.extend(retry);
-        let mock = Mock::new(replies);
-        let client = mock.client(false);
-        let result = client
-            .launch_plan(
-                "space",
-                "base",
-                "game",
-                Platform::Mac,
-                temporary.path(),
-                "en",
-            )
-            .await;
-        if retry_status == 200 {
-            assert!(result.is_ok());
-        } else {
-            assert!(matches!(result, Err(EpicError::Unauthorized)));
-        }
-        assert_eq!(
-            client.credentials().await.unwrap().refresh_token,
-            "refresh-new"
-        );
-        let requests = mock.requests();
-        assert_eq!(
-            requests
-                .iter()
-                .filter(|request| request.starts_with("POST /account/api/oauth/token "))
-                .count(),
-            1
-        );
-        assert_eq!(
-            requests
-                .iter()
-                .filter(|request| request.starts_with("GET /account/api/oauth/exchange "))
-                .count(),
-            2
-        );
-    }
-}
-
-#[tokio::test]
 async fn launch_discards_exchange_code_when_user_disconnects_during_http() {
     let temporary = tempfile::tempdir().unwrap();
     launch_installation(temporary.path());
@@ -2110,8 +2229,11 @@ async fn achievements_reject_player_state_from_another_account() {
 
 #[tokio::test]
 async fn achievements_retry_unauthorized_with_refreshed_credentials() {
+    // Epic rejects a token that has not lapsed.
+    let mut rejected = reply("/graphql", 401, json!({}));
+    rejected.bearer = Some("access-old");
     let mock = Mock::new(vec![
-        reply("/graphql", 401, json!({})),
+        rejected,
         reply("/account/api/oauth/token", 200, token("account-a")),
         reply("/graphql", 200, achievement_definitions()),
         reply("/graphql", 200, achievement_player("account-a")),
@@ -2123,6 +2245,8 @@ async fn achievements_retry_unauthorized_with_refreshed_credentials() {
         "refresh-new"
     );
     let requests = mock.requests();
+    assert_eq!(requests.len(), 4, "one renewal, then both questions");
+    assert!(requests[1].starts_with("POST /account/api/oauth/token "));
     assert!(requests[2].contains("Bearer access-new"));
     assert!(requests[3].contains("Bearer access-new"));
 }

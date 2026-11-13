@@ -2,7 +2,10 @@
 //! shows before any download. Only a download reads a Mac build's files, as
 //! its Transfer starts, once per build; the page shows the Mac build until
 //! one found that its game does not run natively. Each storefront answers
-//! for its builds through a [`GameBuilds`] adapter.
+//! for its builds through a [`GameBuilds`] adapter: it says what a Mac build
+//! lists and what a launch of it starts. Whether that runs natively, and what
+//! a build its storefront refuses or fails to give does to the pick, is told
+//! here.
 use std::{
     collections::HashMap,
     future::Future,
@@ -12,6 +15,7 @@ use std::{
 
 use crate::{
     Platform,
+    mac_build::{self, Listing},
     transfer::{CancelToken, Cancelled},
 };
 
@@ -28,12 +32,71 @@ pub struct Offered<B> {
     pub windows: Option<B>,
 }
 
-/// What reading a Mac build's files told.
-pub enum Inspection<V> {
-    /// Its game runs natively; `V` is what the build's download starts from.
-    Native(V),
-    /// Its game does not, or Obelisk cannot install the build.
-    NotNative,
+/// What a launch of a Mac build starts, as its storefront names it.
+#[derive(Clone, Copy, Debug)]
+pub struct Launch<'a> {
+    /// The program or the application bundle, a path from the installation's
+    /// root.
+    pub executable: &'a str,
+    /// The names a library the program loads may have. The first file so
+    /// named in the folder a launch searches must run natively too; empty
+    /// when the storefront pairs the program with none.
+    pub libraries: &'a [&'a str],
+}
+
+/// Whether a Mac build's game runs natively on Apple silicon, as its files
+/// told.
+#[derive(Debug)]
+#[must_use]
+pub struct Verdict(bool);
+
+impl Verdict {
+    /// Judges the build whose files are in `listing` and whose launch starts
+    /// `launch`. `read` gives a file's first bytes, never more than its size;
+    /// only the few files that tell are read.
+    ///
+    /// # Errors
+    ///
+    /// Whatever `read` fails with.
+    pub async fn of<F: Copy, E, Read>(
+        listing: &Listing<F>,
+        launch: Launch<'_>,
+        read: impl Fn(F, u64) -> Read,
+    ) -> Result<Self, E>
+    where
+        Read: Future<Output = Result<Vec<u8>, E>>,
+    {
+        mac_build::runs_natively(listing, launch.executable, launch.libraries, read)
+            .await
+            .map(Self)
+    }
+
+    /// With what the build's download starts from, which `kept` makes only
+    /// for a game that runs natively.
+    pub fn keeping<V>(self, kept: impl FnOnce() -> V) -> Inspection<V> {
+        Inspection(self.0.then(kept))
+    }
+}
+
+/// What reading a Mac build's files told: whether its game runs natively,
+/// and then what the build's download starts from.
+#[derive(Debug)]
+#[must_use]
+pub struct Inspection<V>(Option<V>);
+
+impl<V> Inspection<V> {
+    /// Of a build that names no program for a launch to start: its game does
+    /// not run natively.
+    pub fn no_program() -> Self {
+        Self(None)
+    }
+
+    /// What the build's download starts from; none when its game does not
+    /// run natively. For a storefront's tests of its own `inspect`.
+    #[cfg(any(test, feature = "testing"))]
+    pub fn into_kept(self) -> Option<V> {
+        self.0
+    }
 }
 
 /// Why a game has no build a download can install. Storefront errors
@@ -54,7 +117,10 @@ pub trait GameBuilds: Sync {
     type Key: Clone + Eq + Hash + Send;
     /// What the download of a native Mac build starts from.
     type Kept: Send;
-    type Error: From<Unavailable> + Send;
+    type Error: From<Unavailable> + From<Cancelled> + Send;
+    /// Why reading a Mac build stopped: the storefront's error, with where
+    /// it arose when [`is_refusal`](Self::is_refusal) needs that told.
+    type Failure: Into<Self::Error> + Send;
 
     /// The builds the account can install. Reads no build's files.
     fn builds(&self) -> impl Future<Output = Result<Offered<Self::Build>, Self::Error>> + Send;
@@ -66,13 +132,19 @@ pub trait GameBuilds: Sync {
         mac: &Self::Build,
     ) -> impl Future<Output = Result<Option<Self::Key>, Self::Error>> + Send;
 
-    /// Reads the few files of `mac` that tell whether its game runs
-    /// natively, through `mac_build::runs_natively`.
+    /// Reads what `mac` lists, has [`Verdict::of`] judge what a launch of it
+    /// starts, and keeps what its download starts from.
     fn inspect(
         &self,
         mac: &Self::Build,
         cancel: &CancelToken,
-    ) -> impl Future<Output = Result<Inspection<Self::Kept>, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<Inspection<Self::Kept>, Self::Failure>> + Send;
+
+    /// Whether `failure` is a refusal, which asking again does not change:
+    /// the storefront denies the build, or it holds what Obelisk cannot
+    /// install. A refused Mac build gives way to the Windows build; any other
+    /// failure may pass, and fails the pick.
+    fn is_refusal(failure: &Self::Failure) -> bool;
 }
 
 /// One storefront client's build choice for the session: each Mac build's
@@ -200,8 +272,12 @@ impl<K: Clone + Eq + Hash, V> Pick<'_, K, V> {
     }
 
     /// Whether the game of `mac` runs natively, from its verdict when one is
-    /// kept, else from its files. What a native build's read is kept for its
-    /// download, in place of any other build's.
+    /// kept, else from its files. A build its storefront refuses does not,
+    /// and keeps that verdict: it gives way to the Windows build. Any other
+    /// failure fails the pick and keeps no verdict, since falling back on it
+    /// could install the Windows build of a game that runs natively. What a
+    /// native build's read is kept for its download, in place of any other
+    /// build's.
     async fn runs_natively<G: GameBuilds<Key = K, Kept = V>>(
         &self,
         game: &G,
@@ -211,14 +287,20 @@ impl<K: Clone + Eq + Hash, V> Pick<'_, K, V> {
         if let Some(native) = key.as_ref().and_then(|key| self.choice.verdict(key)) {
             return Ok(native);
         }
-        let inspection = game.inspect(mac, &self.cancel).await?;
-        let native = matches!(inspection, Inspection::Native(_));
+        let kept = match game.inspect(mac, &self.cancel).await {
+            Ok(Inspection(kept)) => kept,
+            Err(failure) if G::is_refusal(&failure) => {
+                // A pick being stopped ends cancelled, whatever its
+                // storefront answered meanwhile.
+                self.cancel.check()?;
+                None
+            }
+            Err(failure) => return Err(failure.into()),
+        };
+        let native = kept.is_some();
         if let Some(key) = key {
             self.choice.lock_verdicts().insert(key.clone(), native);
-            *self.choice.lock_kept() = match inspection {
-                Inspection::Native(kept) => Some((key, kept)),
-                Inspection::NotNative => None,
-            };
+            *self.choice.lock_kept() = kept.map(|kept| (key, kept));
         }
         Ok(native)
     }

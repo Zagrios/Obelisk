@@ -7,6 +7,16 @@ struct FriendsStoreIdentity: Equatable, Sendable {
     let logoAssetName: String
 }
 
+extension FriendsStoreIdentity {
+    /// The storefront's identity, from the facts its section already carries.
+    init(_ section: LibrarySection) {
+        guard let name = section.storeName, let logo = section.logoAssetName else {
+            preconditionFailure("\(section) is not a storefront")
+        }
+        self.init(id: section.rawValue, name: name, logoAssetName: logo)
+    }
+}
+
 struct FriendsAccountIdentity: Hashable, Sendable {
     let storeID: String
     let accountID: String

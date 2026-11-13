@@ -1,15 +1,19 @@
 //! GOG's part of an account's installations: where each build lives, the
 //! credentials every account call renews and saves first, and what GOG's
 //! network does for them. Only the network is a seam; tests stand in for it.
-use super::{Configuration, Error, Gog, Product};
+use super::{Configuration, Gog, Product};
 use crate::{
-    Locations, cloud_status,
-    installations::{self, BoxFuture, Credentials, Receipt, Transfer, blocking},
-    sessions::{self, Admission, Failure, Storefront as _, Supervised, failed},
+    Locations,
+    installations::{self, BoxFuture, Credentials, Receipt, Transfer},
+    launch_shell::{self, NoCredential},
+    sessions::{Admission, Failure, Storefront as _, failed},
 };
 use gog_kit::{GogError, client::Client as GogClient};
-use obelisk_core::{Platform, installation::TransferProgress, transfer::CancelToken};
-use std::{path::Path, sync::Arc};
+use obelisk_core::{Platform, installation::TransferProgress};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 /// What an account's installations ask of GOG's network. Every call may wait
 /// on it.
@@ -133,7 +137,9 @@ impl<N: Network> Content<N> {
         }
     }
 
-    fn configuration(&self, receipt: &Receipt<Gog>) -> Configuration {
+    /// What a Game session of the build starts: a Windows build runs in its
+    /// Wine `prefix`.
+    fn configuration(&self, receipt: &Receipt<Gog>, prefix: Option<PathBuf>) -> Configuration {
         Configuration {
             home: self.locations.home.clone(),
             install: receipt.directory.clone().into(),
@@ -142,11 +148,7 @@ impl<N: Network> Content<N> {
             product_id: receipt.product.product_id.clone(),
             platform: receipt.platform,
             title: receipt.name.clone(),
-            prefix: receipt
-                .windows(&self.locations)
-                .ok()
-                .flatten()
-                .map(|windows| windows.prefix().to_owned()),
+            prefix,
         }
     }
 }
@@ -212,22 +214,16 @@ impl<N: Network> installations::Content<Gog> for Content<N> {
         _: Option<&'a std::convert::Infallible>,
     ) -> BoxFuture<'a, Result<(), Failure>> {
         Box::pin(async move {
-            admission
-                .hand_off(Handover {
-                    network: self.network.clone(),
-                    configuration: self.configuration(receipt),
-                    windows: receipt.windows(&self.locations).ok().flatten(),
-                    locations: self.locations.clone(),
-                })
-                .await
+            let windows = launch_shell::windows(receipt, &self.locations).await?;
+            launch_shell::hand_off(
+                admission,
+                windows,
+                &self.locations,
+                |prefix| self.configuration(receipt, prefix),
+                Signing(self.network.clone()),
+            )
+            .await
         })
-    }
-    /// GOG keeps no Cloud saves for Obelisk yet.
-    fn archive<'a>(&'a self, _: &'a Receipt<Gog>) -> BoxFuture<'a, Result<(), Failure>> {
-        Box::pin(async { Ok(()) })
-    }
-    fn removed<'a>(&'a self, _: &'a Receipt<Gog>) -> BoxFuture<'a, Result<(), Failure>> {
-        Box::pin(async { Ok(()) })
     }
     fn directory_name(&self, receipt: &Receipt<Gog>) -> String {
         gog_kit::client::installation_directory_name(&receipt.product.product_id, receipt.platform)
@@ -236,79 +232,28 @@ impl<N: Network> installations::Content<Gog> for Content<N> {
     /// the new one at the next launch.
     fn relocated(&self, receipt: &Receipt<Gog>, from: &Path) -> Result<(), String> {
         receipt.relocated(&self.locations, from)?;
-        let Ok(Some(windows)) = receipt.windows(&self.locations) else {
+        if receipt.platform != Platform::Windows {
             return Ok(());
-        };
-        windows
-            .forget_prerequisites(&self.locations, |id| {
-                id.starts_with("gog:isi:") || id.starts_with("gog:installer:")
-            })
-            .map_err(|error| error.to_string())
+        }
+        crate::wine::forget_prerequisites(&self.locations, Path::new(&receipt.directory), |id| {
+            id.starts_with("gog:isi:") || id.starts_with("gog:installer:")
+        })
+        .map_err(|error| error.to_string())
     }
     fn remove_prefix(&self, receipt: &Receipt<Gog>) -> Option<Result<(), String>> {
         receipt.remove_prefix(&self.locations)
     }
-    fn maintain<'a>(
-        &'a self,
-        _: &'a String,
-        _: Option<&'a Receipt<Gog>>,
-        _: Arc<crate::cloud::Control>,
-    ) -> BoxFuture<'a, Result<(), Failure>> {
-        Box::pin(async { Err(failed(Error::Unsupported)) })
-    }
-    fn indicators(&self, _: &[String]) -> Result<Vec<(String, cloud_status::Indicator)>, Failure> {
-        Ok(Vec::new())
-    }
 }
 
-/// Starting an installed GOG build: its Wine prefix readied, then its
-/// supervisor.
-struct Handover<N: Network> {
-    network: Arc<N>,
-    configuration: Configuration,
-    /// Set for a Windows build, whose prefix it readies.
-    windows: Option<crate::wine::Installation>,
-    locations: Locations,
-}
+/// Signs a GOG launch in with the account GOG's session is signed in to. The
+/// build is DRM free, so the account is all its supervisor is given.
+struct Signing<N: Network>(Arc<N>);
 
-impl<N: Network> sessions::Handover<Gog> for Handover<N> {
-    /// The account, and how a Windows build runs.
-    type Prepared = (String, Option<crate::wine::Config>);
-    fn platform(&self) -> Platform {
-        self.configuration.platform
-    }
-    fn prepare(&self) -> BoxFuture<'_, Result<Self::Prepared, Failure>> {
-        Box::pin(async move {
-            let wine = match &self.windows {
-                None => None,
-                Some(windows) => {
-                    let (windows, configuration, locations) = (
-                        windows.clone(),
-                        self.configuration.clone(),
-                        self.locations.clone(),
-                    );
-                    Some(
-                        blocking(Error::Session.to_string(), move || {
-                            super::windows::ready(&windows, &configuration, &locations)
-                        })
-                        .await?
-                        .map_err(failed)?,
-                    )
-                }
-            };
-            Ok((self.network.account_id().await?, wine))
-        })
-    }
-    fn start(
-        self,
-        (account, wine): Self::Prepared,
-        cancel: CancelToken,
-    ) -> Result<Arc<dyn Supervised<Gog>>, String> {
-        super::start(self.configuration, account, wine, cancel)
-            .map(|client| Arc::new(client) as Arc<dyn Supervised<Gog>>)
-            .map_err(|error| error.to_string())
+impl<N: Network> launch_shell::SignIn<Gog> for Signing<N> {
+    fn credential(&self) -> BoxFuture<'_, Result<(String, NoCredential), Failure>> {
+        Box::pin(async move { Ok((self.0.account_id().await?, NoCredential {})) })
     }
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

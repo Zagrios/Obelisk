@@ -4,8 +4,9 @@
 //! record one vocabulary of events. Only process inspection is replaced.
 use super::*;
 use crate::supervisor::client::Client;
-use std::{fs, path::Path};
+use std::{fs, path::Path, process::Command as Process};
 
+mod gog;
 mod recording;
 
 /// What the storefront's fakes do at each step.
@@ -80,13 +81,15 @@ fn choice(cloud: bool) -> crate::cloud::Choice {
 }
 
 /// Events the fakes of every storefront record, in the order they occur.
-const SHARED: [&str; 8] = [
+const SHARED: [&str; 10] = [
     "cloud.prepare",
     "answered",
     "target",
     "cloud.started",
-    "presence:true",
-    "presence:false",
+    "presence:online",
+    "presence:away",
+    "presence:invisible",
+    "presence:offline",
     "cloud.finished",
     "cloud.aborted",
 ];
@@ -148,6 +151,7 @@ fn supervisor_fixture() {
         crate::epic::launch::tests::EpicHarness::NAME => {
             crate::epic::launch::tests::EpicHarness::serve(input, output)
         }
+        gog::GogHarness::NAME => gog::GogHarness::serve(input, output),
         other => panic!("unknown harness {other}"),
     };
     if let Err(error) = &served {
@@ -228,6 +232,61 @@ pub(crate) fn write_helper(path: &Path, directory: &Path, script: &Script) {
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(path, helper(directory, script.helper)).unwrap();
     fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
+}
+
+/// What a client handed the supervisor it started: the request on the pipe,
+/// the command line and the environment the supervisor started with.
+pub(crate) struct HandedOver {
+    pub request: serde_json::Value,
+    pub arguments: Vec<String>,
+    /// Sorted, without the variables the shell itself adds.
+    pub environment: Vec<String>,
+}
+
+/// Installs at `helper` a supervisor that records its handoff in `into` and
+/// exits without acknowledging it: the client's start then fails.
+pub(crate) fn write_recording_supervisor(helper: &Path, into: &Path) {
+    fs::create_dir_all(helper.parent().unwrap()).unwrap();
+    fs::create_dir_all(into).unwrap();
+    let into = into.to_string_lossy();
+    fs::write(
+        helper,
+        format!(
+            "#!/bin/sh\n\
+             IFS= read -r request\n\
+             printf '%s' \"$request\" > '{into}/request.json'\n\
+             printf '%s\\n' \"$@\" > '{into}/arguments'\n\
+             /usr/bin/env > '{into}/environment'\n"
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(helper, fs::Permissions::from_mode(0o700)).unwrap();
+}
+
+/// The handoff the recording supervisor of `from` took, if it was started.
+pub(crate) fn handed_over(from: &Path) -> Option<HandedOver> {
+    let request = fs::read(from.join("request.json")).ok()?;
+    let lines = |name: &str| -> Vec<String> {
+        fs::read_to_string(from.join(name))
+            .unwrap_or_default()
+            .lines()
+            .map(str::to_owned)
+            .collect()
+    };
+    let mut environment: Vec<String> = lines("environment")
+        .into_iter()
+        .filter(|line| {
+            !["PWD=", "OLDPWD=", "SHLVL=", "_="]
+                .iter()
+                .any(|own| line.starts_with(own))
+        })
+        .collect();
+    environment.sort();
+    Some(HandedOver {
+        request: serde_json::from_slice(&request).unwrap(),
+        arguments: lines("arguments"),
+        environment,
+    })
 }
 
 /// The game a fake storefront names in its target.
@@ -428,6 +487,10 @@ macro_rules! lifecycle_suite {
             lifecycle::revoking_a_running_game_withdraws_presence_but_keeps_the_game::<$harness>()
         }
         #[test]
+        fn a_running_game_shows_each_status_the_player_picks() {
+            lifecycle::a_running_game_shows_each_status_the_player_picks::<$harness>()
+        }
+        #[test]
         fn revocation_fences_presence_of_a_late_exec() {
             lifecycle::revocation_fences_presence_of_a_late_exec::<$harness>()
         }
@@ -537,8 +600,8 @@ pub(crate) fn a_launch_prepares_in_order_then_runs_its_game_and_settles_cloud<H:
             "cloud.prepare",
             "target",
             "cloud.started",
-            "presence:true",
-            "presence:false",
+            "presence:online",
+            "presence:offline",
             "cloud.finished:true",
         ]
     );
@@ -852,12 +915,40 @@ pub(crate) fn revoking_a_running_game_withdraws_presence_but_keeps_the_game<H: H
     run.until(|r| r.phase == Phase::Running);
     run.client.revoke(&H::account()).unwrap();
     // Presence is withdrawn before the reply.
-    assert_eq!(run.presence(), ["presence:true", "presence:false"]);
+    assert_eq!(run.presence(), ["presence:online", "presence:offline"]);
     assert_eq!(run.client.snapshot(None).unwrap().phase, Phase::Running);
     run.release("release-game");
     let finished = run.until(Record::finished);
     assert_eq!(finished.phase, Phase::Finished);
     assert_eq!(finished.exit_code, Some(3));
+}
+
+pub(crate) fn a_running_game_shows_each_status_the_player_picks<H: Harness>() {
+    use obelisk_core::OnlineStatus;
+    let run = launch::<H>(script(HELD));
+    run.until(|r| r.phase == Phase::Running);
+    assert!(
+        run.client
+            .set_status(&H::other_account(), OnlineStatus::Away)
+            .is_err(),
+        "another account is refused"
+    );
+    run.client
+        .set_status(&H::account(), OnlineStatus::Away)
+        .unwrap();
+    run.client
+        .set_status(&H::account(), OnlineStatus::Away)
+        .unwrap();
+    run.client
+        .set_status(&H::account(), OnlineStatus::Invisible)
+        .unwrap();
+    assert_eq!(
+        run.presence(),
+        ["presence:online", "presence:away", "presence:invisible"]
+    );
+    run.release("release-game");
+    run.until(Record::finished);
+    assert_eq!(run.presence().last().unwrap(), "presence:offline");
 }
 
 pub(crate) fn revocation_fences_presence_of_a_late_exec<H: Harness>() {

@@ -56,6 +56,17 @@ impl From<u32> for FriendPresence {
     }
 }
 
+/// The persona state (EPersonaState) Steam shows for `status`: Online 1,
+/// Away 3, Invisible 7. Steam's client still accepts Busy and the others but
+/// no longer offers them.
+pub fn persona_state(status: obelisk_core::OnlineStatus) -> u8 {
+    match status {
+        obelisk_core::OnlineStatus::Online => 1,
+        obelisk_core::OnlineStatus::Away => 3,
+        obelisk_core::OnlineStatus::Invisible => 7,
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct FriendGame {
     pub app_id: Option<u32>,

@@ -30,20 +30,18 @@ private func verbatimCount(_ prefix: String, _ count: Int) -> String {
     prefix + count.formatted(.number.locale(L10n.locale))
 }
 
-extension SessionStorefront {
-    var section: LibrarySection {
-        switch self {
-        case .steam: .steam
-        case .epic: .epic
-        case .gog: .gog
-        }
-    }
-}
-
 enum DownloadFormatting {
-    /// A speed in the file sizes Finder shows; nothing reads as "0 kB/s".
-    static func speed(_ bytesPerSecond: Double) -> String {
-        L10n.string("ui.downloads.speed", size(UInt64(max(0, bytesPerSecond))))
+    /// A speed in the file sizes Finder shows, or in megabits; nothing reads as
+    /// "0 kB/s".
+    static func speed(_ bytesPerSecond: Double, in unit: DownloadSpeedUnit) -> String {
+        switch unit {
+        case .bytes:
+            return L10n.string("ui.downloads.speed", size(UInt64(max(0, bytesPerSecond))))
+        case .bits:
+            let megabits = max(0, bytesPerSecond) / Double(DownloadSpeedUnit.bytesPerMegabit)
+            return L10n.string("ui.downloads.speed_bits",
+                               megabits.formatted(.number.precision(.fractionLength(0...1)).locale(L10n.locale)))
+        }
     }
 
     /// A size in the units Finder shows; nothing reads as "Zero kB".
@@ -162,7 +160,8 @@ struct DownloadsSidebarButton: View {
             let phase = running.launching ? L10n.string("ui.downloads.before_launch") : transfer.activityTitle
             // A move's pace reads as a download's.
             let paced = transfer.state == .downloading || transfer.state == .moving
-            let lead = (paced ? downloads.currentSpeed.map(DownloadFormatting.speed) : nil) ?? phase
+            let speed = paced ? downloads.currentSpeed.map { DownloadFormatting.speed($0, in: downloads.speedUnit) } : nil
+            let lead = speed ?? phase
             return [lead, fraction.map(DownloadFormatting.percent)].compactMap { $0 }.joined(separator: " · ")
         }
         if downloads.waitsForGame { return L10n.string("ui.downloads.waiting_for_game") }
@@ -321,7 +320,7 @@ private struct DownloadSpeedCard: View {
                 .layoutPriority(1)
                 Spacer()
                 DownloadStat(title: L10n.string("ui.downloads.peak"),
-                             value: downloads.samples.count > 1 ? DownloadFormatting.speed(downloads.peakSpeed) : "—")
+                             value: downloads.samples.count > 1 ? speed(downloads.peakSpeed) : "—")
                 DownloadedStat(downloads: downloads)
             }
             chart
@@ -330,7 +329,11 @@ private struct DownloadSpeedCard: View {
         .modifier(GamePageCard())
     }
 
-    private var headline: String { DownloadFormatting.speed(downloads.currentSpeed ?? 0) }
+    private var headline: String { speed(downloads.currentSpeed ?? 0) }
+
+    private func speed(_ bytesPerSecond: Double) -> String {
+        DownloadFormatting.speed(bytesPerSecond, in: downloads.speedUnit)
+    }
 
     @ViewBuilder private var chart: some View {
         let samples = downloads.samples
@@ -362,7 +365,7 @@ private struct DownloadSpeedCard: View {
                         .lineStyle(StrokeStyle(lineWidth: 1))
                         .annotation(position: .top, spacing: 4,
                                     overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
-                            Text(DownloadFormatting.speed(hovered.bytesPerSecond))
+                            Text(speed(hovered.bytesPerSecond))
                                 .font(.system(size: 11, weight: .semibold))
                                 .monospacedDigit()
                                 .padding(.horizontal, 8)
@@ -379,8 +382,8 @@ private struct DownloadSpeedCard: View {
                 AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { value in
                     AxisGridLine(stroke: StrokeStyle(lineWidth: 1)).foregroundStyle(.primary.opacity(0.07))
                     AxisValueLabel {
-                        if let speed = value.as(Double.self) {
-                            Text(DownloadFormatting.speed(speed))
+                        if let bytesPerSecond = value.as(Double.self) {
+                            Text(speed(bytesPerSecond))
                                 .font(.system(size: 10))
                                 .foregroundStyle(.secondary)
                         }

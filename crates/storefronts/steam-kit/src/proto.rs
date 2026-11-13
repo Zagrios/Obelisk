@@ -179,6 +179,12 @@ pub(crate) struct RichPresence {
 pub(crate) struct ChangeStatus {
     #[prost(uint32, optional, tag = "1")]
     pub persona_state: Option<u32>,
+    #[prost(bool, optional, tag = "5")]
+    pub persona_set_by_user: Option<bool>,
+    #[prost(bool, optional, tag = "7")]
+    pub need_persona_response: Option<bool>,
+    #[prost(bool, optional, tag = "8")]
+    pub is_client_idle: Option<bool>,
 }
 
 /// CMsgClientMMSInviteToLobby, steammessages_clientserver_mms.proto. Its

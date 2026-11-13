@@ -764,7 +764,8 @@ public protocol AccountInstallationsProtocol: AnyObject, Sendable {
     
     /**
      * Verifies `installation`'s files and repairs or updates them in place;
-     * a Transfer of the game that stopped resumes instead.
+     * a Transfer of the game that stopped resumes instead. The player asked:
+     * every file is hashed again, whatever the last Transfer recorded.
      */
     func update(installation: String) 
     
@@ -824,45 +825,6 @@ open class AccountInstallations: AccountInstallationsProtocol, @unchecked Sendab
 
     
     /**
-     * The installations of the Epic account `account_id`, which `session`
-     * signed in. `language` names the game's language at launch. The
-     * session's own persistence saves the credentials their calls rotate.
-     */
-public static func epic(session: EpicSession, accountId: String, language: String, sessions: StorefrontSessions, receipts: String, locations: ObeliskLocations)throws  -> AccountInstallations  {
-    return try  FfiConverterTypeAccountInstallations_lift(try rustCallWithError(FfiConverterTypeGameSessionError_lift) {
-        uniffiCallStatus in
-    uniffi_obelisk_bridge_fn_constructor_accountinstallations_epic(
-        FfiConverterTypeEpicSession_lower(session),
-        FfiConverterString.lower(accountId),
-        FfiConverterString.lower(language),
-        FfiConverterTypeStorefrontSessions_lower(sessions),
-        FfiConverterString.lower(receipts),
-        FfiConverterTypeObeliskLocations_lower(locations),uniffiCallStatus
-    )
-})
-}
-    
-    /**
-     * The installations of the GOG account `user_id`, which `session`
-     * signed in. `language` names the depots Transfers install, such as
-     * `fr-FR`. The session's own persistence saves the credentials their
-     * calls rotate.
-     */
-public static func gog(session: GogSession, userId: String, language: String, sessions: StorefrontSessions, receipts: String, locations: ObeliskLocations)throws  -> AccountInstallations  {
-    return try  FfiConverterTypeAccountInstallations_lift(try rustCallWithError(FfiConverterTypeGameSessionError_lift) {
-        uniffiCallStatus in
-    uniffi_obelisk_bridge_fn_constructor_accountinstallations_gog(
-        FfiConverterTypeGogSession_lower(session),
-        FfiConverterString.lower(userId),
-        FfiConverterString.lower(language),
-        FfiConverterTypeStorefrontSessions_lower(sessions),
-        FfiConverterString.lower(receipts),
-        FfiConverterTypeObeliskLocations_lower(locations),uniffiCallStatus
-    )
-})
-}
-    
-    /**
      * The installations of the Steam account `session` signed in, whose
      * receipts `receipts` keeps, for the whole sign-in: they reach Steam
      * through the session's CM connection of the moment.
@@ -873,6 +835,26 @@ public static func steam(session: SteamSession, credentials: SteamCredentials, s
     uniffi_obelisk_bridge_fn_constructor_accountinstallations_steam(
         FfiConverterTypeSteamSession_lower(session),
         FfiConverterTypeSteamCredentials_lower(credentials),
+        FfiConverterTypeStorefrontSessions_lower(sessions),
+        FfiConverterString.lower(receipts),
+        FfiConverterTypeObeliskLocations_lower(locations),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * The installations of the Epic or GOG account `account_id`, which
+     * `session` signed in. `language` names an Epic game's language at
+     * launch and the depots GOG's Transfers install, such as `fr-FR`. The
+     * session's own persistence saves the credentials their calls rotate.
+     */
+public static func web(session: WebAccountSession, accountId: String, language: String, sessions: StorefrontSessions, receipts: String, locations: ObeliskLocations)throws  -> AccountInstallations  {
+    return try  FfiConverterTypeAccountInstallations_lift(try rustCallWithError(FfiConverterTypeGameSessionError_lift) {
+        uniffiCallStatus in
+    uniffi_obelisk_bridge_fn_constructor_accountinstallations_web(
+        FfiConverterTypeWebAccountSession_lower(session),
+        FfiConverterString.lower(accountId),
+        FfiConverterString.lower(language),
         FfiConverterTypeStorefrontSessions_lower(sessions),
         FfiConverterString.lower(receipts),
         FfiConverterTypeObeliskLocations_lower(locations),uniffiCallStatus
@@ -1130,7 +1112,8 @@ open func uninstall(installation: String)  {try! rustCall() {
     
     /**
      * Verifies `installation`'s files and repairs or updates them in place;
-     * a Transfer of the game that stopped resumes instead.
+     * a Transfer of the game that stopped resumes instead. The player asked:
+     * every file is hashed again, whatever the last Transfer recorded.
      */
 open func update(installation: String)  {try! rustCall() {
         uniffiCallStatus in
@@ -1421,6 +1404,12 @@ public protocol DownloadsProtocol: AnyObject, Sendable {
     
     func resume(id: UInt64) 
     
+    /**
+     * Limits what every storefront downloads, in bytes per second: see
+     * `obelisk_core::transfer::set_speed_limit`.
+     */
+    func setSpeedLimit(bytesPerSecond: UInt64) 
+    
     func state()  -> DownloadQueueState
     
 }
@@ -1553,6 +1542,19 @@ open func resume(id: UInt64)  {try! rustCall() {
 }
 }
     
+    /**
+     * Limits what every storefront downloads, in bytes per second: see
+     * `obelisk_core::transfer::set_speed_limit`.
+     */
+open func setSpeedLimit(bytesPerSecond: UInt64)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_obelisk_bridge_fn_method_downloads_set_speed_limit(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt64.lower(bytesPerSecond),uniffiCallStatus
+    )
+}
+}
+    
 open func state() -> DownloadQueueState  {
     return try!  FfiConverterTypeDownloadQueueState_lift(try! rustCall() {
         uniffiCallStatus in
@@ -1605,455 +1607,6 @@ public func FfiConverterTypeDownloads_lift(_ handle: UInt64) throws -> Downloads
 #endif
 public func FfiConverterTypeDownloads_lower(_ value: Downloads) -> UInt64 {
     return FfiConverterTypeDownloads.lower(value)
-}
-
-
-
-
-
-
-public protocol EpicSessionProtocol: AnyObject, Sendable {
-    
-    /**
-     * The share of each of `namespaces`' achievements the account unlocked,
-     * by namespace, as `achievements` reads them: none for a sandbox without
-     * achievements or that Epic did not answer for. It fails only when no
-     * sandbox could be told.
-     */
-    func achievementShares(namespaces: [String], locale: String) async throws  -> [String: Double]
-    
-    /**
-     * The game's achievements in `locale`, such as the game page's: the
-     * library's while the game was not played since they were read, unless
-     * `fresh`, else Epic's, which the library then keeps. Epic tells them by
-     * sandbox, which several games may share.
-     */
-    func achievements(namespace: String, locale: String, fresh: Bool) async throws  -> [LibraryAchievement]
-    
-    func credentials() async throws  -> EpicCredentials
-    
-    func disconnect() async throws 
-    
-    func gameDetails(namespace: String, catalogItemId: String, appName: String) async throws  -> EpicGameDetails
-    
-    func games() async throws  -> [EpicGame]
-    
-    func nextCredentialsRevision(afterRevision: UInt64) async  -> UInt64?
-    
-    func nextFriends(afterRevision: UInt64) async  -> EpicFriendsSnapshot
-    
-    /**
-     * Saves the account's credentials through `credentials` now and after
-     * every rotation, one save at a time and in order, until the session's
-     * observers stop. Every account call relies on it.
-     */
-    func persist(credentials: CredentialSave) async 
-    
-    /**
-     * Every game the account played, in one request.
-     */
-    func playtimes() async throws  -> [EpicPlaytime]
-    
-    func reconnectFriends() async 
-    
-    func shutdownObservers() 
-    
-    func startFriends() async 
-    
-    func stopFriends() 
-    
-    /**
-     * Opens Epic's site signed in as the account, then `redirect_url`, an
-     * Epic page. The address holds a single-use code: never keep or log it.
-     */
-    func webSignInUrl(redirectUrl: String) async throws  -> String
-    
-}
-open class EpicSession: EpicSessionProtocol, @unchecked Sendable {
-    fileprivate let handle: UInt64
-
-    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    public struct NoHandle {
-        public init() {}
-    }
-
-    // TODO: We'd like this to be `private` but for Swifty reasons,
-    // we can't implement `FfiConverter` without making this `required` and we can't
-    // make it `required` without making it `public`.
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    required public init(unsafeFromHandle handle: UInt64) {
-        self.handle = handle
-    }
-
-    // This constructor can be used to instantiate a fake object.
-    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
-    //
-    // - Warning:
-    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    public init(noHandle: NoHandle) {
-        self.handle = 0
-    }
-
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    public func uniffiCloneHandle() -> UInt64 {
-        return try! rustCall { uniffi_obelisk_bridge_fn_clone_epicsession(self.handle, $0) }
-    }
-    // No primary constructor declared for this class.
-
-    deinit {
-        if handle == 0 {
-            // Mock objects have handle=0 don't try to free them
-            return
-        }
-
-        try! rustCall { uniffi_obelisk_bridge_fn_free_epicsession(handle, $0) }
-    }
-
-    
-    /**
-     * Keeps every library it loads in `library`.
-     */
-public static func restore(credentials: EpicCredentials, library: LibraryCache?)async throws  -> EpicSession  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_obelisk_bridge_fn_constructor_epicsession_restore(FfiConverterTypeEpicCredentials_lower(credentials),FfiConverterOptionTypeLibraryCache.lower(library)
-                )
-            },
-            pollFunc: ffi_obelisk_bridge_rust_future_poll_u64,
-            completeFunc: ffi_obelisk_bridge_rust_future_complete_u64,
-            freeFunc: ffi_obelisk_bridge_rust_future_free_u64,
-            liftFunc: FfiConverterTypeEpicSession_lift,
-            errorHandler: FfiConverterTypeEpicError_lift
-        )
-}
-    
-    /**
-     * Keeps every library it loads in `library`.
-     */
-public static func signIn(authorizationCode: String, library: LibraryCache?)async throws  -> EpicSession  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_obelisk_bridge_fn_constructor_epicsession_sign_in(FfiConverterString.lower(authorizationCode),FfiConverterOptionTypeLibraryCache.lower(library)
-                )
-            },
-            pollFunc: ffi_obelisk_bridge_rust_future_poll_u64,
-            completeFunc: ffi_obelisk_bridge_rust_future_complete_u64,
-            freeFunc: ffi_obelisk_bridge_rust_future_free_u64,
-            liftFunc: FfiConverterTypeEpicSession_lift,
-            errorHandler: FfiConverterTypeEpicError_lift
-        )
-}
-    
-
-    
-    /**
-     * The share of each of `namespaces`' achievements the account unlocked,
-     * by namespace, as `achievements` reads them: none for a sandbox without
-     * achievements or that Epic did not answer for. It fails only when no
-     * sandbox could be told.
-     */
-open func achievementShares(namespaces: [String], locale: String)async throws  -> [String: Double]  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_obelisk_bridge_fn_method_epicsession_achievement_shares(
-                        self.uniffiCloneHandle(),FfiConverterSequenceString.lower(namespaces),FfiConverterString.lower(locale)
-                )
-            },
-            pollFunc: ffi_obelisk_bridge_rust_future_poll_rust_buffer,
-            completeFunc: ffi_obelisk_bridge_rust_future_complete_rust_buffer,
-            freeFunc: ffi_obelisk_bridge_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterDictionaryStringDouble.lift,
-            errorHandler: FfiConverterTypeEpicError_lift
-        )
-}
-    
-    /**
-     * The game's achievements in `locale`, such as the game page's: the
-     * library's while the game was not played since they were read, unless
-     * `fresh`, else Epic's, which the library then keeps. Epic tells them by
-     * sandbox, which several games may share.
-     */
-open func achievements(namespace: String, locale: String, fresh: Bool)async throws  -> [LibraryAchievement]  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_obelisk_bridge_fn_method_epicsession_achievements(
-                        self.uniffiCloneHandle(),FfiConverterString.lower(namespace),FfiConverterString.lower(locale),FfiConverterBool.lower(fresh)
-                )
-            },
-            pollFunc: ffi_obelisk_bridge_rust_future_poll_rust_buffer,
-            completeFunc: ffi_obelisk_bridge_rust_future_complete_rust_buffer,
-            freeFunc: ffi_obelisk_bridge_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterSequenceTypeLibraryAchievement.lift,
-            errorHandler: FfiConverterTypeEpicError_lift
-        )
-}
-    
-open func credentials()async throws  -> EpicCredentials  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_obelisk_bridge_fn_method_epicsession_credentials(
-                        self.uniffiCloneHandle()
-                )
-            },
-            pollFunc: ffi_obelisk_bridge_rust_future_poll_rust_buffer,
-            completeFunc: ffi_obelisk_bridge_rust_future_complete_rust_buffer,
-            freeFunc: ffi_obelisk_bridge_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypeEpicCredentials_lift,
-            errorHandler: FfiConverterTypeEpicError_lift
-        )
-}
-    
-open func disconnect()async throws   {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_obelisk_bridge_fn_method_epicsession_disconnect(
-                        self.uniffiCloneHandle()
-                )
-            },
-            pollFunc: ffi_obelisk_bridge_rust_future_poll_void,
-            completeFunc: ffi_obelisk_bridge_rust_future_complete_void,
-            freeFunc: ffi_obelisk_bridge_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeEpicError_lift
-        )
-}
-    
-open func gameDetails(namespace: String, catalogItemId: String, appName: String)async throws  -> EpicGameDetails  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_obelisk_bridge_fn_method_epicsession_game_details(
-                        self.uniffiCloneHandle(),FfiConverterString.lower(namespace),FfiConverterString.lower(catalogItemId),FfiConverterString.lower(appName)
-                )
-            },
-            pollFunc: ffi_obelisk_bridge_rust_future_poll_rust_buffer,
-            completeFunc: ffi_obelisk_bridge_rust_future_complete_rust_buffer,
-            freeFunc: ffi_obelisk_bridge_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypeEpicGameDetails_lift,
-            errorHandler: FfiConverterTypeEpicError_lift
-        )
-}
-    
-open func games()async throws  -> [EpicGame]  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_obelisk_bridge_fn_method_epicsession_games(
-                        self.uniffiCloneHandle()
-                )
-            },
-            pollFunc: ffi_obelisk_bridge_rust_future_poll_rust_buffer,
-            completeFunc: ffi_obelisk_bridge_rust_future_complete_rust_buffer,
-            freeFunc: ffi_obelisk_bridge_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterSequenceTypeEpicGame.lift,
-            errorHandler: FfiConverterTypeEpicError_lift
-        )
-}
-    
-open func nextCredentialsRevision(afterRevision: UInt64)async  -> UInt64?  {
-    return
-        try!  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_obelisk_bridge_fn_method_epicsession_next_credentials_revision(
-                        self.uniffiCloneHandle(),FfiConverterUInt64.lower(afterRevision)
-                )
-            },
-            pollFunc: ffi_obelisk_bridge_rust_future_poll_rust_buffer,
-            completeFunc: ffi_obelisk_bridge_rust_future_complete_rust_buffer,
-            freeFunc: ffi_obelisk_bridge_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterOptionUInt64.lift,
-            errorHandler: nil
-            
-        )
-}
-    
-open func nextFriends(afterRevision: UInt64)async  -> EpicFriendsSnapshot  {
-    return
-        try!  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_obelisk_bridge_fn_method_epicsession_next_friends(
-                        self.uniffiCloneHandle(),FfiConverterUInt64.lower(afterRevision)
-                )
-            },
-            pollFunc: ffi_obelisk_bridge_rust_future_poll_rust_buffer,
-            completeFunc: ffi_obelisk_bridge_rust_future_complete_rust_buffer,
-            freeFunc: ffi_obelisk_bridge_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypeEpicFriendsSnapshot_lift,
-            errorHandler: nil
-            
-        )
-}
-    
-    /**
-     * Saves the account's credentials through `credentials` now and after
-     * every rotation, one save at a time and in order, until the session's
-     * observers stop. Every account call relies on it.
-     */
-open func persist(credentials: CredentialSave)async   {
-    return
-        try!  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_obelisk_bridge_fn_method_epicsession_persist(
-                        self.uniffiCloneHandle(),FfiConverterTypeCredentialSave_lower(credentials)
-                )
-            },
-            pollFunc: ffi_obelisk_bridge_rust_future_poll_void,
-            completeFunc: ffi_obelisk_bridge_rust_future_complete_void,
-            freeFunc: ffi_obelisk_bridge_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: nil
-            
-        )
-}
-    
-    /**
-     * Every game the account played, in one request.
-     */
-open func playtimes()async throws  -> [EpicPlaytime]  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_obelisk_bridge_fn_method_epicsession_playtimes(
-                        self.uniffiCloneHandle()
-                )
-            },
-            pollFunc: ffi_obelisk_bridge_rust_future_poll_rust_buffer,
-            completeFunc: ffi_obelisk_bridge_rust_future_complete_rust_buffer,
-            freeFunc: ffi_obelisk_bridge_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterSequenceTypeEpicPlaytime.lift,
-            errorHandler: FfiConverterTypeEpicError_lift
-        )
-}
-    
-open func reconnectFriends()async   {
-    return
-        try!  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_obelisk_bridge_fn_method_epicsession_reconnect_friends(
-                        self.uniffiCloneHandle()
-                )
-            },
-            pollFunc: ffi_obelisk_bridge_rust_future_poll_void,
-            completeFunc: ffi_obelisk_bridge_rust_future_complete_void,
-            freeFunc: ffi_obelisk_bridge_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: nil
-            
-        )
-}
-    
-open func shutdownObservers()  {try! rustCall() {
-        uniffiCallStatus in
-    uniffi_obelisk_bridge_fn_method_epicsession_shutdown_observers(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-}
-}
-    
-open func startFriends()async   {
-    return
-        try!  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_obelisk_bridge_fn_method_epicsession_start_friends(
-                        self.uniffiCloneHandle()
-                )
-            },
-            pollFunc: ffi_obelisk_bridge_rust_future_poll_void,
-            completeFunc: ffi_obelisk_bridge_rust_future_complete_void,
-            freeFunc: ffi_obelisk_bridge_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: nil
-            
-        )
-}
-    
-open func stopFriends()  {try! rustCall() {
-        uniffiCallStatus in
-    uniffi_obelisk_bridge_fn_method_epicsession_stop_friends(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-}
-}
-    
-    /**
-     * Opens Epic's site signed in as the account, then `redirect_url`, an
-     * Epic page. The address holds a single-use code: never keep or log it.
-     */
-open func webSignInUrl(redirectUrl: String)async throws  -> String  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_obelisk_bridge_fn_method_epicsession_web_sign_in_url(
-                        self.uniffiCloneHandle(),FfiConverterString.lower(redirectUrl)
-                )
-            },
-            pollFunc: ffi_obelisk_bridge_rust_future_poll_rust_buffer,
-            completeFunc: ffi_obelisk_bridge_rust_future_complete_rust_buffer,
-            freeFunc: ffi_obelisk_bridge_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterString.lift,
-            errorHandler: FfiConverterTypeEpicError_lift
-        )
-}
-    
-
-    
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeEpicSession: FfiConverter {
-    typealias FfiType = UInt64
-    typealias SwiftType = EpicSession
-
-    public static func lift(_ handle: UInt64) throws -> EpicSession {
-        return EpicSession(unsafeFromHandle: handle)
-    }
-
-    public static func lower(_ value: EpicSession) -> UInt64 {
-        return value.uniffiCloneHandle()
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EpicSession {
-        let handle: UInt64 = try readInt(&buf)
-        return try lift(handle)
-    }
-
-    public static func write(_ value: EpicSession, into buf: inout [UInt8]) {
-        writeInt(&buf, lower(value))
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeEpicSession_lift(_ handle: UInt64) throws -> EpicSession {
-    return try FfiConverterTypeEpicSession.lift(handle)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeEpicSession_lower(_ value: EpicSession) -> UInt64 {
-    return FfiConverterTypeEpicSession.lower(value)
 }
 
 
@@ -2320,547 +1873,6 @@ public func FfiConverterTypeGamesFolder_lift(_ handle: UInt64) throws -> GamesFo
 #endif
 public func FfiConverterTypeGamesFolder_lower(_ value: GamesFolder) -> UInt64 {
     return FfiConverterTypeGamesFolder.lower(value)
-}
-
-
-
-
-
-
-public protocol GogSessionProtocol: AnyObject, Sendable {
-    
-    /**
-     * The share of each of `product_ids`' achievements the account unlocked,
-     * by product, as `achievements` reads them: none for a game without
-     * achievements or that GOG did not answer for. It fails only when no
-     * game could be told.
-     */
-    func achievementShares(productIds: [String], locale: String) async throws  -> [String: Double]
-    
-    /**
-     * The game's achievements in `locale`, such as `fr-FR`, as the game
-     * page reads them: the library's while the game was not played since
-     * they were read, unless `fresh`, else GOG's, which the library then
-     * keeps.
-     */
-    func achievements(productId: String, locale: String, fresh: Bool) async throws  -> [LibraryAchievement]
-    
-    /**
-     * The account's avatar, as its GOG profile shows it.
-     */
-    func avatarUrl()  -> String?
-    
-    func credentials() async throws  -> GogCredentials
-    
-    func disconnect() async throws 
-    
-    /**
-     * `language` names the depots, such as `fr-FR`.
-     */
-    func gameDetails(productId: String, language: String) async throws  -> GogGameDetails
-    
-    func games() async throws  -> [GogGame]
-    
-    func nextCredentialsRevision(afterRevision: UInt64) async  -> UInt64?
-    
-    /**
-     * Saves the account's credentials through `credentials` now and after
-     * every rotation, one save at a time and in order, until the session's
-     * observers stop. Every account call relies on it.
-     */
-    func persist(credentials: CredentialSave) async 
-    
-    /**
-     * How long the account played each of `product_ids`; a game never
-     * played has no entry. GOG answers one game at a time.
-     */
-    func playtimes(productIds: [String]) async throws  -> [GogPlaytime]
-    
-    func shutdownObservers() 
-    
-}
-open class GogSession: GogSessionProtocol, @unchecked Sendable {
-    fileprivate let handle: UInt64
-
-    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    public struct NoHandle {
-        public init() {}
-    }
-
-    // TODO: We'd like this to be `private` but for Swifty reasons,
-    // we can't implement `FfiConverter` without making this `required` and we can't
-    // make it `required` without making it `public`.
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    required public init(unsafeFromHandle handle: UInt64) {
-        self.handle = handle
-    }
-
-    // This constructor can be used to instantiate a fake object.
-    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
-    //
-    // - Warning:
-    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    public init(noHandle: NoHandle) {
-        self.handle = 0
-    }
-
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    public func uniffiCloneHandle() -> UInt64 {
-        return try! rustCall { uniffi_obelisk_bridge_fn_clone_gogsession(self.handle, $0) }
-    }
-    // No primary constructor declared for this class.
-
-    deinit {
-        if handle == 0 {
-            // Mock objects have handle=0 don't try to free them
-            return
-        }
-
-        try! rustCall { uniffi_obelisk_bridge_fn_free_gogsession(handle, $0) }
-    }
-
-    
-    /**
-     * Keeps every library it loads in `library`.
-     */
-public static func restore(credentials: GogCredentials, library: LibraryCache?)async throws  -> GogSession  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_obelisk_bridge_fn_constructor_gogsession_restore(FfiConverterTypeGogCredentials_lower(credentials),FfiConverterOptionTypeLibraryCache.lower(library)
-                )
-            },
-            pollFunc: ffi_obelisk_bridge_rust_future_poll_u64,
-            completeFunc: ffi_obelisk_bridge_rust_future_complete_u64,
-            freeFunc: ffi_obelisk_bridge_rust_future_free_u64,
-            liftFunc: FfiConverterTypeGogSession_lift,
-            errorHandler: FfiConverterTypeGogError_lift
-        )
-}
-    
-    /**
-     * Keeps every library it loads in `library`.
-     */
-public static func signIn(authorizationCode: String, library: LibraryCache?)async throws  -> GogSession  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_obelisk_bridge_fn_constructor_gogsession_sign_in(FfiConverterString.lower(authorizationCode),FfiConverterOptionTypeLibraryCache.lower(library)
-                )
-            },
-            pollFunc: ffi_obelisk_bridge_rust_future_poll_u64,
-            completeFunc: ffi_obelisk_bridge_rust_future_complete_u64,
-            freeFunc: ffi_obelisk_bridge_rust_future_free_u64,
-            liftFunc: FfiConverterTypeGogSession_lift,
-            errorHandler: FfiConverterTypeGogError_lift
-        )
-}
-    
-
-    
-    /**
-     * The share of each of `product_ids`' achievements the account unlocked,
-     * by product, as `achievements` reads them: none for a game without
-     * achievements or that GOG did not answer for. It fails only when no
-     * game could be told.
-     */
-open func achievementShares(productIds: [String], locale: String)async throws  -> [String: Double]  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_obelisk_bridge_fn_method_gogsession_achievement_shares(
-                        self.uniffiCloneHandle(),FfiConverterSequenceString.lower(productIds),FfiConverterString.lower(locale)
-                )
-            },
-            pollFunc: ffi_obelisk_bridge_rust_future_poll_rust_buffer,
-            completeFunc: ffi_obelisk_bridge_rust_future_complete_rust_buffer,
-            freeFunc: ffi_obelisk_bridge_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterDictionaryStringDouble.lift,
-            errorHandler: FfiConverterTypeGogError_lift
-        )
-}
-    
-    /**
-     * The game's achievements in `locale`, such as `fr-FR`, as the game
-     * page reads them: the library's while the game was not played since
-     * they were read, unless `fresh`, else GOG's, which the library then
-     * keeps.
-     */
-open func achievements(productId: String, locale: String, fresh: Bool)async throws  -> [LibraryAchievement]  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_obelisk_bridge_fn_method_gogsession_achievements(
-                        self.uniffiCloneHandle(),FfiConverterString.lower(productId),FfiConverterString.lower(locale),FfiConverterBool.lower(fresh)
-                )
-            },
-            pollFunc: ffi_obelisk_bridge_rust_future_poll_rust_buffer,
-            completeFunc: ffi_obelisk_bridge_rust_future_complete_rust_buffer,
-            freeFunc: ffi_obelisk_bridge_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterSequenceTypeLibraryAchievement.lift,
-            errorHandler: FfiConverterTypeGogError_lift
-        )
-}
-    
-    /**
-     * The account's avatar, as its GOG profile shows it.
-     */
-open func avatarUrl() -> String?  {
-    return try!  FfiConverterOptionString.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_obelisk_bridge_fn_method_gogsession_avatar_url(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-})
-}
-    
-open func credentials()async throws  -> GogCredentials  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_obelisk_bridge_fn_method_gogsession_credentials(
-                        self.uniffiCloneHandle()
-                )
-            },
-            pollFunc: ffi_obelisk_bridge_rust_future_poll_rust_buffer,
-            completeFunc: ffi_obelisk_bridge_rust_future_complete_rust_buffer,
-            freeFunc: ffi_obelisk_bridge_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypeGogCredentials_lift,
-            errorHandler: FfiConverterTypeGogError_lift
-        )
-}
-    
-open func disconnect()async throws   {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_obelisk_bridge_fn_method_gogsession_disconnect(
-                        self.uniffiCloneHandle()
-                )
-            },
-            pollFunc: ffi_obelisk_bridge_rust_future_poll_void,
-            completeFunc: ffi_obelisk_bridge_rust_future_complete_void,
-            freeFunc: ffi_obelisk_bridge_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeGogError_lift
-        )
-}
-    
-    /**
-     * `language` names the depots, such as `fr-FR`.
-     */
-open func gameDetails(productId: String, language: String)async throws  -> GogGameDetails  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_obelisk_bridge_fn_method_gogsession_game_details(
-                        self.uniffiCloneHandle(),FfiConverterString.lower(productId),FfiConverterString.lower(language)
-                )
-            },
-            pollFunc: ffi_obelisk_bridge_rust_future_poll_rust_buffer,
-            completeFunc: ffi_obelisk_bridge_rust_future_complete_rust_buffer,
-            freeFunc: ffi_obelisk_bridge_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypeGogGameDetails_lift,
-            errorHandler: FfiConverterTypeGogError_lift
-        )
-}
-    
-open func games()async throws  -> [GogGame]  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_obelisk_bridge_fn_method_gogsession_games(
-                        self.uniffiCloneHandle()
-                )
-            },
-            pollFunc: ffi_obelisk_bridge_rust_future_poll_rust_buffer,
-            completeFunc: ffi_obelisk_bridge_rust_future_complete_rust_buffer,
-            freeFunc: ffi_obelisk_bridge_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterSequenceTypeGogGame.lift,
-            errorHandler: FfiConverterTypeGogError_lift
-        )
-}
-    
-open func nextCredentialsRevision(afterRevision: UInt64)async  -> UInt64?  {
-    return
-        try!  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_obelisk_bridge_fn_method_gogsession_next_credentials_revision(
-                        self.uniffiCloneHandle(),FfiConverterUInt64.lower(afterRevision)
-                )
-            },
-            pollFunc: ffi_obelisk_bridge_rust_future_poll_rust_buffer,
-            completeFunc: ffi_obelisk_bridge_rust_future_complete_rust_buffer,
-            freeFunc: ffi_obelisk_bridge_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterOptionUInt64.lift,
-            errorHandler: nil
-            
-        )
-}
-    
-    /**
-     * Saves the account's credentials through `credentials` now and after
-     * every rotation, one save at a time and in order, until the session's
-     * observers stop. Every account call relies on it.
-     */
-open func persist(credentials: CredentialSave)async   {
-    return
-        try!  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_obelisk_bridge_fn_method_gogsession_persist(
-                        self.uniffiCloneHandle(),FfiConverterTypeCredentialSave_lower(credentials)
-                )
-            },
-            pollFunc: ffi_obelisk_bridge_rust_future_poll_void,
-            completeFunc: ffi_obelisk_bridge_rust_future_complete_void,
-            freeFunc: ffi_obelisk_bridge_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: nil
-            
-        )
-}
-    
-    /**
-     * How long the account played each of `product_ids`; a game never
-     * played has no entry. GOG answers one game at a time.
-     */
-open func playtimes(productIds: [String])async throws  -> [GogPlaytime]  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_obelisk_bridge_fn_method_gogsession_playtimes(
-                        self.uniffiCloneHandle(),FfiConverterSequenceString.lower(productIds)
-                )
-            },
-            pollFunc: ffi_obelisk_bridge_rust_future_poll_rust_buffer,
-            completeFunc: ffi_obelisk_bridge_rust_future_complete_rust_buffer,
-            freeFunc: ffi_obelisk_bridge_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterSequenceTypeGogPlaytime.lift,
-            errorHandler: FfiConverterTypeGogError_lift
-        )
-}
-    
-open func shutdownObservers()  {try! rustCall() {
-        uniffiCallStatus in
-    uniffi_obelisk_bridge_fn_method_gogsession_shutdown_observers(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-}
-}
-    
-
-    
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeGogSession: FfiConverter {
-    typealias FfiType = UInt64
-    typealias SwiftType = GogSession
-
-    public static func lift(_ handle: UInt64) throws -> GogSession {
-        return GogSession(unsafeFromHandle: handle)
-    }
-
-    public static func lower(_ value: GogSession) -> UInt64 {
-        return value.uniffiCloneHandle()
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GogSession {
-        let handle: UInt64 = try readInt(&buf)
-        return try lift(handle)
-    }
-
-    public static func write(_ value: GogSession, into buf: inout [UInt8]) {
-        writeInt(&buf, lower(value))
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeGogSession_lift(_ handle: UInt64) throws -> GogSession {
-    return try FfiConverterTypeGogSession.lift(handle)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeGogSession_lower(_ value: GogSession) -> UInt64 {
-    return FfiConverterTypeGogSession.lower(value)
-}
-
-
-
-
-
-
-public protocol LibraryProtocol: AnyObject, Sendable {
-    
-    func addLocalGame(path: String) throws  -> Game
-    
-    func games() throws  -> [Game]
-    
-    func recordLaunch(id: String) throws 
-    
-    func removeGame(id: String) throws 
-    
-}
-open class Library: LibraryProtocol, @unchecked Sendable {
-    fileprivate let handle: UInt64
-
-    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    public struct NoHandle {
-        public init() {}
-    }
-
-    // TODO: We'd like this to be `private` but for Swifty reasons,
-    // we can't implement `FfiConverter` without making this `required` and we can't
-    // make it `required` without making it `public`.
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    required public init(unsafeFromHandle handle: UInt64) {
-        self.handle = handle
-    }
-
-    // This constructor can be used to instantiate a fake object.
-    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
-    //
-    // - Warning:
-    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    public init(noHandle: NoHandle) {
-        self.handle = 0
-    }
-
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    public func uniffiCloneHandle() -> UInt64 {
-        return try! rustCall { uniffi_obelisk_bridge_fn_clone_library(self.handle, $0) }
-    }
-public convenience init(storageDir: String)throws  {
-    let handle =
-        try rustCallWithError(FfiConverterTypeCoreError_lift) {
-        uniffiCallStatus in
-    uniffi_obelisk_bridge_fn_constructor_library_new(
-        FfiConverterString.lower(storageDir),uniffiCallStatus
-    )
-}
-    self.init(unsafeFromHandle: handle)
-}
-
-    deinit {
-        if handle == 0 {
-            // Mock objects have handle=0 don't try to free them
-            return
-        }
-
-        try! rustCall { uniffi_obelisk_bridge_fn_free_library(handle, $0) }
-    }
-
-    
-
-    
-open func addLocalGame(path: String)throws  -> Game  {
-    return try  FfiConverterTypeGame_lift(try rustCallWithError(FfiConverterTypeCoreError_lift) {
-        uniffiCallStatus in
-    uniffi_obelisk_bridge_fn_method_library_add_local_game(
-            self.uniffiCloneHandle(),
-        FfiConverterString.lower(path),uniffiCallStatus
-    )
-})
-}
-    
-open func games()throws  -> [Game]  {
-    return try  FfiConverterSequenceTypeGame.lift(try rustCallWithError(FfiConverterTypeCoreError_lift) {
-        uniffiCallStatus in
-    uniffi_obelisk_bridge_fn_method_library_games(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-})
-}
-    
-open func recordLaunch(id: String)throws   {try rustCallWithError(FfiConverterTypeCoreError_lift) {
-        uniffiCallStatus in
-    uniffi_obelisk_bridge_fn_method_library_record_launch(
-            self.uniffiCloneHandle(),
-        FfiConverterString.lower(id),uniffiCallStatus
-    )
-}
-}
-    
-open func removeGame(id: String)throws   {try rustCallWithError(FfiConverterTypeCoreError_lift) {
-        uniffiCallStatus in
-    uniffi_obelisk_bridge_fn_method_library_remove_game(
-            self.uniffiCloneHandle(),
-        FfiConverterString.lower(id),uniffiCallStatus
-    )
-}
-}
-    
-
-    
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeLibrary: FfiConverter {
-    typealias FfiType = UInt64
-    typealias SwiftType = Library
-
-    public static func lift(_ handle: UInt64) throws -> Library {
-        return Library(unsafeFromHandle: handle)
-    }
-
-    public static func lower(_ value: Library) -> UInt64 {
-        return value.uniffiCloneHandle()
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Library {
-        let handle: UInt64 = try readInt(&buf)
-        return try lift(handle)
-    }
-
-    public static func write(_ value: Library, into buf: inout [UInt8]) {
-        writeInt(&buf, lower(value))
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeLibrary_lift(_ handle: UInt64) throws -> Library {
-    return try FfiConverterTypeLibrary.lift(handle)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeLibrary_lower(_ value: Library) -> UInt64 {
-    return FfiConverterTypeLibrary.lower(value)
 }
 
 
@@ -3435,7 +2447,10 @@ public protocol SteamConnectionAttemptProtocol: AnyObject, Sendable {
     
     func cancel() 
     
-    func connect(credentials: SteamCredentials, library: LibraryCache?) async throws  -> SteamSession
+    /**
+     * Signs in, showing the account to its friends as `status` says.
+     */
+    func connect(credentials: SteamCredentials, library: LibraryCache?, status: OnlineStatus) async throws  -> SteamSession
     
 }
 /**
@@ -3510,12 +2525,15 @@ open func cancel()  {try! rustCall() {
 }
 }
     
-open func connect(credentials: SteamCredentials, library: LibraryCache?)async throws  -> SteamSession  {
+    /**
+     * Signs in, showing the account to its friends as `status` says.
+     */
+open func connect(credentials: SteamCredentials, library: LibraryCache?, status: OnlineStatus)async throws  -> SteamSession  {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
                 uniffi_obelisk_bridge_fn_method_steamconnectionattempt_connect(
-                        self.uniffiCloneHandle(),FfiConverterTypeSteamCredentials_lower(credentials),FfiConverterOptionTypeLibraryCache.lower(library)
+                        self.uniffiCloneHandle(),FfiConverterTypeSteamCredentials_lower(credentials),FfiConverterOptionTypeLibraryCache.lower(library),FfiConverterTypeOnlineStatus_lower(status)
                 )
             },
             pollFunc: ffi_obelisk_bridge_rust_future_poll_u64,
@@ -4166,8 +3184,11 @@ public protocol SteamSessionProtocol: AnyObject, Sendable {
     
     /**
      * Shows the account Online again, for instance after a game ended.
+     * Shows the account as `status` says, through this connection and
+     * every later one; also again once a game's own Steam session changed
+     * it.
      */
-    func setOnline() async throws 
+    func setStatus(status: OnlineStatus) async throws 
     
 }
 open class SteamSession: SteamSessionProtocol, @unchecked Sendable {
@@ -4222,13 +3243,14 @@ open class SteamSession: SteamSessionProtocol, @unchecked Sendable {
 
     
     /**
-     * Keeps every library it loads in `library`.
+     * Keeps every library it loads in `library`, and shows the account to
+     * its friends as `status` says.
      */
-public static func connect(credentials: SteamCredentials, library: LibraryCache?)async throws  -> SteamSession  {
+public static func connect(credentials: SteamCredentials, library: LibraryCache?, status: OnlineStatus)async throws  -> SteamSession  {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_obelisk_bridge_fn_constructor_steamsession_connect(FfiConverterTypeSteamCredentials_lower(credentials),FfiConverterOptionTypeLibraryCache.lower(library)
+                uniffi_obelisk_bridge_fn_constructor_steamsession_connect(FfiConverterTypeSteamCredentials_lower(credentials),FfiConverterOptionTypeLibraryCache.lower(library),FfiConverterTypeOnlineStatus_lower(status)
                 )
             },
             pollFunc: ffi_obelisk_bridge_rust_future_poll_u64,
@@ -4733,13 +3755,16 @@ open func sendTyping(friendSteamId: UInt64)async throws   {
     
     /**
      * Shows the account Online again, for instance after a game ended.
+     * Shows the account as `status` says, through this connection and
+     * every later one; also again once a game's own Steam session changed
+     * it.
      */
-open func setOnline()async throws   {
+open func setStatus(status: OnlineStatus)async throws   {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_obelisk_bridge_fn_method_steamsession_set_online(
-                        self.uniffiCloneHandle()
+                uniffi_obelisk_bridge_fn_method_steamsession_set_status(
+                        self.uniffiCloneHandle(),FfiConverterTypeOnlineStatus_lower(status)
                 )
             },
             pollFunc: ffi_obelisk_bridge_rust_future_poll_void,
@@ -4863,6 +3888,13 @@ public protocol StorefrontSessionsProtocol: AnyObject, Sendable {
      * Account revocation. The game keeps running.
      */
     func revoke(account: GameAccount) 
+    
+    /**
+     * How the player shows to their friends: the next game starts showing
+     * it, and the one under way shows it at once. Nothing for a storefront
+     * whose games show no presence.
+     */
+    func setStatus(status: OnlineStatus) async 
     
     func state()  -> GameSessionsState
     
@@ -5127,6 +4159,28 @@ open func revoke(account: GameAccount)  {try! rustCall() {
 }
 }
     
+    /**
+     * How the player shows to their friends: the next game starts showing
+     * it, and the one under way shows it at once. Nothing for a storefront
+     * whose games show no presence.
+     */
+open func setStatus(status: OnlineStatus)async   {
+    return
+        try!  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_obelisk_bridge_fn_method_storefrontsessions_set_status(
+                        self.uniffiCloneHandle(),FfiConverterTypeOnlineStatus_lower(status)
+                )
+            },
+            pollFunc: ffi_obelisk_bridge_rust_future_poll_void,
+            completeFunc: ffi_obelisk_bridge_rust_future_complete_void,
+            freeFunc: ffi_obelisk_bridge_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: nil
+            
+        )
+}
+    
 open func state() -> GameSessionsState  {
     return try!  FfiConverterTypeGameSessionsState_lift(try! rustCall() {
         uniffiCallStatus in
@@ -5199,6 +4253,537 @@ public func FfiConverterTypeStorefrontSessions_lift(_ handle: UInt64) throws -> 
 #endif
 public func FfiConverterTypeStorefrontSessions_lower(_ value: StorefrontSessions) -> UInt64 {
     return FfiConverterTypeStorefrontSessions.lower(value)
+}
+
+
+
+
+
+
+/**
+ * One Epic or GOG account's session, from its sign-in or restoration until
+ * it disconnects.
+ */
+public protocol WebAccountSessionProtocol: AnyObject, Sendable {
+    
+    /**
+     * The share of each of `games`' achievements the account unlocked, by
+     * game, as `achievements` reads them: none for a game without
+     * achievements or that the storefront did not answer for. It fails only
+     * when no game could be told.
+     */
+    func achievementShares(games: [String], locale: String) async throws  -> [String: Double]
+    
+    /**
+     * The game's achievements in `locale`, such as the game page's: the
+     * library's while the game was not played since they were read, unless
+     * `fresh`, else the storefront's, which the library then keeps.
+     */
+    func achievements(game: String, locale: String, fresh: Bool) async throws  -> [LibraryAchievement]
+    
+    /**
+     * The account's avatar, as its GOG profile shows it; none for Epic.
+     */
+    func avatarUrl()  -> String?
+    
+    func credentials() async throws  -> WebAccountCredentials
+    
+    func disconnect() async throws 
+    
+    /**
+     * What the page of the game `offer` names adds to its library entry.
+     * `language` names GOG's depots, such as `fr-FR`.
+     */
+    func gameDetails(offer: GameOffer, language: String) async throws  -> WebGameDetails
+    
+    func games() async throws  -> WebAccountGames
+    
+    /**
+     * The next revision of the credentials after `after_revision`, or none
+     * once the session's observers stop.
+     */
+    func nextCredentialsRevision(afterRevision: UInt64) async  -> UInt64?
+    
+    /**
+     * An Epic account's friends once they change from `after_revision`;
+     * none for a GOG account.
+     */
+    func nextFriends(afterRevision: UInt64) async  -> EpicFriendsSnapshot?
+    
+    /**
+     * Saves the account's credentials through `credentials` now and after
+     * every rotation, one save at a time and in order, until the session's
+     * observers stop. Every account call relies on it.
+     */
+    func persist(credentials: CredentialSave) async 
+    
+    /**
+     * How long the account played each of `games`, in seconds, by game; a
+     * game never played has no entry. Epic answers every game in one
+     * request, GOG one game at a time.
+     */
+    func playtimes(games: [String]) async throws  -> [String: UInt64]
+    
+    func reconnectFriends() async 
+    
+    /**
+     * Shows an Epic account to its friends as `status` says: from the next
+     * friends connection on, and at once on a live one. Friends are Epic's
+     * alone here: a GOG session ignores their calls.
+     */
+    func setStatus(status: OnlineStatus) 
+    
+    /**
+     * Stops the credentials watch and Epic's friends at once.
+     */
+    func shutdownObservers() 
+    
+    func startFriends() async 
+    
+    func stopFriends() 
+    
+    /**
+     * Opens Epic's site signed in as the account, then `redirect_url`, an
+     * Epic page. The address holds a single-use code: never keep or log it.
+     * None for GOG, whose site takes no sign-in from the app.
+     */
+    func webSignInUrl(redirectUrl: String) async throws  -> String?
+    
+}
+/**
+ * One Epic or GOG account's session, from its sign-in or restoration until
+ * it disconnects.
+ */
+open class WebAccountSession: WebAccountSessionProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_obelisk_bridge_fn_clone_webaccountsession(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_obelisk_bridge_fn_free_webaccountsession(handle, $0) }
+    }
+
+    
+    /**
+     * Restores the account `credentials` name on `storefront`, Epic or
+     * GOG. Keeps every library it loads in `library`.
+     */
+public static func restore(storefront: SessionStorefront, credentials: WebAccountCredentials, library: LibraryCache?)async throws  -> WebAccountSession  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_obelisk_bridge_fn_constructor_webaccountsession_restore(FfiConverterTypeSessionStorefront_lower(storefront),FfiConverterTypeWebAccountCredentials_lower(credentials),FfiConverterOptionTypeLibraryCache.lower(library)
+                )
+            },
+            pollFunc: ffi_obelisk_bridge_rust_future_poll_u64,
+            completeFunc: ffi_obelisk_bridge_rust_future_complete_u64,
+            freeFunc: ffi_obelisk_bridge_rust_future_free_u64,
+            liftFunc: FfiConverterTypeWebAccountSession_lift,
+            errorHandler: FfiConverterTypeWebAccountError_lift
+        )
+}
+    
+    /**
+     * Signs in to `storefront`, Epic or GOG, with the code its web page
+     * returned. Keeps every library it loads in `library`.
+     */
+public static func signIn(storefront: SessionStorefront, authorizationCode: String, library: LibraryCache?)async throws  -> WebAccountSession  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_obelisk_bridge_fn_constructor_webaccountsession_sign_in(FfiConverterTypeSessionStorefront_lower(storefront),FfiConverterString.lower(authorizationCode),FfiConverterOptionTypeLibraryCache.lower(library)
+                )
+            },
+            pollFunc: ffi_obelisk_bridge_rust_future_poll_u64,
+            completeFunc: ffi_obelisk_bridge_rust_future_complete_u64,
+            freeFunc: ffi_obelisk_bridge_rust_future_free_u64,
+            liftFunc: FfiConverterTypeWebAccountSession_lift,
+            errorHandler: FfiConverterTypeWebAccountError_lift
+        )
+}
+    
+
+    
+    /**
+     * The share of each of `games`' achievements the account unlocked, by
+     * game, as `achievements` reads them: none for a game without
+     * achievements or that the storefront did not answer for. It fails only
+     * when no game could be told.
+     */
+open func achievementShares(games: [String], locale: String)async throws  -> [String: Double]  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_obelisk_bridge_fn_method_webaccountsession_achievement_shares(
+                        self.uniffiCloneHandle(),FfiConverterSequenceString.lower(games),FfiConverterString.lower(locale)
+                )
+            },
+            pollFunc: ffi_obelisk_bridge_rust_future_poll_rust_buffer,
+            completeFunc: ffi_obelisk_bridge_rust_future_complete_rust_buffer,
+            freeFunc: ffi_obelisk_bridge_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterDictionaryStringDouble.lift,
+            errorHandler: FfiConverterTypeWebAccountError_lift
+        )
+}
+    
+    /**
+     * The game's achievements in `locale`, such as the game page's: the
+     * library's while the game was not played since they were read, unless
+     * `fresh`, else the storefront's, which the library then keeps.
+     */
+open func achievements(game: String, locale: String, fresh: Bool)async throws  -> [LibraryAchievement]  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_obelisk_bridge_fn_method_webaccountsession_achievements(
+                        self.uniffiCloneHandle(),FfiConverterString.lower(game),FfiConverterString.lower(locale),FfiConverterBool.lower(fresh)
+                )
+            },
+            pollFunc: ffi_obelisk_bridge_rust_future_poll_rust_buffer,
+            completeFunc: ffi_obelisk_bridge_rust_future_complete_rust_buffer,
+            freeFunc: ffi_obelisk_bridge_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterSequenceTypeLibraryAchievement.lift,
+            errorHandler: FfiConverterTypeWebAccountError_lift
+        )
+}
+    
+    /**
+     * The account's avatar, as its GOG profile shows it; none for Epic.
+     */
+open func avatarUrl() -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_obelisk_bridge_fn_method_webaccountsession_avatar_url(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+open func credentials()async throws  -> WebAccountCredentials  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_obelisk_bridge_fn_method_webaccountsession_credentials(
+                        self.uniffiCloneHandle()
+                )
+            },
+            pollFunc: ffi_obelisk_bridge_rust_future_poll_rust_buffer,
+            completeFunc: ffi_obelisk_bridge_rust_future_complete_rust_buffer,
+            freeFunc: ffi_obelisk_bridge_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeWebAccountCredentials_lift,
+            errorHandler: FfiConverterTypeWebAccountError_lift
+        )
+}
+    
+open func disconnect()async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_obelisk_bridge_fn_method_webaccountsession_disconnect(
+                        self.uniffiCloneHandle()
+                )
+            },
+            pollFunc: ffi_obelisk_bridge_rust_future_poll_void,
+            completeFunc: ffi_obelisk_bridge_rust_future_complete_void,
+            freeFunc: ffi_obelisk_bridge_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeWebAccountError_lift
+        )
+}
+    
+    /**
+     * What the page of the game `offer` names adds to its library entry.
+     * `language` names GOG's depots, such as `fr-FR`.
+     */
+open func gameDetails(offer: GameOffer, language: String)async throws  -> WebGameDetails  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_obelisk_bridge_fn_method_webaccountsession_game_details(
+                        self.uniffiCloneHandle(),FfiConverterTypeGameOffer_lower(offer),FfiConverterString.lower(language)
+                )
+            },
+            pollFunc: ffi_obelisk_bridge_rust_future_poll_rust_buffer,
+            completeFunc: ffi_obelisk_bridge_rust_future_complete_rust_buffer,
+            freeFunc: ffi_obelisk_bridge_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeWebGameDetails_lift,
+            errorHandler: FfiConverterTypeWebAccountError_lift
+        )
+}
+    
+open func games()async throws  -> WebAccountGames  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_obelisk_bridge_fn_method_webaccountsession_games(
+                        self.uniffiCloneHandle()
+                )
+            },
+            pollFunc: ffi_obelisk_bridge_rust_future_poll_rust_buffer,
+            completeFunc: ffi_obelisk_bridge_rust_future_complete_rust_buffer,
+            freeFunc: ffi_obelisk_bridge_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeWebAccountGames_lift,
+            errorHandler: FfiConverterTypeWebAccountError_lift
+        )
+}
+    
+    /**
+     * The next revision of the credentials after `after_revision`, or none
+     * once the session's observers stop.
+     */
+open func nextCredentialsRevision(afterRevision: UInt64)async  -> UInt64?  {
+    return
+        try!  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_obelisk_bridge_fn_method_webaccountsession_next_credentials_revision(
+                        self.uniffiCloneHandle(),FfiConverterUInt64.lower(afterRevision)
+                )
+            },
+            pollFunc: ffi_obelisk_bridge_rust_future_poll_rust_buffer,
+            completeFunc: ffi_obelisk_bridge_rust_future_complete_rust_buffer,
+            freeFunc: ffi_obelisk_bridge_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterOptionUInt64.lift,
+            errorHandler: nil
+            
+        )
+}
+    
+    /**
+     * An Epic account's friends once they change from `after_revision`;
+     * none for a GOG account.
+     */
+open func nextFriends(afterRevision: UInt64)async  -> EpicFriendsSnapshot?  {
+    return
+        try!  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_obelisk_bridge_fn_method_webaccountsession_next_friends(
+                        self.uniffiCloneHandle(),FfiConverterUInt64.lower(afterRevision)
+                )
+            },
+            pollFunc: ffi_obelisk_bridge_rust_future_poll_rust_buffer,
+            completeFunc: ffi_obelisk_bridge_rust_future_complete_rust_buffer,
+            freeFunc: ffi_obelisk_bridge_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterOptionTypeEpicFriendsSnapshot.lift,
+            errorHandler: nil
+            
+        )
+}
+    
+    /**
+     * Saves the account's credentials through `credentials` now and after
+     * every rotation, one save at a time and in order, until the session's
+     * observers stop. Every account call relies on it.
+     */
+open func persist(credentials: CredentialSave)async   {
+    return
+        try!  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_obelisk_bridge_fn_method_webaccountsession_persist(
+                        self.uniffiCloneHandle(),FfiConverterTypeCredentialSave_lower(credentials)
+                )
+            },
+            pollFunc: ffi_obelisk_bridge_rust_future_poll_void,
+            completeFunc: ffi_obelisk_bridge_rust_future_complete_void,
+            freeFunc: ffi_obelisk_bridge_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: nil
+            
+        )
+}
+    
+    /**
+     * How long the account played each of `games`, in seconds, by game; a
+     * game never played has no entry. Epic answers every game in one
+     * request, GOG one game at a time.
+     */
+open func playtimes(games: [String])async throws  -> [String: UInt64]  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_obelisk_bridge_fn_method_webaccountsession_playtimes(
+                        self.uniffiCloneHandle(),FfiConverterSequenceString.lower(games)
+                )
+            },
+            pollFunc: ffi_obelisk_bridge_rust_future_poll_rust_buffer,
+            completeFunc: ffi_obelisk_bridge_rust_future_complete_rust_buffer,
+            freeFunc: ffi_obelisk_bridge_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterDictionaryStringUInt64.lift,
+            errorHandler: FfiConverterTypeWebAccountError_lift
+        )
+}
+    
+open func reconnectFriends()async   {
+    return
+        try!  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_obelisk_bridge_fn_method_webaccountsession_reconnect_friends(
+                        self.uniffiCloneHandle()
+                )
+            },
+            pollFunc: ffi_obelisk_bridge_rust_future_poll_void,
+            completeFunc: ffi_obelisk_bridge_rust_future_complete_void,
+            freeFunc: ffi_obelisk_bridge_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: nil
+            
+        )
+}
+    
+    /**
+     * Shows an Epic account to its friends as `status` says: from the next
+     * friends connection on, and at once on a live one. Friends are Epic's
+     * alone here: a GOG session ignores their calls.
+     */
+open func setStatus(status: OnlineStatus)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_obelisk_bridge_fn_method_webaccountsession_set_status(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeOnlineStatus_lower(status),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * Stops the credentials watch and Epic's friends at once.
+     */
+open func shutdownObservers()  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_obelisk_bridge_fn_method_webaccountsession_shutdown_observers(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+}
+}
+    
+open func startFriends()async   {
+    return
+        try!  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_obelisk_bridge_fn_method_webaccountsession_start_friends(
+                        self.uniffiCloneHandle()
+                )
+            },
+            pollFunc: ffi_obelisk_bridge_rust_future_poll_void,
+            completeFunc: ffi_obelisk_bridge_rust_future_complete_void,
+            freeFunc: ffi_obelisk_bridge_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: nil
+            
+        )
+}
+    
+open func stopFriends()  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_obelisk_bridge_fn_method_webaccountsession_stop_friends(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * Opens Epic's site signed in as the account, then `redirect_url`, an
+     * Epic page. The address holds a single-use code: never keep or log it.
+     * None for GOG, whose site takes no sign-in from the app.
+     */
+open func webSignInUrl(redirectUrl: String)async throws  -> String?  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_obelisk_bridge_fn_method_webaccountsession_web_sign_in_url(
+                        self.uniffiCloneHandle(),FfiConverterString.lower(redirectUrl)
+                )
+            },
+            pollFunc: ffi_obelisk_bridge_rust_future_poll_rust_buffer,
+            completeFunc: ffi_obelisk_bridge_rust_future_complete_rust_buffer,
+            freeFunc: ffi_obelisk_bridge_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterOptionString.lift,
+            errorHandler: FfiConverterTypeWebAccountError_lift
+        )
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeWebAccountSession: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = WebAccountSession
+
+    public static func lift(_ handle: UInt64) throws -> WebAccountSession {
+        return WebAccountSession(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: WebAccountSession) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> WebAccountSession {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: WebAccountSession, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWebAccountSession_lift(_ handle: UInt64) throws -> WebAccountSession {
+    return try FfiConverterTypeWebAccountSession.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWebAccountSession_lower(_ value: WebAccountSession) -> UInt64 {
+    return FfiConverterTypeWebAccountSession.lower(value)
 }
 
 
@@ -5280,7 +4865,7 @@ public func FfiConverterTypeCachedEpicGame_lower(_ value: CachedEpicGame) -> Rus
  */
 public struct CachedGogGame: Equatable, Hashable {
     public var game: GogGame
-    public var playtimeMinutes: UInt64?
+    public var playtimeSeconds: UInt64?
     /**
      * The share of its achievements unlocked when they were last read;
      * none for a game without any.
@@ -5289,13 +4874,13 @@ public struct CachedGogGame: Equatable, Hashable {
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(game: GogGame, playtimeMinutes: UInt64?, 
+    public init(game: GogGame, playtimeSeconds: UInt64?, 
         /**
          * The share of its achievements unlocked when they were last read;
          * none for a game without any.
          */achievementShare: Double? = nil) {
         self.game = game
-        self.playtimeMinutes = playtimeMinutes
+        self.playtimeSeconds = playtimeSeconds
         self.achievementShare = achievementShare
     }
 
@@ -5316,14 +4901,14 @@ public struct FfiConverterTypeCachedGogGame: FfiConverterRustBuffer {
         return
             try CachedGogGame(
                 game: FfiConverterTypeGogGame.read(from: &buf), 
-                playtimeMinutes: FfiConverterOptionUInt64.read(from: &buf), 
+                playtimeSeconds: FfiConverterOptionUInt64.read(from: &buf), 
                 achievementShare: FfiConverterOptionDouble.read(from: &buf)
         )
     }
 
     public static func write(_ value: CachedGogGame, into buf: inout [UInt8]) {
         FfiConverterTypeGogGame.write(value.game, into: &buf)
-        FfiConverterOptionUInt64.write(value.playtimeMinutes, into: &buf)
+        FfiConverterOptionUInt64.write(value.playtimeSeconds, into: &buf)
         FfiConverterOptionDouble.write(value.achievementShare, into: &buf)
     }
 }
@@ -5939,64 +5524,6 @@ public func FfiConverterTypeDownloadQueueState_lower(_ value: DownloadQueueState
 }
 
 
-public struct EpicCredentials: Equatable, Hashable {
-    public var accountId: String
-    public var displayName: String
-    public var refreshToken: String
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(accountId: String, displayName: String, refreshToken: String) {
-        self.accountId = accountId
-        self.displayName = displayName
-        self.refreshToken = refreshToken
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension EpicCredentials: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeEpicCredentials: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EpicCredentials {
-        return
-            try EpicCredentials(
-                accountId: FfiConverterString.read(from: &buf), 
-                displayName: FfiConverterString.read(from: &buf), 
-                refreshToken: FfiConverterString.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: EpicCredentials, into buf: inout [UInt8]) {
-        FfiConverterString.write(value.accountId, into: &buf)
-        FfiConverterString.write(value.displayName, into: &buf)
-        FfiConverterString.write(value.refreshToken, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeEpicCredentials_lift(_ buf: RustBuffer) throws -> EpicCredentials {
-    return try FfiConverterTypeEpicCredentials.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeEpicCredentials_lower(_ value: EpicCredentials) -> RustBuffer {
-    return FfiConverterTypeEpicCredentials.lower(value)
-}
-
-
 public struct EpicFriend: Equatable, Hashable {
     public var accountId: String
     public var displayName: String?
@@ -6278,203 +5805,6 @@ public func FfiConverterTypeEpicGame_lift(_ buf: RustBuffer) throws -> EpicGame 
 #endif
 public func FfiConverterTypeEpicGame_lower(_ value: EpicGame) -> RustBuffer {
     return FfiConverterTypeEpicGame.lower(value)
-}
-
-
-/**
- * What a game's page adds to its library entry: the build it shows before
- * any download, and its size.
- */
-public struct EpicGameDetails: Equatable, Hashable {
-    /**
-     * Unknown when Epic could not tell.
-     */
-    public var platform: GamePlatform?
-    /**
-     * Unknown when Epic serves no manifest of the build.
-     */
-    public var installationBytes: UInt64?
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(
-        /**
-         * Unknown when Epic could not tell.
-         */platform: GamePlatform?, 
-        /**
-         * Unknown when Epic serves no manifest of the build.
-         */installationBytes: UInt64?) {
-        self.platform = platform
-        self.installationBytes = installationBytes
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension EpicGameDetails: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeEpicGameDetails: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EpicGameDetails {
-        return
-            try EpicGameDetails(
-                platform: FfiConverterOptionTypeGamePlatform.read(from: &buf), 
-                installationBytes: FfiConverterOptionUInt64.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: EpicGameDetails, into buf: inout [UInt8]) {
-        FfiConverterOptionTypeGamePlatform.write(value.platform, into: &buf)
-        FfiConverterOptionUInt64.write(value.installationBytes, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeEpicGameDetails_lift(_ buf: RustBuffer) throws -> EpicGameDetails {
-    return try FfiConverterTypeEpicGameDetails.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeEpicGameDetails_lower(_ value: EpicGameDetails) -> RustBuffer {
-    return FfiConverterTypeEpicGameDetails.lower(value)
-}
-
-
-/**
- * How long the account played one game, as Epic records it.
- */
-public struct EpicPlaytime: Equatable, Hashable {
-    public var appName: String
-    public var seconds: UInt64
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(appName: String, seconds: UInt64) {
-        self.appName = appName
-        self.seconds = seconds
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension EpicPlaytime: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeEpicPlaytime: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EpicPlaytime {
-        return
-            try EpicPlaytime(
-                appName: FfiConverterString.read(from: &buf), 
-                seconds: FfiConverterUInt64.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: EpicPlaytime, into buf: inout [UInt8]) {
-        FfiConverterString.write(value.appName, into: &buf)
-        FfiConverterUInt64.write(value.seconds, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeEpicPlaytime_lift(_ buf: RustBuffer) throws -> EpicPlaytime {
-    return try FfiConverterTypeEpicPlaytime.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeEpicPlaytime_lower(_ value: EpicPlaytime) -> RustBuffer {
-    return FfiConverterTypeEpicPlaytime.lower(value)
-}
-
-
-public struct Game: Equatable, Hashable {
-    public var id: String
-    public var title: String
-    public var path: String
-    public var addedAt: UInt64
-    public var lastPlayedAt: UInt64?
-    public var kind: GameKind
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(id: String, title: String, path: String, addedAt: UInt64, lastPlayedAt: UInt64?, kind: GameKind) {
-        self.id = id
-        self.title = title
-        self.path = path
-        self.addedAt = addedAt
-        self.lastPlayedAt = lastPlayedAt
-        self.kind = kind
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension Game: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeGame: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Game {
-        return
-            try Game(
-                id: FfiConverterString.read(from: &buf), 
-                title: FfiConverterString.read(from: &buf), 
-                path: FfiConverterString.read(from: &buf), 
-                addedAt: FfiConverterUInt64.read(from: &buf), 
-                lastPlayedAt: FfiConverterOptionUInt64.read(from: &buf), 
-                kind: FfiConverterTypeGameKind.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: Game, into buf: inout [UInt8]) {
-        FfiConverterString.write(value.id, into: &buf)
-        FfiConverterString.write(value.title, into: &buf)
-        FfiConverterString.write(value.path, into: &buf)
-        FfiConverterUInt64.write(value.addedAt, into: &buf)
-        FfiConverterOptionUInt64.write(value.lastPlayedAt, into: &buf)
-        FfiConverterTypeGameKind.write(value.kind, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeGame_lift(_ buf: RustBuffer) throws -> Game {
-    return try FfiConverterTypeGame.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeGame_lower(_ value: Game) -> RustBuffer {
-    return FfiConverterTypeGame.lower(value)
 }
 
 
@@ -7174,64 +6504,6 @@ public func FfiConverterTypeGamesFolderState_lower(_ value: GamesFolderState) ->
 }
 
 
-public struct GogCredentials: Equatable, Hashable {
-    public var userId: String
-    public var username: String
-    public var refreshToken: String
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(userId: String, username: String, refreshToken: String) {
-        self.userId = userId
-        self.username = username
-        self.refreshToken = refreshToken
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension GogCredentials: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeGogCredentials: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GogCredentials {
-        return
-            try GogCredentials(
-                userId: FfiConverterString.read(from: &buf), 
-                username: FfiConverterString.read(from: &buf), 
-                refreshToken: FfiConverterString.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: GogCredentials, into buf: inout [UInt8]) {
-        FfiConverterString.write(value.userId, into: &buf)
-        FfiConverterString.write(value.username, into: &buf)
-        FfiConverterString.write(value.refreshToken, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeGogCredentials_lift(_ buf: RustBuffer) throws -> GogCredentials {
-    return try FfiConverterTypeGogCredentials.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeGogCredentials_lower(_ value: GogCredentials) -> RustBuffer {
-    return FfiConverterTypeGogCredentials.lower(value)
-}
-
-
 public struct GogGame: Equatable, Hashable {
     public var productId: String
     public var title: String
@@ -7375,133 +6647,6 @@ public func FfiConverterTypeGogGame_lift(_ buf: RustBuffer) throws -> GogGame {
 #endif
 public func FfiConverterTypeGogGame_lower(_ value: GogGame) -> RustBuffer {
     return FfiConverterTypeGogGame.lower(value)
-}
-
-
-/**
- * What a game's page adds to its library entry: the build it shows before
- * any download, and its size.
- */
-public struct GogGameDetails: Equatable, Hashable {
-    /**
-     * Unknown when GOG could not tell.
-     */
-    public var platform: GamePlatform?
-    /**
-     * Unknown when GOG serves no build for the platform.
-     */
-    public var installationBytes: UInt64?
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(
-        /**
-         * Unknown when GOG could not tell.
-         */platform: GamePlatform?, 
-        /**
-         * Unknown when GOG serves no build for the platform.
-         */installationBytes: UInt64?) {
-        self.platform = platform
-        self.installationBytes = installationBytes
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension GogGameDetails: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeGogGameDetails: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GogGameDetails {
-        return
-            try GogGameDetails(
-                platform: FfiConverterOptionTypeGamePlatform.read(from: &buf), 
-                installationBytes: FfiConverterOptionUInt64.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: GogGameDetails, into buf: inout [UInt8]) {
-        FfiConverterOptionTypeGamePlatform.write(value.platform, into: &buf)
-        FfiConverterOptionUInt64.write(value.installationBytes, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeGogGameDetails_lift(_ buf: RustBuffer) throws -> GogGameDetails {
-    return try FfiConverterTypeGogGameDetails.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeGogGameDetails_lower(_ value: GogGameDetails) -> RustBuffer {
-    return FfiConverterTypeGogGameDetails.lower(value)
-}
-
-
-/**
- * How long the account played one game, as GOG records it.
- */
-public struct GogPlaytime: Equatable, Hashable {
-    public var productId: String
-    public var minutes: UInt64
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(productId: String, minutes: UInt64) {
-        self.productId = productId
-        self.minutes = minutes
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension GogPlaytime: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeGogPlaytime: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GogPlaytime {
-        return
-            try GogPlaytime(
-                productId: FfiConverterString.read(from: &buf), 
-                minutes: FfiConverterUInt64.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: GogPlaytime, into buf: inout [UInt8]) {
-        FfiConverterString.write(value.productId, into: &buf)
-        FfiConverterUInt64.write(value.minutes, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeGogPlaytime_lift(_ buf: RustBuffer) throws -> GogPlaytime {
-    return try FfiConverterTypeGogPlaytime.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeGogPlaytime_lower(_ value: GogPlaytime) -> RustBuffer {
-    return FfiConverterTypeGogPlaytime.lower(value)
 }
 
 
@@ -7906,19 +7051,23 @@ public struct LaunchChoices: Equatable, Hashable {
     public var engine: LaunchEngine?
     public var graphics: LaunchGraphics?
     public var rayTracing: Bool?
+    public var renderPercent: UInt32?
     public var performanceHud: Bool
+    public var gameMode: Bool?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
     public init(
         /**
          * What the player adds to the game's command line, as typed.
-         */arguments: String? = nil, engine: LaunchEngine? = nil, graphics: LaunchGraphics? = nil, rayTracing: Bool? = nil, performanceHud: Bool = false) {
+         */arguments: String? = nil, engine: LaunchEngine? = nil, graphics: LaunchGraphics? = nil, rayTracing: Bool? = nil, renderPercent: UInt32? = nil, performanceHud: Bool = false, gameMode: Bool? = nil) {
         self.arguments = arguments
         self.engine = engine
         self.graphics = graphics
         self.rayTracing = rayTracing
+        self.renderPercent = renderPercent
         self.performanceHud = performanceHud
+        self.gameMode = gameMode
     }
 
     
@@ -7941,7 +7090,9 @@ public struct FfiConverterTypeLaunchChoices: FfiConverterRustBuffer {
                 engine: FfiConverterOptionTypeLaunchEngine.read(from: &buf), 
                 graphics: FfiConverterOptionTypeLaunchGraphics.read(from: &buf), 
                 rayTracing: FfiConverterOptionBool.read(from: &buf), 
-                performanceHud: FfiConverterBool.read(from: &buf)
+                renderPercent: FfiConverterOptionUInt32.read(from: &buf), 
+                performanceHud: FfiConverterBool.read(from: &buf), 
+                gameMode: FfiConverterOptionBool.read(from: &buf)
         )
     }
 
@@ -7950,7 +7101,9 @@ public struct FfiConverterTypeLaunchChoices: FfiConverterRustBuffer {
         FfiConverterOptionTypeLaunchEngine.write(value.engine, into: &buf)
         FfiConverterOptionTypeLaunchGraphics.write(value.graphics, into: &buf)
         FfiConverterOptionBool.write(value.rayTracing, into: &buf)
+        FfiConverterOptionUInt32.write(value.renderPercent, into: &buf)
         FfiConverterBool.write(value.performanceHud, into: &buf)
+        FfiConverterOptionBool.write(value.gameMode, into: &buf)
     }
 }
 
@@ -7981,17 +7134,35 @@ public struct LaunchEngineOffer: Equatable, Hashable {
      */
     public var defaultGraphics: LaunchGraphics
     public var graphics: [LaunchGraphicsOffer]
+    /**
+     * The lowest render resolution it offers, up to 100; None when it offers
+     * none.
+     */
+    public var lowestRenderPercent: UInt32?
+    /**
+     * Whether it can keep macOS's Game Mode off a game.
+     */
+    public var gameMode: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
     public init(engine: LaunchEngine, translator: LaunchTranslator, 
         /**
          * The backend the game renders with there without choices.
-         */defaultGraphics: LaunchGraphics, graphics: [LaunchGraphicsOffer]) {
+         */defaultGraphics: LaunchGraphics, graphics: [LaunchGraphicsOffer], 
+        /**
+         * The lowest render resolution it offers, up to 100; None when it offers
+         * none.
+         */lowestRenderPercent: UInt32?, 
+        /**
+         * Whether it can keep macOS's Game Mode off a game.
+         */gameMode: Bool) {
         self.engine = engine
         self.translator = translator
         self.defaultGraphics = defaultGraphics
         self.graphics = graphics
+        self.lowestRenderPercent = lowestRenderPercent
+        self.gameMode = gameMode
     }
 
     
@@ -8013,7 +7184,9 @@ public struct FfiConverterTypeLaunchEngineOffer: FfiConverterRustBuffer {
                 engine: FfiConverterTypeLaunchEngine.read(from: &buf), 
                 translator: FfiConverterTypeLaunchTranslator.read(from: &buf), 
                 defaultGraphics: FfiConverterTypeLaunchGraphics.read(from: &buf), 
-                graphics: FfiConverterSequenceTypeLaunchGraphicsOffer.read(from: &buf)
+                graphics: FfiConverterSequenceTypeLaunchGraphicsOffer.read(from: &buf), 
+                lowestRenderPercent: FfiConverterOptionUInt32.read(from: &buf), 
+                gameMode: FfiConverterBool.read(from: &buf)
         )
     }
 
@@ -8022,6 +7195,8 @@ public struct FfiConverterTypeLaunchEngineOffer: FfiConverterRustBuffer {
         FfiConverterTypeLaunchTranslator.write(value.translator, into: &buf)
         FfiConverterTypeLaunchGraphics.write(value.defaultGraphics, into: &buf)
         FfiConverterSequenceTypeLaunchGraphicsOffer.write(value.graphics, into: &buf)
+        FfiConverterOptionUInt32.write(value.lowestRenderPercent, into: &buf)
+        FfiConverterBool.write(value.gameMode, into: &buf)
     }
 }
 
@@ -8110,9 +7285,17 @@ public struct LaunchSettings: Equatable, Hashable {
      */
     public var rayTracing: Bool
     /**
+     * The share of the screen's pixels the game renders at, in whole percent.
+     */
+    public var renderPercent: UInt32
+    /**
      * Metal's Performance HUD shows over the game, whatever renders it.
      */
     public var performanceHud: Bool
+    /**
+     * macOS may turn its Game Mode on for the game.
+     */
+    public var gameMode: Bool
     /**
      * What the player changed from what Obelisk knows of the game.
      */
@@ -8134,8 +7317,14 @@ public struct LaunchSettings: Equatable, Hashable {
          * Direct3D 12 offers DirectX Raytracing, on D3DMetal.
          */rayTracing: Bool, 
         /**
+         * The share of the screen's pixels the game renders at, in whole percent.
+         */renderPercent: UInt32, 
+        /**
          * Metal's Performance HUD shows over the game, whatever renders it.
          */performanceHud: Bool, 
+        /**
+         * macOS may turn its Game Mode on for the game.
+         */gameMode: Bool, 
         /**
          * What the player changed from what Obelisk knows of the game.
          */choices: LaunchChoices, 
@@ -8149,7 +7338,9 @@ public struct LaunchSettings: Equatable, Hashable {
         self.engine = engine
         self.graphics = graphics
         self.rayTracing = rayTracing
+        self.renderPercent = renderPercent
         self.performanceHud = performanceHud
+        self.gameMode = gameMode
         self.choices = choices
         self.defaultEngine = defaultEngine
         self.engines = engines
@@ -8174,7 +7365,9 @@ public struct FfiConverterTypeLaunchSettings: FfiConverterRustBuffer {
                 engine: FfiConverterTypeLaunchEngine.read(from: &buf), 
                 graphics: FfiConverterTypeLaunchGraphics.read(from: &buf), 
                 rayTracing: FfiConverterBool.read(from: &buf), 
+                renderPercent: FfiConverterUInt32.read(from: &buf), 
                 performanceHud: FfiConverterBool.read(from: &buf), 
+                gameMode: FfiConverterBool.read(from: &buf), 
                 choices: FfiConverterTypeLaunchChoices.read(from: &buf), 
                 defaultEngine: FfiConverterTypeLaunchEngine.read(from: &buf), 
                 engines: FfiConverterSequenceTypeLaunchEngineOffer.read(from: &buf)
@@ -8185,7 +7378,9 @@ public struct FfiConverterTypeLaunchSettings: FfiConverterRustBuffer {
         FfiConverterTypeLaunchEngine.write(value.engine, into: &buf)
         FfiConverterTypeLaunchGraphics.write(value.graphics, into: &buf)
         FfiConverterBool.write(value.rayTracing, into: &buf)
+        FfiConverterUInt32.write(value.renderPercent, into: &buf)
         FfiConverterBool.write(value.performanceHud, into: &buf)
+        FfiConverterBool.write(value.gameMode, into: &buf)
         FfiConverterTypeLaunchChoices.write(value.choices, into: &buf)
         FfiConverterTypeLaunchEngine.write(value.defaultEngine, into: &buf)
         FfiConverterSequenceTypeLaunchEngineOffer.write(value.engines, into: &buf)
@@ -9418,6 +8613,10 @@ public struct SteamGameArtwork: Equatable, Hashable {
      * as Rust's for its staging branch.
      */
     public var parent: UInt32?
+    /**
+     * What the app is when not a full game, which its cover says.
+     */
+    public var kind: SteamAppKind?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -9434,12 +8633,16 @@ public struct SteamGameArtwork: Equatable, Hashable {
         /**
          * The app whose artwork stands in for the game's missing images, such
          * as Rust's for its staging branch.
-         */parent: UInt32? = nil) {
+         */parent: UInt32? = nil, 
+        /**
+         * What the app is when not a full game, which its cover says.
+         */kind: SteamAppKind? = nil) {
         self.cover = cover
         self.hero = hero
         self.logo = logo
         self.header = header
         self.parent = parent
+        self.kind = kind
     }
 
     
@@ -9462,7 +8665,8 @@ public struct FfiConverterTypeSteamGameArtwork: FfiConverterRustBuffer {
                 hero: FfiConverterOptionString.read(from: &buf), 
                 logo: FfiConverterOptionString.read(from: &buf), 
                 header: FfiConverterOptionString.read(from: &buf), 
-                parent: FfiConverterOptionUInt32.read(from: &buf)
+                parent: FfiConverterOptionUInt32.read(from: &buf), 
+                kind: FfiConverterOptionTypeSteamAppKind.read(from: &buf)
         )
     }
 
@@ -9472,6 +8676,7 @@ public struct FfiConverterTypeSteamGameArtwork: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.logo, into: &buf)
         FfiConverterOptionString.write(value.header, into: &buf)
         FfiConverterOptionUInt32.write(value.parent, into: &buf)
+        FfiConverterOptionTypeSteamAppKind.write(value.kind, into: &buf)
     }
 }
 
@@ -10388,64 +9593,6 @@ public func FfiConverterTypeSteamWebCookie_lower(_ value: SteamWebCookie) -> Rus
 }
 
 
-public struct StorefrontInfo: Equatable, Hashable {
-    public var id: StorefrontId
-    public var displayName: String
-    public var available: Bool
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(id: StorefrontId, displayName: String, available: Bool) {
-        self.id = id
-        self.displayName = displayName
-        self.available = available
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension StorefrontInfo: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeStorefrontInfo: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> StorefrontInfo {
-        return
-            try StorefrontInfo(
-                id: FfiConverterTypeStorefrontId.read(from: &buf), 
-                displayName: FfiConverterString.read(from: &buf), 
-                available: FfiConverterBool.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: StorefrontInfo, into buf: inout [UInt8]) {
-        FfiConverterTypeStorefrontId.write(value.id, into: &buf)
-        FfiConverterString.write(value.displayName, into: &buf)
-        FfiConverterBool.write(value.available, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeStorefrontInfo_lift(_ buf: RustBuffer) throws -> StorefrontInfo {
-    return try FfiConverterTypeStorefrontInfo.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeStorefrontInfo_lower(_ value: StorefrontInfo) -> RustBuffer {
-    return FfiConverterTypeStorefrontInfo.lower(value)
-}
-
-
 /**
  * What a Voile release brings.
  */
@@ -10590,6 +9737,138 @@ public func FfiConverterTypeVoileUpdateOffer_lift(_ buf: RustBuffer) throws -> V
 #endif
 public func FfiConverterTypeVoileUpdateOffer_lower(_ value: VoileUpdateOffer) -> RustBuffer {
     return FfiConverterTypeVoileUpdateOffer.lower(value)
+}
+
+
+/**
+ * What the Keychain keeps of an account: who it is, the name its storefront
+ * shows, and the refresh token its calls rotate.
+ */
+public struct WebAccountCredentials: Equatable, Hashable {
+    public var accountId: String
+    public var name: String
+    public var refreshToken: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(accountId: String, name: String, refreshToken: String) {
+        self.accountId = accountId
+        self.name = name
+        self.refreshToken = refreshToken
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension WebAccountCredentials: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeWebAccountCredentials: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> WebAccountCredentials {
+        return
+            try WebAccountCredentials(
+                accountId: FfiConverterString.read(from: &buf), 
+                name: FfiConverterString.read(from: &buf), 
+                refreshToken: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: WebAccountCredentials, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.accountId, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.refreshToken, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWebAccountCredentials_lift(_ buf: RustBuffer) throws -> WebAccountCredentials {
+    return try FfiConverterTypeWebAccountCredentials.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWebAccountCredentials_lower(_ value: WebAccountCredentials) -> RustBuffer {
+    return FfiConverterTypeWebAccountCredentials.lower(value)
+}
+
+
+/**
+ * What a game's page adds to its library entry: the build it shows before
+ * any download, and its size.
+ */
+public struct WebGameDetails: Equatable, Hashable {
+    /**
+     * Unknown when the storefront could not tell.
+     */
+    public var platform: GamePlatform?
+    /**
+     * Unknown when the storefront serves no build to measure.
+     */
+    public var installationBytes: UInt64?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Unknown when the storefront could not tell.
+         */platform: GamePlatform?, 
+        /**
+         * Unknown when the storefront serves no build to measure.
+         */installationBytes: UInt64?) {
+        self.platform = platform
+        self.installationBytes = installationBytes
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension WebGameDetails: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeWebGameDetails: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> WebGameDetails {
+        return
+            try WebGameDetails(
+                platform: FfiConverterOptionTypeGamePlatform.read(from: &buf), 
+                installationBytes: FfiConverterOptionUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: WebGameDetails, into buf: inout [UInt8]) {
+        FfiConverterOptionTypeGamePlatform.write(value.platform, into: &buf)
+        FfiConverterOptionUInt64.write(value.installationBytes, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWebGameDetails_lift(_ buf: RustBuffer) throws -> WebGameDetails {
+    return try FfiConverterTypeWebGameDetails.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWebGameDetails_lower(_ value: WebGameDetails) -> RustBuffer {
+    return FfiConverterTypeWebGameDetails.lower(value)
 }
 
 
@@ -11077,111 +10356,6 @@ public func FfiConverterTypeCloudSyncKind_lower(_ value: CloudSyncKind) -> RustB
 
 
 
-public 
-enum CoreError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
-
-    
-    
-    case InvalidGame(reason: String
-    )
-    case Storage(reason: String
-    )
-    case CorruptLibrary(reason: String
-    )
-    case NotFound(id: String
-    )
-
-    
-
-    
-
-    
-    public var errorDescription: String? {
-        String(reflecting: self)
-    }
-    
-}
-
-#if compiler(>=6)
-extension CoreError: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeCoreError: FfiConverterRustBuffer {
-    typealias SwiftType = CoreError
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreError {
-        let variant: Int32 = try readInt(&buf)
-        switch variant {
-
-        
-
-        
-        case 1: return .InvalidGame(
-            reason: try FfiConverterString.read(from: &buf)
-            )
-        case 2: return .Storage(
-            reason: try FfiConverterString.read(from: &buf)
-            )
-        case 3: return .CorruptLibrary(
-            reason: try FfiConverterString.read(from: &buf)
-            )
-        case 4: return .NotFound(
-            id: try FfiConverterString.read(from: &buf)
-            )
-
-         default: throw UniffiInternalError.unexpectedEnumCase
-        }
-    }
-
-    public static func write(_ value: CoreError, into buf: inout [UInt8]) {
-        switch value {
-
-        
-
-        
-        
-        case let .InvalidGame(reason):
-            writeInt(&buf, Int32(1))
-            FfiConverterString.write(reason, into: &buf)
-            
-        
-        case let .Storage(reason):
-            writeInt(&buf, Int32(2))
-            FfiConverterString.write(reason, into: &buf)
-            
-        
-        case let .CorruptLibrary(reason):
-            writeInt(&buf, Int32(3))
-            FfiConverterString.write(reason, into: &buf)
-            
-        
-        case let .NotFound(id):
-            writeInt(&buf, Int32(4))
-            FfiConverterString.write(id, into: &buf)
-            
-        }
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeCoreError_lift(_ buf: RustBuffer) throws -> CoreError {
-    return try FfiConverterTypeCoreError.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeCoreError_lower(_ value: CoreError) -> RustBuffer {
-    return FfiConverterTypeCoreError.lower(value)
-}
-
-
 /**
  * What a bug report is about, as far as its diagnostics go: Obelisk, or one
  * game as its storefront names it.
@@ -11340,105 +10514,6 @@ public func FfiConverterTypeDownloadKind_lower(_ value: DownloadKind) -> RustBuf
     return FfiConverterTypeDownloadKind.lower(value)
 }
 
-
-
-public 
-enum EpicError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
-
-    
-    
-    case Network
-    case Unauthorized
-    case InvalidCode
-    case InvalidResponse
-    case Service(message: String
-    )
-
-    
-
-    
-
-    
-    public var errorDescription: String? {
-        String(reflecting: self)
-    }
-    
-}
-
-#if compiler(>=6)
-extension EpicError: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeEpicError: FfiConverterRustBuffer {
-    typealias SwiftType = EpicError
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EpicError {
-        let variant: Int32 = try readInt(&buf)
-        switch variant {
-
-        
-
-        
-        case 1: return .Network
-        case 2: return .Unauthorized
-        case 3: return .InvalidCode
-        case 4: return .InvalidResponse
-        case 5: return .Service(
-            message: try FfiConverterString.read(from: &buf)
-            )
-
-         default: throw UniffiInternalError.unexpectedEnumCase
-        }
-    }
-
-    public static func write(_ value: EpicError, into buf: inout [UInt8]) {
-        switch value {
-
-        
-
-        
-        
-        case .Network:
-            writeInt(&buf, Int32(1))
-        
-        
-        case .Unauthorized:
-            writeInt(&buf, Int32(2))
-        
-        
-        case .InvalidCode:
-            writeInt(&buf, Int32(3))
-        
-        
-        case .InvalidResponse:
-            writeInt(&buf, Int32(4))
-        
-        
-        case let .Service(message):
-            writeInt(&buf, Int32(5))
-            FfiConverterString.write(message, into: &buf)
-            
-        }
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeEpicError_lift(_ buf: RustBuffer) throws -> EpicError {
-    return try FfiConverterTypeEpicError.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeEpicError_lower(_ value: EpicError) -> RustBuffer {
-    return FfiConverterTypeEpicError.lower(value)
-}
 
 
 
@@ -11813,72 +10888,6 @@ public func FfiConverterTypeGameIdentity_lift(_ buf: RustBuffer) throws -> GameI
 #endif
 public func FfiConverterTypeGameIdentity_lower(_ value: GameIdentity) -> RustBuffer {
     return FfiConverterTypeGameIdentity.lower(value)
-}
-
-
-
-
-public enum GameKind: Equatable, Hashable {
-    
-    case nativeMac
-    case windowsExecutable
-
-
-
-
-
-}
-
-#if compiler(>=6)
-extension GameKind: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeGameKind: FfiConverterRustBuffer {
-    typealias SwiftType = GameKind
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GameKind {
-        let variant: Int32 = try readInt(&buf)
-        switch variant {
-        
-        case 1: return .nativeMac
-        
-        case 2: return .windowsExecutable
-        
-        default: throw UniffiInternalError.unexpectedEnumCase
-        }
-    }
-
-    public static func write(_ value: GameKind, into buf: inout [UInt8]) {
-        switch value {
-        
-        
-        case .nativeMac:
-            writeInt(&buf, Int32(1))
-        
-        
-        case .windowsExecutable:
-            writeInt(&buf, Int32(2))
-        
-        }
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeGameKind_lift(_ buf: RustBuffer) throws -> GameKind {
-    return try FfiConverterTypeGameKind.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeGameKind_lower(_ value: GameKind) -> RustBuffer {
-    return FfiConverterTypeGameKind.lower(value)
 }
 
 
@@ -12394,105 +11403,6 @@ public func FfiConverterTypeGamesFolderInspection_lower(_ value: GamesFolderInsp
 
 
 
-public 
-enum GogError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
-
-    
-    
-    case Network
-    case Unauthorized
-    case InvalidCode
-    case InvalidResponse
-    case Service(message: String
-    )
-
-    
-
-    
-
-    
-    public var errorDescription: String? {
-        String(reflecting: self)
-    }
-    
-}
-
-#if compiler(>=6)
-extension GogError: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeGogError: FfiConverterRustBuffer {
-    typealias SwiftType = GogError
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GogError {
-        let variant: Int32 = try readInt(&buf)
-        switch variant {
-
-        
-
-        
-        case 1: return .Network
-        case 2: return .Unauthorized
-        case 3: return .InvalidCode
-        case 4: return .InvalidResponse
-        case 5: return .Service(
-            message: try FfiConverterString.read(from: &buf)
-            )
-
-         default: throw UniffiInternalError.unexpectedEnumCase
-        }
-    }
-
-    public static func write(_ value: GogError, into buf: inout [UInt8]) {
-        switch value {
-
-        
-
-        
-        
-        case .Network:
-            writeInt(&buf, Int32(1))
-        
-        
-        case .Unauthorized:
-            writeInt(&buf, Int32(2))
-        
-        
-        case .InvalidCode:
-            writeInt(&buf, Int32(3))
-        
-        
-        case .InvalidResponse:
-            writeInt(&buf, Int32(4))
-        
-        
-        case let .Service(message):
-            writeInt(&buf, Int32(5))
-            FfiConverterString.write(message, into: &buf)
-            
-        }
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeGogError_lift(_ buf: RustBuffer) throws -> GogError {
-    return try FfiConverterTypeGogError.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeGogError_lower(_ value: GogError) -> RustBuffer {
-    return FfiConverterTypeGogError.lower(value)
-}
-
-
 /**
  * A failure the player sees, and what it is about.
  */
@@ -12887,6 +11797,85 @@ public func FfiConverterTypeLaunchTranslator_lower(_ value: LaunchTranslator) ->
 
 
 /**
+ * The status the player picks for a storefront account.
+ */
+
+public enum OnlineStatus: Equatable, Hashable {
+    
+    case online
+    case away
+    /**
+     * Friends see the account offline.
+     */
+    case invisible
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension OnlineStatus: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeOnlineStatus: FfiConverterRustBuffer {
+    typealias SwiftType = OnlineStatus
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> OnlineStatus {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .online
+        
+        case 2: return .away
+        
+        case 3: return .invisible
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: OnlineStatus, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .online:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .away:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .invisible:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOnlineStatus_lift(_ buf: RustBuffer) throws -> OnlineStatus {
+    return try FfiConverterTypeOnlineStatus.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOnlineStatus_lower(_ value: OnlineStatus) -> RustBuffer {
+    return FfiConverterTypeOnlineStatus.lower(value)
+}
+
+
+
+/**
  * A runtime a launch downloads before its game is prepared.
  */
 
@@ -13033,6 +12022,88 @@ public func FfiConverterTypeSessionStorefront_lift(_ buf: RustBuffer) throws -> 
 #endif
 public func FfiConverterTypeSessionStorefront_lower(_ value: SessionStorefront) -> RustBuffer {
     return FfiConverterTypeSessionStorefront.lower(value)
+}
+
+
+
+/**
+ * What the library lists beside full games, as Steam types it.
+ */
+
+public enum SteamAppKind: Equatable, Hashable {
+    
+    case demo
+    /**
+     * A beta its name calls a playtest, as Steam's playtests are named.
+     */
+    case playtest
+    /**
+     * Any other beta, such as an open beta or a game's beta branch.
+     */
+    case beta
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension SteamAppKind: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSteamAppKind: FfiConverterRustBuffer {
+    typealias SwiftType = SteamAppKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SteamAppKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .demo
+        
+        case 2: return .playtest
+        
+        case 3: return .beta
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: SteamAppKind, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .demo:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .playtest:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .beta:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSteamAppKind_lift(_ buf: RustBuffer) throws -> SteamAppKind {
+    return try FfiConverterTypeSteamAppKind.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSteamAppKind_lower(_ value: SteamAppKind) -> RustBuffer {
+    return FfiConverterTypeSteamAppKind.lower(value)
 }
 
 
@@ -13936,86 +13007,6 @@ public func FfiConverterTypeSteamStoreFlag_lower(_ value: SteamStoreFlag) -> Rus
 
 
 
-
-public enum StorefrontId: Equatable, Hashable {
-    
-    case steam
-    case epic
-    case gog
-    case other
-
-
-
-
-
-}
-
-#if compiler(>=6)
-extension StorefrontId: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeStorefrontId: FfiConverterRustBuffer {
-    typealias SwiftType = StorefrontId
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> StorefrontId {
-        let variant: Int32 = try readInt(&buf)
-        switch variant {
-        
-        case 1: return .steam
-        
-        case 2: return .epic
-        
-        case 3: return .gog
-        
-        case 4: return .other
-        
-        default: throw UniffiInternalError.unexpectedEnumCase
-        }
-    }
-
-    public static func write(_ value: StorefrontId, into buf: inout [UInt8]) {
-        switch value {
-        
-        
-        case .steam:
-            writeInt(&buf, Int32(1))
-        
-        
-        case .epic:
-            writeInt(&buf, Int32(2))
-        
-        
-        case .gog:
-            writeInt(&buf, Int32(3))
-        
-        
-        case .other:
-            writeInt(&buf, Int32(4))
-        
-        }
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeStorefrontId_lift(_ buf: RustBuffer) throws -> StorefrontId {
-    return try FfiConverterTypeStorefrontId.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeStorefrontId_lower(_ value: StorefrontId) -> RustBuffer {
-    return FfiConverterTypeStorefrontId.lower(value)
-}
-
-
-
 /**
  * Lifecycle of one storefront transfer, shared by every store's progress record.
  */
@@ -14205,6 +13196,187 @@ public func FfiConverterTypeVoileUpdateAnswer_lift(_ buf: RustBuffer) throws -> 
 #endif
 public func FfiConverterTypeVoileUpdateAnswer_lower(_ value: VoileUpdateAnswer) -> RustBuffer {
     return FfiConverterTypeVoileUpdateAnswer.lower(value)
+}
+
+
+
+/**
+ * Why an account call failed. Swift shows each storefront's own text for
+ * it; `Service` carries the storefront's localization key or message.
+ */
+public 
+enum WebAccountError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+
+    
+    
+    case Network
+    /**
+     * The storefront refused the account: it has to sign in again.
+     */
+    case Unauthorized
+    case InvalidCode
+    case InvalidResponse
+    case Service(message: String
+    )
+
+    
+
+    
+
+    
+    public var errorDescription: String? {
+        String(reflecting: self)
+    }
+    
+}
+
+#if compiler(>=6)
+extension WebAccountError: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeWebAccountError: FfiConverterRustBuffer {
+    typealias SwiftType = WebAccountError
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> WebAccountError {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        
+
+        
+        case 1: return .Network
+        case 2: return .Unauthorized
+        case 3: return .InvalidCode
+        case 4: return .InvalidResponse
+        case 5: return .Service(
+            message: try FfiConverterString.read(from: &buf)
+            )
+
+         default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: WebAccountError, into buf: inout [UInt8]) {
+        switch value {
+
+        
+
+        
+        
+        case .Network:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .Unauthorized:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .InvalidCode:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .InvalidResponse:
+            writeInt(&buf, Int32(4))
+        
+        
+        case let .Service(message):
+            writeInt(&buf, Int32(5))
+            FfiConverterString.write(message, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWebAccountError_lift(_ buf: RustBuffer) throws -> WebAccountError {
+    return try FfiConverterTypeWebAccountError.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWebAccountError_lower(_ value: WebAccountError) -> RustBuffer {
+    return FfiConverterTypeWebAccountError.lower(value)
+}
+
+
+/**
+ * The account's games, as its storefront's records tell them.
+ */
+
+public enum WebAccountGames: Equatable, Hashable {
+    
+    case epic(games: [EpicGame]
+    )
+    case gog(games: [GogGame]
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension WebAccountGames: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeWebAccountGames: FfiConverterRustBuffer {
+    typealias SwiftType = WebAccountGames
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> WebAccountGames {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .epic(games: try FfiConverterSequenceTypeEpicGame.read(from: &buf)
+        )
+        
+        case 2: return .gog(games: try FfiConverterSequenceTypeGogGame.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: WebAccountGames, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .epic(games):
+            writeInt(&buf, Int32(1))
+            FfiConverterSequenceTypeEpicGame.write(games, into: &buf)
+            
+        
+        case let .gog(games):
+            writeInt(&buf, Int32(2))
+            FfiConverterSequenceTypeGogGame.write(games, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWebAccountGames_lift(_ buf: RustBuffer) throws -> WebAccountGames {
+    return try FfiConverterTypeWebAccountGames.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWebAccountGames_lower(_ value: WebAccountGames) -> RustBuffer {
+    return FfiConverterTypeWebAccountGames.lower(value)
 }
 
 
@@ -14467,6 +13639,30 @@ fileprivate struct FfiConverterOptionTypeEpicFriendActivity: FfiConverterRustBuf
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeEpicFriendActivity.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeEpicFriendsSnapshot: FfiConverterRustBuffer {
+    typealias SwiftType = EpicFriendsSnapshot?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeEpicFriendsSnapshot.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeEpicFriendsSnapshot.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -14955,6 +14151,30 @@ fileprivate struct FfiConverterOptionTypeLaunchGraphics: FfiConverterRustBuffer 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeSteamAppKind: FfiConverterRustBuffer {
+    typealias SwiftType = SteamAppKind?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeSteamAppKind.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeSteamAppKind.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeSteamHostState: FfiConverterRustBuffer {
     typealias SwiftType = SteamHostState?
 
@@ -15203,56 +14423,6 @@ fileprivate struct FfiConverterSequenceTypeEpicGame: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterSequenceTypeEpicPlaytime: FfiConverterRustBuffer {
-    typealias SwiftType = [EpicPlaytime]
-
-    public static func write(_ value: [EpicPlaytime], into buf: inout [UInt8]) {
-        let len = Int32(value.count)
-        writeInt(&buf, len)
-        for item in value {
-            FfiConverterTypeEpicPlaytime.write(item, into: &buf)
-        }
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [EpicPlaytime] {
-        let len: Int32 = try readInt(&buf)
-        var seq = [EpicPlaytime]()
-        seq.reserveCapacity(Int(len))
-        for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeEpicPlaytime.read(from: &buf))
-        }
-        return seq
-    }
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-fileprivate struct FfiConverterSequenceTypeGame: FfiConverterRustBuffer {
-    typealias SwiftType = [Game]
-
-    public static func write(_ value: [Game], into buf: inout [UInt8]) {
-        let len = Int32(value.count)
-        writeInt(&buf, len)
-        for item in value {
-            FfiConverterTypeGame.write(item, into: &buf)
-        }
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [Game] {
-        let len: Int32 = try readInt(&buf)
-        var seq = [Game]()
-        seq.reserveCapacity(Int(len))
-        for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeGame.read(from: &buf))
-        }
-        return seq
-    }
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
 fileprivate struct FfiConverterSequenceTypeGameCloudIndicator: FfiConverterRustBuffer {
     typealias SwiftType = [GameCloudIndicator]
 
@@ -15320,31 +14490,6 @@ fileprivate struct FfiConverterSequenceTypeGogGame: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeGogGame.read(from: &buf))
-        }
-        return seq
-    }
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-fileprivate struct FfiConverterSequenceTypeGogPlaytime: FfiConverterRustBuffer {
-    typealias SwiftType = [GogPlaytime]
-
-    public static func write(_ value: [GogPlaytime], into buf: inout [UInt8]) {
-        let len = Int32(value.count)
-        writeInt(&buf, len)
-        for item in value {
-            FfiConverterTypeGogPlaytime.write(item, into: &buf)
-        }
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [GogPlaytime] {
-        let len: Int32 = try readInt(&buf)
-        var seq = [GogPlaytime]()
-        seq.reserveCapacity(Int(len))
-        for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeGogPlaytime.read(from: &buf))
         }
         return seq
     }
@@ -15703,31 +14848,6 @@ fileprivate struct FfiConverterSequenceTypeSteamWebCookie: FfiConverterRustBuffe
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterSequenceTypeStorefrontInfo: FfiConverterRustBuffer {
-    typealias SwiftType = [StorefrontInfo]
-
-    public static func write(_ value: [StorefrontInfo], into buf: inout [UInt8]) {
-        let len = Int32(value.count)
-        writeInt(&buf, len)
-        for item in value {
-            FfiConverterTypeStorefrontInfo.write(item, into: &buf)
-        }
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [StorefrontInfo] {
-        let len: Int32 = try readInt(&buf)
-        var seq = [StorefrontInfo]()
-        seq.reserveCapacity(Int(len))
-        for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeStorefrontInfo.read(from: &buf))
-        }
-        return seq
-    }
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
 fileprivate struct FfiConverterSequenceTypeVoileReleaseNotes: FfiConverterRustBuffer {
     typealias SwiftType = [VoileReleaseNotes]
 
@@ -15880,6 +15000,32 @@ fileprivate struct FfiConverterDictionaryUInt32Double: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterDictionaryStringUInt64: FfiConverterRustBuffer {
+    public static func write(_ value: [String: UInt64], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for (key, value) in value {
+            FfiConverterString.write(key, into: &buf)
+            FfiConverterUInt64.write(value, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [String: UInt64] {
+        let len: Int32 = try readInt(&buf)
+        var dict = [String: UInt64]()
+        dict.reserveCapacity(Int(len))
+        for _ in 0..<len {
+            let key = try FfiConverterString.read(from: &buf)
+            let value = try FfiConverterUInt64.read(from: &buf)
+            dict[key] = value
+        }
+        return dict
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterDictionaryStringDouble: FfiConverterRustBuffer {
     public static func write(_ value: [String: Double], into buf: inout [UInt8]) {
         let len = Int32(value.count)
@@ -15950,13 +15096,6 @@ fileprivate func uniffiFutureContinuationCallback(handle: UInt64, pollResult: In
         print("uniffiFutureContinuationCallback invalid handle")
     }
 }
-public func storefronts() -> [StorefrontInfo]  {
-    return try!  FfiConverterSequenceTypeStorefrontInfo.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_obelisk_bridge_fn_func_storefronts(uniffiCallStatus
-    )
-})
-}
 /**
  * The diagnostics a bug report on `subject` attaches, most telling first.
  */
@@ -15982,7 +15121,7 @@ public func withoutMetalHudFrames(text: String) -> String  {
 })
 }
 public func epicAuthorizationCode(input: String)throws  -> String  {
-    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeEpicError_lift) {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeWebAccountError_lift) {
         uniffiCallStatus in
     uniffi_obelisk_bridge_fn_func_epic_authorization_code(
         FfiConverterString.lower(input),uniffiCallStatus
@@ -16011,15 +15150,16 @@ public func gameNote(storefront: SessionStorefront, id: String, language: String
 })
 }
 /**
- * Reads the notes again from Obelisk's `main`, keeping them in the
- * library. Runs once at startup: pages read those Obelisk was built with
- * until then, and the last ones kept when `main` does not answer.
+ * Reads the game notes and the profiles again from Obelisk's `main`,
+ * keeping them in the library. Runs once at startup, besides each Windows
+ * launch for the profiles: until `main` answers, pages read the last ones
+ * kept, else those Obelisk was built with.
  */
-public func refreshGameNotes(locations: ObeliskLocations)async   {
+public func refreshNotesAndProfiles(locations: ObeliskLocations)async   {
     return
         try!  await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_obelisk_bridge_fn_func_refresh_game_notes(FfiConverterTypeObeliskLocations_lower(locations)
+                uniffi_obelisk_bridge_fn_func_refresh_notes_and_profiles(FfiConverterTypeObeliskLocations_lower(locations)
                 )
             },
             pollFunc: ffi_obelisk_bridge_rust_future_poll_void,
@@ -16032,7 +15172,7 @@ public func refreshGameNotes(locations: ObeliskLocations)async   {
 }
 /**
  * The games of `storefront` the profile table names, as the app names
- * them, read as launches read the table now.
+ * them, read as Obelisk reads the table now.
  */
 public func verifiedGames(storefront: SessionStorefront) -> [String]  {
     return try!  FfiConverterSequenceString.lift(try! rustCall() {
@@ -16043,7 +15183,7 @@ public func verifiedGames(storefront: SessionStorefront) -> [String]  {
 })
 }
 public func gogAuthorizationCode(input: String)throws  -> String  {
-    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeGogError_lift) {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeWebAccountError_lift) {
         uniffiCallStatus in
     uniffi_obelisk_bridge_fn_func_gog_authorization_code(
         FfiConverterString.lower(input),uniffiCallStatus
@@ -16102,6 +15242,21 @@ public func obeliskLocations(library: String, bundle: String, home: String) -> O
     )
 })
 }
+/**
+ * Whether Windows games run in Voile's pre-releases too, as Settings' beta
+ * releases choose: the next launch takes the newest release or pre-release,
+ * else it leaves a pre-release in place for the newest release. Returns
+ * whether the choice was kept.
+ */
+public func takeVoilePrereleases(locations: ObeliskLocations, take: Bool) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_obelisk_bridge_fn_func_take_voile_prereleases(
+        FfiConverterTypeObeliskLocations_lower(locations),
+        FfiConverterBool.lower(take),uniffiCallStatus
+    )
+})
+}
 public func steamLanguage(locale: String) -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
         uniffiCallStatus in
@@ -16152,16 +15307,13 @@ private let initializationResult: InitializationResult = {
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
     }
-    if (uniffi_obelisk_bridge_checksum_func_storefronts() != 5932) {
-        return InitializationResult.apiChecksumMismatch
-    }
     if (uniffi_obelisk_bridge_checksum_func_diagnostic_files() != 60320) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_func_without_metal_hud_frames() != 20665) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_obelisk_bridge_checksum_func_epic_authorization_code() != 42633) {
+    if (uniffi_obelisk_bridge_checksum_func_epic_authorization_code() != 24876) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_func_epic_login_url() != 45052) {
@@ -16170,13 +15322,13 @@ private let initializationResult: InitializationResult = {
     if (uniffi_obelisk_bridge_checksum_func_game_note() != 45148) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_obelisk_bridge_checksum_func_refresh_game_notes() != 43003) {
+    if (uniffi_obelisk_bridge_checksum_func_refresh_notes_and_profiles() != 52799) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_obelisk_bridge_checksum_func_verified_games() != 13684) {
+    if (uniffi_obelisk_bridge_checksum_func_verified_games() != 41148) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_obelisk_bridge_checksum_func_gog_authorization_code() != 19621) {
+    if (uniffi_obelisk_bridge_checksum_func_gog_authorization_code() != 19949) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_func_gog_is_login_redirect() != 36862) {
@@ -16194,6 +15346,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_obelisk_bridge_checksum_func_obelisk_locations() != 18961) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_obelisk_bridge_checksum_func_take_voile_prereleases() != 22977) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_obelisk_bridge_checksum_func_steam_language() != 20076) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -16201,18 +15356,6 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_func_steam_chat_invite() != 53466) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_library_add_local_game() != 39029) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_library_games() != 59102) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_library_record_launch() != 44476) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_library_remove_game() != 9491) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_method_credentialsave_save() != 31513) {
@@ -16233,52 +15376,10 @@ private let initializationResult: InitializationResult = {
     if (uniffi_obelisk_bridge_checksum_method_downloads_resume() != 2894) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_obelisk_bridge_checksum_method_downloads_set_speed_limit() != 54904) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_obelisk_bridge_checksum_method_downloads_state() != 47105) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_epicsession_achievement_shares() != 61673) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_epicsession_achievements() != 26143) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_epicsession_credentials() != 19572) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_epicsession_disconnect() != 24075) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_epicsession_game_details() != 36459) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_epicsession_games() != 26754) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_epicsession_next_credentials_revision() != 20501) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_epicsession_next_friends() != 61821) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_epicsession_persist() != 43492) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_epicsession_playtimes() != 51139) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_epicsession_reconnect_friends() != 49037) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_epicsession_shutdown_observers() != 13061) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_epicsession_start_friends() != 54834) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_epicsession_stop_friends() != 62372) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_epicsession_web_sign_in_url() != 65487) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_method_storefrontsessions_accept_invite() != 8710) {
@@ -16311,6 +15412,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_obelisk_bridge_checksum_method_storefrontsessions_revoke() != 35880) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_obelisk_bridge_checksum_method_storefrontsessions_set_status() != 22283) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_obelisk_bridge_checksum_method_storefrontsessions_state() != 19945) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -16339,39 +15443,6 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_method_gamesfolder_volumes_changed() != 47232) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_gogsession_achievement_shares() != 31127) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_gogsession_achievements() != 31708) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_gogsession_avatar_url() != 16894) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_gogsession_credentials() != 12372) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_gogsession_disconnect() != 50347) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_gogsession_game_details() != 16534) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_gogsession_games() != 62040) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_gogsession_next_credentials_revision() != 16908) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_gogsession_persist() != 28298) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_gogsession_playtimes() != 65023) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_method_gogsession_shutdown_observers() != 36493) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_method_accountinstallations_answer_cloud() != 37495) {
@@ -16425,7 +15496,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_obelisk_bridge_checksum_method_accountinstallations_uninstall() != 45481) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_obelisk_bridge_checksum_method_accountinstallations_update() != 64898) {
+    if (uniffi_obelisk_bridge_checksum_method_accountinstallations_update() != 8984) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_method_librarycache_epic_library() != 25582) {
@@ -16539,7 +15610,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_obelisk_bridge_checksum_method_steamsession_send_typing() != 6475) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_obelisk_bridge_checksum_method_steamsession_set_online() != 17400) {
+    if (uniffi_obelisk_bridge_checksum_method_steamsession_set_status() != 13167) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_method_steamchatfixture_connect_invite() != 34020) {
@@ -16578,7 +15649,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_obelisk_bridge_checksum_method_steamconnectionattempt_cancel() != 56619) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_obelisk_bridge_checksum_method_steamconnectionattempt_connect() != 54392) {
+    if (uniffi_obelisk_bridge_checksum_method_steamconnectionattempt_connect() != 40355) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_method_steamfriendsfixture_close() != 38754) {
@@ -16605,16 +15676,58 @@ private let initializationResult: InitializationResult = {
     if (uniffi_obelisk_bridge_checksum_method_steamfriendsfixture_unreachable() != 65007) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_obelisk_bridge_checksum_constructor_library_new() != 47156) {
+    if (uniffi_obelisk_bridge_checksum_method_webaccountsession_achievement_shares() != 13408) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_method_webaccountsession_achievements() != 55506) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_method_webaccountsession_avatar_url() != 32421) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_method_webaccountsession_credentials() != 54913) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_method_webaccountsession_disconnect() != 27502) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_method_webaccountsession_game_details() != 29088) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_method_webaccountsession_games() != 26527) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_method_webaccountsession_next_credentials_revision() != 12128) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_method_webaccountsession_next_friends() != 64106) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_method_webaccountsession_persist() != 7530) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_method_webaccountsession_playtimes() != 17472) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_method_webaccountsession_reconnect_friends() != 26272) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_method_webaccountsession_set_status() != 21075) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_method_webaccountsession_shutdown_observers() != 63570) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_method_webaccountsession_start_friends() != 11336) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_method_webaccountsession_stop_friends() != 39073) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_method_webaccountsession_web_sign_in_url() != 61509) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_constructor_downloads_new() != 22984) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_constructor_epicsession_restore() != 11917) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_constructor_epicsession_sign_in() != 3967) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_constructor_storefrontsessions_new() != 58149) {
@@ -16623,19 +15736,10 @@ private let initializationResult: InitializationResult = {
     if (uniffi_obelisk_bridge_checksum_constructor_gamesfolder_new() != 52166) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_obelisk_bridge_checksum_constructor_gogsession_restore() != 909) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_constructor_gogsession_sign_in() != 34826) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_constructor_accountinstallations_epic() != 4009) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_obelisk_bridge_checksum_constructor_accountinstallations_gog() != 4525) {
-        return InitializationResult.apiChecksumMismatch
-    }
     if (uniffi_obelisk_bridge_checksum_constructor_accountinstallations_steam() != 58838) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_constructor_accountinstallations_web() != 10335) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_constructor_librarycache_new() != 37002) {
@@ -16647,7 +15751,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_obelisk_bridge_checksum_constructor_steamlogin_begin_qr() != 58090) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_obelisk_bridge_checksum_constructor_steamsession_connect() != 9835) {
+    if (uniffi_obelisk_bridge_checksum_constructor_steamsession_connect() != 59461) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_constructor_steamchatfixture_new() != 16613) {
@@ -16657,6 +15761,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_constructor_steamfriendsfixture_new() != 31042) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_constructor_webaccountsession_restore() != 49123) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_constructor_webaccountsession_sign_in() != 45530) {
         return InitializationResult.apiChecksumMismatch
     }
 

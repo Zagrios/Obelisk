@@ -3,25 +3,18 @@ import XCTest
 @testable import Obelisk
 
 /// A web storefront as the shared account tests drive it: how its fixtures
-/// are named, and what its session answers and throws.
-protocol WebStoreFixture: WebStorefront where Credentials: Equatable {
-    associatedtype Playtime: Sendable
-    associatedtype DetailsRequest: Equatable & Sendable
-
+/// are named, and what its own texts say.
+protocol WebStoreFixture: WebStorefront {
     /// The account a test signs in unless it names another.
     static var fixtureAccount: String { get }
     static var fixtureName: String { get }
-    /// The fixture account carries `fixtureName`; any other is named
-    /// "Name of" its id, so a test tells two accounts, and a name from an id, apart.
-    static func credentials(_ token: String, account: String) -> Credentials
     /// A Windows game. The `title:` label keeps it apart from `InstallationStorefront.game(_:)`.
     static func game(_ key: String, title: String) -> Game
-    static func playtime(_ key: String, minutes: UInt64) -> Playtime
-    static func details(bytes: UInt64?) -> Details
-    /// The Library cache of `directory` once it holds `entries` for `account`.
-    static func cache(_ entries: [(game: Game, minutes: UInt64?)], account: String, in directory: URL) throws -> LibraryCache
-    static var unauthorized: Error { get }
-    static var network: Error { get }
+    /// `games` as a session lists them.
+    static func listed(_ games: [Game]) -> WebAccountGames
+    /// The Library cache of `directory` once it holds `entries` for
+    /// `account`, each with the seconds its game was played.
+    static func cache(_ entries: [(game: Game, seconds: UInt64?)], account: String, in directory: URL) throws -> LibraryCache
     static var expectedAvatar: URL? { get }
     /// What the store shows once it refuses the account, spelled out here
     /// rather than asked of the adapter, so a wrong mapping fails.
@@ -29,11 +22,19 @@ protocol WebStoreFixture: WebStorefront where Credentials: Equatable {
     /// The warning after a sign-out the store may not have revoked, spelled
     /// out for the same reason.
     static var revocationMessage: String { get }
-    static func session(_ fake: WebTestSession<Self>) -> Session
 }
 
 extension WebStoreFixture {
-    static func credentials(_ token: String) -> Credentials { credentials(token, account: fixtureAccount) }
+    static func credentials(_ token: String) -> WebAccountCredentials { credentials(token, account: fixtureAccount) }
+    /// The fixture account carries `fixtureName`; any other is named
+    /// "Name of" its id, so a test tells two accounts, and a name from an id, apart.
+    static func credentials(_ token: String, account: String) -> WebAccountCredentials {
+        WebAccountCredentials(accountId: account, name: account == fixtureAccount ? fixtureName : "Name of \(account)",
+                              refreshToken: token)
+    }
+    static func details(bytes: UInt64?) -> WebGameDetails { WebGameDetails(platform: nil, installationBytes: bytes) }
+    static var unauthorized: Error { WebAccountError.Unauthorized }
+    static var network: Error { WebAccountError.Network }
 }
 
 /// The store's account model, with test Game sessions. A sign-in or
@@ -41,10 +42,10 @@ extension WebStoreFixture {
 @MainActor
 func webModel<S: WebStoreFixture>(
     _: S.Type,
-    _ keychain: MemoryStore<S.Credentials>,
+    _ keychain: MemoryStore<WebAccountCredentials>,
     authorize: @escaping @MainActor () async throws -> String = { "test-code" },
-    signIn: @escaping @Sendable (String) async throws -> S.Session = { _ in throw S.network },
-    restore: @escaping @Sendable (S.Credentials) async throws -> S.Session = { _ in throw S.network },
+    signIn: @escaping @Sendable (String) async throws -> WebSession = { _ in throw S.network },
+    restore: @escaping @Sendable (WebAccountCredentials) async throws -> WebSession = { _ in throw S.network },
     language: String = "en-US",
     gameSessions: GameSessions<S>? = nil,
     libraryCache: LibraryCache? = nil
@@ -56,7 +57,7 @@ func webModel<S: WebStoreFixture>(
 /// A model whose saved session restores as `session`, once its library loaded.
 @MainActor
 func connectedModel<S: WebStoreFixture>(_ session: WebTestSession<S>, language: String = "en-US") async -> WebAccountModel<S> {
-    let model = webModel(S.self, MemoryStore(S.credentials("current")), restore: { _ in S.session(session) },
+    let model = webModel(S.self, MemoryStore(S.credentials("current")), restore: { _ in session },
                          language: language)
     await model.start()
     XCTAssertTrue(model.isConnected)
@@ -64,71 +65,45 @@ func connectedModel<S: WebStoreFixture>(_ session: WebTestSession<S>, language: 
 }
 
 extension EpicGames: WebStoreFixture {
-    typealias Playtime = EpicPlaytime
-    typealias DetailsRequest = EpicDetailsRequest
-
     static let fixtureAccount = "fixture-id"
     static let fixtureName = "Fixture"
-    static func credentials(_ token: String, account: String) -> EpicCredentials {
-        EpicCredentials(accountId: account, displayName: account == fixtureAccount ? fixtureName : "Name of \(account)",
-                        refreshToken: token)
-    }
     /// The app name and catalog item are the key, in the "fixture" namespace.
     static func game(_ key: String, title: String) -> EpicGame {
         EpicGame(appName: key, namespace: "fixture", catalogItemId: key, title: title, description: "", imageUrl: nil,
                  headerImageUrl: nil, developer: "", windows: true, macos: false)
     }
-    static func playtime(_ key: String, minutes: UInt64) -> EpicPlaytime { EpicPlaytime(appName: key, seconds: minutes * 60) }
-    static func details(bytes: UInt64?) -> EpicGameDetails { EpicGameDetails(platform: nil, installationBytes: bytes) }
-    static func cache(_ entries: [(game: EpicGame, minutes: UInt64?)], account: String, in directory: URL) throws -> LibraryCache {
-        let games = entries.map { CachedEpicGame(game: $0.game, playtimeSeconds: $0.minutes.map { $0 * 60 }) }
+    static func listed(_ games: [EpicGame]) -> WebAccountGames { .epic(games: games) }
+    static func cache(_ entries: [(game: EpicGame, seconds: UInt64?)], account: String, in directory: URL) throws -> LibraryCache {
+        let games = entries.map { CachedEpicGame(game: $0.game, playtimeSeconds: $0.seconds) }
         return try LibraryCache.holding(epic: [account: games], in: directory)
     }
-    static var unauthorized: Error { EpicError.Unauthorized }
-    static var network: Error { EpicError.Network }
     static let expectedAvatar: URL? = nil
     static var unauthorizedMessage: String { L10n.string("model.epic.unauthorized") }
     static var revocationMessage: String { L10n.string("model.epic.revocationUnconfirmed") }
-    static func session(_ fake: WebTestSession<EpicGames>) -> any EpicSessionProtocol { fake }
 }
 
 extension GogGames: WebStoreFixture {
-    typealias Playtime = GogPlaytime
-    typealias DetailsRequest = GogDetailsRequest
-
     static let fixtureAccount = "48628349957132247"
     static let fixtureName = "Geralt"
-    static func credentials(_ token: String, account: String) -> GogCredentials {
-        GogCredentials(userId: account, username: account == fixtureAccount ? fixtureName : "Name of \(account)",
-                       refreshToken: token)
-    }
     /// The product id is the key.
     static func game(_ key: String, title: String) -> GogGame {
         GogGame(productId: key, title: title, imageUrl: nil, headerImageUrl: nil, windows: true, macos: false,
                 summary: "", developers: [], publishers: [], releaseDate: nil, genres: [], rating: nil, languages: [])
     }
-    static func playtime(_ key: String, minutes: UInt64) -> GogPlaytime { GogPlaytime(productId: key, minutes: minutes) }
-    static func details(bytes: UInt64?) -> GogGameDetails { GogGameDetails(platform: nil, installationBytes: bytes) }
-    static func cache(_ entries: [(game: GogGame, minutes: UInt64?)], account: String, in directory: URL) throws -> LibraryCache {
-        let games = entries.map { CachedGogGame(game: $0.game, playtimeMinutes: $0.minutes) }
+    static func listed(_ games: [GogGame]) -> WebAccountGames { .gog(games: games) }
+    static func cache(_ entries: [(game: GogGame, seconds: UInt64?)], account: String, in directory: URL) throws -> LibraryCache {
+        let games = entries.map { CachedGogGame(game: $0.game, playtimeSeconds: $0.seconds) }
         return try LibraryCache.holding(gog: [account: games], in: directory)
     }
-    static var unauthorized: Error { GogError.Unauthorized }
-    static var network: Error { GogError.Network }
     static let expectedAvatar = URL(string: "https://images.gog.com/avatar_avm.jpg")
     static var unauthorizedMessage: String { L10n.string("model.gog.unauthorized") }
     static var revocationMessage: String { L10n.string("model.gog.revocationUnconfirmed") }
-    static func session(_ fake: WebTestSession<GogGames>) -> any GogSessionProtocol { fake }
 }
 
-struct EpicDetailsRequest: Equatable, Sendable {
-    let namespace: String
-    let catalogItemId: String
-    let appName: String
-}
-
-struct GogDetailsRequest: Equatable, Sendable {
-    let productId: String
+/// What a game page's details request names: the game's product, and the
+/// player's language.
+struct WebDetailsRequest: Equatable, Sendable {
+    let offer: GameOffer
     let language: String
 }
 
@@ -137,16 +112,17 @@ typealias GogTestSession = WebTestSession<GogGames>
 
 /// A storefront's Rust session as the model tests drive it: the test holds,
 /// fails or rotates each answer, and the session records every call.
-actor WebTestSession<Store: WebStoreFixture> {
+actor WebTestSession<Store: WebStoreFixture>: WebAccountSessionProtocol {
     nonisolated let credentialRevisions = EpicCredentialRevisionFeed()
 
-    private var currentCredentials: Store.Credentials {
+    private var currentCredentials: WebAccountCredentials {
         didSet { credentialRevisions.publish() }
     }
     private let ownedGames: [Store.Game]
-    private let ownedPlaytimes: [Store.Playtime]
-    private var rotated: Store.Credentials?
-    private var prepared: Store.Credentials?
+    /// The seconds each played game was played, by its id.
+    private let ownedPlaytimes: [String: UInt64]
+    private var rotated: WebAccountCredentials?
+    private var prepared: WebAccountCredentials?
     private var failNext = false
     private var expireNext = false
     private var holdNext = false
@@ -155,12 +131,12 @@ actor WebTestSession<Store: WebStoreFixture> {
     private(set) var gameCalls = 0
     private var failNextPlaytimeRequest = false
     private(set) var playtimeCalls = 0
-    /// The product ids of each of GOG's playtime requests.
+    /// The games each playtime request named.
     private(set) var playtimeRequests: [[String]] = []
     private var shouldHoldDetails = false
-    private var detailsFailureCredentials: Store.Credentials?
-    private var detailsContinuations: [Int: CheckedContinuation<Store.Details, Never>] = [:]
-    private(set) var detailsCalls: [Store.DetailsRequest] = []
+    private var detailsFailureCredentials: WebAccountCredentials?
+    private var detailsContinuations: [Int: CheckedContinuation<WebGameDetails, Never>] = [:]
+    private(set) var detailsCalls: [WebDetailsRequest] = []
     private(set) var returnedDetails = 0
     private var shouldHoldCredentials = false
     private var credentialsContinuation: CheckedContinuation<Bool, Never>?
@@ -172,14 +148,14 @@ actor WebTestSession<Store: WebStoreFixture> {
     private(set) var disconnections = 0
     /// Each achievements request, as the storefront received it.
     private(set) var achievementReads: [AchievementRead] = []
-    /// Each game's achievements, unlocked or not, by the name requests give
-    /// it; a game not named has one unlocked of two.
+    /// Each game's achievements, unlocked or not, by its id; a game not
+    /// named has one unlocked of two.
     private var achievementStates: [String: [Bool]] = [:]
     /// The games whose achievements request fails.
     private var failingAchievements: Set<String> = []
 
-    init(credentials: Store.Credentials, games: [Store.Game], rotated: Store.Credentials? = nil,
-         playtimes: [Store.Playtime] = []) {
+    init(credentials: WebAccountCredentials, games: [Store.Game], rotated: WebAccountCredentials? = nil,
+         playtimes: [String: UInt64] = [:]) {
         currentCredentials = credentials
         ownedGames = games
         self.rotated = rotated
@@ -188,7 +164,7 @@ actor WebTestSession<Store: WebStoreFixture> {
 
     /// Ignores cancellation, as the generated bindings do: a cancelled sign-in
     /// still gets its credentials back, and the model must drop them itself.
-    func credentials() async throws -> Store.Credentials {
+    func credentials() async throws -> WebAccountCredentials {
         if shouldHoldCredentials {
             shouldHoldCredentials = false
             waitingForCredentials = true
@@ -203,10 +179,12 @@ actor WebTestSession<Store: WebStoreFixture> {
         credentialsContinuation?.resume(returning: failing)
         credentialsContinuation = nil
     }
-    func rotate(_ credentials: Store.Credentials) { currentCredentials = credentials }
-    func rotateOnPrepare(_ credentials: Store.Credentials) { prepared = credentials }
+    func rotate(_ credentials: WebAccountCredentials) { currentCredentials = credentials }
+    func rotateOnPrepare(_ credentials: WebAccountCredentials) { prepared = credentials }
 
-    func games() async throws -> [Store.Game] {
+    func games() async throws -> WebAccountGames { Store.listed(try await ownedLibrary()) }
+
+    private func ownedLibrary() async throws -> [Store.Game] {
         gameCalls += 1
         if let rotated { currentCredentials = rotated; self.rotated = nil }
         if expireNext { expireNext = false; throw Store.unauthorized }
@@ -223,16 +201,16 @@ actor WebTestSession<Store: WebStoreFixture> {
     func holdNextGames() { holdNext = true }
     func completeGames(_ games: [Store.Game]) { gameContinuation?.resume(returning: games); gameContinuation = nil }
     func expireNextGames() { expireNext = true }
-    func failNextGames(rotated: Store.Credentials) { failNext = true; self.rotated = rotated }
+    func failNextGames(rotated: WebAccountCredentials) { failNext = true; self.rotated = rotated }
 
     func failNextPlaytimes() { failNextPlaytimeRequest = true }
 
     func holdNextDetails() { shouldHoldDetails = true }
-    func completeDetails(_ invocation: Int, with details: Store.Details, rotated: Store.Credentials? = nil) {
+    func completeDetails(_ invocation: Int, with details: WebGameDetails, rotated: WebAccountCredentials? = nil) {
         if let rotated { currentCredentials = rotated }
         detailsContinuations.removeValue(forKey: invocation)?.resume(returning: details)
     }
-    func failNextDetails(rotated: Store.Credentials) { detailsFailureCredentials = rotated }
+    func failNextDetails(rotated: WebAccountCredentials) { detailsFailureCredentials = rotated }
 
     func disconnect() async throws {
         disconnections += 1
@@ -259,15 +237,16 @@ actor WebTestSession<Store: WebStoreFixture> {
         if let prepared { currentCredentials = prepared; self.prepared = nil }
     }
 
-    private func answerPlaytimes() async throws -> [Store.Playtime] {
+    func playtimes(games: [String]) async throws -> [String: UInt64] {
         playtimeCalls += 1
+        playtimeRequests.append(games)
         if failNextPlaytimeRequest { failNextPlaytimeRequest = false; throw Store.network }
         return ownedPlaytimes
     }
 
-    private func answerDetails(_ request: Store.DetailsRequest) async throws -> Store.Details {
+    func gameDetails(offer: GameOffer, language: String) async throws -> WebGameDetails {
         preparing()
-        detailsCalls.append(request)
+        detailsCalls.append(WebDetailsRequest(offer: offer, language: language))
         defer { returnedDetails += 1 }
         if let rotated = detailsFailureCredentials {
             currentCredentials = rotated
@@ -297,68 +276,38 @@ actor WebTestSession<Store: WebStoreFixture> {
         return Dictionary(told, uniquingKeysWith: { first, _ in first })
     }
 
-    fileprivate func readAchievements(of id: String, locale: String, fresh: Bool) throws -> [LibraryAchievement] {
-        let states = try readAchievements([id], locale: locale, fresh: fresh)[id] ?? []
+    func achievements(game: String, locale: String, fresh: Bool) async throws -> [LibraryAchievement] {
+        let states = try readAchievements([game], locale: locale, fresh: fresh)[game] ?? []
         return states.enumerated().map { index, unlocked in
             LibraryAchievement(id: "\(index)", name: "Achievement \(index)", description: "", iconUrl: "",
                                hidden: false, unlocked: unlocked, unlockedAt: unlocked ? 1_790_000_000 : nil)
         }
     }
 
-    fileprivate func readAchievementShares(_ ids: [String], locale: String) throws -> [String: Double] {
-        try readAchievements(ids, locale: locale, fresh: false).compactMapValues { states in
+    func achievementShares(games: [String], locale: String) async throws -> [String: Double] {
+        try readAchievements(games, locale: locale, fresh: false).compactMapValues { states in
             states.isEmpty ? nil : Double(states.count { $0 }) / Double(states.count)
         }
     }
+
+    nonisolated func avatarUrl() -> String? { Store.expectedAvatar?.absoluteString }
+
+    nonisolated func setStatus(status: OnlineStatus) {}
+    func startFriends() async {}
+    func reconnectFriends() async {}
+    nonisolated func stopFriends() {}
+    func nextFriends(afterRevision: UInt64) async -> EpicFriendsSnapshot? { nil }
 }
 
-/// One achievements request: the games it names (Epic's namespaces, GOG's
-/// products), its locale, and whether it skips the Library cache.
+/// One achievements request: the games it names, its locale, and whether it
+/// skips the Library cache.
 struct AchievementRead: Equatable, Sendable {
     let ids: [String]
     let locale: String
     let fresh: Bool
 }
 
-extension WebTestSession: EpicSessionProtocol where Store == EpicGames {
-    func gameDetails(namespace: String, catalogItemId: String, appName: String) async throws -> EpicGameDetails {
-        try await answerDetails(EpicDetailsRequest(namespace: namespace, catalogItemId: catalogItemId, appName: appName))
-    }
-    func playtimes() async throws -> [EpicPlaytime] { try await answerPlaytimes() }
-    func achievements(namespace: String, locale: String, fresh: Bool) async throws -> [LibraryAchievement] {
-        try readAchievements(of: namespace, locale: locale, fresh: fresh)
-    }
-    func achievementShares(namespaces: [String], locale: String) async throws -> [String: Double] {
-        try readAchievementShares(namespaces, locale: locale)
-    }
-
-    func startFriends() async {}
-    func reconnectFriends() async {}
-    nonisolated func stopFriends() {}
-    nonisolated func friends() -> EpicFriendsSnapshot {
-        EpicFriendsSnapshot(accountId: "unused", revision: 1, connection: .stopped, friends: [], message: nil)
-    }
-    func nextFriends(afterRevision: UInt64) async -> EpicFriendsSnapshot { friends() }
-}
-
-extension WebTestSession: GogSessionProtocol where Store == GogGames {
-    func gameDetails(productId: String, language: String) async throws -> GogGameDetails {
-        try await answerDetails(GogDetailsRequest(productId: productId, language: language))
-    }
-    func playtimes(productIds: [String]) async throws -> [GogPlaytime] {
-        playtimeRequests.append(productIds)
-        return try await answerPlaytimes()
-    }
-    func achievements(productId: String, locale: String, fresh: Bool) async throws -> [LibraryAchievement] {
-        try readAchievements(of: productId, locale: locale, fresh: fresh)
-    }
-    func achievementShares(productIds: [String], locale: String) async throws -> [String: Double] {
-        try readAchievementShares(productIds, locale: locale)
-    }
-    nonisolated func avatarUrl() -> String? { GogGames.expectedAvatar?.absoluteString }
-}
-
-typealias EpicMemoryStore = MemoryStore<EpicCredentials>
+typealias EpicMemoryStore = MemoryStore<WebAccountCredentials>
 
 /// The Keychain as the model tests drive it: it records every write, and the
 /// test holds or rejects saves.

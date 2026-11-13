@@ -11,3 +11,9 @@ Captured September 20, 2026 through Obelisk's normal authenticated PICS session.
 225260 Brütal Legend: platform-specific roots and SteamID placeholder.
 2239150 Thronefall: backslash-separated publisher paths.
 1030300 Silksong: existing cross-platform transform and account placeholder.
+
+Captured October 29, 2026 from the product info Obelisk cached through its normal authenticated PICS session:
+
+239030 Papers, Please: lowercase "macos" root override.
+200710 Torchlight II: lowercase "macos" and "linux" root overrides into the installation.
+1888930 The Last of Us Part I: {Steam3AccountId} placeholder.

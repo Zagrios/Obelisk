@@ -158,6 +158,7 @@ impl<const BEGIN: bool> Launch for Recorder<BEGIN> {
                     name: "fixture".into(),
                 },
                 helpers: directory.clone(),
+                status: obelisk_core::OnlineStatus::default(),
             },
             Self { directory, script },
         ))
@@ -191,21 +192,24 @@ impl<const BEGIN: bool> Launch for Recorder<BEGIN> {
         &mut self,
         _: &Arc<Session<Recording>>,
         target: &Target,
-        _: Option<Architecture>,
         _: Option<&Cloud>,
     ) -> Result<Prepared<()>, Failure> {
         record(&self.directory, "host.prepare");
         Ok(Prepared {
             host: (),
             helper: self.directory.join("helper"),
-            subcommand: "game-exec",
             environment: target.environment.clone(),
         })
     }
 
-    fn running(&self, _: &Arc<()>, _: u32) -> Box<dyn Fn(bool) + Send + Sync> {
+    fn running(&self, _: &Arc<()>, _: u32) -> crate::supervisor::session::Publish {
         let directory = self.directory.clone();
-        Box::new(move |active| record(&directory, &format!("presence:{active}")))
+        Box::new(move |shown| {
+            record(
+                &directory,
+                &crate::supervisor::session::presence_event(shown),
+            )
+        })
     }
 
     fn stopped(&self, _: &(), _: Option<i32>) {}

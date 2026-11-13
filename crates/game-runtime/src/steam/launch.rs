@@ -2,7 +2,7 @@
 //! Cloud, and the game slice chosen against the pinned Steam API library.
 use super::*;
 use crate::{
-    HostUpdate, NativeStorage, Runtime, package,
+    package,
     supervisor::{
         Error as Core,
         architecture::Architecture,
@@ -10,6 +10,7 @@ use crate::{
         storage,
     },
 };
+use host::{Host, HostUpdate, NativeStorage, Startup};
 use std::{io::Read, marker::PhantomData, sync::Arc};
 
 /// Makes `ISteamUtils::IsOverlayEnabled` true for a game in Wine, so it asks
@@ -28,11 +29,12 @@ pub(crate) trait Machine: Send + Sync + 'static {
     fn select(target: &Target, config: &Config) -> Result<Option<Architecture>, Error>;
     /// Starts the native host for this account and game.
     fn prepare(
-        launch: &crate::Launch,
+        startup: &Startup,
         config: Config,
         storage: Option<NativeStorage>,
-    ) -> Result<Runtime, Error>;
-    fn publish(runtime: &Runtime, active: bool);
+    ) -> Result<Host, Error>;
+    /// Shows the account as the game's presence says.
+    fn publish(host: &Host, shown: session::Shown);
     fn cloud(
         config: cloud::Config,
         credentials: Credentials,
@@ -50,17 +52,17 @@ impl Machine for Mac {
             return Ok(Some(wine.architecture()));
         }
         let library = config.steam_api.as_deref().ok_or(Error::ApiMissing)?;
-        Architecture::select(&target.executable, library).map(Some)
+        Ok(Some(Architecture::select(&target.executable, library)?))
     }
     fn prepare(
-        launch: &crate::Launch,
+        startup: &Startup,
         config: Config,
         storage: Option<NativeStorage>,
-    ) -> Result<Runtime, Error> {
-        launch.prepare(config, storage)
+    ) -> Result<Host, Error> {
+        startup.prepare(config, storage)
     }
-    fn publish(runtime: &Runtime, active: bool) {
-        let _ = runtime.set_presence(active);
+    fn publish(host: &Host, shown: session::Shown) {
+        let _ = host.set_presence(shown.status());
     }
     fn cloud(
         config: cloud::Config,
@@ -90,13 +92,13 @@ pub(crate) struct Launch<M: Machine = Mac> {
     request: Request,
     /// Zeroized on drop. Only the host and Steam Cloud receive them.
     credentials: Credentials,
-    launch: Arc<crate::Launch>,
+    startup: Arc<Startup>,
     machine: PhantomData<M>,
 }
 
 impl<M: Machine> session::Launch for Launch<M> {
     type P = Steam;
-    type Host = Runtime;
+    type Host = Host;
     type Cloud = Box<dyn SteamCloud>;
 
     fn open(input: &mut dyn Read) -> Result<(Opening<Steam>, Self), Error> {
@@ -120,9 +122,10 @@ impl<M: Machine> session::Launch for Launch<M> {
             account_id: credentials.steam_id,
             store: Store::new(request.config.app_id),
             helpers: helpers.into(),
+            status: request.status,
         };
         let launch = Self {
-            launch: Arc::new(crate::Launch::new(credentials.clone())),
+            startup: Arc::new(Startup::new(credentials.clone())),
             credentials,
             request,
             machine: PhantomData,
@@ -131,8 +134,8 @@ impl<M: Machine> session::Launch for Launch<M> {
     }
 
     fn interrupt(&self) -> Box<dyn Fn() + Send + Sync> {
-        let launch = self.launch.clone();
-        Box::new(move || launch.cancel())
+        let startup = self.startup.clone();
+        Box::new(move || startup.cancel())
     }
 
     fn wine(&self) -> Option<crate::wine::Config> {
@@ -166,72 +169,45 @@ impl<M: Machine> session::Launch for Launch<M> {
         &mut self,
         _: &Arc<Session<Steam>>,
         target: &Target,
-        architecture: Option<Architecture>,
         cloud: Option<&Box<dyn SteamCloud>>,
-    ) -> Result<Prepared<Runtime>, Error> {
+    ) -> Result<Prepared<Host>, Error> {
         let storage = match cloud {
             Some(cloud) => cloud.native_storage()?,
             None => None,
         };
-        let (launch, config) = (self.launch.clone(), self.request.config.clone());
-        let runtime = tokio::task::spawn_blocking(move || M::prepare(&launch, config, storage))
+        let (startup, config) = (self.startup.clone(), self.request.config.clone());
+        let host = tokio::task::spawn_blocking(move || M::prepare(&startup, config, storage))
             .await
             .map_err(|_| Error::StartFailed)??;
-        // The Intel helper comes from the prepared runtime; arm64 games use
-        // the bundled host's gated exec.
-        let (helper, subcommand) = if architecture == Some(Architecture::Intel) {
-            (
-                runtime.prepared.directory.join(package::SDK_INTEL),
-                "exec-game",
-            )
-        } else {
-            (self.request.config.helpers.join(package::HOST), "game-exec")
-        };
         let mut environment = target.environment.clone();
-        environment.extend(runtime.environment());
+        environment.extend(host.environment());
         game_environment(
             &mut environment,
             self.request.config.app_id,
             self.request.config.wine.is_some(),
-            &runtime.prepared.directory,
+            host.directory(),
         );
         Ok(Prepared {
-            host: runtime,
-            helper,
-            subcommand,
+            host,
+            helper: self.request.config.helpers.join(package::HOST),
             environment,
         })
     }
 
-    fn running(&self, host: &Arc<Runtime>, pid: u32) -> Box<dyn Fn(bool) + Send + Sync> {
+    fn running(&self, host: &Arc<Host>, pid: u32) -> session::Publish {
         let _ = host.started(pid);
         let host = host.clone();
-        Box::new(move |active| M::publish(&host, active))
+        Box::new(move |shown| M::publish(&host, shown))
     }
 
-    fn control(&self, host: &Arc<Runtime>) -> Option<session::Control<Steam>> {
+    fn control(&self, host: &Arc<Host>) -> Option<session::Control<Steam>> {
         let host = host.clone();
-        Some(Box::new(move |control| {
-            match control {
-                Control::Overlay {
-                    active,
-                    user_initiated,
-                } => host.overlay_state(active, user_initiated),
-                Control::AcceptInvite { friend, target } => host.accept_invite(friend, target),
-                Control::AuthorizeMicroTxn { order_id, approve } => {
-                    host.authorize_microtxn(order_id, approve)
-                }
-            }
-            .map_err(|error| match error {
-                Error::InvalidSession => Core::InvalidSession,
-                _ => Core::Unavailable,
-            })
-        }))
+        Some(Box::new(move |control| host.control(control)))
     }
 
     fn watch(
         &self,
-        host: &Arc<Runtime>,
+        host: &Arc<Host>,
         session: &Arc<Session<Steam>>,
     ) -> Option<std::thread::JoinHandle<()>> {
         let (host, session) = (host.clone(), session.clone());
@@ -248,7 +224,7 @@ impl<M: Machine> session::Launch for Launch<M> {
         }))
     }
 
-    fn stopped(&self, host: &Runtime, exit: Option<i32>) {
+    fn stopped(&self, host: &Host, exit: Option<i32>) {
         host.stopped(exit);
     }
 
@@ -267,7 +243,7 @@ fn game_environment(
     environment: &mut std::collections::HashMap<String, String>,
     app_id: u32,
     wine: bool,
-    runtime: &Path,
+    directory: &Path,
 ) {
     let app_id = app_id.to_string();
     environment.insert("SteamAppId".into(), app_id.clone());
@@ -278,7 +254,7 @@ fn game_environment(
         // lsteamclient loads the Intel slice of the host's steamclient.dylib.
         environment.insert(
             "STEAM_COMPAT_CLIENT_INSTALL_PATH".into(),
-            runtime.to_string_lossy().into_owned(),
+            directory.to_string_lossy().into_owned(),
         );
     }
 }

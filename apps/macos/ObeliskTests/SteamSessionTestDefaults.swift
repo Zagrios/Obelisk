@@ -41,7 +41,7 @@ extension SteamSessionProtocol {
     func shutdown() {}
     func reconnect() {}
 
-    func setOnline() async throws {}
+    func setStatus(status: OnlineStatus) async throws {}
     func nextChat(afterSequence: UInt64) async -> SteamChatEvents {
         let stream = AsyncStream<Void>(bufferingPolicy: .bufferingNewest(1)) { _ in }
         for await _ in stream {}
@@ -86,22 +86,16 @@ private func saveEveryRotation(_ credentials: any CredentialSave, rotations: @es
     }
 }
 
-extension GogSessionProtocol {
-    func persist(credentials: any CredentialSave) async {
-        let session = self
-        saveEveryRotation(credentials) { await session.nextCredentialsRevision(afterRevision: $0) }
-    }
-}
-
 // Models take launches as injected closures, so a fake
 // session never has to build a Rust-backed object.
-extension EpicSessionProtocol {
-    func webSignInUrl(redirectUrl: String) async throws -> String { throw CocoaError(.featureUnsupported) }
+extension WebAccountSessionProtocol {
+    func webSignInUrl(redirectUrl: String) async throws -> String? { throw CocoaError(.featureUnsupported) }
+    func avatarUrl() -> String? { nil }
     func persist(credentials: any CredentialSave) async {
         let session = self
         saveEveryRotation(credentials) { await session.nextCredentialsRevision(afterRevision: $0) }
     }
 
-    func achievements(namespace: String, locale: String, fresh: Bool) async throws -> [LibraryAchievement] { [] }
-    func achievementShares(namespaces: [String], locale: String) async throws -> [String: Double] { [:] }
+    func achievements(game: String, locale: String, fresh: Bool) async throws -> [LibraryAchievement] { [] }
+    func achievementShares(games: [String], locale: String) async throws -> [String: Double] { [:] }
 }

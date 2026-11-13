@@ -244,6 +244,27 @@ pub struct SteamGameArtwork {
     /// as Rust's for its staging branch.
     #[uniffi(default = None)]
     pub parent: Option<u32>,
+    /// What the app is when not a full game, which its cover says.
+    #[uniffi(default = None)]
+    pub kind: Option<SteamAppKind>,
+}
+/// What the library lists beside full games, as Steam types it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum SteamAppKind {
+    Demo,
+    /// A beta its name calls a playtest, as Steam's playtests are named.
+    Playtest,
+    /// Any other beta, such as an open beta or a game's beta branch.
+    Beta,
+}
+impl From<artwork::AppKind> for SteamAppKind {
+    fn from(kind: artwork::AppKind) -> Self {
+        match kind {
+            artwork::AppKind::Demo => Self::Demo,
+            artwork::AppKind::Playtest => Self::Playtest,
+            artwork::AppKind::Beta => Self::Beta,
+        }
+    }
 }
 impl From<artwork::LibraryArtwork> for SteamGameArtwork {
     fn from(
@@ -253,6 +274,7 @@ impl From<artwork::LibraryArtwork> for SteamGameArtwork {
             logo,
             header,
             parent,
+            kind,
         }: artwork::LibraryArtwork,
     ) -> Self {
         Self {
@@ -261,6 +283,7 @@ impl From<artwork::LibraryArtwork> for SteamGameArtwork {
             logo,
             header,
             parent,
+            kind: kind.map(Into::into),
         }
     }
 }
@@ -324,11 +347,13 @@ pub struct SteamProfile {
 
 #[uniffi::export(async_runtime = "tokio")]
 impl SteamSession {
-    /// Keeps every library it loads in `library`.
+    /// Keeps every library it loads in `library`, and shows the account to
+    /// its friends as `status` says.
     #[uniffi::constructor]
     pub async fn connect(
         credentials: SteamCredentials,
         library: Option<Arc<LibraryCache>>,
+        status: crate::OnlineStatus,
     ) -> Result<Arc<Self>, SteamError> {
         // Decode the routing identity before sending the token, then let Steam
         // validate its signature, expiry, revocation and account ownership.
@@ -337,11 +362,14 @@ impl SteamSession {
             return Err(auth::AuthError::Protocol.into());
         }
         let library = library.map(|library| library.steam(token.steam_id));
-        let account = AccountSession::connect(Credentials {
-            steam_id: token.steam_id,
-            account_name: token.account_name,
-            refresh_token: token.refresh_token,
-        })
+        let account = AccountSession::connect(
+            Credentials {
+                steam_id: token.steam_id,
+                account_name: token.account_name,
+                refresh_token: token.refresh_token,
+            },
+            status.into(),
+        )
         .await?;
         Ok(Arc::new(Self { account, library }))
     }

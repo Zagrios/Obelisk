@@ -77,14 +77,14 @@ final class EpicIntegrationTests: XCTestCase {
         let steam = SteamKeychain(service: service)
         let initial = try await epic.load()
         XCTAssertNil(initial)
-        let fixture = EpicCredentials(accountId: "fixture-account", displayName: "Epic Fixture", refreshToken: "test-only")
+        let fixture = WebAccountCredentials(accountId: "fixture-account", name: "Epic Fixture", refreshToken: "test-only")
         try await epic.save(fixture)
         do {
             let loaded = try await epic.load()
             XCTAssertEqual(loaded, fixture)
             let steamSession = try await steam.load()
             XCTAssertNil(steamSession)
-            let rotated = EpicCredentials(accountId: "fixture-account", displayName: "Epic Fixture", refreshToken: "test-only-rotated")
+            let rotated = WebAccountCredentials(accountId: "fixture-account", name: "Epic Fixture", refreshToken: "test-only-rotated")
             try await epic.save(rotated)
             let updated = try await epic.load()
             XCTAssertEqual(updated, rotated)
@@ -110,18 +110,12 @@ final class EpicIntegrationTests: XCTestCase {
 
     func testMalformedSavedSessionFailsWithoutExposingToken() async {
         do {
-            _ = try await EpicSession.restore(credentials: EpicCredentials(accountId: "", displayName: "Fixture", refreshToken: "private-test-token"), library: nil)
+            _ = try await WebAccountSession.restore(storefront: .epic, credentials: WebAccountCredentials(accountId: "", name: "Fixture", refreshToken: "private-test-token"), library: nil)
             XCTFail("Missing account identity must fail before authentication")
         } catch {
-            XCTAssertTrue(error is EpicError)
+            XCTAssertTrue(error is WebAccountError)
             XCTAssertFalse(String(describing: error).contains("private-test-token"))
         }
-    }
-
-    func testEpicAvailabilityAcrossBridge() {
-        let epic = storefronts().first { $0.id == .epic }
-        XCTAssertEqual(epic?.available, true)
-        XCTAssertEqual(epic?.displayName, "Epic Games")
     }
 }
 

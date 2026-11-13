@@ -1,5 +1,6 @@
 use super::*;
 use crate::client::{Client, GameInviteKind};
+use obelisk_core::OnlineStatus;
 
 const ACCOUNT: u64 = 76_561_198_000_000_000;
 const FRIEND: u64 = ACCOUNT + 1;
@@ -91,13 +92,24 @@ fn header_routing_app_is_tag_3() {
 }
 
 #[tokio::test]
-async fn online_status_is_sent_without_a_job() {
+async fn the_chosen_status_is_sent_without_a_job() {
     let (client, mut server) = session().await;
-    client.set_online().await.unwrap();
-    let status = server.request(716).await;
-    assert_eq!(&status.body[..], [0x08, 0x01]);
-    assert_eq!(status.header.job_source, None);
-    assert_eq!(status.header.steam_id, Some(ACCOUNT));
+    for (status, persona) in [
+        (OnlineStatus::Online, 1),
+        (OnlineStatus::Away, 3),
+        (OnlineStatus::Invisible, 7),
+    ] {
+        client.set_status(status).await.unwrap();
+        let sent = server.request(716).await;
+        // persona_state, then as Steam's menu: set by the user (5), no
+        // response asked (7), not idle (8).
+        assert_eq!(
+            &sent.body[..],
+            [0x08, persona, 0x28, 0x01, 0x38, 0x00, 0x40, 0x00]
+        );
+        assert_eq!(sent.header.job_source, None);
+        assert_eq!(sent.header.steam_id, Some(ACCOUNT));
+    }
 }
 
 #[tokio::test]

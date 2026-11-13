@@ -4,8 +4,10 @@
 use super::{Product, Steam, cloud as steam_cloud};
 use crate::{
     Locations,
-    cloud::{Control, record},
-    cloud_status,
+    cloud::{
+        Control,
+        saves::{self, Archive, Saves},
+    },
     installations::{self, BoxFuture, Receipt, Transfer, blocking},
     protocol::Credentials,
     sessions::{self, Admission, Failure, Storefront as _, Supervised, failed},
@@ -59,11 +61,11 @@ pub trait Network: Send + Sync + 'static {
         &self,
         app_id: u32,
     ) -> BoxFuture<'_, Result<Option<(CloudMetadata, CloudListing)>, steam_cloud::Failure>>;
-    /// Syncs Cloud saves on the player's request, while `idle` keeps every
-    /// Steam launch out. It blocks.
+    /// Syncs the Cloud saves under `config` on the player's request, while
+    /// `idle` keeps every Steam launch out. It blocks.
     fn maintain(
         &self,
-        target: steam_cloud::MaintenanceTarget,
+        config: steam_cloud::Config,
         credentials: &Credentials,
         control: Arc<Control>,
         idle: &super::IdleGuard,
@@ -154,12 +156,12 @@ impl Network for steam_kit::client::Client {
     }
     fn maintain(
         &self,
-        target: steam_cloud::MaintenanceTarget,
+        config: steam_cloud::Config,
         credentials: &Credentials,
         control: Arc<Control>,
         idle: &super::IdleGuard,
     ) -> Result<(), steam_cloud::Failure> {
-        steam_cloud::maintain(target, credentials, control, idle)
+        steam_cloud::maintain(config, credentials, control, idle)
     }
 }
 
@@ -179,24 +181,19 @@ impl<N: Network> Content<N> {
         }
     }
 
-    fn account(&self) -> u64 {
-        self.credentials.steam_id
-    }
-
-    /// Where the installation's Cloud saves live: a Windows game's in its
-    /// Wine prefix.
-    fn cloud(&self, receipt: &Receipt<Steam>) -> steam_cloud::Config {
-        steam_cloud::Config {
+    /// Where the installation's Cloud saves live: a Windows game's in the
+    /// Wine prefix of the engine it runs on.
+    async fn cloud_configuration(
+        &self,
+        receipt: &Receipt<Steam>,
+    ) -> Result<steam_cloud::Config, Failure> {
+        Ok(steam_cloud::Config {
             root: self.locations.cloud_archive.clone(),
             home: self.locations.home.clone(),
             install: receipt.directory.clone().into(),
             app_id: receipt.product.app_id,
-            prefix: receipt
-                .windows(&self.locations)
-                .ok()
-                .flatten()
-                .map(|windows| windows.prefix().to_owned()),
-        }
+            prefix: receipt.wine_prefix(&self.locations).await?,
+        })
     }
 }
 
@@ -282,43 +279,24 @@ impl<N: Network> installations::Content<Steam> for Content<N> {
             if let Some(join) = join {
                 target.arguments.extend(join.arguments(receipt.platform));
             }
+            // Its launch settings, resolved once.
+            let windows = receipt
+                .windows_for_launch(&self.locations, super::Error::StartFailed.to_string())
+                .await?
+                .map_err(|error| failed(super::Error::from(error)))?;
             admission
                 .hand_off(Handover {
                     locations: self.locations.clone(),
                     credentials: self.credentials.clone(),
                     receipt: receipt.clone(),
                     target,
+                    windows,
                 })
                 .await
         })
     }
-    fn archive<'a>(&'a self, receipt: &'a Receipt<Steam>) -> BoxFuture<'a, Result<(), Failure>> {
-        Box::pin(async move {
-            let rules = self
-                .network
-                .archive_rules(receipt.product.app_id)
-                .await
-                .map_err(key)?;
-            let Some((metadata, listing)) = rules else {
-                return Ok(());
-            };
-            let config = self.cloud(receipt);
-            blocking(crate::Error::Storage.to_string(), move || {
-                steam_cloud::archive_with_rules(&config, metadata, listing)
-            })
-            .await?
-            .map_err(key)
-        })
-    }
-    fn removed<'a>(&'a self, receipt: &'a Receipt<Steam>) -> BoxFuture<'a, Result<(), Failure>> {
-        Box::pin(async move {
-            let (config, account) = (self.cloud(receipt), self.account());
-            blocking(Steam::SESSION_FAILED, move || {
-                record::removed::<steam_cloud::Context>(&config, &account)
-            })
-            .await?
-            .map_err(key)
-        })
+    fn cloud(&self) -> Option<Box<dyn Saves<Steam> + '_>> {
+        Some(saves::of(self))
     }
     fn directory_name(&self, receipt: &Receipt<Steam>) -> String {
         steam_kit::client::installation_directory_name(receipt.product.app_id, receipt.platform)
@@ -329,52 +307,81 @@ impl<N: Network> installations::Content<Steam> for Content<N> {
     fn remove_prefix(&self, receipt: &Receipt<Steam>) -> Option<Result<(), String>> {
         receipt.remove_prefix(&self.locations)
     }
-    fn maintain<'a>(
-        &'a self,
-        game: &'a u32,
-        installed: Option<&'a Receipt<Steam>>,
-        control: Arc<Control>,
-    ) -> BoxFuture<'a, Result<(), Failure>> {
-        Box::pin(async move {
-            // An uninstalled game syncs what its saved context names.
-            let target = match installed {
-                Some(receipt) => steam_cloud::MaintenanceTarget::Installed(self.cloud(receipt)),
-                None => steam_cloud::MaintenanceTarget::Uninstalled {
-                    root: self.locations.cloud_archive.clone(),
-                    app_id: *game,
-                },
-            };
-            let (network, credentials) = (self.network.clone(), self.credentials.clone());
-            let locations = self.locations.clone();
-            blocking(Steam::SESSION_FAILED, move || {
-                // Its idle guard keeps every launch of Steam out meanwhile.
-                let idle = super::Client::idle_guard(&locations.steam_sessions, &locations.helper)
-                    .map_err(failed)?;
-                network
-                    .maintain(target, &credentials, control, &idle)
-                    .map_err(cloud_failure)
-            })
-            .await?
-        })
+}
+
+/// Steam's part of the account's Cloud saves between Game sessions.
+impl<N: Network> saves::Storefront for Content<N> {
+    type Of = Steam;
+    type Record = steam_cloud::Context;
+
+    fn root(&self) -> &Path {
+        &self.locations.cloud_archive
     }
-    fn indicators(&self, games: &[u32]) -> Result<Vec<(u32, cloud_status::Indicator)>, Failure> {
-        let scopes: Vec<StoreScope> = games
-            .iter()
-            .map(|app_id| steam_cloud::app_scope(self.account(), *app_id).into())
-            .collect();
-        let shown = record::indicators::<steam_cloud::Context>(
-            &self.locations.cloud_archive,
-            &self.account().into(),
-            &scopes,
-        )
-        .map_err(key)?;
-        Ok(shown
-            .into_iter()
-            .filter_map(|(scope, indicator)| match scope {
-                StoreScope::Steam(scope) => Some((scope.app_id, indicator)),
-                StoreScope::Epic(_) => None,
-            })
-            .collect())
+    fn account(&self) -> &u64 {
+        &self.credentials.steam_id
+    }
+    fn sessions(&self) -> (&Path, &Path) {
+        (&self.locations.steam_sessions, &self.locations.helper)
+    }
+    fn scope(&self, game: &u32) -> StoreScope {
+        steam_cloud::app_scope(self.credentials.steam_id, *game).into()
+    }
+    fn game(scope: StoreScope) -> Option<u32> {
+        match scope {
+            StoreScope::Steam(scope) => Some(scope.app_id),
+            StoreScope::Epic(_) => None,
+        }
+    }
+    async fn configuration(
+        &self,
+        receipt: &Receipt<Steam>,
+    ) -> Result<steam_cloud::Config, Failure> {
+        self.cloud_configuration(receipt).await
+    }
+    /// Steam's rules reach an uninstall over the account session's own CM
+    /// connection: no second sign-in, and no save is transferred.
+    async fn rules(
+        &self,
+        config: &steam_cloud::Config,
+    ) -> Result<Option<Archive<steam_cloud::Context>>, Failure> {
+        let rules = self
+            .network
+            .archive_rules(config.app_id)
+            .await
+            .map_err(key)?;
+        let Some((metadata, listing)) = rules else {
+            return Ok(None);
+        };
+        let config = config.clone();
+        blocking(super::Error::Storage.to_string(), move || {
+            steam_cloud::archive_under(&config, metadata, listing)
+        })
+        .await?
+        .map(Some)
+        .map_err(key)
+    }
+    fn capture_lost() -> String {
+        super::Error::Storage.to_string()
+    }
+    /// Without a record, Steam's Cloud has nothing to sync for an uninstalled
+    /// game.
+    fn recorded(&self, saved: Option<steam_cloud::Config>) -> Result<steam_cloud::Config, Failure> {
+        saved.ok_or_else(|| key(steam_cloud::Failure::Unsupported))
+    }
+    async fn sync(
+        &self,
+        config: steam_cloud::Config,
+        control: Arc<Control>,
+        idle: super::IdleGuard,
+    ) -> Result<(), Failure> {
+        let (network, credentials) = (self.network.clone(), self.credentials.clone());
+        // A Steam Cloud sync drives its own executor from one blocking thread.
+        blocking(Steam::SESSION_FAILED, move || {
+            network
+                .maintain(config, &credentials, control, &idle)
+                .map_err(cloud_failure)
+        })
+        .await?
     }
 }
 
@@ -385,6 +392,8 @@ struct Handover {
     credentials: Credentials,
     receipt: Receipt<Steam>,
     target: LaunchTarget,
+    /// Set for a Windows build, whose prefix it readies.
+    windows: Option<crate::wine::Installation>,
 }
 
 impl sessions::Handover<Steam> for Handover {
@@ -392,28 +401,34 @@ impl sessions::Handover<Steam> for Handover {
     fn platform(&self) -> Platform {
         self.receipt.platform
     }
+    fn windows(&self) -> Option<&crate::wine::Installation> {
+        self.windows.as_ref()
+    }
     fn prepare(&self) -> BoxFuture<'_, Result<super::Request, Failure>> {
-        let (locations, receipt, target) = (
+        let (locations, receipt, target, windows) = (
             self.locations.clone(),
             self.receipt.clone(),
             self.target.clone(),
+            self.windows.clone(),
         );
         Box::pin(async move {
-            blocking(crate::Error::StartFailed.to_string(), move || {
-                super::prepare(&locations, &receipt, &target)
+            blocking(super::Error::StartFailed.to_string(), move || {
+                super::prepare(&locations, &receipt, windows.as_ref(), &target)
             })
             .await?
             .map_err(|error| match error {
-                crate::Error::Cancelled => Failure::Cancelled,
+                super::Error::Cancelled => Failure::Cancelled,
                 error => failed(error),
             })
         })
     }
     fn start(
         self,
-        request: super::Request,
+        mut request: super::Request,
+        status: obelisk_core::OnlineStatus,
         cancel: CancelToken,
     ) -> Result<Arc<dyn Supervised<Steam>>, String> {
+        request.status = status;
         let helper = request.config.helpers.join(crate::package::HOST);
         super::start(&helper, &self.credentials, request, &cancel)
             .map(|client| Arc::new(client) as Arc<dyn Supervised<Steam>>)

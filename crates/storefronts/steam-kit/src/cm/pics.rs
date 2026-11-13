@@ -31,12 +31,15 @@ impl AppInfo {
     }
 
     /// The game as the library lists one the account never played, when it
-    /// is a released game: not a DLC, tool, soundtrack or demo, nor a game
-    /// Steam has yet to release.
+    /// is a released game, demo or playtest, which Steam's library all lists
+    /// as games: not a DLC, tool or soundtrack, nor a game Steam has yet to
+    /// release.
     pub(crate) fn unplayed_game(&self) -> Option<OwnedGameInfo> {
-        let game = self
-            .common("type")
-            .is_some_and(|kind| kind.eq_ignore_ascii_case("game"));
+        let game = self.common("type").is_some_and(|kind| {
+            ["game", "demo", "beta"]
+                .iter()
+                .any(|listed| kind.eq_ignore_ascii_case(listed))
+        });
         let released = self
             .common("releasestate")
             .is_none_or(|state| state.eq_ignore_ascii_case("released"));
@@ -48,6 +51,12 @@ impl AppInfo {
             playtime_minutes: 0,
             record: serde_json::Value::Null,
         })
+    }
+
+    /// Whether its publisher keeps the game out of Family Sharing, which
+    /// then stays with the account that bought it.
+    pub(crate) fn excluded_from_sharing(&self) -> bool {
+        self.common("exfgls") == Some("1")
     }
 
     /// Whether the Steam store has a page for the app.
@@ -323,7 +332,7 @@ mod tests {
         );
         assert!(rights.depots.contains(&1046443));
         assert!(rights.apps.contains(&99));
-        // A family member's license grants downloads, not a place in the library.
+        // A family member's license grants downloads and a borrowed game.
         assert_eq!(rights.own_apps, BTreeSet::from([588650]));
         assert!(!rights.apps.contains(&1046443));
         assert!(!rights.depots.contains(&99));
@@ -354,12 +363,15 @@ mod tests {
         assert!(rights.apps.contains(&30));
     }
 
+    /// App 730 with the given `common` fields.
+    fn common_app(common: &str) -> AppInfo {
+        let info = format!(r#""appinfo" {{ "appid" "730" "common" {{ {common} }} }}"#);
+        parse_app(730, info.as_bytes()).unwrap()
+    }
+
     #[test]
-    fn only_a_released_game_joins_the_library_unplayed() {
-        let app = |common: &str| {
-            let info = format!(r#""appinfo" {{ "appid" "730" "common" {{ {common} }} }}"#);
-            parse_app(730, info.as_bytes()).unwrap().unplayed_game()
-        };
+    fn only_a_released_game_demo_or_playtest_joins_the_library_unplayed() {
+        let app = |common: &str| common_app(common).unplayed_game();
         let game = app(
             r#""name" "Counter-Strike 2" "type" "Game" "icon" "8dbc71" "releasestate" "released""#,
         )
@@ -368,11 +380,20 @@ mod tests {
         assert_eq!(game.icon_hash, "8dbc71");
         assert_eq!((game.last_played, game.playtime_minutes), (0, 0));
         assert!(app(r#""name" "Old game" "type" "game""#).is_some());
+        assert!(app(r#""name" "Trials Rising Demo" "type" "Demo""#).is_some());
+        assert!(app(r#""name" "WARDOGS Playtest" "type" "Beta""#).is_some());
         assert!(app(r#""name" "Soundtrack" "type" "Music""#).is_none());
         assert!(app(r#""name" "Expansion" "type" "DLC""#).is_none());
         assert!(app(r#""name" "Server" "type" "Tool""#).is_none());
         assert!(app(r#""name" "Upcoming" "type" "Game" "releasestate" "prerelease""#).is_none());
         assert!(app(r#""type" "Game""#).is_none());
+    }
+
+    #[test]
+    fn a_publisher_can_keep_a_game_from_family_sharing() {
+        assert!(common_app(r#""name" "Kept Home" "exfgls" "1""#).excluded_from_sharing());
+        assert!(!common_app(r#""name" "Lendable" "exfgls" "0""#).excluded_from_sharing());
+        assert!(!common_app(r#""name" "Lendable""#).excluded_from_sharing());
     }
 
     #[test]

@@ -94,10 +94,10 @@ final class EpicPresentationTests: XCTestCase {
 
     @MainActor
     func testMountedDetailRendersItsPlaytimeAndArrivingSize() async throws {
-        let details = EpicGameDetails(platform: .windows, installationBytes: 2_000_000_000)
+        let details = WebGameDetails(platform: .windows, installationBytes: 2_000_000_000)
         let session = EpicPresentationSession(
             games: epicPresentationLibrary, details: details, holdDetails: true,
-            playtimes: [EpicPlaytime(appName: epicPresentationLibrary[0].appName, seconds: 5400)]
+            playtimes: [epicPresentationLibrary[0].id: 5400]
         )
         let model = EpicModel(keychain: EpicPresentationCredentials(), restore: { _ in session })
         await model.start()
@@ -363,8 +363,8 @@ final class EpicPresentationTests: XCTestCase {
             imageUrl: nil, headerImageUrl: nil, developer: "Fixture studio", windows: true, macos: true
         )
         let detailsSession = EpicPresentationSession(
-            games: [game], details: EpicGameDetails(platform: .windows, installationBytes: 2_000_000_000),
-            playtimes: [EpicPlaytime(appName: game.appName, seconds: 5400)],
+            games: [game], details: WebGameDetails(platform: .windows, installationBytes: 2_000_000_000),
+            playtimes: [game.id: 5400],
             achievements: [
                 LibraryAchievement(id: "first", name: "First steps", description: "", iconUrl: "",
                                    hidden: false, unlocked: true, unlockedAt: nil),
@@ -506,34 +506,33 @@ struct EpicPresentationWindow {
 }
 
 private actor EpicPresentationCredentials: CredentialStore {
-    private var value: EpicCredentials?
+    private var value: WebAccountCredentials?
     private(set) var loads = 0
-    init(_ value: EpicCredentials? = epicPresentationCredentials) { self.value = value }
-    func load() -> EpicCredentials? { loads += 1; return value }
-    func save(_ credentials: EpicCredentials) { value = credentials }
+    init(_ value: WebAccountCredentials? = epicPresentationCredentials) { self.value = value }
+    func load() -> WebAccountCredentials? { loads += 1; return value }
+    func save(_ credentials: WebAccountCredentials) { value = credentials }
     func remove() { value = nil }
 }
 
-private actor EpicPresentationSession: EpicSessionProtocol {
+private actor EpicPresentationSession: WebAccountSessionProtocol {
+    nonisolated func setStatus(status: OnlineStatus) {}
     func startFriends() async {}
     func reconnectFriends() async {}
     nonisolated func stopFriends() {}
     nonisolated func shutdownObservers() { credentialRevisions.stop() }
-    nonisolated func friends() -> EpicFriendsSnapshot {
-        EpicFriendsSnapshot(accountId: "unused", revision: 1, connection: .stopped, friends: [], message: nil)
-    }
-    func nextFriends(afterRevision: UInt64) async -> EpicFriendsSnapshot { friends() }
+    func nextFriends(afterRevision: UInt64) async -> EpicFriendsSnapshot? { nil }
     nonisolated let credentialRevisions = EpicCredentialRevisionFeed()
     func nextCredentialsRevision(afterRevision: UInt64) async -> UInt64? {
         await credentialRevisions.next(after: afterRevision)
     }
 
     private let library: [EpicGame]
-    private let details: EpicGameDetails
+    private let details: WebGameDetails
     private let achievementItems: [LibraryAchievement]
-    private let playtimeItems: [EpicPlaytime]
+    /// The seconds each played game was played, by its id.
+    private let playtimeItems: [String: UInt64]
     private var shouldHoldDetails: Bool
-    private var detailsContinuation: CheckedContinuation<EpicGameDetails, Never>?
+    private var detailsContinuation: CheckedContinuation<WebGameDetails, Never>?
     private(set) var waitingForDetails = false
     private var shouldHoldGames: Bool
     private var gamesContinuation: CheckedContinuation<[EpicGame], Never>?
@@ -543,9 +542,9 @@ private actor EpicPresentationSession: EpicSessionProtocol {
     init(
         games: [EpicGame],
         holdGames: Bool = false,
-        details: EpicGameDetails = EpicGameDetails(platform: nil, installationBytes: nil),
+        details: WebGameDetails = WebGameDetails(platform: nil, installationBytes: nil),
         holdDetails: Bool = false,
-        playtimes: [EpicPlaytime] = [],
+        playtimes: [String: UInt64] = [:],
         achievements: [LibraryAchievement] = []
     ) {
         library = games
@@ -555,12 +554,11 @@ private actor EpicPresentationSession: EpicSessionProtocol {
         shouldHoldDetails = holdDetails
         achievementItems = achievements
     }
-    func achievements(namespace: String, locale: String, fresh: Bool) async throws -> [LibraryAchievement] {
+    func achievements(game: String, locale: String, fresh: Bool) async throws -> [LibraryAchievement] {
         achievementItems
     }
-    func credentials() -> EpicCredentials { epicPresentationCredentials }
-    func prepare() -> EpicCredentials { epicPresentationCredentials }
-    func gameDetails(namespace: String, catalogItemId: String, appName: String) async -> EpicGameDetails {
+    func credentials() -> WebAccountCredentials { epicPresentationCredentials }
+    func gameDetails(offer: GameOffer, language: String) async -> WebGameDetails {
         if shouldHoldDetails {
             shouldHoldDetails = false
             waitingForDetails = true
@@ -574,15 +572,15 @@ private actor EpicPresentationSession: EpicSessionProtocol {
         detailsContinuation?.resume(returning: details)
         detailsContinuation = nil
     }
-    func playtimes() async throws -> [EpicPlaytime] { playtimeItems }
-    func games() async -> [EpicGame] {
+    func playtimes(games: [String]) async throws -> [String: UInt64] { playtimeItems }
+    func games() async -> WebAccountGames {
         gameCalls += 1
         if shouldHoldGames {
             shouldHoldGames = false
             waitingForGames = true
-            return await withCheckedContinuation { gamesContinuation = $0 }
+            return .epic(games: await withCheckedContinuation { gamesContinuation = $0 })
         }
-        return library
+        return .epic(games: library)
     }
     func releaseGames() {
         shouldHoldGames = false
@@ -593,7 +591,7 @@ private actor EpicPresentationSession: EpicSessionProtocol {
     func disconnect() {}
 }
 
-private let epicPresentationCredentials = EpicCredentials(accountId: "epic-presentation", displayName: "Test account", refreshToken: "fixture-only-never-sent")
+private let epicPresentationCredentials = WebAccountCredentials(accountId: "epic-presentation", name: "Test account", refreshToken: "fixture-only-never-sent")
 private let epicPresentationLibrary: [EpicGame] = (0..<24).map { index in
     EpicGame(appName: "fixture-\(index)", namespace: "presentation", catalogItemId: "catalog-\(index)", title: index == 0 ? "Forgotten light" : "Test game \(index)", description: "", imageUrl: nil, headerImageUrl: nil, developer: "", windows: false, macos: false)
 }

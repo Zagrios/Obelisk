@@ -18,18 +18,6 @@ final class GogModelTests: XCTestCase {
         XCTAssertNil(neither.offer)
     }
 
-    func testPlaytimesAskEveryProductAndConvertMinutes() async throws {
-        let games = [GogGames.game("1", title: "Alpha"), GogGames.game("2", title: "Beta"), GogGames.game("3", title: "Gamma")]
-        let session = GogTestSession(credentials: GogGames.credentials("current"), games: games,
-                                     playtimes: [GogPlaytime(productId: "2", minutes: 600)])
-        let model = await connectedModel(session)
-        defer { model.signOut() }
-
-        try await eventually { model.library.playtime(of: games[1]) == .seconds(36_000) }
-        let asked = await session.playtimeRequests
-        XCTAssertEqual(asked, [["1", "2", "3"]], "One request names every product")
-    }
-
     func testTheLibraryOrdersByWhenGalaxyTellsEachGameJoinedIt() async throws {
         var classic = GogGames.game("1", title: "Classic"), recent = GogGames.game("2", title: "Recent")
         let unknown = GogGames.game("3", title: "Unknown")
@@ -68,10 +56,6 @@ final class GogModelTests: XCTestCase {
         XCTAssertEqual(again.count, 1, "Picking the order asks nothing")
     }
 
-    func testAnAbsurdMinuteCountSaturates() {
-        XCTAssertEqual(GogGames.played(minutes: .max), .seconds(Int64.max))
-    }
-
     func testDetailsPassThePlayersLanguage() async throws {
         var owned = GogGames.game("1", title: "Alpha")
         owned.macos = true
@@ -82,7 +66,7 @@ final class GogModelTests: XCTestCase {
         model.open(owned)
         try await eventually { !model.isLoadingGameDetails }
         let requests = await session.detailsCalls
-        XCTAssertEqual(requests, [GogDetailsRequest(productId: "1", language: "fr-FR")])
+        XCTAssertEqual(requests, [WebDetailsRequest(offer: .gog(productId: "1", title: "Alpha"), language: "fr-FR")])
     }
 
     func testAchievementsAskGogForTheProductAndFullTag() async throws {
@@ -130,7 +114,7 @@ final class GogModelTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let session = GogTestSession(credentials: GogGames.credentials("current"), games: [owned])
         let model = GogModel(directory: directory, keychain: MemoryStore(GogGames.credentials("current")),
-                             restore: { _ in GogGames.session(session) }, gameSessions: GameSessions(),
+                             restore: { _ in session }, gameSessions: GameSessions(),
                              installations: GogModel.installations(backend))
         await model.start()
         defer { model.signOut() }
@@ -165,5 +149,25 @@ final class GogModelTests: XCTestCase {
         XCTAssertEqual(code, "fixture-gog")
         XCTAssertEqual(loginWindow?.title, L10n.string("model.gogWeb.title"))
         XCTAssertEqual(loginWindow?.isVisible, false)
+    }
+
+    /// GOG's sign-in button stays disabled until Cloudflare's captcha, which
+    /// runs in `about:srcdoc` frames, hands its token over.
+    func testTheGogWindowLetsAFrameBuildItsOwnDocument() async throws {
+        let completed = expectation(description: "GOG callback intercepted from a srcdoc frame")
+        let task = Task {
+            defer { completed.fulfill() }
+            return try await WebAuthentication(.gog).authorize { webView in
+                webView.loadHTMLString("""
+                    <html><body>
+                    <iframe srcdoc="<script>parent.location.href = 'https://embed.gog.com/on_login_success?origin=client&code=fixture-srcdoc'</script>"></iframe>
+                    </body></html>
+                    """, baseURL: nil)
+            }
+        }
+        await fulfillment(of: [completed], timeout: 10)
+        task.cancel()
+        let code = try await task.value
+        XCTAssertEqual(code, "fixture-srcdoc")
     }
 }

@@ -1,21 +1,21 @@
 //! Steam's answers to the build choice: the builds the account's licenses
 //! grant, and a Mac build's depot manifests, read to find the program and
 //! Steam API library a launch would start.
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use obelisk_core::{
-    build_choice::{GameBuilds, Inspection, Offered},
-    mac_build,
+    build_choice::{GameBuilds, Inspection, Launch, Offered, Verdict},
+    mac_build::Listing,
     platform::Platform,
 };
 
 use super::{
-    Client, ClientError, DepotAuthorization, MacBuild, installable_builds, select_depots,
-    shared_sources,
+    Client, ClientError,
+    build::{Kept, Revision, Selection},
 };
 use crate::{
     cm::{AppInfo, ContentLicenses},
-    content::{CachedManifest, CancelToken, ContentClient, DepotFiles, DepotSource},
+    content::{CancelToken, DepotFiles, DepotSource},
 };
 
 /// The account's licenses and a game's PICS metadata, from which both of
@@ -46,72 +46,63 @@ pub(super) struct OwnedApp<'a> {
 
 impl GameBuilds for OwnedApp<'_> {
     type Build = Licensed;
-    type Key = MacBuild;
-    type Kept = HashMap<(u32, u64), CachedManifest>;
+    type Key = Revision;
+    type Kept = Kept;
     type Error = ClientError;
+    /// Steam's errors tell a refusal apart wherever they arise.
+    type Failure = ClientError;
 
     async fn builds(&self) -> Result<Offered<Licensed>, ClientError> {
         let (owned, app) = self.client.owned_app(self.app_id).await?;
-        let (mac, windows) = installable_builds(&app, &owned, self.language);
+        let installable =
+            |platform| !Selection::of(&app, &owned, platform, self.language).is_empty();
+        let (mac, windows) = (installable(Platform::Mac), installable(Platform::Windows));
         Ok(Licensed { owned, app }.offered(mac, windows))
     }
 
     /// A build without a Mac launch configuration has no program to read,
     /// so it keeps no verdict.
-    async fn key(&self, mac: &Licensed) -> Result<Option<MacBuild>, ClientError> {
+    async fn key(&self, mac: &Licensed) -> Result<Option<Revision>, ClientError> {
         if crate::launch::configuration(&mac.app, Platform::Mac).is_none() {
             return Ok(None);
         }
-        self.client
-            .mac_build(&mac.app, &mac.owned, self.language)
-            .await
-            .map(Some)
+        let selection = Selection::of(&mac.app, &mac.owned, Platform::Mac, self.language);
+        let resolved = self.client.build_of(selection).await?;
+        Ok(Some(resolved.revision()))
     }
 
-    /// Whether the build's program and its Steam API library hold arm64
-    /// slices, as a launch would start them. It reads their first bytes from
-    /// the build's depots.
+    /// The build's program and the Steam API library beside it, as a launch
+    /// would start them, read from the build's depots. The depots' manifests
+    /// are kept for the download of a build that is picked.
     async fn inspect(
         &self,
         mac: &Licensed,
         cancel: &CancelToken,
-    ) -> Result<Inspection<Self::Kept>, ClientError> {
+    ) -> Result<Inspection<Kept>, ClientError> {
         let Some(executable) = crate::launch::configuration(&mac.app, Platform::Mac)
             .map(|config| config.executable.clone())
         else {
-            return Ok(Inspection::NotNative);
+            return Ok(Inspection::no_program());
         };
         let (client, app) = (self.client, &*mac.app);
-        let selected = select_depots(app, &mac.owned, Platform::Mac, self.language);
-        let sources = client
-            .cached_app_infos(&shared_sources(app, &selected))
-            .await?;
+        let selection = Selection::of(app, &mac.owned, Platform::Mac, self.language);
+        let resolved = client.build_of(selection).await?;
         let servers = client.content_servers(app.app_id).await?;
+        // Each depot checks again, but a build may have none.
+        cancel.check()?;
         let mut depots = Vec::new();
-        for depot in &selected {
-            if let Some(prepared) = client.prepare_depot(app, depot, &sources, cancel).await? {
-                let request_code = client
-                    .cm
-                    .manifest_request_code(
-                        prepared.depot_id,
-                        prepared.authorizing_app,
-                        prepared.manifest_id,
-                    )
-                    .await?;
-                depots.push((prepared, request_code));
-            }
+        for depot in resolved.depots() {
+            let prepared = depot.prepare(&client.cm, cancel).await?;
+            let request_code = prepared.request_code(&client.cm).await?;
+            depots.push((prepared, request_code));
         }
         let authorizations: Vec<_> = depots
             .iter()
-            .map(|(depot, _)| DepotAuthorization {
-                cm: &client.cm,
-                app_id: depot.authorizing_app,
-                depot_id: depot.depot_id,
-            })
+            .map(|(depot, _)| depot.authorization(&client.cm))
             .collect();
-        let content = ContentClient::new(client.http.clone());
+        let content = &client.content;
         let mut files = Vec::new();
-        let mut listing = mac_build::Listing::default();
+        let mut listing = Listing::default();
         for ((depot, request_code), authorization) in depots.iter().zip(&authorizations) {
             let source = DepotSource {
                 depot_id: depot.depot_id,
@@ -129,11 +120,19 @@ impl GameBuilds for OwnedApp<'_> {
             let files: &Vec<_> = &files;
             files[depot].read(file, bytes, cancel)
         };
-        let native =
-            mac_build::runs_natively(&listing, &executable, &["libsteam_api.dylib"], read).await?;
-        Ok(match native {
-            true => Inspection::Native(files.into_iter().map(DepotFiles::into_manifest).collect()),
-            false => Inspection::NotNative,
-        })
+        let launch = Launch {
+            executable: &executable,
+            libraries: &["libsteam_api.dylib"],
+        };
+        let verdict = Verdict::of(&listing, launch, read).await?;
+        Ok(verdict.keeping(|| files.into_iter().map(DepotFiles::into_manifest).collect()))
+    }
+
+    /// A build Steam refuses or whose depots hold what Obelisk cannot
+    /// install, as `ContentError::is_refusal` and `CmError::is_refusal` name
+    /// them: an unsafe path, invalid data, a link Obelisk does not make, a
+    /// status that is no outage, or Steam denying the account.
+    fn is_refusal(failure: &ClientError) -> bool {
+        matches!(failure, ClientError::Refused(_))
     }
 }

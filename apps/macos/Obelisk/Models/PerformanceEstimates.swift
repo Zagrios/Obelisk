@@ -81,14 +81,3 @@ final class PerformanceEstimates {
         return try? JSONDecoder().decode(Answer.self, from: data).games
     }
 }
-
-extension SessionStorefront {
-    /// How getobelisk.app names the storefront.
-    var siteName: String {
-        switch self {
-        case .steam: "steam"
-        case .epic: "epic"
-        case .gog: "gog"
-        }
-    }
-}

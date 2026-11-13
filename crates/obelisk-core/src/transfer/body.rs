@@ -1,6 +1,6 @@
 //! Bounded reading of a streamed response body, shared by every storefront's
-//! chunk fetch so the bound, the byte counting and the cancellation stay in
-//! one order.
+//! requests so the bound, the byte counting and the cancellation stay in one
+//! order.
 use futures_util::{Stream, StreamExt};
 
 use super::{CancelToken, Cancelled};
@@ -85,8 +85,9 @@ pub async fn read_body<B: AsRef<[u8]>, X>(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use futures_util::stream;
+
+    use super::*;
 
     type Part = Result<&'static [u8], ()>;
 

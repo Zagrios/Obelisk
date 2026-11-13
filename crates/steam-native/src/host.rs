@@ -3,7 +3,9 @@ use crate::{
     abi::{ClientFriends, ClientUser, Engine},
     lobby, mach, overlay, received,
 };
-use game_runtime::protocol::{Credentials, Event, Failure, HostCommand, OverlayDialog};
+use game_runtime::protocol::{
+    Credentials, Event, Failure, HOST_STARTUP_TIMEOUT, HostCommand, OverlayDialog,
+};
 use std::{
     ffi::{CStr, CString},
     fs::File,
@@ -39,8 +41,8 @@ pub fn serve(
         let mut input = std::io::stdin().lock();
         while let Ok(Some(command)) = HostCommand::read(&mut input) {
             match command {
-                HostCommand::SetPresence { online } => {
-                    *requested_presence.lock().unwrap() = Some(online);
+                HostCommand::SetPresence { status } => {
+                    *requested_presence.lock().unwrap() = Some(HostCommand::persona_state(status));
                 }
                 command => {
                     if commands.send(command).is_err() {
@@ -212,7 +214,7 @@ pub fn serve(
                 )?;
             }
         }
-        if !ready && deadline.elapsed() > Duration::from_secs(45) {
+        if !ready && deadline.elapsed() > HOST_STARTUP_TIMEOUT {
             emit(
                 output,
                 &Event::Failed {
@@ -281,7 +283,7 @@ pub fn serve(
             expected_id as u32
         ));
         let started = Instant::now();
-        while !game_runtime::native_cache_checkpoint(cache.clone(), app, platforms) {
+        while !game_runtime::steam::host::native_cache_checkpoint(cache.clone(), app, platforms) {
             if started.elapsed() > Duration::from_millis(500) {
                 return Err("Native storage index incomplete".into());
             }

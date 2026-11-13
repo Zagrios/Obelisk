@@ -11,7 +11,7 @@ One account-scoped attempt to install, verify or repair a game's files. Its life
 A record identifying a game installation whose required files were successfully installed. Partial download data is not an installation receipt.
 
 **Offer**:
-What a storefront says Obelisk can install of one game, with Steam's language, before any folder is chosen. The storefront picks its build as the Transfer starts: the Mac build when its game runs natively on Apple silicon, as its program's first bytes tell, else the Windows build. Until a download found that a Mac build's game does not run natively, the game's page shows the Mac build. A Mac build without an arm64 slice, Intel or 32-bit, is never installed, nor launched. A new installation starts from an offer; an installed game launches, updates and uninstalls from its Installation receipt alone.
+What a storefront says Obelisk can install of one game, with Steam's language, before any folder is chosen. The storefront picks its build as the Transfer starts: the Mac build when its game runs natively on Apple silicon, as its program's first bytes tell, else the Windows build. A Mac build its storefront refuses, or that holds what Obelisk cannot install, gives way to the Windows build like one whose game does not run natively; a failure that may pass, such as an outage, stops the Transfer instead. Until a download found that a Mac build's game does not run natively, the game's page shows the Mac build. A Mac build without an arm64 slice, Intel or 32-bit, is never installed, nor launched. A new installation starts from an offer; an installed game launches, updates and uninstalls from its Installation receipt alone.
 _Avoid_: download request, install target
 
 **Platform**:
@@ -22,17 +22,29 @@ _Avoid_: OS, os list (Steam's declared platforms, Linux included), macos/osx/Mac
 Where Obelisk installs games: its own folder in its library until the player chooses another, such as one on an external disk, inside which Obelisk makes its own. Choosing one moves every installation there, one at a time in the download queue: a game cannot launch while it moves, the others can, and a move the player stops leaves its game where it was. Wine prefixes, launch settings and the Cloud archive stay in the library. An installation whose disk is not connected shows as not installed until the disk comes back.
 _Avoid_: library folder (Obelisk's own data), install location
 
+**Receipt book**:
+The Installation receipts one storefront account keeps, in a file of its own. Those of installations whose disk is connected show; those whose disk is not stay in the file, hidden, until it comes back. Beside them, in a second file, it keeps the records of new installations whose Transfer has not succeeded; these are not Installation receipts. A change to it, such as a finished Transfer, a move or an uninstall, applies to the receipts as they are when it happens, never as they were when the action began.
+_Avoid_: installation list
+
+**Speed limit**:
+The most the player lets Obelisk download per second, set in Settings. Every storefront's Transfers share it, so it bounds their total rather than each connection; it applies from the next bytes on, to a Transfer under way too, and a lower choice than 625 kB/s is raised to it. It holds games only: the downloads of Obelisk's own runtime, Voile and Valve's components, are not held by it.
+_Avoid_: bandwidth cap, throttle
+
 **Account session**:
-One storefront account's signed-in connection to its storefront, from sign-in or restoration until sign-out. The account's library, Transfers, launches, friends and chat go through it. Steam's connects again by itself when its CM connection drops: three attempts after growing waits, then only the player's retry or the Mac's wake tries again, and never once Steam asked the account to sign in again. A Transfer whose turn comes meanwhile waits for the new connection, and the download queue waits with it. Each CM connection of a session is numbered, 0 for the first: its transport, in the code.
+One storefront account's signed-in connection to its storefront, from sign-in or restoration until sign-out. The account's library, Transfers, launches, friends and chat go through it. Steam's connects again by itself when its CM connection drops: six attempts over about a minute, after growing waits, then only the player's retry or the Mac's wake tries again, and never once Steam asked the account to sign in again. A Transfer whose turn comes meanwhile waits for the new connection, and the download queue waits with it. Each CM connection of a session is numbered, 0 for the first: its transport, in the code.
 _Avoid_: login, CM connection (one connection of an account session)
 
+**Web account session**:
+The Account session of a storefront whose account signs in on its web page and whose credentials rotate: Epic's and GOG's. One session serves both: a storefront supplies only how its requests name a game for playtimes and achievements, its game record and its extras, Epic's friends, status and web sign-in address, GOG's avatar. It holds an access token, renewed once it lapsed or the storefront rejected it: a renewal may rotate the credentials the Keychain keeps, and a request answered after sign-out is refused. It tells playtimes in seconds.
+_Avoid_: Epic session, GOG session
+
 **Library cache**:
-The last library each storefront account loaded, with everything the storefront returned for each game and the game's last launch from Obelisk. The library shows from it while the account's session connects; the session keeps it as it loads, and signing the account out forgets it. It is not the catalog of games added by hand.
-_Avoid_: library.json (the catalog's file), launch history file
+The last library each storefront account loaded, with everything the storefront returned for each game and the game's last launch from Obelisk. The library shows from it while the account's session connects; the session keeps it as it loads, and signing the account out forgets it. It keeps each playtime as its storefront told it, Epic's in seconds and GOG's in minutes, and Obelisk reads both in seconds. It is not the catalog of games added by hand.
+_Avoid_: launch history file
 
 **Account library**:
-One storefront account's games as Obelisk shows them, with what orders and narrows each: its name, playtime, last played (on its storefront or from Obelisk, whichever is later), date added, achievements unlocked and size installed. It shows from the Library cache while the account's session connects, becomes live once the session lists the games, and signing the account out forgets it. Every storefront searches, filters and orders it the same six ways, and its featured game, its hero, is the last one played, else the most played, equal ones by name.
-_Avoid_: catalog (the games added by hand), filtered games, Library cache (its saved copy)
+One storefront account's games as Obelisk shows them, with what orders and narrows each: its name, playtime, last played (on its storefront or from Obelisk, whichever is later), date added, achievements unlocked and size installed. It shows from the Library cache while the account's session connects, becomes live once the session lists the games, and signing the account out forgets it. Every storefront searches, filters and orders it the same six ways, and its featured game, its hero, is the last one played, else the most played, equal ones by name. A game counts as installed when the account holds an Installation receipt for it; a receipt of a game the library does not list counts for none.
+_Avoid_: filtered games, Library cache (its saved copy)
 
 **Cloud archive**:
 Obelisk's own local store of each account's save versions, together with the record of which account currently owns each physical save location. One archive serves every storefront, so two storefront copies of a game that share a save location cannot silently adopt each other's saves.
@@ -47,16 +59,20 @@ The Windows machine one Windows installation runs in, shared by every account th
 _Avoid_: bottle, Wine folder
 
 **Engine**:
-What runs a Windows game's Wine: Rosetta's Wine, Voile's Wine for macOS under Rosetta, for most games, or the Linux engine, Voile's Wine for Linux that voile-lkd runs natively, for games whose anti-cheat supports Linux. Each engine keeps its own Wine prefix of an installation and its own runtime in Voile, offers its own Graphics backends, and starts, quits and stops a game its own way; Prerequisites run only in Rosetta's Wine. Launch settings pick it, and a game moved to the other engine starts in that engine's Wine prefix.
+What runs a Windows game's Wine: Rosetta's Wine, Voile's Wine for macOS under Rosetta, for most games, or the Linux engine, Voile's Wine for Linux that voile-lkd runs natively, for games whose anti-cheat supports Linux. Each engine keeps its own Wine prefix of an installation and its own runtime in Voile, offers its own Graphics backends, and starts, quits and stops a game its own way; Prerequisites run only in Rosetta's Wine. Launch settings pick it, and a game moved to the other engine starts in that engine's Wine prefix. Without a choice, a game whose installation holds Easy Anti-Cheat runs on the Linux engine, unless what Obelisk knows of the game says otherwise.
 _Avoid_: backend (a Graphics backend renders), runner, bottle, Wine flavour
 
 **Launch settings**:
-How one Windows installation runs, for every account that launches it: what Obelisk knows of the game, with the player's choices over it. The player picks the arguments added after the storefront's and the game's own on its command line, its engine, then the graphics backend that renders its Direct3D there and that backend's options, each as the engine allows, and whether Metal's Performance HUD shows over the game. Only the choices that differ from what Obelisk knows of the game are kept. A change applies from the game's next launch, a game moved to the other engine runs in that engine's Wine prefix, and the settings go when the installation is uninstalled.
+How one Windows installation runs, for every account that launches it: what Obelisk knows of the game, with the player's choices over it, in the player's language. The player picks the arguments added after the storefront's and the game's own on its command line, its engine, then the graphics backend that renders its Direct3D there and that backend's options, each as the engine allows, the render resolution on the engines that offer one, and whether Metal's Performance HUD shows over the game. Only the choices that differ from what Obelisk knows of the game are kept. A change applies from the game's next launch, a game moved to the other engine runs in that engine's Wine prefix, and the settings go when the installation is uninstalled.
 _Avoid_: bottle, container, game settings, profile (what Obelisk itself knows of a game)
 
 **Graphics backend**:
 What renders a Windows game's Direct3D through Metal: D3DMetal, for Direct3D 11 and 12 in 64-bit programs, or DXMT, for Direct3D 10 and 11. A game has one, as Windows has one dxgi per process: on DXMT it has no Direct3D 12. On Rosetta's Wine, a 32-bit program of a game on D3DMetal renders through DXMT.
 _Avoid_: renderer, translation layer
+
+**Render resolution**:
+The share of the screen's backing pixels, per axis and in whole percent, that a Windows game sees and renders at, picked in Launch settings: Native, all of them, by default, and offered by the Linux engine.
+_Avoid_: resolution (the game's own, which it picks in its settings), scale, Retina mode
 
 **Prerequisite**:
 A program a storefront names to run once in a Wine prefix before its game first starts, such as a DirectX or Visual C++ installer. One that fails runs again on the next launch; the game starts anyway.
@@ -65,6 +81,14 @@ _Avoid_: redistributable (Steam's name for the package, not the run), dependency
 **Runtime**:
 What Obelisk downloads beside a game's own files for it to run: Voile for a Windows build, Valve's Steam components for every Steam game. A Transfer gets the missing ones before the game's files, and a launch that still misses one gets it after its Admission, before its game is prepared. A launch that finds a newer Voile release asks the player there, with what it brings: they take it before the game starts, or skip it for that launch, unless the game needs it. A Voile release a newer one replaced goes only once no game of any storefront may still run from it.
 _Avoid_: dependency, prerequisite (a Prerequisite runs inside a Wine prefix)
+
+**Beta releases**:
+The player's choice, in Settings, to take the pre-releases of Obelisk and Voile too: GitHub releases published with the pre-release box ticked, the betas such as Obelisk 0.6.3.beta1 or Voile v26.3.0-26.beta1 that the Beta workflows build every two hours when main changed. Obelisk and Voile then each run the newest version, pre-release or release. Turned off, each goes back to its latest release: Obelisk as it next quits, having got and checked that release itself, since Sparkle never installs an older version; Voile at the next Windows launch, which leaves a pre-release in place as it leaves a withdrawn release.
+_Avoid_: beta channel (the feed's list Sparkle reads), nightly
+
+**Steam host**:
+The sandboxed process that holds a Steam game's Steam session beside it, run from Valve's Steam components: it signs in as the account, proves the game's license, and carries what the game asks of Steam, its overlays, invitations and purchases. Each Steam Game session has one; losing it never ends the game.
+_Avoid_: runtime (what Obelisk downloads), native runtime
 
 **Reservation**:
 The exclusive claim a Game session or Cloud maintenance holds on a game's installation. While it exists, no Transfer, uninstall or other launch of that game can start.
@@ -109,6 +133,10 @@ _Avoid_: sign-out cancel, logout kill
 **Game action**:
 What the player can do with one game of an account now, as its button shows it: download, resume or update it, launch it, wait for its queued Transfer, follow its Transfer, wait while it is uninstalled, launched or its session closes, follow a step outside any Transfer (a runtime its launch waits for, or a Cloud sync), or end its running game. A game's page and its library show the same action, except for an installed game whose storefront offers a newer build: the page offers the update alone, while the library launches it and the launch installs the update first. A Game session of another account is not this account's running game.
 _Avoid_: primary action, card action
+
+**Update watch**:
+What Obelisk knows of the newer builds a storefront offers of one account's installations, and when it asks. An update check asks about every installation at once: as the account connects and each time Obelisk becomes the active app, at most every ten minutes, and at once when the account's session connects again. A launch asks about its own game. With automatic updates on, a newer build's Transfer queues as soon as it is known, once per update check: one that failed or was stopped waits for the next.
+_Avoid_: update poll, updater (Sparkle updates Obelisk itself)
 
 **Game note**:
 What Obelisk tells players about one game on its page, whatever its storefront or build, such as what works of it and what does not yet: a few sentences in Obelisk's language, else in English. Obelisk writes it, not the storefront, and it changes nothing about how the game runs, which its profile decides.

@@ -71,18 +71,14 @@ impl<S: Storefront> Receipt<S> {
         }
     }
 
-    /// Its game's profile.
-    pub(crate) fn profile(&self) -> crate::profile::Profile {
-        crate::profile::of(S::profile_game(&self.product), Path::new(&self.directory))
-    }
-
-    /// Its launch settings, by its game's profile and the choices kept for it
-    /// in Obelisk's `library`.
+    /// Its launch settings, by its game's profile, the choices kept for it in
+    /// Obelisk's `library` and the player's language.
     pub(crate) fn launch_settings(&self, library: &Path) -> crate::launch_settings::View {
         crate::launch_settings::of(
             library,
             S::profile_game(&self.product),
             Path::new(&self.directory),
+            crate::native::player_locale().as_deref(),
         )
     }
 
@@ -97,22 +93,68 @@ impl<S: Storefront> Receipt<S> {
             library,
             S::profile_game(&self.product),
             Path::new(&self.directory),
+            crate::native::player_locale().as_deref(),
             choices,
         )
     }
 
     /// Its Wine prefix and how its game runs there, when it is a Windows
-    /// build.
+    /// build: its launch settings resolved once, for one launch.
     pub fn windows(
         &self,
         locations: &crate::Locations,
-    ) -> Result<Option<crate::wine::Installation>, crate::Error> {
-        crate::wine::Installation::of(
+    ) -> Result<Option<crate::wine::Installation>, crate::launch::Error> {
+        if self.platform != Platform::Windows {
+            return Ok(None);
+        }
+        let launch_settings = self.launch_settings(&locations.library);
+        crate::wine::Installation::new(
             locations,
             S::profile_game(&self.product),
-            self.platform,
             Path::new(&self.directory),
+            launch_settings,
         )
+        .map(Some)
+    }
+
+    /// `windows`, worked out off the async runtime as a launch reads it:
+    /// finding Easy Anti-Cheat may read hundreds of folders. `failed` names a
+    /// lost join.
+    pub(crate) async fn windows_for_launch(
+        &self,
+        locations: &crate::Locations,
+        failed: impl Into<String>,
+    ) -> Result<
+        Result<Option<crate::wine::Installation>, crate::launch::Error>,
+        crate::sessions::Failure,
+    > {
+        let (locations, receipt) = (locations.clone(), self.clone());
+        super::blocking(failed, move || receipt.windows(&locations)).await
+    }
+
+    /// Its Wine prefix when it is a Windows build, the one of the engine it
+    /// runs on, without the rest of its launch settings: where its saves
+    /// live. None for a Mac build, or one whose folder names no prefix.
+    /// Worked out off the async runtime, as `windows_for_launch` does:
+    /// without a choice of engine, finding Easy Anti-Cheat reads folders of
+    /// the installation, on a disk that may still be spinning up. A lost join
+    /// is the storefront's `SESSION_FAILED`.
+    pub(crate) async fn wine_prefix(
+        &self,
+        locations: &crate::Locations,
+    ) -> Result<Option<PathBuf>, crate::sessions::Failure> {
+        if self.platform != Platform::Windows {
+            return Ok(None);
+        }
+        let (library, prefixes) = (locations.library.clone(), locations.wine_prefixes.clone());
+        let (product, directory) = (self.product.clone(), PathBuf::from(&self.directory));
+        super::blocking(S::SESSION_FAILED, move || {
+            let game = S::profile_game(&product);
+            crate::launch_settings::engine(&library, game, &directory)
+                .prefix(&prefixes, &directory)
+                .ok()
+        })
+        .await
     }
 
     /// Follows its installation, which moved from `from`: the Cloud
@@ -129,8 +171,11 @@ impl<S: Storefront> Receipt<S> {
     /// Deletes its Wine prefix once its folder is gone. `None` when it has
     /// none.
     pub(crate) fn remove_prefix(&self, locations: &crate::Locations) -> Option<Result<(), String>> {
-        let windows = self.windows(locations).ok().flatten()?;
-        Some(windows.remove(locations).map_err(|error| error.to_string()))
+        if self.platform != Platform::Windows {
+            return None;
+        }
+        crate::wine::remove(locations, Path::new(&self.directory))
+            .map(|removed| removed.map_err(|error| error.to_string()))
     }
 
     /// The Transfer that verifies its installation, or updates it in place,
@@ -175,23 +220,6 @@ impl<S: Storefront> Offer<S> {
             directory,
         }
     }
-}
-
-/// The receipts in `file`, whose folders the installations then sort.
-pub(super) fn load<S: Storefront>(file: &Path) -> std::io::Result<Vec<Receipt<S>>> {
-    let bytes = match std::fs::read(file) {
-        Ok(bytes) => bytes,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(error) => return Err(error),
-    };
-    Ok(serde_json::from_slice(&bytes)?)
-}
-
-pub(super) fn save<S: Storefront>(file: &Path, receipts: &[Receipt<S>]) -> std::io::Result<()> {
-    if let Some(parent) = file.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    obelisk_core::write_atomic(file, &serde_json::to_vec(receipts)?)
 }
 
 /// The folder an installation's own folder sits in.

@@ -109,9 +109,21 @@ final class ArtworkCache {
         return await task.value
     }
 
+    /// `URLSession.shared`'s disk cache holds a few dozen covers, so a large
+    /// library would download them again at each launch. Storefronts mark
+    /// their artwork cacheable. Public artwork only, no account data; decoded
+    /// images stay in `images`, so nothing is kept in memory here.
+    private nonisolated static let session: URLSession = {
+        let configuration = URLSessionConfiguration.default
+        let directory = URL.cachesDirectory.appending(path: "\(AppIdentity.storageIdentifier)/Artwork",
+                                                      directoryHint: .isDirectory)
+        configuration.urlCache = URLCache(memoryCapacity: 0, diskCapacity: 512 * 1024 * 1024, directory: directory)
+        return URLSession(configuration: configuration)
+    }()
+
     nonisolated static func download(_ request: Request) async -> CGImage? {
         do {
-            let (data, response) = try await URLSession.shared.data(for: URLRequest(url: request.url, timeoutInterval: 20))
+            let (data, response) = try await session.data(for: URLRequest(url: request.url, timeoutInterval: 20))
             guard let response = response as? HTTPURLResponse,
                   (200..<300).contains(response.statusCode), data.count <= 32 * 1024 * 1024
             else { return nil }

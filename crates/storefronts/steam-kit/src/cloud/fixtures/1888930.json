@@ -1,0 +1,54 @@
+{
+  "Object": [
+    [
+      "maxnumfiles",
+      {
+        "Value": "1000"
+      }
+    ],
+    [
+      "quota",
+      {
+        "Value": "200000000"
+      }
+    ],
+    [
+      "savefiles",
+      {
+        "Object": [
+          [
+            "0",
+            {
+              "Object": [
+                [
+                  "path",
+                  {
+                    "Value": "The Last of Us Part I/users/{Steam3AccountId}/savedata/"
+                  }
+                ],
+                [
+                  "pattern",
+                  {
+                    "Value": "*"
+                  }
+                ],
+                [
+                  "recursive",
+                  {
+                    "Value": "1"
+                  }
+                ],
+                [
+                  "root",
+                  {
+                    "Value": "WinSavedGames"
+                  }
+                ]
+              ]
+            }
+          ]
+        ]
+      }
+    ]
+  ]
+}

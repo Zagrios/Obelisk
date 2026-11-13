@@ -107,7 +107,7 @@ fn a_steam_session_keeps_every_field_steam_returned_and_each_games_platforms() {
 fn an_epic_session_keeps_each_games_playtime_whichever_answers_first() {
     let directory = TempDir::new().unwrap();
     let cache = cache(&directory);
-    let first = cache.epic("epic-a");
+    let first = cache.web::<epic::Epic>("epic-a");
     first.games(vec![epic("rocket"), epic("fall")]);
     first.playtimes(&BTreeMap::from([("rocket".into(), 3600)]));
     assert_eq!(
@@ -115,22 +115,27 @@ fn an_epic_session_keeps_each_games_playtime_whichever_answers_first() {
         [("rocket".into(), Some(3600)), ("fall".into(), None)]
     );
 
-    let next = cache.epic("epic-a");
+    let next = cache.web::<epic::Epic>("epic-a");
     next.games(vec![epic("rocket"), epic("fall")]);
     assert_eq!(
         playtimes(&cache)[0],
         ("rocket".into(), Some(3600)),
         "until its playtimes answer, a game keeps the earlier one"
     );
-    let next = cache.epic("epic-a");
+    let next = cache.web::<epic::Epic>("epic-a");
     next.playtimes(&BTreeMap::from([("fall".into(), 60)]));
     next.games(vec![epic("rocket"), epic("fall")]);
     assert_eq!(
         playtimes(&cache),
         [("rocket".into(), None), ("fall".into(), Some(60))]
     );
-    let saved = &file(&cache, &directory)["epic"]["epic-a"][0];
+    let file = file(&cache, &directory);
+    let saved = &file["epic"]["epic-a"][0];
     assert_eq!(saved["id"], "space:rocket");
+    assert_eq!(
+        file["epic"]["epic-a"][1]["playtimeSeconds"], 60,
+        "the file keeps Epic's seconds"
+    );
     assert_eq!(saved["metadata"]["catalogItems"]["item"]["id"], "item");
     assert!(saved.get("headerImageUrl").is_none());
 }
@@ -141,7 +146,9 @@ fn launches_name_their_game_and_forgetting_an_account_stops_its_session_writing(
     let cache = cache(&directory);
     let steam = cache.steam(7);
     steam.games(vec![owned(620, "Portal 2")]);
-    cache.epic("epic-a").games(vec![epic("rocket")]);
+    cache
+        .web::<epic::Epic>("epic-a")
+        .games(vec![epic("rocket")]);
     let portal = GameIdentity::Steam {
         app_id: 620,
         account_id: 7,
@@ -261,7 +268,7 @@ fn gog(product_id: &str) -> gog_kit::client::Game {
 fn a_gog_session_keeps_each_games_page_and_playtime() {
     let directory = TempDir::new().unwrap();
     let cache = cache(&directory);
-    let library = cache.gog("48628349957132247");
+    let library = cache.web::<gog::Gog>("48628349957132247");
     let shown = library.games(vec![gog("1"), gog("2")]);
     assert_eq!(shown[0].developers, ["Tango Gameworks"]);
     library.playtimes(&BTreeMap::from([("2".to_owned(), 90)]));
@@ -270,16 +277,20 @@ fn a_gog_session_keeps_each_games_page_and_playtime() {
     let cached = cache.gog_library("48628349957132247".into());
     let read: Vec<_> = cached
         .iter()
-        .map(|cached| (cached.game.product_id.as_str(), cached.playtime_minutes))
+        .map(|cached| (cached.game.product_id.as_str(), cached.playtime_seconds))
         .collect();
-    assert_eq!(read, [("1", None), ("2", Some(90))]);
+    assert_eq!(
+        read,
+        [("1", None), ("2", Some(5400))],
+        "GOG's minutes show in seconds"
+    );
     assert_eq!(cached[0].game.release_date, Some(1_413_158_400));
     assert_eq!(cached[0].game.rating, Some(75));
     let file = file(&cache, &directory);
-    assert_eq!(
-        file["gog"]["48628349957132247"][1]["metadata"]["catalog"]["type"],
-        "game"
-    );
+    let kept = &file["gog"]["48628349957132247"][1];
+    assert_eq!(kept["metadata"]["catalog"]["type"], "game");
+    assert_eq!(kept["playtimeMinutes"], 90, "the file keeps GOG's minutes");
+    assert!(kept.get("playtimeSeconds").is_none());
 
     let launch = GameLaunch {
         game: GameIdentity::Gog {
@@ -309,6 +320,47 @@ fn a_gog_game_cached_before_its_page_still_shows() {
     let cached = cache(&directory).gog_library("7".into());
     assert_eq!(cached[0].game.title, "Old");
     assert!(cached[0].game.developers.is_empty());
+}
+
+#[test]
+fn a_cached_playtime_shows_in_seconds_whatever_its_storefront_counts() {
+    let directory = TempDir::new().unwrap();
+    std::fs::write(
+        directory.path().join(library_cache::FILE_NAME),
+        json!({
+            "version": 1,
+            "epic": {"epic-a": [{
+                "id": "space:rocket", "appName": "rocket", "namespace": "space", "catalogItemId": "item",
+                "title": "ROCKET", "description": "", "developer": "Psyonix", "windows": true,
+                "macos": false, "playtimeSeconds": 7200,
+            }]},
+            "gog": {"7": [
+                {"id": "1", "productId": "1", "title": "Played", "windows": true, "macos": false,
+                 "playtimeMinutes": 120},
+                {"id": "2", "productId": "2", "title": "Absurd", "windows": true, "macos": false,
+                 "playtimeMinutes": u64::MAX},
+                {"id": "3", "productId": "3", "title": "Never played", "windows": true, "macos": false},
+            ]},
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let cache = cache(&directory);
+    assert_eq!(
+        cache.epic_library("epic-a".into())[0].playtime_seconds,
+        Some(7200),
+        "Epic's seconds as they are"
+    );
+    let gog: Vec<_> = cache
+        .gog_library("7".into())
+        .into_iter()
+        .map(|cached| cached.playtime_seconds)
+        .collect();
+    assert_eq!(
+        gog,
+        [Some(7200), Some(u64::MAX), None],
+        "GOG's minutes once, and a count too large saturates"
+    );
 }
 
 fn achievement(id: &str, unlocked: bool) -> LibraryAchievement {
@@ -380,7 +432,7 @@ fn a_steam_library_keeps_its_dates_and_achievements_across_loads() {
 fn a_games_achievements_are_read_again_once_it_was_played_or_in_another_language() {
     let directory = TempDir::new().unwrap();
     let cache = cache(&directory);
-    let library = cache.gog("7");
+    let library = cache.web::<gog::Gog>("7");
     library.games(vec![gog("1"), gog("2"), gog("3"), gog("4")]);
     library.playtimes(&BTreeMap::from([
         ("1".to_owned(), 60),
@@ -428,7 +480,7 @@ fn a_games_achievements_are_read_again_once_it_was_played_or_in_another_language
 fn games_sharing_an_epic_sandbox_are_read_once() {
     let directory = TempDir::new().unwrap();
     let cache = cache(&directory);
-    let library = cache.epic("epic-a");
+    let library = cache.web::<epic::Epic>("epic-a");
     library.games(vec![epic("rocket"), epic("rocket-bonus")]);
     library.achievements().keep(&[read("space", true)], "fr");
     let (current, stale) = library
@@ -448,7 +500,7 @@ fn games_sharing_an_epic_sandbox_are_read_once() {
 async fn achievements_come_from_the_library_unless_fresh_and_fail_only_when_none_could_be_told() {
     let directory = TempDir::new().unwrap();
     let cache = cache(&directory);
-    let library = cache.gog("7");
+    let library = cache.web::<gog::Gog>("7");
     library.games(vec![gog("1"), gog("2")]);
     let asked = Mutex::new(Vec::new());
     let ids = vec!["1".to_owned(), "2".to_owned()];

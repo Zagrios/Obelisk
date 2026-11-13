@@ -12,6 +12,8 @@ protocol DownloadsBackend: AnyObject {
     func pause(_ id: UInt64)
     func resume(_ id: UInt64)
     func moveToTop(_ id: UInt64)
+    /// In bytes per second; zero lifts the limit.
+    func setSpeedLimit(_ bytesPerSecond: UInt64)
 }
 
 /// The queue every account's installations share in Rust.
@@ -24,6 +26,36 @@ final class RustDownloads: DownloadsBackend {
     func pause(_ id: UInt64) { core.pause(id: id) }
     func resume(_ id: UInt64) { core.resume(id: id) }
     func moveToTop(_ id: UInt64) { core.moveToTop(id: id) }
+    func setSpeedLimit(_ bytesPerSecond: UInt64) { core.setSpeedLimit(bytesPerSecond: bytesPerSecond) }
+}
+
+/// The unit download speeds read in.
+enum DownloadSpeedUnit: String, CaseIterable, Identifiable {
+    /// The file sizes Finder shows, per second.
+    case bytes
+    case bits
+
+    static let bytesPerMegabit = 125_000
+    private static let byteLimits = [1, 2, 5, 10, 25, 50, 100].map { $0 * 1_000_000 } + [0]
+    private static let bitLimits = [5, 10, 25, 50, 100, 250, 500, 1000].map { $0 * bytesPerMegabit } + [0]
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .bytes: L10n.string("model.downloads.speed_unit_bytes")
+        case .bits: L10n.string("model.downloads.speed_unit_bits")
+        }
+    }
+
+    /// The limits the player picks the speed from in this unit, in bytes per
+    /// second, ending with none (zero). None goes below the lowest limit Rust
+    /// holds to: see `set_speed_limit`.
+    var speedLimits: [Int] {
+        switch self {
+        case .bytes: Self.byteLimits
+        case .bits: Self.bitLimits
+        }
+    }
 }
 
 /// The running Transfer's download speed at one moment.
@@ -46,14 +78,29 @@ final class DownloadsModel {
     /// last two minutes.
     private(set) var samples: [DownloadSpeedSample] = []
     var isPresented = false
+    /// The unit speeds read in, as the player chose.
+    var speedUnit: DownloadSpeedUnit {
+        didSet { defaults.set(speedUnit.rawValue, forKey: Self.speedUnitKey) }
+    }
+    /// The most every storefront may download in all, in bytes per second;
+    /// zero leaves it unlimited.
+    var speedLimit: Int {
+        didSet {
+            defaults.set(speedLimit, forKey: Self.speedLimitKey)
+            backend.setSpeedLimit(UInt64(speedLimit))
+        }
+    }
 
     /// The running Transfer's progress, as its storefront's installations show it.
     @ObservationIgnored var progress: @MainActor (DownloadItem) -> GameTransfer? = { _ in nil }
 
     /// How many samples the speed graph keeps.
     static let sampleLimit = 120
+    static let speedUnitKey = "obelisk.downloads.speedUnit"
+    static let speedLimitKey = "obelisk.downloads.speedLimit"
 
     @ObservationIgnored private let backend: any DownloadsBackend
+    @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let period: Duration
     @ObservationIgnored private var revision: UInt64?
     @ObservationIgnored private var observation: Task<Void, Never>?
@@ -62,9 +109,14 @@ final class DownloadsModel {
     @ObservationIgnored private var lastSample: (time: Date, bytes: UInt64)?
     @ObservationIgnored private var nextSample = 0
 
-    init(backend: any DownloadsBackend = RustDownloads(), period: Duration = .seconds(1)) {
+    init(backend: any DownloadsBackend = RustDownloads(), period: Duration = .seconds(1),
+         defaults: UserDefaults = .standard) {
         self.backend = backend
         self.period = period
+        self.defaults = defaults
+        speedUnit = defaults.string(forKey: Self.speedUnitKey).flatMap(DownloadSpeedUnit.init) ?? .bytes
+        speedLimit = max(0, defaults.integer(forKey: Self.speedLimitKey))
+        backend.setSpeedLimit(UInt64(speedLimit))
         apply(backend.state())
         observation = Task { [weak self, backend] in
             var after = self?.revision ?? 0
@@ -75,6 +127,18 @@ final class DownloadsModel {
                 apply(state)
             }
         }
+    }
+
+    /// Where the limit stands among the unit's limits: the nearest, since the
+    /// other unit may have offered one between two. Changing the unit leaves
+    /// the limit as it is until the player picks another.
+    var speedLimitChoice: Int {
+        get {
+            let limits = speedUnit.speedLimits
+            guard speedLimit != 0 else { return limits.count - 1 }
+            return limits.dropLast().indices.min { abs(limits[$0] - speedLimit) < abs(limits[$1] - speedLimit) } ?? 0
+        }
+        set { speedLimit = speedUnit.speedLimits[newValue] }
     }
 
     /// Whether anything runs or waits: the sidebar shows the queue then.

@@ -1,6 +1,7 @@
-//! Platform-independent library catalog and storefront capability descriptions.
+//! Platform-independent installation, Transfer, download and account session rules shared by the
+//! storefront kits.
 //!
-//! This crate never launches a process or reads credentials.
+//! This crate never launches a process or reads credentials from where the host keeps them.
 //! Swift owns macOS presentation and native application launching.
 
 mod atomic_file;
@@ -9,15 +10,18 @@ pub mod date;
 pub mod install;
 pub mod installation;
 pub mod launch;
-mod library;
 pub mod library_cache;
 pub mod mac_build;
+pub mod oauth_session;
 pub mod platform;
-pub mod storefront;
+pub mod presence;
+pub mod publish;
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
 pub mod transfer;
 pub mod verification;
 pub mod watch;
 
 pub use atomic_file::{write_atomic, write_atomic_with};
-pub use library::{CoreError, Game, GameKind, Library};
 pub use platform::Platform;
+pub use presence::OnlineStatus;

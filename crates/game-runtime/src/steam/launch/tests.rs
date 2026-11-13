@@ -1,6 +1,6 @@
 //! The Steam launch through the shared lifecycle suite. Its machine and
-//! Steam Cloud are fakes that follow the suite's script; the handoff, the
-//! native host's interruption and the helper choice are the adapter's own.
+//! Steam Cloud are fakes that follow the suite's script; the handoff and the
+//! native host's interruption are the adapter's own.
 use super::*;
 use crate::supervisor::session::tests::{
     Harness, Script, fixture_directory, hold, inspect, lifecycle_suite, record, rosetta_suite,
@@ -55,6 +55,7 @@ impl Harness for SteamHarness {
                     app_id: 42,
                     prefix: None,
                 }),
+                status: obelisk_core::OnlineStatus::default(),
             },
         )
     }
@@ -111,31 +112,24 @@ impl Machine for FakeMac {
         record(&directory, "target");
         Ok(script.intel.then_some(Architecture::Intel))
     }
-    fn prepare(
-        launch: &crate::Launch,
-        config: Config,
-        _: Option<NativeStorage>,
-    ) -> Result<Runtime, Error> {
-        launch.check_cancelled()?;
+    fn prepare(startup: &Startup, config: Config, _: Option<NativeStorage>) -> Result<Host, Error> {
         let (directory, script) = fixture_directory();
-        record(&directory, "host.prepare");
-        // Both helpers are the suite's; the adapter chooses between them.
-        write_helper(&config.helpers.join(package::HOST), &directory, &script);
-        write_helper(&config.cache.join(package::SDK_INTEL), &directory, &script);
         // The host keeps every command it gets.
-        let runtime = crate::tests::runtime(
+        let host = startup.scripted(
             &format!("cat > '{}'", directory.join("host-input").display()),
             &config.cache,
-        );
-        fs::write(
-            directory.join("host-pid"),
-            runtime.inner.lock().unwrap().host.id().to_string(),
-        )
-        .unwrap();
-        Ok(runtime)
+        )?;
+        record(&directory, "host.prepare");
+        // The bundled host is the suite's exec helper.
+        write_helper(&config.helpers.join(package::HOST), &directory, &script);
+        fs::write(directory.join("host-pid"), host.pid().to_string()).unwrap();
+        Ok(host)
     }
-    fn publish(_: &Runtime, active: bool) {
-        record(&fixture_directory().0, &format!("presence:{active}"));
+    fn publish(_: &Host, shown: crate::supervisor::session::Shown) {
+        record(
+            &fixture_directory().0,
+            &crate::supervisor::session::presence_event(shown),
+        );
     }
     fn cloud(
         _: cloud::Config,
@@ -328,20 +322,20 @@ fn a_steam_store_keeps_what_the_host_told_and_reads_records_without_it() {
         lobby_id: 109_775_244_421_126_053,
     };
     let store = Store {
-        requests: crate::GameRequests {
-            overlay: Some(crate::OverlayRequest {
+        requests: crate::steam::host::GameRequests {
+            overlay: Some(crate::steam::host::OverlayRequest {
                 sequence: 1,
                 dialog: crate::protocol::OverlayDialog::LobbyInvite {
                     lobby_id: 109_775_244_421_126_053,
                 },
             }),
             lobby: Some(109_775_244_421_126_053),
-            invites: vec![crate::ReceivedInvite {
+            invites: vec![crate::steam::host::ReceivedInvite {
                 friend: FRIEND,
                 target: lobby.clone(),
                 received_at: 1_790_000_000,
             }],
-            microtxn: Some(crate::MicroTxn {
+            microtxn: Some(crate::steam::host::MicroTxn {
                 order_id: 7,
                 app_id: 42,
             }),
@@ -353,7 +347,7 @@ fn a_steam_store_keeps_what_the_host_told_and_reads_records_without_it() {
     assert_eq!(serde_json::from_str::<Store>(&json).unwrap(), store);
     assert_eq!(
         store.requests.invite(),
-        Some(crate::InviteRequest {
+        Some(crate::steam::host::InviteRequest {
             sequence: 1,
             target: lobby,
         })
@@ -363,7 +357,7 @@ fn a_steam_store_keeps_what_the_host_told_and_reads_records_without_it() {
     value["invite"] = serde_json::to_value(store.requests.invite()).unwrap();
     assert_eq!(serde_json::from_value::<Store>(value).unwrap(), store);
     let mut terminal = store.clone();
-    terminal.apply(&crate::HostUpdate::new(HostState::Stopped));
+    terminal.apply(&crate::steam::host::HostUpdate::new(HostState::Stopped));
     assert_eq!(
         terminal,
         Store {

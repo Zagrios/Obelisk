@@ -196,7 +196,7 @@ final class SteamIntegrationTests: XCTestCase {
 
     func testMalformedSavedSessionIsRejectedAcrossAsyncRustBridge() async {
         do {
-            _ = try await SteamSession.connect(credentials: SteamCredentials(accountName: "fixture", steamId: 1, refreshToken: "invalid-token"), library: nil)
+            _ = try await SteamSession.connect(credentials: SteamCredentials(accountName: "fixture", steamId: 1, refreshToken: "invalid-token"), library: nil, status: .online)
             XCTFail("A malformed saved token must fail before a CM connection")
         } catch {
             guard case let SteamError.Failure(reason) = error else {

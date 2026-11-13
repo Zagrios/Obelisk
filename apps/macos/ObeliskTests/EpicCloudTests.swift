@@ -14,7 +14,7 @@ final class EpicCloudTests: XCTestCase {
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         let directory = FileManager.default.temporaryDirectory.appending(path: "ObeliskEpicCloudPreview-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }
-        let credentials = EpicCredentials(accountId: "account", displayName: "Fixture", refreshToken: "fixture")
+        let credentials = WebAccountCredentials(accountId: "account", name: "Fixture", refreshToken: "fixture")
         let owned = EpicGame(appName: "game", namespace: "sandbox", catalogItemId: "catalog", title: "Cloud fixture",
                              description: "", imageUrl: nil, headerImageUrl: nil, developer: "", windows: false, macos: true)
         let account = EpicTestSession(credentials: credentials, games: [owned])
@@ -120,7 +120,7 @@ final class EpicCloudTests: XCTestCase {
     func testEpicModelDisablesFileMutationsThroughRunningGameAndSignOut() async throws {
         let directory = FileManager.default.temporaryDirectory.appending(path: "ObeliskEpicCloudTests-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }
-        let credentials = EpicCredentials(accountId: "account", displayName: "Fixture", refreshToken: "fixture")
+        let credentials = WebAccountCredentials(accountId: "account", name: "Fixture", refreshToken: "fixture")
         let owned = EpicGame(appName: "game", namespace: "sandbox", catalogItemId: "catalog", title: "Fixture",
                              description: "", imageUrl: nil, headerImageUrl: nil, developer: "", windows: false, macos: true)
         let account = EpicTestSession(credentials: credentials, games: [owned])
@@ -146,7 +146,7 @@ final class EpicCloudTests: XCTestCase {
     func testEpicMaintenanceAsksLiveAndShowsNoBannerAfterAFailure() async throws {
         let directory = FileManager.default.temporaryDirectory.appending(path: "ObeliskEpicCloudTests-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }
-        let credentials = EpicCredentials(accountId: "account", displayName: "Fixture", refreshToken: "fixture")
+        let credentials = WebAccountCredentials(accountId: "account", name: "Fixture", refreshToken: "fixture")
         let owned = EpicGame(appName: "game", namespace: "sandbox", catalogItemId: "catalog", title: "Fixture",
                              description: "", imageUrl: nil, headerImageUrl: nil, developer: "", windows: false, macos: true)
         let receipt = InstallationReceipt.epic(namespace: "sandbox", appName: "game", name: "Fixture",
@@ -198,7 +198,7 @@ final class EpicCloudTests: XCTestCase {
     func testAnEpicCloudQuestionAppearsWhileTheSteamTabIsOpen() async throws {
         let directory = FileManager.default.temporaryDirectory.appending(path: "ObeliskEpicCloudTests-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }
-        let credentials = EpicCredentials(accountId: "account", displayName: "Fixture", refreshToken: "fixture")
+        let credentials = WebAccountCredentials(accountId: "account", name: "Fixture", refreshToken: "fixture")
         let owned = EpicGame(appName: "game", namespace: "sandbox", catalogItemId: "catalog", title: "Fixture",
                              description: "", imageUrl: nil, headerImageUrl: nil, developer: "", windows: false, macos: true)
         let sessions = EpicGameSessions()
@@ -213,7 +213,7 @@ final class EpicCloudTests: XCTestCase {
 
         backend.publish { $0.cloudSync = .exit("sandbox:game", question: .conflict(1)) }
 
-        try await eventually { app.presentedPrompt == .epicCloud }
+        try await eventually { app.presentedPrompt == AccountPrompt(section: .epic, kind: .cloud) }
         backend.publish { $0.cloudSync = nil }
         try await eventually { app.presentedPrompt == nil }
     }
@@ -232,7 +232,7 @@ final class EpicCloudTests: XCTestCase {
 
         sessions.fake.show(launch)
 
-        try await eventually { app.presentedPrompt == .epicVoile }
+        try await eventually { app.presentedPrompt == AccountPrompt(section: .epic, kind: .voile) }
         XCTAssertEqual(sessions.voileUpdate?.version, "v26.3.0-17")
         sessions.answerVoileUpdate(.skip)
         XCTAssertEqual(sessions.fake.voileAnswers, [.skip])
@@ -306,7 +306,7 @@ final class EpicCloudTests: XCTestCase {
     func testEpicModelConnectsAndDisconnectsSharedRosettaPresentation() async throws {
         let directory = FileManager.default.temporaryDirectory.appending(path: "ObeliskEpicRosetta-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }
-        let credentials = EpicCredentials(accountId: "account", displayName: "Fixture", refreshToken: "fixture")
+        let credentials = WebAccountCredentials(accountId: "account", name: "Fixture", refreshToken: "fixture")
         let account = EpicTestSession(credentials: credentials, games: [])
         let sessions = EpicGameSessions()
         let model = EpicModel(directory: directory, keychain: EpicMemoryStore(credentials), restore: { _ in account },

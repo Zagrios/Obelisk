@@ -322,7 +322,7 @@ fn withheld(id: u32) -> proto::ProductInfo {
 }
 
 #[tokio::test]
-async fn library_adds_the_free_games_owned_games_leave_out() {
+async fn library_adds_the_free_and_family_lent_games_owned_games_leave_out() {
     const ACCOUNT: u32 = 76_561_198_000_000_000_u64 as u32;
     const BORROWED: u32 = 0x4000;
     let (client, mut server, _) = fixture().await;
@@ -335,7 +335,7 @@ async fn library_adds_the_free_games_owned_games_leave_out() {
                 time_created: 1_700_000_000,
                 ..Default::default()
             },
-            // A family member lends app 400.
+            // A family member lends apps 400 and 401.
             proto::License {
                 package_id: 2,
                 owner_id: ACCOUNT + 1,
@@ -359,7 +359,10 @@ async fn library_adds_the_free_games_owned_games_leave_out() {
         server.reply(&owned, SERVICE_RESPONSE, &response).await;
         let packages = server.request(PRODUCT_REQUEST).await;
         let response = proto::ProductResponse {
-            packages: vec![package(1, &[620, 730, 731, 732, 733]), package(2, &[400])],
+            packages: vec![
+                package(1, &[620, 730, 731, 732, 733]),
+                package(2, &[400, 401]),
+            ],
             ..Default::default()
         };
         server.reply(&packages, PRODUCT_RESPONSE, &response).await;
@@ -376,15 +379,18 @@ async fn library_adds_the_free_games_owned_games_leave_out() {
                 ),
                 // Steam withholds this one's metadata from the account.
                 withheld(733),
+                app(400, r#""name" "Stardew Valley" "type" "Game""#),
+                // Its publisher keeps it from the family's libraries.
+                app(401, r#""name" "Kept Home" "type" "Game" "exfgls" "1""#),
             ],
             ..Default::default()
         };
-        respond_batch(&mut server, &[730, 731, 732, 733], apps).await;
+        respond_batch(&mut server, &[400, 401, 730, 731, 732, 733], apps).await;
     };
     let (games, ()) = tokio::join!(client.games(), answer);
     let games = games.unwrap();
     let names: Vec<_> = games.iter().map(|game| game.name.as_str()).collect();
-    assert_eq!(names, ["Portal 2", "Counter-Strike 2"]);
+    assert_eq!(names, ["Portal 2", "Counter-Strike 2", "Stardew Valley"]);
     assert_eq!(games[1].icon_hash, "cs2");
     // The licenses this load read date the games without asking Steam again.
     assert_eq!(

@@ -77,11 +77,11 @@ impl From<std::io::Error> for Failure {
         Self::Storage
     }
 }
-impl From<crate::Error> for Failure {
-    fn from(error: crate::Error) -> Self {
+impl From<crate::steam::Error> for Failure {
+    fn from(error: crate::steam::Error) -> Self {
         match error {
-            crate::Error::Cancelled => Self::Cancelled,
-            crate::Error::Storage => Self::Storage,
+            crate::steam::Error::Cancelled => Self::Cancelled,
+            crate::steam::Error::Storage => Self::Storage,
             _ => Self::Damaged,
         }
     }

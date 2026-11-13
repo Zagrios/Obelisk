@@ -28,8 +28,6 @@ struct EpicView: View {
     private var browser: some View {
         StorefrontBrowser(
             model: model,
-            storeID: "epic",
-            storeTitle: L10n.string("ui.store.epic"),
             libraryTitle: L10n.string("ui.epic.library"),
             accountName: model.accountName,
             storePage: model.storePage,
@@ -59,7 +57,7 @@ struct EpicView: View {
     }
 
     @ViewBuilder private var accountMenu: some View {
-        Text(model.accountName ?? L10n.string("ui.epic.account"))
+        AccountMenuName(name: model.accountName ?? L10n.string("ui.epic.account"), status: model.onlineStatus)
         Text(L10n.string("ui.library.account_game_count", Int64(model.library.games.count)))
         Divider()
         EpicFriendsMenuButton(model: model)

@@ -156,6 +156,68 @@ fn a_d3dmetal_game_asks_the_launcher_for_the_d3dmetal_render_server() {
     assert_eq!(options(&target, "--graphics"), ["d3dmetal"]);
 }
 
+#[test]
+fn a_render_resolution_below_all_pixels_follows_the_graphics_pair_to_the_launcher() {
+    let (_directory, root) = installation();
+    let install = root.join("install");
+    fs::create_dir_all(&install).unwrap();
+    fs::write(install.join("Game.exe"), pe()).unwrap();
+    let config = linux_config(&root);
+    let started = |render_percent| {
+        let config = wine::Config {
+            settings: Settings {
+                render_percent,
+                ..config.settings.clone()
+            },
+            ..config.clone()
+        };
+        wine::target::<Plain>(
+            &config,
+            &game(&install),
+            &launch_target(&install.join("Game.exe"), &[]),
+            HashMap::new(),
+        )
+        .unwrap()
+    };
+
+    let (full, half) = (started(100), started(50));
+
+    // A launch without a choice is the launcher's arguments of before.
+    assert!(options(&full, "--render-percent").is_empty());
+    assert_eq!(options(&half, "--render-percent"), ["50"]);
+    assert_eq!(
+        half.arguments[7..11],
+        ["--graphics", "dxmt", "--render-percent", "50"]
+    );
+    let mut without = half.arguments.clone();
+    without.drain(9..11);
+    assert_eq!(without, full.arguments);
+}
+
+#[test]
+fn game_mode_kept_off_reaches_the_launcher() {
+    let (_directory, root) = installation();
+    let install = root.join("install");
+    fs::create_dir_all(&install).unwrap();
+    fs::write(install.join("Game.exe"), pe()).unwrap();
+    let mut config = linux_config(&root);
+    let mut started = |game_mode| {
+        config.settings.game_mode = game_mode;
+        wine::target::<Plain>(
+            &config,
+            &game(&install),
+            &launch_target(&install.join("Game.exe"), &[]),
+            HashMap::new(),
+        )
+        .unwrap()
+    };
+
+    let (on, off) = (started(true), started(false));
+
+    assert!(options(&on, "--game-mode").is_empty());
+    assert_eq!(options(&off, "--game-mode"), ["off"]);
+}
+
 /// A Steam game whose program is `Game/start_protected_game.exe`, in a
 /// runtime that carries steam-hostpid.so when `host_pid`.
 fn steam_target(root: &Path, host_pid: bool) -> (wine::Config, Target) {
@@ -253,7 +315,8 @@ fn the_guest_home_leads_lsteamclient_to_the_runtime_s_linux_steamclient() {
 }
 
 /// A runtime whose window server and render servers only listen, and whose
-/// engine records what it was asked to run into `engine.txt`.
+/// engine records what it was asked to run into `engine.txt`. The window
+/// server records its arguments into `wsd.txt` before it listens.
 fn recording_runtime(root: &Path) -> PathBuf {
     use std::os::unix::fs::PermissionsExt;
     let runtime = root.join("runtime");
@@ -263,7 +326,11 @@ fn recording_runtime(root: &Path) -> PathBuf {
         fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
         fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
     };
-    script("engine/wsd", r#"exec /usr/bin/nc -lU "$2/wsd.sock""#);
+    script(
+        "engine/wsd",
+        r#"printf '%s\n' "$@" > "$OBELISK_TEST_ROOT/wsd.txt"
+exec /usr/bin/nc -lU "$2/wsd.sock""#,
+    );
     let server = r#"printf '%s\n' "$NPT_BACKEND $NPT_D3D12_LIBRARY_PATH" "$RENDER_SERVER_EXEC_PATH" "residency set ${DMN_RESIDENCY_SET-default}" > "$OBELISK_TEST_ROOT/server.txt"
 exec /usr/bin/nc -lU "$4""#;
     script("graphics/bin/virgl_test_server", server);
@@ -286,14 +353,22 @@ exec /usr/bin/nc -lU "$4""#;
 /// Runs the launcher with `options` and the program `Game.exe`, from an
 /// environment with `variables` and the Finder's 256 open files.
 fn run_launcher(root: &Path, options: &[&str], variables: &[(&str, &str)]) -> (String, String) {
-    let runtime = recording_runtime(root);
+    run_launcher_of(&recording_runtime(root), root, options, variables);
+    (
+        fs::read_to_string(root.join("engine.txt")).unwrap(),
+        fs::read_to_string(root.join("server.txt")).unwrap(),
+    )
+}
+
+/// Runs the launcher of `runtime` so, to its end.
+fn run_launcher_of(runtime: &Path, root: &Path, options: &[&str], variables: &[(&str, &str)]) {
     let mut command = Command::new("/bin/bash");
     command
         .arg("-c")
         .arg(r#"ulimit -S -n 256; exec /bin/bash -c "$0" "$@""#)
         .arg(LAUNCHER)
         .arg("obelisk-linux-engine")
-        .arg(&runtime)
+        .arg(runtime)
         .arg(root.join("home"))
         .arg(root.join("install"))
         .arg("/opt/game")
@@ -306,10 +381,6 @@ fn run_launcher(root: &Path, options: &[&str], variables: &[(&str, &str)]) -> (S
         .envs(variables.iter().copied());
     let status = command.stdin(Stdio::null()).status().unwrap();
     assert!(status.success(), "{status:?}");
-    (
-        fs::read_to_string(root.join("engine.txt")).unwrap(),
-        fs::read_to_string(root.join("server.txt")).unwrap(),
-    )
 }
 
 #[test]
@@ -375,6 +446,43 @@ fn the_launcher_hands_the_guest_its_binds_its_variables_and_the_session_s_values
 }
 
 #[test]
+fn the_launcher_starts_the_window_server_with_the_render_resolution_it_was_given() {
+    for options in [&[][..], &["--render-percent", "50"]] {
+        let (_directory, root) = installation();
+
+        let (engine, _) = run_launcher(&root, options, &[]);
+
+        // Its folder is the launcher's own, named after its pid.
+        let recorded = fs::read_to_string(root.join("wsd.txt")).unwrap();
+        let lines: Vec<&str> = recorded.lines().collect();
+        assert_eq!(lines[0], "--dir", "{options:?}");
+        assert!(lines[1].starts_with("obelisk-engine-"), "{options:?}");
+        assert_eq!(lines[2..], *options, "{options:?}");
+        // The render resolution is the window server's alone: the guest and
+        // its Wine never see it.
+        assert!(!engine.contains("--render-percent"), "{engine}");
+    }
+}
+
+#[test]
+fn the_launcher_s_game_bundle_is_a_game_that_says_when_game_mode_is_kept_off() {
+    for (options, off) in [(&[][..], false), (&["--game-mode", "off"], true)] {
+        let (_directory, root) = installation();
+
+        run_launcher(&root, options, &[("OBELISK_APP_NAME", "My Game")]);
+
+        let bundle = root.join("obelisk-apps/My-Game/My Game.app");
+        let plist = fs::read_to_string(bundle.join("Contents/Info.plist")).unwrap();
+        assert!(plist.contains("public.app-category.games"), "{plist}");
+        assert_eq!(
+            plist.contains("<key>LSSupportsGameMode</key><false/>"),
+            off,
+            "{plist}"
+        );
+    }
+}
+
+#[test]
 fn the_guest_gets_the_mac_s_time_zone_unless_the_caller_passes_one() {
     // The guest root has no zone file: without TZ, every program ran in UTC.
     let mac = fs::read("/etc/localtime").ok().and_then(|zone| {
@@ -407,6 +515,66 @@ fn the_guest_gets_the_mac_s_time_zone_unless_the_caller_passes_one() {
             expected.iter().map(String::as_str).collect::<Vec<_>>()
         );
     }
+}
+
+#[test]
+fn the_launcher_hands_the_guest_none_of_the_locale_in_its_own_environment() {
+    let (_directory, root) = installation();
+
+    let (engine, _) = run_launcher(
+        &root,
+        &["--env", "LC_ALL=it_IT.UTF-8"],
+        &[
+            ("LANG", "fr_FR.UTF-8"),
+            ("LC_ALL", "de_DE.UTF-8"),
+            ("LC_CTYPE", "de_DE.UTF-8"),
+        ],
+    );
+
+    // Only the variables the caller names reach the guest: the locale of the
+    // launcher's own process, which the game's environment holds, does not.
+    let lines: Vec<&str> = engine.lines().collect();
+    let variables: Vec<&str> = lines
+        .windows(2)
+        .filter(|pair| pair[0] == "--env" && !pair[1].starts_with("TZ="))
+        .map(|pair| pair[1])
+        .collect();
+    assert_eq!(variables, ["LC_ALL=it_IT.UTF-8"]);
+}
+
+#[test]
+fn the_guest_speaks_the_locale_its_launch_settings_carry_and_no_other() {
+    let (_directory, root) = installation();
+    let environment = |locale: Option<&str>| {
+        let mut config = linux_config(&root);
+        config.settings.locale = locale.map(str::to_owned);
+        config.settings.variables =
+            std::collections::BTreeMap::from([("ZZ_PROFILE".to_owned(), "1".to_owned())]);
+        guest_environment(&config)
+    };
+    let names = |environment: &[(String, String)]| -> Vec<String> {
+        environment.iter().map(|(name, _)| name.clone()).collect()
+    };
+
+    // A locale no runner has, so no process environment can stand in for it.
+    let with = environment(Some("tl_PH"));
+
+    assert!(with.contains(&("LC_ALL".into(), "tl_PH.UTF-8".into())));
+    assert!(
+        with.contains(&("LANG".into(), "en_US.UTF-8".into())),
+        "Wine takes nothing from LANG"
+    );
+    // The chain: the engine's own variables, then the locale, then the
+    // profile's.
+    assert_eq!(
+        names(&with)[names(&with).len() - 2..],
+        ["LC_ALL", "ZZ_PROFILE"]
+    );
+    assert!(
+        !names(&environment(None))
+            .iter()
+            .any(|name| name == "LC_ALL")
+    );
 }
 
 #[test]
@@ -590,6 +758,63 @@ fn a_failed_translation_is_tried_again_and_a_dxmt_game_needs_none() {
     };
     translate_d3dmetal(&dxmt, &helpers);
     assert!(!calls.exists());
+}
+
+/// macOS itself follows the switch from one launch of a game to the next,
+/// which it did not while the launcher only rewrote the bundle's Info.plist.
+/// The window server here is an app that goes full screen, and the engine
+/// asks `gamepolicyctl`, which Xcode ships, whether Game Mode is on. It takes
+/// the screen for a few seconds at each launch.
+#[test]
+#[ignore]
+fn macos_follows_game_mode_from_one_launch_to_the_next() {
+    use std::os::unix::fs::PermissionsExt;
+    let (_directory, root) = installation();
+    let runtime = recording_runtime(&root);
+    let source = root.join("wsd.swift");
+    fs::write(
+        &source,
+        r#"import AppKit
+let app = NSApplication.shared
+app.setActivationPolicy(.regular)
+let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
+                      styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+window.collectionBehavior = [.fullScreenPrimary]
+window.makeKeyAndOrderFront(nil)
+app.activate(ignoringOtherApps: true)
+DispatchQueue.main.asyncAfter(deadline: .now() + 1) { window.toggleFullScreen(nil) }
+app.run()
+"#,
+    )
+    .unwrap();
+    let wsd = runtime.join("engine/wsd");
+    let built = Command::new("/usr/bin/xcrun")
+        .args(["swiftc", "-O", "-o"])
+        .args([&wsd, &source])
+        .status()
+        .unwrap();
+    assert!(built.success(), "{built:?}");
+    // This window server listens on no socket: the launcher waits its five
+    // seconds for one, by when the window is full screen.
+    let engine = runtime.join("engine/fexdarwin-run");
+    fs::write(
+        &engine,
+        "#!/bin/sh\nsleep 2\n/usr/bin/xcrun gamepolicyctl game-mode status > \"$OBELISK_TEST_ROOT/game-mode.txt\"\n",
+    )
+    .unwrap();
+    fs::set_permissions(&engine, fs::Permissions::from_mode(0o755)).unwrap();
+
+    for (options, on) in [
+        (&[][..], true),
+        (&["--game-mode", "off"], false),
+        (&[], true),
+    ] {
+        run_launcher_of(&runtime, &root, options, &[("OBELISK_APP_NAME", "My Game")]);
+
+        let status = fs::read_to_string(root.join("game-mode.txt")).unwrap();
+        let first = status.lines().next().unwrap_or_default();
+        assert_eq!(first.contains("on"), on, "{options:?}: {status}");
+    }
 }
 
 /// End to end on an installed engine runtime, through `prepare` and the

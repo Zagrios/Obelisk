@@ -3,22 +3,21 @@
 use std::{
     collections::{BTreeMap, HashSet},
     future::Future,
-    sync::Arc,
     time::Instant,
 };
 
 use futures_util::{StreamExt, TryStreamExt, stream};
 use obelisk_core::{
+    oauth_session::OAuthSession,
     platform::{Platform, Spelling},
-    watch::Revisions,
 };
 use reqwest::Url;
 use serde::{Deserialize, Serializer};
-use tokio::sync::Mutex;
 
 use crate::{
     EpicError,
     auth::{self, Api, Credentials, Session},
+    content::ContentClient,
 };
 
 mod achievements;
@@ -80,8 +79,9 @@ pub struct GameDetails {
 pub struct Client {
     downloads: download::Downloads,
     api: Api,
-    session: Arc<Mutex<Option<Session>>>,
-    credential_events: Revisions,
+    /// How the Mac pick and every download reach Epic's CDN.
+    content: ContentClient,
+    session: OAuthSession<Api>,
     social: crate::social::SocialService,
     installation_sizes: crate::details::InstallationSizes,
     /// Each Mac build's verdict, and the manifest the last native one read,
@@ -156,18 +156,13 @@ impl Client {
     }
 
     pub async fn credentials(&self) -> Result<Credentials, EpicError> {
-        self.session
-            .lock()
-            .await
-            .as_ref()
-            .map(|session| session.credentials.clone())
-            .ok_or(EpicError::Unauthorized)
+        self.session.credentials().await
     }
 
     /// Refresh before a long read so the caller can persist a rotated token
     /// without waiting for catalog enrichment to finish.
     pub async fn prepare(&self) -> Result<Credentials, EpicError> {
-        self.access_token(None).await?;
+        self.session.access_token(None).await?;
         self.credentials().await
     }
 
@@ -188,12 +183,9 @@ impl Client {
         validate_identity(namespace, catalog_item_id, app_name)?;
         let shown = self
             .with_access_token(|token| async move {
+                let game = self.live_builds(&token, namespace, catalog_item_id, app_name);
                 let shown = crate::details::shown_build(
-                    &self.api,
-                    &token,
-                    namespace,
-                    catalog_item_id,
-                    app_name,
+                    &game,
                     &self.build_choice,
                     &self.installation_sizes,
                 )
@@ -229,13 +221,7 @@ impl Client {
                 validate_identity(namespace, catalog_item_id, app_name)?;
                 let pick = &pick;
                 self.with_access_token(|token| async move {
-                    let game = crate::details::LiveBuilds::new(
-                        &self.api,
-                        &token,
-                        namespace,
-                        catalog_item_id,
-                        app_name,
-                    );
+                    let game = self.live_builds(&token, namespace, catalog_item_id, app_name);
                     pick.of(&game).await
                 })
                 .await
@@ -255,26 +241,47 @@ impl Client {
     }
 
     pub(crate) fn from_session(api: Api, session: Session) -> Self {
+        let content = ContentClient::new(api.http.clone());
+        Self::with_content(api, session, content)
+    }
+
+    /// The client of `session`, whose chunks come through `content` for as
+    /// long as it lives.
+    fn with_content(api: Api, session: Session, content: ContentClient) -> Self {
         let social = crate::social::SocialService::new(session.credentials.account_id.clone());
         Self {
             downloads: download::Downloads::default(),
+            session: OAuthSession::new(api.clone(), session),
             api,
-            session: Arc::new(Mutex::new(Some(session))),
-            credential_events: Revisions::new(),
+            content,
             social,
             installation_sizes: Default::default(),
             build_choice: Default::default(),
         }
     }
 
-    async fn access_token(&self, rejected: Option<&str>) -> Result<String, EpicError> {
-        self.social_auth().access_token(rejected).await
+    /// The game's live builds, as `access_token` lets the account ask for
+    /// them.
+    fn live_builds<'a>(
+        &'a self,
+        access_token: &'a str,
+        namespace: &'a str,
+        catalog_item_id: &'a str,
+        app_name: &'a str,
+    ) -> crate::details::LiveBuilds<'a> {
+        crate::details::LiveBuilds {
+            api: &self.api,
+            content: &self.content,
+            access_token,
+            namespace,
+            catalog_item_id,
+            app_name,
+        }
     }
 
-    /// Runs `operation` with a current access token. When Epic rejects that
-    /// token, it is refreshed once and the operation runs again. A result
-    /// computed for a session the account discarded while the request was in
-    /// flight is never returned: sign-out clears the session concurrently.
+    /// Runs `operation` with a current access token, once more when Epic
+    /// rejects that token. A result computed for a session the account
+    /// discarded while the request was in flight is never returned.
     pub(crate) async fn with_access_token<T, Fut>(
         &self,
         operation: impl Fn(String) -> Fut,
@@ -282,18 +289,7 @@ impl Client {
     where
         Fut: Future<Output = Result<T, EpicError>>,
     {
-        let token = self.access_token(None).await?;
-        let result = match operation(token.clone()).await {
-            Err(EpicError::Unauthorized) => {
-                let token = self.access_token(Some(&token)).await?;
-                operation(token).await
-            }
-            result => result,
-        };
-        if self.session.lock().await.is_none() {
-            return Err(EpicError::Unauthorized);
-        }
-        result
+        self.session.with_access_token(operation).await
     }
 
     /// The catalog is presentation data. Check the current account's paginated
@@ -324,8 +320,13 @@ impl Client {
         SocialAuth {
             api: self.api.clone(),
             session: self.session.clone(),
-            credential_events: self.credential_events.clone(),
         }
+    }
+
+    /// Shows the account to its friends as `status` says: from the next
+    /// social connection on, and at once on a live one.
+    pub fn set_status(&self, status: obelisk_core::OnlineStatus) {
+        self.social.set_status(status);
     }
 
     pub fn start_friends(&self) {
@@ -357,26 +358,25 @@ impl Client {
 
     /// The revision of the credentials now, which grows with each rotation.
     pub fn credentials_revision(&self) -> u64 {
-        self.credential_events.current()
+        self.session.credentials_revision()
     }
 
     /// A separate watch reports refresh immediately, even if the next HTTP request fails.
     pub async fn next_credentials_revision(&self, after_revision: u64) -> Option<u64> {
-        self.credential_events.next(after_revision).await
+        self.session.next_credentials_revision(after_revision).await
     }
 
     /// Synchronous cancellation crosses UniFFI even when a Swift task is suspended.
     /// This does not revoke OAuth or affect a running content transfer.
     pub fn shutdown_observers(&self) {
         self.social.stop();
-        self.credential_events.stop();
+        self.session.stop_credentials_watch();
     }
 
     pub async fn disconnect(&self) -> Result<(), EpicError> {
         self.shutdown_observers();
         self.cancel_download();
-        let session = self.session.lock().await.take();
-        if let Some(session) = session {
+        if let Some(session) = self.session.discard().await {
             self.api.revoke(&session.access_token).await?;
         }
         Ok(())
@@ -399,42 +399,20 @@ pub(crate) fn validate_identity(
     Ok(())
 }
 
+/// The account's session, for the social connection, which a reconnection
+/// may restart while it renews the token.
 #[derive(Clone)]
 pub(crate) struct SocialAuth {
     pub(crate) api: Api,
-    session: Arc<Mutex<Option<Session>>>,
-    credential_events: Revisions,
+    session: OAuthSession<Api>,
 }
 impl SocialAuth {
     pub(crate) async fn access_token(&self, rejected: Option<&str>) -> Result<String, EpicError> {
-        // The renewing task owns the refresh, not the caller awaiting it. Social
-        // reconnection may cancel that caller after Epic has already rotated the token.
-        // Dropping a JoinHandle detaches it; the bounded OAuth request still publishes
-        // credentials, and concurrent consumers reuse the session under the same lock.
-        let auth = self.clone();
-        let rejected = rejected.map(str::to_owned);
-        tokio::spawn(async move {
-            let mut guard = auth.session.lock().await;
-            let session = guard.as_mut().ok_or(EpicError::Unauthorized)?;
-            if session.expires_at <= Instant::now()
-                || rejected.as_deref() == Some(&session.access_token)
-            {
-                *session = auth.api.refresh(&session.credentials).await?;
-                auth.credential_events.advance();
-            }
-            Ok(session.access_token.clone())
-        })
-        .await
-        .map_err(|_| EpicError::Cancelled)?
+        self.session.access_token(rejected).await
     }
 
     pub(crate) async fn expires_at(&self) -> Result<Instant, EpicError> {
-        self.session
-            .lock()
-            .await
-            .as_ref()
-            .map(|s| s.expires_at)
-            .ok_or(EpicError::Unauthorized)
+        self.session.expires_at().await
     }
 }
 

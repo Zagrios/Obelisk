@@ -2,7 +2,8 @@
 //! build's own files before it is installed. A storefront lists the files its
 //! manifest names and reads the first bytes of the few asked for; nothing here
 //! reaches the network or the disk. Obelisk installs a Mac build only when it
-//! does: an Intel or 32-bit one goes through Wine as its Windows build.
+//! does: an Intel or 32-bit one goes through Wine as its Windows build. The
+//! build choice asks it of each storefront's Mac build.
 use std::{
     collections::{BTreeMap, HashMap},
     future::Future,
@@ -144,7 +145,7 @@ impl<F: Copy> Listing<F> {
 /// in the folder a launch searches, which must hold one. An application
 /// bundle starts the executable its Info.plist names. `read` gives a file's
 /// first bytes, never more than its size.
-pub async fn runs_natively<F: Copy, E, Read>(
+pub(crate) async fn runs_natively<F: Copy, E, Read>(
     listing: &Listing<F>,
     executable: &str,
     libraries: &[&str],

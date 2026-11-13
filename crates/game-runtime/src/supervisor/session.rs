@@ -4,16 +4,15 @@
 //! A storefront supplies its `Launch`; the order of the steps is the core's.
 use super::*;
 use crate::supervisor::architecture::Architecture;
-use obelisk_core::transfer::CancelToken;
+use obelisk_core::{OnlineStatus, transfer::CancelToken};
 use std::{
     io::{Read, Write},
-    os::fd::OwnedFd,
     os::unix::{
         fs::PermissionsExt,
         net::{UnixListener, UnixStream},
     },
     path::Path,
-    process::{Command as Process, Stdio},
+    process::Stdio,
     sync::{
         Arc, Condvar, Mutex, OnceLock,
         atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
@@ -26,6 +25,26 @@ use std::{
 pub type Inspect = fn(u32) -> Result<Option<Identity>, Error>;
 
 type Failure<L> = <<L as Launch>::P as Provider>::Error;
+/// How a running game shows the account to its friends.
+pub(crate) type Publish = Box<dyn Fn(Shown) + Send + Sync>;
+/// What a running game's presence publishes, in this order: `Started`
+/// once, a `Changed` for each status the player picks after, `Stopped` once.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Shown {
+    Started(OnlineStatus),
+    Changed(OnlineStatus),
+    /// The account shows offline.
+    Stopped,
+}
+impl Shown {
+    /// The status the account shows, `None` once offline.
+    pub(crate) fn status(self) -> Option<OnlineStatus> {
+        match self {
+            Self::Started(status) | Self::Changed(status) => Some(status),
+            Self::Stopped => None,
+        }
+    }
+}
 /// How the player's controls reach a running game.
 pub(crate) type Control<P> =
     Box<dyn Fn(<P as Provider>::Control) -> Result<(), Error> + Send + Sync>;
@@ -51,14 +70,16 @@ pub(crate) struct Opening<P: Provider> {
     pub store: P::Store,
     /// The directory that bundles the Obelisk Rosetta helper app.
     pub helpers: PathBuf,
+    /// How the game shows the account once it runs, until the player
+    /// changes it.
+    pub status: OnlineStatus,
 }
 
 /// A prepared game, ready for exec admission.
 pub(crate) struct Prepared<H> {
     pub host: H,
-    /// The exec helper and its subcommand.
+    /// Obelisk's host, which becomes the game as its exec helper.
     pub helper: PathBuf,
-    pub subcommand: &'static str,
     /// The game's environment. It is set on the helper and inherited through
     /// exec, so it reaches the game verbatim.
     pub environment: std::collections::HashMap<String, String>,
@@ -159,11 +180,10 @@ pub(crate) trait Launch: Sized + 'static {
         &mut self,
         session: &Arc<Session<Self::P>>,
         target: &Target,
-        architecture: Option<Architecture>,
         cloud: Option<&Self::Cloud>,
     ) -> Result<Prepared<Self::Host>, Failure<Self>>;
     /// The game runs. Returns how its presence is published.
-    fn running(&self, host: &Arc<Self::Host>, pid: u32) -> Box<dyn Fn(bool) + Send + Sync>;
+    fn running(&self, host: &Arc<Self::Host>, pid: u32) -> Publish;
     /// The game runs: how the player's controls reach it, if the storefront
     /// offers any. They stop once the game exits.
     fn control(&self, _host: &Arc<Self::Host>) -> Option<Control<Self::P>> {
@@ -227,26 +247,52 @@ impl Questions {
     }
 }
 
+/// How tests record what a game's presence published.
+#[cfg(test)]
+pub(crate) fn presence_event(shown: Shown) -> String {
+    let shown = match shown.status() {
+        None => "offline",
+        Some(OnlineStatus::Online) => "online",
+        Some(OnlineStatus::Away) => "away",
+        Some(OnlineStatus::Invisible) => "invisible",
+    };
+    format!("presence:{shown}")
+}
+
 /// Presence goes Active once, after exec is confirmed, and stops for good:
-/// a revocation before exec prevents any later publication.
-struct Presence(Mutex<PresenceState>);
+/// a revocation before exec prevents any later publication. It shows the
+/// status the player chose last.
+struct Presence(Mutex<(OnlineStatus, PresenceState)>);
 enum PresenceState {
     Pending,
-    Active(Box<dyn Fn(bool) + Send + Sync>),
+    Active(Publish),
     Stopped,
 }
 impl Presence {
-    fn start(&self, publish: Box<dyn Fn(bool) + Send + Sync>) {
-        let mut state = self.0.lock().unwrap();
-        if matches!(*state, PresenceState::Pending) {
-            publish(true);
+    fn new(status: OnlineStatus) -> Self {
+        Self(Mutex::new((status, PresenceState::Pending)))
+    }
+    fn start(&self, publish: Publish) {
+        let (status, state) = &mut *self.0.lock().unwrap();
+        if matches!(state, PresenceState::Pending) {
+            publish(Shown::Started(*status));
             *state = PresenceState::Active(publish);
         }
     }
+    /// The player changed the status: a running game shows it at once.
+    fn set_status(&self, status: OnlineStatus) {
+        let (shown, state) = &mut *self.0.lock().unwrap();
+        if std::mem::replace(shown, status) == status {
+            return;
+        }
+        if let PresenceState::Active(publish) = state {
+            publish(Shown::Changed(status));
+        }
+    }
     fn stop(&self) {
-        let mut state = self.0.lock().unwrap();
-        if let PresenceState::Active(publish) = &*state {
-            publish(false);
+        let (_, state) = &mut *self.0.lock().unwrap();
+        if let PresenceState::Active(publish) = state {
+            publish(Shown::Stopped);
         }
         *state = PresenceState::Stopped;
     }
@@ -552,7 +598,7 @@ pub(crate) fn serve<L: Launch>(
         cancel: CancelToken::new(),
         root: opening.root,
         questions: questions.clone(),
-        presence: Presence(Mutex::new(PresenceState::Pending)),
+        presence: Presence::new(opening.status),
         rosetta: crate::supervisor::rosetta::Gate::new(
             crate::supervisor::rosetta::helper(&opening.helpers),
             L::rosetta,
@@ -665,7 +711,7 @@ async fn run<L: Launch>(
     inspect: Inspect,
     alive: &SessionAlive<'_>,
 ) -> Result<(), Failure<L>> {
-    use super::child::{Execution, confirm_execution, wait_for_exit, wait_identity};
+    use exec::Execution;
 
     if L::BEGIN {
         session.begun().await?;
@@ -676,7 +722,7 @@ async fn run<L: Launch>(
     }
     session.check()?;
     let mut refreshed = false;
-    let (target, architecture) = loop {
+    let target = loop {
         let (target, architecture) = launch.target(session).await?;
         session.check()?;
         if architecture == Some(Architecture::Intel) && cfg!(target_arch = "aarch64") {
@@ -691,11 +737,11 @@ async fn run<L: Launch>(
                 continue;
             }
         }
-        break (target, architecture);
+        break target;
     };
     session.check()?;
     let mut prepared = launch
-        .prepare_host(session, &target, architecture, cloud.as_ref())
+        .prepare_host(session, &target, cloud.as_ref())
         .await?;
     let wine = launch.wine();
     // A game in Wine for macOS reads the Mac's gamepads through the input
@@ -723,21 +769,16 @@ async fn run<L: Launch>(
         program: target.program.clone(),
     });
     let host = Arc::new(prepared.host);
-    let mut command = Process::new(&prepared.helper);
-    let (mut pipe, child_pipe) = UnixStream::pair().map_err(Error::from)?;
-    pipe.set_write_timeout(Some(Duration::from_secs(5)))
-        .map_err(Error::from)?;
-    command
-        .arg(prepared.subcommand)
-        .env_clear()
-        .envs(&prepared.environment)
-        .stdin(Stdio::from(OwnedFd::from(child_pipe)))
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null());
-    let expected = target
-        .executable
-        .canonicalize()
-        .map_err(|_| Error::StartFailed)?;
+    let log_header = session
+        .wine
+        .get()
+        .and_then(Option::as_ref)
+        .map(crate::wine::Config::log_header);
+    let helper = exec::Helper::new(
+        &prepared.helper,
+        &prepared.environment,
+        exec::Admission::of(&target, log_header),
+    )?;
     let (mut game, admitted) = {
         // Cancellation and spawn have one linearization point. Cancellation
         // after it never ends a game, including sign-out and UI loss.
@@ -746,51 +787,21 @@ async fn run<L: Launch>(
         if let Some(cloud) = cloud.as_mut() {
             cloud.started()?;
         }
-        let game = tokio::process::Command::from(command)
-            .kill_on_drop(false)
-            .spawn()
-            .map_err(|_| Error::StartFailed)?;
+        let mut game = helper.spawn()?;
         {
             let mut state = session.state.lock().unwrap();
             state.spawned = true;
-            state.game = game.id();
+            state.game = game.pid();
         }
-        let admitted = (|| {
-            // Read now: a game reaped during confirmation no longer has one.
-            let pid = game.id().ok_or(Error::StartFailed)?;
-            let identity = inspect(pid)?.ok_or(Error::StartFailed)?;
-            // The helper cannot exec before its identity and destination are
-            // durable: this write must succeed.
-            session.update(|r| {
-                r.starting = Some(StartingGame::Process {
-                    identity,
-                    executable: expected.clone(),
-                })
-            })?;
-            exec::send(
-                &mut pipe,
-                &exec::Admission {
-                    executable: target.executable.clone(),
-                    arguments: target.arguments.clone(),
-                    working_directory: target.working_directory.clone(),
-                    log: target.log.clone(),
-                    log_header: session
-                        .wine
-                        .get()
-                        .and_then(Option::as_ref)
-                        .map(crate::wine::Config::log_header),
-                },
-            )
-            .map_err(|_| Error::StartFailed)?;
-            Ok(pid)
-        })();
+        let admitted = game.admit(inspect, |starting| {
+            session.update(|r| r.starting = Some(starting))
+        });
         (game, admitted)
     };
-    drop(pipe);
     // A helper that never became the game keeps its ownership until it is
     // reaped, outside the admission lock.
-    let reap = async |mut game: tokio::process::Child, error: Error| {
-        let exit = wait_for_exit(&mut game).await.code().unwrap_or(-1);
+    let reap = async |mut game: exec::Child, error: Error| {
+        let exit = game.exit().await.code().unwrap_or(-1);
         session.state.lock().unwrap().game = None;
         launch.stopped(&host, Some(exit));
         session.state.lock().unwrap().spawned = false;
@@ -802,14 +813,13 @@ async fn run<L: Launch>(
         Ok(pid) => pid,
         Err(error) => return reap(game, error).await,
     };
-    let inspect_game = |pid| inspect(pid).ok().flatten();
-    let execution = confirm_execution(&mut game, &target.executable, inspect_game).await;
+    let execution = game.confirm(inspect).await;
     if execution == Execution::Failed {
         return reap(game, Error::StartFailed).await;
     }
     let started = execution == Execution::Started;
     if started {
-        let identity = wait_identity(&mut game, &target.executable, inspect_game).await;
+        let identity = game.identity(inspect).await;
         // Revocation takes this same lock: its permanent stop fences a late exec.
         let _admission = session.admission.lock().unwrap();
         session.presence.start(launch.running(&host, pid));
@@ -827,7 +837,7 @@ async fn run<L: Launch>(
     }
     let watching = launch.watch(&host, session);
     let began = Instant::now();
-    let status = wait_for_exit(&mut game).await;
+    let status = game.exit().await;
     let seconds = began.elapsed().as_secs();
     let exit = status.code().unwrap_or(-1);
     drop(input);
@@ -988,6 +998,16 @@ fn respond<L: Launch>(mut stream: UnixStream, session: &Arc<Session<L::P>>) -> R
         }
         Command::Quit { id } => end(session, &id, false)?,
         Command::ForceQuit { id } => end(session, &id, true)?,
+        Command::Status {
+            id,
+            account_id,
+            status,
+        } => {
+            if !same(&session.state.lock().unwrap(), &id, Some(&account_id)) {
+                return Err(Error::InvalidSession);
+            }
+            session.presence.set_status(status);
+        }
         Command::Control {
             id,
             account_id,

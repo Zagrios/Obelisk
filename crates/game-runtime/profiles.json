@@ -42,6 +42,7 @@
     {
       "name": "Dead by Daylight",
       "note": "Easy Anti-Cheat, as Rocket League's: it loads its Linux module on the Linux engine. Unreal renders it with Direct3D 11, through DXMT as Rocket League. Its launch executable, DeadByDaylight.exe, is already the Easy Anti-Cheat bootstrapper. It needs Voile v26.3.0-18: older Linux engines refused its 301st thread and it crashed at start, older Neptune cut its render target calls with a KEEP count short, leaving the screen black, and showed its 10-bit swapchain as 8-bit.",
+      "steam": 381210,
       "epic": {
         "namespace": "611482b8586142cda48a0786eb8a127c",
         "app_name": "Brill"
@@ -57,6 +58,13 @@
       "engine": "Linux",
       "graphics": "Dxmt",
       "executable": "start_protected_game.exe"
+    },
+    {
+      "name": "THE FINALS",
+      "note": "Embark's THEIA packer refuses Rosetta's Wine (E111000D) and runs on the Linux engine, with Denuvo Anti-Cheat. Unreal renders it with Direct3D 12, through D3DMetal: with Direct3D 11 through DXMT, matches held the frame each time DXMT compiled a new pipeline.",
+      "steam": 2073850,
+      "engine": "Linux",
+      "graphics": "D3DMetal"
     },
     {
       "name": "Counter-Strike 2",
@@ -364,6 +372,17 @@
       "variables": {
         "D3DM_EXE_OVERRIDE": "GoWR.exe"
       }
+    },
+    {
+      "name": "A Plague Tale: Innocence",
+      "note": "Renders through DXMT rather than D3DMetal.",
+      "steam": 752590,
+      "epic": {
+        "namespace": "71d19da3678943098859baa9c4c39f95",
+        "app_name": "e0fa47ae79514345823bff209ae29451"
+      },
+      "path": "APlagueTaleInnocence_x64.exe",
+      "graphics": "Dxmt"
     }
   ]
 }

@@ -52,7 +52,7 @@ final class EpicRememberedSessionTests: XCTestCase {
         await removal.value
         let removed = await store.value
         XCTAssertNil(removed)
-        await remembered.activate(rotating: EpicGames.rotating(replacement), accountID: EpicGames.fixtureAccount)
+        await remembered.activate(rotating: RotatingSession(replacement), accountID: EpicGames.fixtureAccount)
         await old.rotate(EpicGames.credentials("old-late"))
         try await eventually { replacement.credentialRevisions.isWaiting }
         let saved = await store.value
@@ -116,7 +116,7 @@ final class EpicRememberedSessionTests: XCTestCase {
     func testReleasingModuleStopsObservationWithoutRevokingSessionOrRemovingCredentials() async throws {
         let store = EpicMemoryStore(nil)
         let session = EpicTestSession(credentials: EpicGames.credentials("initial"), games: [])
-        var remembered: RememberedSession<EpicCredentials>? = await activated(store, session)
+        var remembered: RememberedSession<WebAccountCredentials>? = await activated(store, session)
         try await eventually { session.credentialRevisions.isWaiting }
         weak var released = remembered
         remembered = nil
@@ -128,10 +128,10 @@ final class EpicRememberedSessionTests: XCTestCase {
     }
 
     /// The store's remembered session, once it saves `session`'s fixture account.
-    private func activated(_ store: EpicMemoryStore, _ session: EpicTestSession) async -> RememberedSession<EpicCredentials> {
-        let remembered = RememberedSession(keychain: store, accountID: EpicGames.accountID,
+    private func activated(_ store: EpicMemoryStore, _ session: EpicTestSession) async -> RememberedSession<WebAccountCredentials> {
+        let remembered = RememberedSession(keychain: store, accountID: \.accountId,
                                            notSaved: EpicGames.sessionNotSaved)
-        await remembered.activate(rotating: EpicGames.rotating(session), accountID: EpicGames.fixtureAccount)
+        await remembered.activate(rotating: RotatingSession(session), accountID: EpicGames.fixtureAccount)
         return remembered
     }
 }

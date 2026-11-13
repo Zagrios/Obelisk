@@ -4,7 +4,7 @@
 //! translated here for the engine its Launch settings name, by that engine's
 //! adapter.
 use crate::{
-    Error,
+    launch::Error,
     supervisor::{Target, architecture::Architecture},
 };
 use obelisk_core::{Platform, launch::LaunchTarget};
@@ -12,7 +12,6 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     fs,
-    io::Read,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     thread,
@@ -75,6 +74,19 @@ impl Graphics {
     /// player picks another backend.
     pub fn default_on(engine: Engine) -> Self {
         engine.adapter().facts().graphics
+    }
+
+    /// What renders `program` on `engine` when neither the game's profile
+    /// nor its player picks another backend: the engine's default, unless
+    /// that is DXMT and the program imports Direct3D 12 without Direct3D 11,
+    /// as ELDEN RING does, since DXMT has no Direct3D 12.
+    pub(crate) fn default_for(engine: Engine, program: Option<&crate::pe::Program>) -> Self {
+        let imports = program.map(crate::pe::Program::imports).unwrap_or_default();
+        let imported = |dll: &str| imports.iter().any(|import| import == dll);
+        match Self::default_on(engine) {
+            Self::Dxmt if imported("d3d12.dll") && !imported("d3d11.dll") => Self::D3DMetal,
+            graphics => graphics,
+        }
     }
 
     /// The name Wine, Neptune and Obelisk's reports know it by.
@@ -185,6 +197,12 @@ impl Config {
                 "off"
             };
             header.push_str(&format!(" ray_tracing={state}"));
+        }
+        if self.settings.render_percent != crate::launch_settings::FULL_RENDER_PERCENT {
+            header.push_str(&format!(" render_percent={}", self.settings.render_percent));
+        }
+        if !self.settings.game_mode {
+            header.push_str(" game_mode=off");
         }
         // Only a development runtime has no manifest.
         let voile = crate::voile::release_of(&self.runtime);
@@ -299,6 +317,18 @@ struct Facts {
     launcher_grace: Option<Duration>,
     /// The variables and DLL overrides its Wine gets from Obelisk.
     reserved: Reserved,
+    /// The Windows programs its Wine runs.
+    programs: Programs,
+}
+
+/// The Windows programs an engine's Wine runs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Programs {
+    /// 32-bit and 64-bit ones, and .NET ones through Wine Mono.
+    All,
+    /// x86-64 ones only, and no .NET one: its Wine has neither 32-bit
+    /// support nor Wine Mono.
+    X86_64,
 }
 
 /// Names Obelisk sets in an engine's Wine. A profile could still replace one
@@ -363,9 +393,25 @@ impl Engine {
         }
     }
 
+    /// The Wine prefix this engine keeps of the Windows installation in
+    /// `install`, among `prefixes`.
+    pub(crate) fn prefix(self, prefixes: &Path, install: &Path) -> Result<PathBuf, Error> {
+        self.adapter().prefix(&prefix(prefixes, install)?)
+    }
+
     /// The names Obelisk sets in this engine's Wine.
     pub(crate) fn reserved(self) -> &'static Reserved {
         &self.adapter().facts().reserved
+    }
+
+    /// Whether this engine's Wine runs the Windows program at `path`. A file
+    /// that is no Windows program is left to the launch to refuse.
+    pub(crate) fn runs(self, path: &Path) -> bool {
+        match self.adapter().facts().programs {
+            Programs::All => true,
+            Programs::X86_64 => crate::pe::Program::open(path)
+                .is_none_or(|program| program.is_x86_64() && !program.is_dotnet()),
+        }
     }
 }
 
@@ -450,7 +496,7 @@ fn program(install: &Path, target: &LaunchTarget) -> Result<PathBuf, Error> {
     let executable = Path::new(&target.executable)
         .canonicalize()
         .map_err(|_| Error::NotExecutable)?;
-    if !executable.starts_with(&root) || !portable_executable(&executable)? {
+    if !executable.starts_with(&root) || crate::pe::Program::open(&executable).is_none() {
         return Err(Error::NotExecutable);
     }
     Ok(executable)
@@ -483,30 +529,33 @@ pub struct Installation {
     /// Where Wine logs while its game runs.
     log: PathBuf,
     settings: crate::launch_settings::Settings,
+    /// The oldest Voile release its game runs in, as its profile says.
+    minimum_voile: Option<&'static str>,
 }
 
 impl Installation {
-    /// The installation of `game` in `install`, when `platform` is the
-    /// Windows build, run as the game's profile and its player's launch
-    /// settings say.
-    pub fn of(
+    /// The Windows installation of `game` in `install`, run as
+    /// `launch_settings` say, resolved once for this launch.
+    pub(crate) fn new(
         locations: &crate::Locations,
         game: crate::profile::Game<'_>,
-        platform: Platform,
         install: &Path,
-    ) -> Result<Option<Self>, Error> {
-        if platform != Platform::Windows {
-            return Ok(None);
-        }
-        let settings = crate::launch_settings::of(&locations.library, game, install).settings;
-        let rosetta = prefix(&locations.wine_prefixes, install)?;
-        let prefix = settings.engine.adapter().prefix(&rosetta)?;
-        Ok(Some(Self {
+        launch_settings: crate::launch_settings::View,
+    ) -> Result<Self, Error> {
+        let settings = launch_settings.settings;
+        Ok(Self {
             install: install.to_owned(),
-            prefix,
+            prefix: settings.engine.prefix(&locations.wine_prefixes, install)?,
             log: log(locations, game),
             settings,
-        }))
+            minimum_voile: launch_settings.minimum_voile,
+        })
+    }
+
+    /// The oldest Voile release its game runs in: its launch waits for one
+    /// when an older one is in place.
+    pub(crate) fn minimum_voile(&self) -> Option<&'static str> {
+        self.minimum_voile
     }
 
     /// The Windows machine the installation runs in.
@@ -540,39 +589,53 @@ impl Installation {
             settings: self.settings.clone(),
         })
     }
+}
 
-    /// Forgets the prerequisites `forget` picks among those its Rosetta
-    /// prefix ran: they run again at the next launch. Only Rosetta's Wine runs
-    /// prerequisites.
-    pub(crate) fn forget_prerequisites(
-        &self,
-        locations: &crate::Locations,
-        forget: impl Fn(&str) -> bool,
-    ) -> std::io::Result<()> {
-        let rosetta = prefix(&locations.wine_prefixes, &self.install)
-            .map_err(|error| std::io::Error::other(error.to_string()))?;
-        rosetta::forget_prerequisites(&rosetta, forget)
-    }
+/// Forgets the prerequisites `forget` picks among those the Rosetta prefix of
+/// the Windows installation in `install` ran: they run again at the next
+/// launch. Only Rosetta's Wine runs prerequisites, and an installation that
+/// can have no prefix ran none.
+pub(crate) fn forget_prerequisites(
+    locations: &crate::Locations,
+    install: &Path,
+    forget: impl Fn(&str) -> bool,
+) -> std::io::Result<()> {
+    let Ok(rosetta) = prefix(&locations.wine_prefixes, install) else {
+        return Ok(());
+    };
+    rosetta::forget_prerequisites(&rosetta, forget)
+}
 
-    /// Deletes the prefixes of the uninstalled installation, as Steam deletes
-    /// a Proton prefix, and its launch settings. Both engines' go, whichever
-    /// runs the game now: an earlier launch may have made the other's before
-    /// the game moved. A missing prefix is already gone; a link in its place
-    /// is never followed.
-    pub fn remove(
-        &self,
-        locations: &crate::Locations,
-    ) -> Result<(), obelisk_core::installation::RemovalFailure> {
-        use obelisk_core::installation::RemovalFailure;
-        let unsafe_prefix = |_| RemovalFailure::Unsafe(self.prefix.clone());
-        let rosetta = prefix(&locations.wine_prefixes, &self.install).map_err(unsafe_prefix)?;
-        for engine in [Engine::Linux, Engine::Rosetta] {
-            let adapter = engine.adapter();
-            adapter.remove(locations, &adapter.prefix(&rosetta).map_err(unsafe_prefix)?)?;
-        }
-        crate::launch_settings::remove(&locations.library, &self.install)?;
-        Ok(())
+/// Deletes the prefixes of the uninstalled Windows installation in `install`,
+/// as Steam deletes a Proton prefix, and its launch settings. Both engines'
+/// go, whichever ran the game last: an earlier launch may have made the
+/// other's before the game moved. A missing prefix is already gone; a link in
+/// its place is never followed. None when it can have no prefix.
+pub(crate) fn remove(
+    locations: &crate::Locations,
+    install: &Path,
+) -> Option<Result<(), obelisk_core::installation::RemovalFailure>> {
+    let rosetta = prefix(&locations.wine_prefixes, install).ok()?;
+    Some(remove_prefixes(locations, install, &rosetta))
+}
+
+/// Deletes both engines' prefixes of the installation in `install`, whose
+/// Rosetta prefix is `rosetta`, then its launch settings.
+fn remove_prefixes(
+    locations: &crate::Locations,
+    install: &Path,
+    rosetta: &Path,
+) -> Result<(), obelisk_core::installation::RemovalFailure> {
+    use obelisk_core::installation::RemovalFailure;
+    for engine in [Engine::Linux, Engine::Rosetta] {
+        let adapter = engine.adapter();
+        let prefix = adapter
+            .prefix(rosetta)
+            .map_err(|_| RemovalFailure::Unsafe(rosetta.to_owned()))?;
+        adapter.remove(locations, &prefix)?;
     }
+    crate::launch_settings::remove(&locations.library, install)?;
+    Ok(())
 }
 
 /// Where Wine logs `game`: in its storefront's diagnostics folder.
@@ -745,20 +808,6 @@ fn typed(arguments: &[String]) -> String {
         })
         .collect::<Vec<_>>()
         .join(" ")
-}
-
-/// Whether `path` starts like a Windows program: a DOS header naming a PE header.
-fn portable_executable(path: &Path) -> Result<bool, Error> {
-    let mut file = fs::File::open(path)?;
-    let mut dos = [0u8; 64];
-    if file.read_exact(&mut dos).is_err() || &dos[..2] != b"MZ" {
-        return Ok(false);
-    }
-    let offset = u32::from_le_bytes(dos[60..64].try_into().expect("four bytes")) as u64;
-    let mut signature = [0u8; 4];
-    use std::io::{Seek, SeekFrom};
-    file.seek(SeekFrom::Start(offset))?;
-    Ok(file.read_exact(&mut signature).is_ok() && &signature == b"PE\0\0")
 }
 
 #[cfg(test)]

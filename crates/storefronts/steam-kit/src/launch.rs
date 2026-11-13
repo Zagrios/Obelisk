@@ -37,9 +37,9 @@ pub fn plan(
     let target = root
         .resolve(
             platform,
-            &config.executable,
+            install_relative(&config.executable),
             &config.arguments,
-            &config.working_directory,
+            install_relative(&config.working_directory),
         )
         .map_err(shared_error)?;
     Ok(LaunchPlan {
@@ -63,6 +63,12 @@ pub(crate) fn configuration(app: &AppInfo, platform: Platform) -> Option<&Launch
             )
         })
         .map(|(config, _)| config)
+}
+
+/// Steam joins launch paths onto the install folder, so publishers may write
+/// `/Bin/game.exe`. Only one separator goes: `\\server` stays a network path.
+fn install_relative(path: &str) -> &str {
+    path.strip_prefix(['/', '\\']).unwrap_or(path)
 }
 
 fn shared_error(error: obelisk_core::launch::LaunchError) -> LaunchError {
@@ -155,6 +161,28 @@ mod tests {
                 .executable
                 .ends_with("/Contents/MacOS/My Game")
         );
+    }
+
+    #[test]
+    fn resolves_paths_steam_writes_from_the_install_root() {
+        let root = tempfile::tempdir().unwrap();
+        file(root.path(), "Game/Binaries/Win64/Game.exe");
+        for path in [
+            "/Game/Binaries/Win64/Game.exe",
+            r"\Game\Binaries\Win64\Game.exe",
+        ] {
+            let mut launch = config(path, "windows", "default");
+            launch.working_directory = "/Game".into();
+            let resolved = plan(&app(vec![launch]), Platform::Windows, root.path()).unwrap();
+            assert!(
+                resolved
+                    .target
+                    .executable
+                    .ends_with("/Game/Binaries/Win64/Game.exe"),
+                "{path}"
+            );
+            assert!(resolved.target.working_directory.ends_with("/Game"));
+        }
     }
 
     #[test]

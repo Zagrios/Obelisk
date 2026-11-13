@@ -74,6 +74,11 @@ impl ManifestFile {
         // Parsing checks this sum before exposing a manifest to the installer.
         self.parts.iter().map(|part| u64::from(part.size)).sum()
     }
+
+    /// Whether the manifest flags it a Unix executable.
+    pub(crate) fn executable(&self) -> bool {
+        self.flags & 4 != 0
+    }
 }
 
 #[derive(Clone, Debug)]

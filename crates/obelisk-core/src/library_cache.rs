@@ -1,5 +1,5 @@
-//! The last library each storefront account loaded, in one JSON file beside
-//! the catalog: `{"version": 1, "<storefront>": {"<account>": [games]}}`, each
+//! The last library each storefront account loaded, in one JSON file in the
+//! library directory: `{"version": 1, "<storefront>": {"<account>": [games]}}`, each
 //! game a JSON object named by its `id`. A library shows from it at once, then
 //! updates from its storefront. Each game also keeps `lastLaunchedAt`, when
 //! the account last launched it from Obelisk.
@@ -23,7 +23,7 @@ use std::{
 
 use crate::date;
 
-/// Its name in the library directory, beside the catalog's `library.json`.
+/// Its name in the library directory.
 pub const FILE_NAME: &str = "library-cache.json";
 const VERSION: u64 = 1;
 const LAUNCH: &str = "lastLaunchedAt";

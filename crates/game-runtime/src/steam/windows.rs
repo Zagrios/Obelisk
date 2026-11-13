@@ -1,7 +1,7 @@
 //! A Windows Steam game: Wine starts it behind Proton's steam.exe helper,
 //! which stands in for Steam, once its prefix ran the steps of the install
 //! scripts the installation lists.
-use crate::{Error, supervisor::Target, wine};
+use crate::{launch::Error, supervisor::Target, wine};
 use obelisk_core::launch::LaunchTarget;
 use std::{fs, io::Read, path::Path};
 

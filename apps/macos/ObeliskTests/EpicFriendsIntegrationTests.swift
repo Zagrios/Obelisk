@@ -12,7 +12,7 @@ final class EpicFriendsIntegrationTests: XCTestCase {
         let store = EpicKeychain()
         let saved = try await store.load()
         let credentials = try XCTUnwrap(saved, "A saved Epic session is required")
-        let session = try await EpicSession.restore(credentials: credentials, library: nil)
+        let session = try await WebAccountSession.restore(storefront: .epic, credentials: credentials, library: nil)
         try await store.save(session.credentials())
         let persistence = Task {
             var revision: UInt64 = 0
@@ -34,7 +34,7 @@ final class EpicFriendsIntegrationTests: XCTestCase {
         var previous: [EpicFriend] = []
         var presenceChanges = 0
         while true {
-            let snapshot = await session.nextFriends(afterRevision: revision)
+            guard let snapshot = await session.nextFriends(afterRevision: revision) else { break }
             revision = snapshot.revision
             if snapshot.connection == .stopped { break }
             if snapshot.connection == .loading || snapshot.connection == .interrupted { continue }
@@ -268,13 +268,13 @@ func epicFriendsModel(_ session: EpicFriendsTestSession, store: EpicFriendsTestS
 }
 
 actor EpicFriendsTestStore: CredentialStore {
-    private(set) var value: EpicCredentials? = EpicCredentials(accountId: "epic-account", displayName: "Epic fixture", refreshToken: "test-initial")
-    func load() async throws -> EpicCredentials? { value }
+    private(set) var value: WebAccountCredentials? = WebAccountCredentials(accountId: "epic-account", name: "Epic fixture", refreshToken: "test-initial")
+    func load() async throws -> WebAccountCredentials? { value }
     private var holdSave = false
     private var heldSave: CheckedContinuation<Void, Never>?
     private var holdWaiter: CheckedContinuation<Void, Never>?
     private var removalWaiter: CheckedContinuation<Void, Never>?
-    func save(_ value: EpicCredentials) async throws {
+    func save(_ value: WebAccountCredentials) async throws {
         if holdSave {
             holdSave = false
             await withCheckedContinuation { c in
@@ -302,11 +302,11 @@ actor EpicFriendsTestStore: CredentialStore {
 }
 
 /// Atomic revision registration is deliberately controllable, without timers or a live account.
-final class EpicFriendsTestSession: EpicSessionProtocol, @unchecked Sendable {
+final class EpicFriendsTestSession: WebAccountSessionProtocol, @unchecked Sendable {
     private let lock = NSLock()
     private var snapshot = EpicFriendsSnapshot(accountId: "epic-account", revision: 1, connection: .ready,
         friends: [EpicFriend(accountId: "alice", displayName: "Alice", avatarUrl: nil, presence: .online, activity: nil)], message: nil)
-    private var saved = EpicCredentials(accountId: "epic-account", displayName: "Epic fixture", refreshToken: "test-initial")
+    private var saved = WebAccountCredentials(accountId: "epic-account", name: "Epic fixture", refreshToken: "test-initial")
     private var credentialRevision: UInt64 = 1
     private var credentialStopped = false
     private var friendWaiters: [CheckedContinuation<EpicFriendsSnapshot, Never>] = []
@@ -317,29 +317,33 @@ final class EpicFriendsTestSession: EpicSessionProtocol, @unchecked Sendable {
     private var friendAfter: UInt64 = 0
     private var credentialAfter: UInt64 = 0
     private var startCount = 0, reconnectCount = 0, disconnectCount = 0, maximum = 0
+    /// Statuses and friends starts, in order.
+    private var socialCalls: [String] = []
     private var expireNext = false
     init(accountID: String = "epic-account") {
         snapshot.accountId = accountID
         saved.accountId = accountID
     }
     var starts: Int { lock.withLock { startCount } }
+    var social: [String] { lock.withLock { socialCalls } }
+    func setStatus(status: OnlineStatus) { lock.withLock { socialCalls.append("status:\(status)") } }
     var reconnections: Int { lock.withLock { reconnectCount } }
     var disconnects: Int { lock.withLock { disconnectCount } }
     var maximumWaiters: Int { lock.withLock { maximum } }
-    func credentials() async throws -> EpicCredentials { lock.withLock { saved } }
-    func games() async throws -> [EpicGame] {
+    func credentials() async throws -> WebAccountCredentials { lock.withLock { saved } }
+    func games() async throws -> WebAccountGames {
         let expired = lock.withLock {
             let expired = expireNext
             expireNext = false
             return expired
         }
-        if expired { throw EpicError.Unauthorized }
-        return []
+        if expired { throw WebAccountError.Unauthorized }
+        return .epic(games: [])
     }
     /// The next library request finds the account signed out.
     func expireNextGames() { lock.withLock { expireNext = true } }
-    func playtimes() async throws -> [EpicPlaytime] { [] }
-    func startFriends() async { lock.withLock { startCount += 1 } }
+    func playtimes(games: [String]) async throws -> [String: UInt64] { [:] }
+    func startFriends() async { lock.withLock { startCount += 1; socialCalls.append("start") } }
     func reconnectFriends() async {
         lock.withLock {
             reconnectCount += 1
@@ -353,8 +357,7 @@ final class EpicFriendsTestSession: EpicSessionProtocol, @unchecked Sendable {
             if reconnectCount > 0 { c.resume() } else { reconnectBarriers.append(c) }
         } }
     }
-    func friends() -> EpicFriendsSnapshot { lock.withLock { snapshot } }
-    func nextFriends(afterRevision: UInt64) async -> EpicFriendsSnapshot {
+    func nextFriends(afterRevision: UInt64) async -> EpicFriendsSnapshot? {
         await withCheckedContinuation { c in lock.withLock {
             friendAfter = afterRevision
             if snapshot.revision != afterRevision || snapshot.connection == .stopped { c.resume(returning: snapshot) }
@@ -388,7 +391,7 @@ final class EpicFriendsTestSession: EpicSessionProtocol, @unchecked Sendable {
         } }
     }
     func rotate(_ token: String) { lock.withLock {
-        saved = EpicCredentials(accountId: saved.accountId, displayName: saved.displayName, refreshToken: token)
+        saved = WebAccountCredentials(accountId: saved.accountId, name: saved.name, refreshToken: token)
         credentialRevision += 1
         credentialWaiters.forEach { $0.resume(returning: credentialRevision) }; credentialWaiters.removeAll()
     } }
@@ -416,5 +419,5 @@ final class EpicFriendsTestSession: EpicSessionProtocol, @unchecked Sendable {
         }
     }
     func disconnect() async throws { shutdownObservers(); lock.withLock { disconnectCount += 1 } }
-    func gameDetails(namespace: String, catalogItemId: String, appName: String) async throws -> EpicGameDetails { throw EpicError.InvalidResponse }
+    func gameDetails(offer: GameOffer, language: String) async throws -> WebGameDetails { throw WebAccountError.InvalidResponse }
 }

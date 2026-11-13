@@ -28,8 +28,6 @@ struct GogView: View {
     private var browser: some View {
         StorefrontBrowser(
             model: model,
-            storeID: "gog",
-            storeTitle: L10n.string("ui.store.gog"),
             libraryTitle: L10n.string("ui.gog.library"),
             accountName: model.accountName,
             avatarURL: model.avatarURL,
@@ -60,7 +58,7 @@ struct GogView: View {
     }
 
     @ViewBuilder private var accountMenu: some View {
-        Text(model.accountName ?? L10n.string("ui.gog.account"))
+        AccountMenuName(name: model.accountName ?? L10n.string("ui.gog.account"), status: model.onlineStatus)
         Text(L10n.string("ui.library.account_game_count", Int64(model.library.games.count)))
         Divider()
         Button(L10n.string("ui.library.refresh"), systemImage: "arrow.clockwise", action: model.refresh)

@@ -29,6 +29,31 @@ enum L10n {
     }
 }
 
+/// The language games start in. A Finder-launched app has no `LANG`, and a
+/// game, Windows ones in Wine above all, then takes English whatever the
+/// player's language: Obelisk gives every game its own, the Mac's or the one
+/// the player chose for Obelisk, as a `LANG` such as `it_IT.UTF-8`.
+enum GameLocale {
+    /// The `LANG` of the first of `preferredLanguages`, such as `it_IT.UTF-8`
+    /// for `it-IT`. A language named without a region takes the one it is
+    /// spoken in most, as `it` does Italy, else `region`; nil when it names
+    /// no language.
+    static func variable(preferredLanguages: [String], region: String? = Locale.current.region?.identifier) -> String? {
+        guard let first = preferredLanguages.first else { return nil }
+        let language = Locale.Language(identifier: first)
+        guard let code = language.languageCode?.identifier, code != "und",
+              let place = Locale.Language(identifier: language.maximalIdentifier).region?.identifier ?? region
+        else { return nil }
+        return "\(code)_\(place).UTF-8"
+    }
+
+    /// Gives the games Obelisk starts the player's language, unless Obelisk
+    /// was given a `LANG`, as from Terminal or Xcode.
+    static func adopt(preferredLanguages: [String] = Locale.preferredLanguages) {
+        if let variable = variable(preferredLanguages: preferredLanguages) { setenv("LANG", variable, 0) }
+    }
+}
+
 /// The language the player chose for Obelisk, or the Mac's own. macOS keeps
 /// the choice as Obelisk's `AppleLanguages`, as its per-app language setting
 /// does, so every part of Obelisk, AppKit's menus and the storefronts' content

@@ -1,7 +1,7 @@
 //! A native game's executable inside its installation, and the environment
 //! every game starts with, whatever its storefront.
 use crate::{
-    Error,
+    launch::Error,
     supervisor::{Target, architecture::Architecture},
 };
 use obelisk_core::launch::LaunchTarget;
@@ -127,6 +127,27 @@ fn environment_from(home: &Path, read: impl Fn(&str) -> Option<String>) -> HashM
         environment.insert("LANG".into(), "en_US.UTF-8".into());
     }
     environment
+}
+
+/// The player's locale, such as `it_IT`: Obelisk's `LC_ALL`, else its
+/// `LANG`, which Obelisk sets to the player's language as it starts. None
+/// for C, POSIX or a name that is no locale. Read where Launch settings are
+/// resolved, in Obelisk's process; they carry it to every process that starts
+/// a game.
+pub(crate) fn player_locale() -> Option<String> {
+    locale_from(|key| std::env::var(key).ok())
+}
+
+fn locale_from(read: impl Fn(&str) -> Option<String>) -> Option<String> {
+    let name = read("LC_ALL")
+        .filter(|name| !name.is_empty())
+        .or_else(|| read("LANG"))?;
+    let locale = name.split(['.', '@']).next()?;
+    let valid = (2..=16).contains(&locale.len())
+        && locale
+            .bytes()
+            .all(|byte| byte.is_ascii_alphabetic() || byte == b'_');
+    (valid && !matches!(locale, "C" | "POSIX")).then(|| locale.to_owned())
 }
 
 #[cfg(test)]

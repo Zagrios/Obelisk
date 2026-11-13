@@ -2,66 +2,83 @@ import Foundation
 import Observation
 
 /// A game of a storefront whose account signs in on the storefront's web
-/// page. Its id names it in receipts, Game sessions and the Library cache.
+/// page. Its id names it in receipts, Game sessions, the Library cache and
+/// its account's session.
 protocol WebGame: LibraryGame, Sendable where ID == String {
     var macos: Bool { get }
     var windows: Bool { get }
-    /// What the storefront can install of the game; nil when it ships no build.
-    var offer: GameOffer? { get }
+    /// The game as its storefront's requests name it, whichever builds it
+    /// ships: what its page's details ask about, and what a Transfer installs.
+    var product: GameOffer { get }
 }
 
 extension WebGame {
     /// The build the game shows before its page's details load: the Mac
     /// build when there is one.
     var preferredPlatform: GamePlatform { macos ? .mac : .windows }
+    /// What the storefront can install of the game; nil when it ships no
+    /// build. The storefront picks the build as the Transfer starts.
+    var offer: GameOffer? { macos || windows ? product : nil }
     /// Neither web storefront tells a playtime in its library entry, nor a
     /// last played date: the playtimes load after the games.
     var playtime: Duration? { nil }
     var lastPlayedOnStorefront: Date? { nil }
 }
 
-/// What a game's page reads besides its library entry, starting with the
-/// build it shows before any download.
-protocol WebGameDetails: Equatable, Sendable {
-    /// The build the page shows; nil when the storefront could not tell.
-    var platform: GamePlatform? { get }
-}
+/// The Rust session of a web storefront account, as its UniFFI protocol: the
+/// same for Epic and GOG.
+typealias WebSession = any WebAccountSessionProtocol
 
 /// What lives as long as an account's connection besides its library, such
 /// as Epic's friends. Account revocation stops it before the session goes.
 @MainActor
 protocol AccountPresence: AnyObject {
-    associatedtype Session
     init()
     /// The session became the connected account's.
-    func connect(_ session: Session, account: String)
+    func connect(_ session: WebSession, account: String)
     /// Stops its network work at once: nothing the revoked session sends later shows.
     func revoke()
+    /// The connected account's friends; nil signed out.
+    var state: FriendsPresentationState? { get }
+    /// Whether the account's menu opened them.
+    var isPresented: Bool { get }
+    func open()
+    func close()
+    /// Replaces only the social socket.
+    func retry()
+    /// Whether the account shows to its friends with a status the player picks.
+    static var showsStatus: Bool { get }
+    /// How the account shows to its friends, the player's choice: from the
+    /// next connection on, and at once on a live one.
+    func setStatus(_ status: OnlineStatus)
 }
 
 /// The presence of a storefront that has none.
 @MainActor
-final class NoPresence<Session>: AccountPresence {
+final class NoPresence: AccountPresence {
     init() {}
-    func connect(_ session: Session, account: String) {}
+    static var showsStatus: Bool { false }
+    func setStatus(_ status: OnlineStatus) {}
+    func connect(_ session: WebSession, account: String) {}
     func revoke() {}
+    var state: FriendsPresentationState? { nil }
+    var isPresented: Bool { false }
+    func open() {}
+    func close() {}
+    func retry() {}
 }
 
 /// A storefront whose account signs in on its own web page and whose Rust
-/// session rotates its refresh credentials: Epic and GOG. Its enum is the
-/// adapter: it makes the session's calls, reads its Library cache and names
-/// things. Each text is an `L10n.string` of a literal key, so the
+/// session rotates its refresh credentials: Epic and GOG. One Rust session
+/// serves both, so its enum only names what is the storefront's own: its
+/// texts, its Keychain item, its game record and how the player's language
+/// reads to it. Each text is an `L10n.string` of a literal key, so the
 /// localization check sees every storefront's.
 ///
 /// `SendableMetatype`: the model's `@Sendable` closures call `Store`'s statics.
 protocol WebStorefront: InstallationStorefront, SendableMetatype where GameID == String, AccountID == String {
-    /// The Rust session, as its UniFFI protocol.
-    associatedtype Session: Sendable
-    associatedtype Credentials: Sendable
     associatedtype Game: WebGame
-    /// What the game page reads besides the library entry.
-    associatedtype Details: WebGameDetails
-    associatedtype Presence: AccountPresence = NoPresence<Session> where Presence.Session == Session
+    associatedtype Presence: AccountPresence = NoPresence
 
     /// Names the storefront in receipts files and achievements.
     static var storeID: String { get }
@@ -69,52 +86,17 @@ protocol WebStorefront: InstallationStorefront, SendableMetatype where GameID ==
     /// The storefront's store, opened in Obelisk.
     static var storeURL: URL { get }
     @MainActor static var sessions: GameSessions<Self> { get }
-    static func keychain() -> any CredentialStore<Credentials>
+    static func keychain() -> any CredentialStore<WebAccountCredentials>
 
-    static func signIn(code: String, library: LibraryCache?) async throws -> Session
-    static func restore(_ credentials: Credentials, library: LibraryCache?) async throws -> Session
-    static func accountID(_ credentials: Credentials) -> String
-    /// The name the storefront shows. The account shows its id when it is empty.
-    static func accountName(_ credentials: Credentials) -> String
-    static func avatar(of session: Session) -> URL?
-    /// How the remembered session saves each rotation of the session's credentials.
-    static func rotating(_ session: Session) -> RotatingSession<Credentials>
-    /// Revokes the session. Throws when the storefront did not confirm it.
-    static func disconnect(_ session: Session) async throws
-
-    static func games(of session: Session) async throws -> [Game]
-    /// The playtime of each played game of `games`, by its id.
-    static func playtimes(of session: Session, games: [Game]) async throws -> [String: Duration]
-    /// The share of each of `games`' achievements the account unlocked, in
-    /// the player's `language`, by game id: the Library cache's for a game
-    /// not played since they were read, else the storefront's, which the
-    /// session then keeps. A game without achievements, or that the
-    /// storefront did not answer for, has none; it throws when no game could
-    /// be told. Asked once the playtimes loaded.
-    static func achievementShares(of games: [Game], session: Session, language: String) async throws -> [String: Double]
-    /// The account's Library cache, with each game's playtime and achievement
-    /// share when they were known.
+    /// The storefront's games among those a session listed.
+    static func games(_ listed: WebAccountGames) -> [Game]
+    /// The account's Library cache, with each game's playtime, in seconds,
+    /// and achievement share when they were known.
     static func cachedLibrary(in cache: LibraryCache, account: String)
-        -> [(game: Game, playtime: Duration?, achievements: Double?)]
-    /// `language` is the player's, such as "fr-FR".
-    static func details(of game: Game, session: Session, language: String) async throws -> Details
-    /// The game's achievements in the player's `language`: the Library
-    /// cache's while the game was not played since they were read, unless
-    /// `fresh`, else the storefront's.
-    static func achievements(of game: Game, session: Session, language: String,
-                             fresh: Bool) async throws -> [GameAchievement]
-    /// The account's installations in Rust; none for a session that is not Rust's.
-    @MainActor static func installations(of session: Session, account: String, language: String,
-                                          sessions: any StorefrontSessionsProtocol, receipts: URL,
-                                          locations: ObeliskLocations) -> any InstallationsBackend<Self>
-    /// An address that opens the storefront's site signed in as the
-    /// session's account and goes on to `destination`, a page of its store;
-    /// nil when its site has none.
-    static func webSignInURL(session: Session, to destination: URL) async throws -> URL?
-
-    /// The storefront refused the account: a restore forgets the saved
-    /// session, and any later call signs the account out.
-    static func isUnauthorized(_ error: Error) -> Bool
+        -> [(game: Game, playtimeSeconds: UInt64?, achievements: Double?)]
+    /// The player's `language`, such as "fr-FR", as the storefront's
+    /// achievements name it.
+    static func achievementLocale(_ language: String) -> String
 
     static var sessionNotSaved: String { get }
     /// Added to the storage warning when the sign-out's revocation fails.
@@ -122,9 +104,26 @@ protocol WebStorefront: InstallationStorefront, SendableMetatype where GameID ==
     static var otherGameRunning: String { get }
 }
 
-extension WebStorefront {
-    static func avatar(of session: Session) -> URL? { nil }
-    static func webSignInURL(session: Session, to destination: URL) async throws -> URL? { nil }
+/// The storefront refused the account: a restore forgets the saved session,
+/// and any later call signs the account out.
+private func isUnauthorized(_ error: Error) -> Bool {
+    if case WebAccountError.Unauthorized = error { true } else { false }
+}
+
+/// A playtime as the session and the Library cache tell it, in seconds. A
+/// count too large to hold saturates.
+private func played(seconds: UInt64) -> Duration { .seconds(Int64(clamping: seconds)) }
+
+extension RotatingSession where Credentials == WebAccountCredentials {
+    /// How the remembered session saves each rotation of `session`'s credentials.
+    init(_ session: WebSession) {
+        self.init(
+            identity: ObjectIdentifier(session),
+            credentials: { try await session.credentials() },
+            persist: { (saver: any CredentialSave) in await session.persist(credentials: saver) },
+            shutdownObservers: { session.shutdownObservers() }
+        )
+    }
 }
 
 /// One account of a storefront that signs in on its web page: its sign-in
@@ -142,7 +141,7 @@ final class WebAccountModel<Store: WebStorefront> {
     typealias Game = Store.Game
     /// The Rust installations of an account a session signed in: its id, the
     /// player's language, and the file its receipts keep.
-    typealias MakeInstallations = @MainActor (Store.Session, String, String,
+    typealias MakeInstallations = @MainActor (WebSession, String, String,
                                               any StorefrontSessionsProtocol, URL) -> any InstallationsBackend<Store>
 
     private(set) var accountName: String?
@@ -161,9 +160,13 @@ final class WebAccountModel<Store: WebStorefront> {
     let achievements = GameAchievementsModel(storeID: Store.storeID, describe: Store.describe)
     /// What lives with the connection, such as Epic's friends.
     let presence: Store.Presence
+    /// How the account shows to its friends, from the account's menu; nil
+    /// for a storefront without friends.
+    let onlineStatus: OnlineStatusChoice?
 
     private(set) var selectedGame: Game?
-    private(set) var selectedGameDetails: Store.Details?
+    /// What the game's page reads besides its library entry.
+    private(set) var selectedGameDetails: WebGameDetails?
     private(set) var isLoadingGameDetails = false
     private(set) var isRestoring = false
     private(set) var isConnecting = false
@@ -180,14 +183,14 @@ final class WebAccountModel<Store: WebStorefront> {
         set { rememberedSession.rememberSession = newValue }
     }
 
-    @ObservationIgnored private let rememberedSession: RememberedSession<Store.Credentials>
+    @ObservationIgnored private let rememberedSession: RememberedSession<WebAccountCredentials>
     @ObservationIgnored private let directory: URL
     @ObservationIgnored private let language: String
     @ObservationIgnored private let authorize: @MainActor () async throws -> String
-    @ObservationIgnored private let createSession: @Sendable (String) async throws -> Store.Session
-    @ObservationIgnored private let restoreSession: @Sendable (Store.Credentials) async throws -> Store.Session
+    @ObservationIgnored private let createSession: @Sendable (String) async throws -> WebSession
+    @ObservationIgnored private let restoreSession: @Sendable (WebAccountCredentials) async throws -> WebSession
     @ObservationIgnored private let makeInstallations: MakeInstallations
-    @ObservationIgnored private var session: Store.Session?
+    @ObservationIgnored private var session: WebSession?
     @ObservationIgnored private var started = false
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var authenticationTask: Task<Void, Never>?
@@ -196,27 +199,38 @@ final class WebAccountModel<Store: WebStorefront> {
 
     init(
         directory: URL = AppIdentity.libraryDirectory,
-        keychain: any CredentialStore<Store.Credentials> = Store.keychain(),
+        keychain: any CredentialStore<WebAccountCredentials> = Store.keychain(),
         authorize: @escaping @MainActor () async throws -> String = { try await WebAuthentication.authorize(Store.webSignIn) },
-        signIn: (@Sendable (String) async throws -> Store.Session)? = nil,
-        restore: (@Sendable (Store.Credentials) async throws -> Store.Session)? = nil,
+        signIn: (@Sendable (String) async throws -> WebSession)? = nil,
+        restore: (@Sendable (WebAccountCredentials) async throws -> WebSession)? = nil,
         language: String = Locale.preferredLanguages.first ?? "en-US",
         gameSessions: GameSessions<Store> = Store.sessions,
         libraryCache: LibraryCache? = nil,
-        installations makeInstallations: MakeInstallations? = nil
+        installations makeInstallations: MakeInstallations? = nil,
+        onlineStatus: OnlineStatusChoice? = nil
     ) {
         self.directory = directory
-        rememberedSession = RememberedSession(keychain: keychain, accountID: Store.accountID,
+        rememberedSession = RememberedSession(keychain: keychain, accountID: \.accountId,
                                               notSaved: Store.sessionNotSaved)
         self.authorize = authorize
-        createSession = signIn ?? { [libraryCache] in try await Store.signIn(code: $0, library: libraryCache) }
-        restoreSession = restore ?? { [libraryCache] in try await Store.restore($0, library: libraryCache) }
+        createSession = signIn ?? { [libraryCache] in
+            try await WebAccountSession.signIn(storefront: Store.storefront, authorizationCode: $0, library: libraryCache)
+        }
+        restoreSession = restore ?? { [libraryCache] in
+            try await WebAccountSession.restore(storefront: Store.storefront, credentials: $0, library: libraryCache)
+        }
         self.language = language
         self.gameSessions = gameSessions
         let locations = ObeliskLocations.of(library: directory)
+        // The account's installations in Rust; none for a session that is not Rust's.
         self.makeInstallations = makeInstallations ?? { session, account, language, sessions, receipts in
-            Store.installations(of: session, account: account, language: language, sessions: sessions,
-                                receipts: receipts, locations: locations)
+            guard let session = session as? WebAccountSession, let sessions = sessions as? StorefrontSessions else {
+                return NoInstallations<Store>()
+            }
+            return RustInstallations<Store>(try! AccountInstallations.web(
+                session: session, accountId: account, language: language, sessions: sessions,
+                receipts: receipts.path, locations: locations
+            ))
         }
         rosetta = RosettaModel(sessions: gameSessions)
         cloud = CloudModel(sessions: gameSessions)
@@ -224,6 +238,10 @@ final class WebAccountModel<Store: WebStorefront> {
         library = AccountLibrary(history: gameSessions.history, cache: libraryCache,
                                  installations: installations)
         presence = Store.Presence()
+        self.onlineStatus = Store.Presence.showsStatus
+            ? onlineStatus ?? OnlineStatusChoice(storeID: Store.storeID) : nil
+        self.onlineStatus?.follow(presence.setStatus)
+        self.onlineStatus?.follow(gameSessions.setStatus)
         installations.selection = { [weak self] in self?.installationSelection }
     }
 
@@ -308,10 +326,14 @@ final class WebAccountModel<Store: WebStorefront> {
         await storePage(at: Store.storeURL)
     }
 
-    /// A page of the storefront's store, signed in as `storePage` is.
+    /// A page of the storefront's store, signed in as `storePage` is. The
+    /// session's address opens the storefront's site signed in as its
+    /// account and goes on to the page; a storefront whose site takes no
+    /// sign-in from the app has none.
     func storePage(at page: URL) async -> WebPageStart {
         var url = page
-        if let session, let signedIn = try? await Store.webSignInURL(session: session, to: page) { url = signedIn }
+        if let session, let address = try? await session.webSignInUrl(redirectUrl: page.absoluteString),
+           let signedIn = URL(string: address) { url = signedIn }
         return WebPageStart(url: url, dataStore: Store.webSignIn.store.dataStore)
     }
 
@@ -350,7 +372,8 @@ final class WebAccountModel<Store: WebStorefront> {
             await removal.value
             if current == generation { isSigningOut = false }
             guard let disconnected else { return }
-            do { try await Store.disconnect(disconnected) }
+            // Throws when the storefront did not confirm the revocation.
+            do { try await disconnected.disconnect() }
             catch {
                 guard current == generation else { return }
                 let warning = Store.revocationUnconfirmed
@@ -372,7 +395,7 @@ final class WebAccountModel<Store: WebStorefront> {
 
     private func restoreSavedSession(generation current: Int) async {
         defer { if current == generation { isRestoring = false } }
-        let credentials: Store.Credentials?
+        let credentials: WebAccountCredentials?
         do {
             credentials = try await rememberedSession.load()
         } catch {
@@ -382,10 +405,10 @@ final class WebAccountModel<Store: WebStorefront> {
             return
         }
         guard isCurrent(current), let credentials else { return }
-        let account = Store.accountID(credentials)
+        let account = credentials.accountId
         library.showCache(of: account) { cache in
             Store.cachedLibrary(in: cache, account: account).map { entry in
-                CachedLibraryGame(game: entry.game, playtime: entry.playtime,
+                CachedLibraryGame(game: entry.game, playtime: entry.playtimeSeconds.map(played(seconds:)),
                                   values: entry.achievements.map { [.achievements: $0] } ?? [:])
             }
         }
@@ -396,7 +419,7 @@ final class WebAccountModel<Store: WebStorefront> {
             guard isCurrent(current) else { return }
             library.dropCache()
             errorMessage = Store.describe(error)
-            if Store.isUnauthorized(error) {
+            if isUnauthorized(error) {
                 await rememberedSession.forget().value
             } else {
                 canRetryRestore = true
@@ -404,25 +427,25 @@ final class WebAccountModel<Store: WebStorefront> {
         }
     }
 
-    private func accept(_ connected: Store.Session, generation current: Int) async {
+    private func accept(_ connected: WebSession, generation current: Int) async {
         guard isCurrent(current) else {
             await disconnectAbandonedSession(connected)
             return
         }
-        let rotating = Store.rotating(connected)
+        let rotating = RotatingSession(connected)
         do {
             let credentials = try await rotating.credentials()
             guard isCurrent(current) else {
                 await disconnectAbandonedSession(connected)
                 return
             }
-            let account = Store.accountID(credentials)
-            let name = Store.accountName(credentials)
+            let account = credentials.accountId
             library.connect(account)
             accountID = account
             session = connected
-            accountName = name.isEmpty ? account : name
-            avatarURL = Store.avatar(of: connected)
+            // The account shows its id when its storefront names it nothing.
+            accountName = credentials.name.isEmpty ? account : credentials.name
+            avatarURL = connected.avatarUrl().flatMap(URL.init(string:))
             presence.connect(connected, account: account)
             isConnecting = false
             isRestoring = false
@@ -443,28 +466,33 @@ final class WebAccountModel<Store: WebStorefront> {
         }
     }
 
-    private func disconnectAbandonedSession(_ connected: Store.Session) async {
+    private func disconnectAbandonedSession(_ connected: WebSession) async {
         // The authentication task may already be cancelled: Account revocation gets its own task.
-        await Task { try? await Store.disconnect(connected) }.value
+        await Task { try? await connected.disconnect() }.value
     }
 
     // MARK: Library
 
-    private func reloadGames(_ connected: Store.Session, generation current: Int) async {
+    private func reloadGames(_ connected: WebSession, generation current: Int) async {
         defer { if current == generation { isLoadingGames = false } }
         // The playtimes reload with the games: a refresh shows them loading at
-        // once. GOG asks each listed game's playtime, so they wait for the games.
-        let listing = Task { try await Store.games(of: connected) }
-        let language = language
+        // once. The session tells them for the games it is asked about, so
+        // they wait for the games.
+        let listing = Task { Store.games(try await connected.games()) }
+        let locale = Store.achievementLocale(language)
         library.loadPlaytimes({
             let games = try await listing.value
             // Nothing asks the storefront once the account signed out.
             try Task.checkCancellation()
-            return try await Store.playtimes(of: connected, games: games)
+            return try await connected.playtimes(games: games.map(\.id)).mapValues(played(seconds:))
         }, then: { [weak self] in
-            // The session reads again the achievements of the games played since.
+            // The share of each game's achievements the account unlocked: the
+            // Library cache's for a game not played since they were read, else
+            // the storefront's, which the session then keeps. A game without
+            // achievements, or that the storefront did not answer for, has
+            // none; it throws when no game could be told.
             self?.library.load(.achievements) {
-                try await Store.achievementShares(of: listing.value, session: connected, language: language)
+                try await connected.achievementShares(games: listing.value.map(\.id), locale: locale)
             }
         })
         do {
@@ -529,16 +557,18 @@ final class WebAccountModel<Store: WebStorefront> {
     /// unless `fresh`.
     private func load(achievementsOf game: Game, into model: GameAchievementsModel, fresh: Bool) {
         guard let session else { return }
-        let language = language
-        model.load { try await Store.achievements(of: game, session: session, language: language, fresh: fresh) }
+        let locale = Store.achievementLocale(language)
+        model.load {
+            try await session.achievements(game: game.id, locale: locale, fresh: fresh).map(GameAchievement.init)
+        }
     }
 
     /// Every change of the game on screen, and the sign-out, cancels it in `closeGame`.
-    private func loadDetails(_ game: Game, session: Store.Session) async {
+    private func loadDetails(_ game: Game, session: WebSession) async {
         defer { if !Task.isCancelled { isLoadingGameDetails = false } }
         guard !Task.isCancelled else { return }
         do {
-            let details = try await Store.details(of: game, session: session, language: language)
+            let details = try await session.gameDetails(offer: game.product, language: language)
             if !Task.isCancelled { selectedGameDetails = details }
         } catch {
             // Secondary metadata must not prevent browsing the library.
@@ -547,7 +577,7 @@ final class WebAccountModel<Store: WebStorefront> {
 
     /// Shows a failed call. One the storefront refused signs the account out.
     private func report(_ error: Error) {
-        if Store.isUnauthorized(error) { signOut() }
+        if isUnauthorized(error) { signOut() }
         errorMessage = Store.describe(error)
     }
 
@@ -569,4 +599,15 @@ final class WebAccountModel<Store: WebStorefront> {
             warn: { [weak self] in self?.storageWarning = $0 }
         )
     }
+}
+
+extension WebAccountModel {
+    /// The account's friends, whichever its presence is: none for a storefront
+    /// without any.
+    var friends: FriendsPresentationState? { presence.state }
+    var isFriendsPresented: Bool { presence.isPresented }
+
+    func openFriends() { presence.open() }
+    func closeFriends() { presence.close() }
+    func retryFriends() { presence.retry() }
 }

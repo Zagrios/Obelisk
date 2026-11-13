@@ -39,7 +39,7 @@ final class SteamModel {
         didSet { if selectedGame?.appId != oldValue?.appId { achievements.reset() } }
     }
     private(set) var details: SteamGameDetails?
-    let achievements = GameAchievementsModel(storeID: "steam", describe: SteamModel.message)
+    let achievements = GameAchievementsModel(storeID: LibrarySection.steam.rawValue, describe: SteamModel.message)
     private(set) var news: [SteamNews] = []
     private(set) var isLoadingDetails = false
     private(set) var isLoadingNews = false
@@ -61,7 +61,8 @@ final class SteamModel {
 
     @ObservationIgnored private let directory: URL
     @ObservationIgnored private let keychain: any CredentialStore<SteamCredentials>
-    @ObservationIgnored private let connectSession: @Sendable (SteamCredentials) async throws -> any SteamSessionProtocol
+    /// Signs the account in, showing it to its friends as the status says.
+    @ObservationIgnored private let connectSession: @Sendable (SteamCredentials, OnlineStatus) async throws -> any SteamSessionProtocol
     @ObservationIgnored private let loadNews: @Sendable (UInt32) async throws -> [SteamNews]
     @ObservationIgnored private let loadWebCookies: @Sendable (any SteamSessionProtocol) async throws -> [SteamWebCookie]
     /// The account's web sign-in, kept a while: its access token lasts a day.
@@ -87,6 +88,8 @@ final class SteamModel {
     }
     /// The in-game purchase the running game waits on.
     let purchase: SteamPurchaseAuthorization
+    /// How the account shows to its friends, from the account's menu.
+    let onlineStatus: OnlineStatusChoice
     @ObservationIgnored private var session: (any SteamSessionProtocol)?
     /// The session's CM connection of the moment, as it last published it;
     /// nil while it reconnects, after it gave up, or once Steam asked to sign
@@ -135,11 +138,18 @@ final class SteamModel {
         gameSessions: SteamGameSessions = .shared,
         libraryCache: LibraryCache? = nil,
         installations makeInstallations: MakeInstallations? = nil,
-        chat: SteamChatModel? = nil
+        chat: SteamChatModel? = nil,
+        onlineStatus: OnlineStatusChoice? = nil
     ) {
         self.directory = directory
         self.keychain = keychain
-        self.connectSession = connect ?? { [libraryCache] in try await SteamSessionConnection.connect($0, library: libraryCache) }
+        if let connect {
+            self.connectSession = { credentials, _ in try await connect(credentials) }
+        } else {
+            self.connectSession = { [libraryCache] in
+                try await SteamSessionConnection.connect($0, library: libraryCache, status: $1)
+            }
+        }
         self.loadNews = news
         self.loadWebCookies = webCookies
         self.beginLogin = beginLogin
@@ -163,6 +173,10 @@ final class SteamModel {
         self.chat = chat ?? SteamChatModel()
         self.invitations = SteamReceivedInvitations(sessions: gameSessions, installations: installations)
         self.purchase = SteamPurchaseAuthorization(sessions: gameSessions)
+        self.onlineStatus = onlineStatus ?? OnlineStatusChoice(storeID: LibrarySection.steam.rawValue)
+        // The chat has no session yet: the session signs in showing the status.
+        self.onlineStatus.follow(self.chat.setStatus)
+        self.onlineStatus.follow(gameSessions.setStatus)
         wakeObserver = SystemWakeObservation { [weak self] in
             Task { @MainActor [weak self] in self?.retryFriends() }
         }
@@ -401,7 +415,8 @@ final class SteamModel {
         isConnecting = true
         do {
             let connector = connectSession
-            let attempt = Task { try await connector(credentials) }
+            let status = onlineStatus.status
+            let attempt = Task { try await connector(credentials, status) }
             connectionTask?.cancel()
             connectionTask = attempt
             let connected = try await withTaskCancellationHandler {
@@ -427,8 +442,10 @@ final class SteamModel {
             displayName = nil
             avatarURL = nil
             friends = Self.emptyFriends(accountID: credentials.steamId)
-            // Rust's session logged on Online; the chat follows it from here.
+            // Rust's session logged on showing `status`; the chat follows it from here.
             chat.connect(connected, account: credentials.steamId)
+            // The player changed it while the session signed in.
+            if onlineStatus.status != status { chat.setStatus(onlineStatus.status) }
             invitations.connect(connected, account: credentials.steamId)
             followGameSession(account: credentials.steamId)
             observeFriends(connected, generation: current)
@@ -581,13 +598,13 @@ final class SteamModel {
     }
 
     /// A game's own Steam session can leave the account's presence behind it,
-    /// so the account shows Online again once its Game session ends. While it
-    /// runs, the chat follows what the game can invite into.
+    /// so the account shows its status again once its Game session ends.
+    /// While it runs, the chat follows what the game can invite into.
     private func observeGameSessions() {
         let active = withObservationTracking { gameSessions.active } onChange: { [weak self] in
             Task { @MainActor [weak self] in self?.observeGameSessions() }
         }
-        if let ended = observedGameSession, active?.id != ended.id, ended.account == steamId { chat.setOnline() }
+        if let ended = observedGameSession, active?.id != ended.id, ended.account == steamId { chat.setStatus(onlineStatus.status) }
         observedGameSession = active
         followGameSession(account: steamId)
     }
@@ -747,8 +764,8 @@ final class SteamModel {
 
     private static func emptyFriends(accountID: UInt64) -> FriendsPresentationState {
         FriendsPresentationState(
-            store: FriendsStoreIdentity(id: "steam", name: L10n.string("ui.store.steam"), logoAssetName: "SteamLogo"),
-            account: FriendsAccountIdentity(storeID: "steam", accountID: String(accountID)),
+            store: FriendsStoreIdentity(.steam),
+            account: FriendsAccountIdentity(storeID: LibrarySection.steam.rawValue, accountID: String(accountID)),
             friends: [], connection: .loading
         )
     }

@@ -1,7 +1,7 @@
 //! Filesystem primitives shared by storefront installers: paths confined to an
 //! installation root, the per-installation advisory lock, bounded cache files,
-//! SHA-1 and MD5 file checks and permission bits. Storefronts keep their manifest
-//! formats and error vocabularies; these helpers never follow a symlink.
+//! SHA-1 and MD5 file checks. Storefronts keep their manifest formats and error
+//! vocabularies; these helpers never follow a symlink.
 use std::{
     fs::{self, File, OpenOptions},
     io::{self, Read},
@@ -301,7 +301,7 @@ pub struct Matched {
     pub parts: usize,
 }
 
-/// Reads a file through its digest in 64 KiB reads, reporting bytes read in
+/// Reads a file through its digest in 1 MiB reads, reporting bytes read in
 /// bounded batches without treating them as validated content. A missing file
 /// or a size mismatch simply does not match; cancellation is checked before
 /// every read.
@@ -323,7 +323,7 @@ pub(crate) fn verify_file_with_progress(
     }
 }
 
-/// Streams a file through SHA-1 in 64 KiB reads. A missing file or a size
+/// Streams a file through SHA-1 in 1 MiB reads. A missing file or a size
 /// mismatch is simply `false`; cancellation is checked between reads.
 pub fn verify_sha1_file(
     path: &Path,
@@ -353,7 +353,9 @@ fn verify_parts<'a, D: Digest>(
     if file.metadata()?.len() != size || parts_size != size {
         return Ok(Matched::default());
     }
-    let mut buffer = [0_u8; 64 * 1024];
+    // Larger reads keep an external disk streaming while several readers
+    // share it.
+    let mut buffer = vec![0_u8; 1024 * 1024];
     let mut pending = 0_u64;
     let mut matched = Matched {
         whole: true,
@@ -388,41 +390,40 @@ fn verify_parts<'a, D: Digest>(
     Ok(matched)
 }
 
-/// Whether the file starts as a program does: a Mach-O binary or a script.
-/// Some manifests flag only a build's launch executable, not the helpers it
-/// starts.
-pub fn starts_as_program(path: &Path) -> io::Result<bool> {
-    const PROGRAMS: [&[u8]; 5] = [
-        &[0xcf, 0xfa, 0xed, 0xfe], // 64-bit Mach-O
-        &[0xce, 0xfa, 0xed, 0xfe], // 32-bit Mach-O
-        &[0xca, 0xfe, 0xba, 0xbe], // universal binary
-        &[0xca, 0xfe, 0xba, 0xbf], // 64-bit universal binary
-        b"#!",
-    ];
-    let mut header = Vec::with_capacity(4);
-    File::open(path)?.take(4).read_to_end(&mut header)?;
-    Ok(PROGRAMS.iter().any(|magic| header.starts_with(magic)))
+/// Hands a written file's data, or a directory's entries, to its drive, as
+/// an installer does before a rename publishes the file. `File::sync_all` is
+/// F_FULLFSYNC on macOS, which also empties the drive's own cache: about
+/// 5 ms a file on an internal SSD, far more on an external disk, and minutes
+/// across a game of many files. This costs a fraction of that; the
+/// installation becomes durable once, as it completes, through
+/// [`crate::publish::Publisher::complete`]. A file a power loss tore before
+/// then fails the verification that starts the next Transfer, which repairs
+/// it.
+pub(crate) fn write_out(file: &File) -> io::Result<()> {
+    Ok(rustix::fs::fsync(file)?)
 }
 
-/// Installed files are user-readable; only manifest-declared executables get
-/// the execute bit. No other mode information crosses a storefront manifest.
-pub fn apply_permissions(path: &Path, executable: bool) -> io::Result<()> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mode = if executable { 0o755 } else { 0o644 };
-        fs::set_permissions(path, fs::Permissions::from_mode(mode))?;
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = (path, executable);
-    }
-    Ok(())
+/// Asks the drive holding `directory` to empty its cache, so what
+/// [`write_out`] handed it, files and renames, survives a power loss.
+pub(crate) fn make_durable(directory: &Path) -> io::Result<()> {
+    File::open(directory)?.sync_all()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn written_files_and_their_directory_reach_the_drive() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("file");
+        fs::write(&path, b"content").unwrap();
+        write_out(&File::open(&path).unwrap()).unwrap();
+        write_out(&File::open(root.path()).unwrap()).unwrap();
+        make_durable(root.path()).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"content");
+        assert!(make_durable(&root.path().join("missing")).is_err());
+    }
 
     #[test]
     fn relative_paths_reject_escapes_and_reserved_names() {

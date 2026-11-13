@@ -12,18 +12,26 @@
 #   EXECUTABLE  the guest path of the Windows program, which Wine starts with its arguments
 # Options:
 #   --graphics dxmt|d3dmetal  what renders the game's Direct3D (default dxmt)
+#   --render-percent N        the share of the screen's pixels per axis that the game sees (default 100, all of them;
+#                             wsd keeps it from 1 to 100): macOS scales the picture up to the screen
+#   --game-mode on|off        whether macOS turns Game Mode on while the game is full screen (default on)
 #   --bind GUEST=HOST[:ro]    a folder the guest also sees, at GUEST, whose parent exists in the root
 #   --env NAME=VALUE          a variable of the guest
 #   --pass NAME               this script's variable NAME, when set, as a variable of the guest
 # OBELISK_APP_NAME names the game in the menu bar, the Dock and Cmd-Tab.
 set -u
+# The Steam host's discovery adapter is for macOS games; no process here needs it. On a Mac with SIP off, dyld also
+# inserts it into the system tools this script runs (mkdir, tr, tail), which are arm64e and abort without that slice.
+unset DYLD_INSERT_LIBRARIES
 runtime=$1 home=$2 install=$3 cwd=$4
 shift 4
-graphics=dxmt binds= guest_env=()
+graphics=dxmt render_percent= game_mode=on binds= guest_env=()
 while [ $# -gt 0 ] && [ "$1" != "--" ]; do
     [ $# -ge 2 ] || exit 2
     case $1 in
     --graphics) graphics=$2 ;;
+    --render-percent) render_percent=$2 ;;
+    --game-mode) game_mode=$2 ;;
     --bind) binds="$binds;$2" ;;
     --env) guest_env+=(--env "$2") ;;
     --pass)
@@ -48,9 +56,12 @@ case " ${guest_env[*]-} " in
 esac
 
 # Wine, the render server and D3DMetal keep a file open for each mapped resource. An app the Finder starts gets 256,
-# which Wine outgrows: take up to 65536, as far as the hard limit and macOS allow.
+# which Wine outgrows: take up to 65536, as far as the hard limit and macOS allow. macOS refuses more than
+# kern.maxfilesperproc, which is below 65536 on Macs with less memory.
 files=$(ulimit -H -n)
 { [ "$files" = unlimited ] || [ "$files" -gt 65536 ]; } && files=65536
+most=$(sysctl -n kern.maxfilesperproc 2>/dev/null)
+[[ $most =~ ^[0-9]+$ ]] && [ "$most" -lt "$files" ] && files=$most
 ulimit -S -n "$files" 2>/dev/null || ulimit -S -n 10240 2>/dev/null
 
 # wsd and the render server bind UNIX sockets in a private folder; a relative path keeps them inside sun_path.
@@ -87,6 +98,9 @@ mkdir -p "$app/Contents/MacOS" || exit 1
 rm -f "$app/Contents/MacOS/wsd"
 cp -c "$runtime/engine/wsd" "$app/Contents/MacOS/wsd" 2>/dev/null || cp "$runtime/engine/wsd" "$app/Contents/MacOS/wsd" || exit 1
 xml_name=$(printf '%s' "$app_name" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g')
+# macOS turns Game Mode on for a full-screen app of the games category, unless the app says it does not support it.
+game_mode_key=
+[ "$game_mode" = off ] && game_mode_key=$'\n  <key>LSSupportsGameMode</key><false/>'
 cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -97,11 +111,14 @@ cat > "$app/Contents/Info.plist" <<PLIST
   <key>CFBundleName</key><string>$xml_name</string>
   <key>CFBundleDisplayName</key><string>$xml_name</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>LSApplicationCategoryType</key><string>public.app-category.games</string>
+  <key>LSApplicationCategoryType</key><string>public.app-category.games</string>$game_mode_key
   <key>NSHighResolutionCapable</key><true/>
 </dict>
 </plist>
 PLIST
+# macOS keeps what it read of a bundle at its first launch, and reads it again only once the bundle's folder has a
+# newer date: with the Info.plist alone rewritten, a game kept the Game Mode of its first launch.
+touch "$app"
 
 # The render server runs from a helper bundle inside the game's, one per graphics backend: Metal keeps its compiled
 # shaders per bundle identifier. Outside a bundle every render server shared one cache, and each start of DXMT's arm64
@@ -144,7 +161,7 @@ else
     render=$(render_server "$runtime/graphics/libexec/virgl_render_server" dxmt) || exit 1
 fi
 
-"$app/Contents/MacOS/wsd" --dir "$sockets" &
+"$app/Contents/MacOS/wsd" --dir "$sockets" ${render_percent:+--render-percent "$render_percent"} &
 helpers+=($!)
 if [ "$graphics" = d3dmetal ]; then
     # D3DMetal is an Intel library: the Intel render server runs it under Rosetta. d3dmetal-native loads the

@@ -2,10 +2,9 @@
 //! drives. Steam stands in; Epic differs only in names and keys.
 use super::*;
 use crate::{
-    HostState,
     epic::Epic,
     runtimes::tests::{FakeRuntimes, fake_offer, ready, recorded},
-    steam::{Steam, Store},
+    steam::{Steam, Store, host::HostState},
 };
 use std::{
     sync::Condvar,
@@ -33,6 +32,8 @@ struct FakeState<P: Provider> {
     quits: Vec<&'static str>,
     /// The player's controls, with the account each named.
     controls: Vec<(P::Account, P::Control)>,
+    /// The statuses it was told, with the account each named.
+    statuses: Vec<(P::Account, OnlineStatus)>,
     revocations: Vec<P::Account>,
     choices: Vec<(P::Account, u64, Choice)>,
     rosetta_resumes: Vec<(P::Account, u64)>,
@@ -74,6 +75,7 @@ impl<P: Provider> Fake<P> {
                 stops: 0,
                 quits: Vec::new(),
                 controls: Vec::new(),
+                statuses: Vec::new(),
                 revocations: Vec::new(),
                 choices: Vec::new(),
                 rosetta_resumes: Vec::new(),
@@ -205,6 +207,14 @@ impl<P: Provider> Supervised<P> for Fake<P> {
             .unwrap()
             .controls
             .push((account.clone(), control));
+        Ok(())
+    }
+    fn set_status(&self, account: &P::Account, status: OnlineStatus) -> Result<(), String> {
+        self.state
+            .lock()
+            .unwrap()
+            .statuses
+            .push((account.clone(), status));
         Ok(())
     }
 }
@@ -441,6 +451,24 @@ async fn a_launch_keeps_when_its_game_started_even_unseen_running_but_a_recovere
         None,
         "a game recovered running started before this Obelisk saw it"
     );
+}
+
+#[tokio::test]
+async fn a_recovered_game_is_told_no_status_until_the_player_has_one() {
+    let recovered = steam(570, Phase::Running);
+    let found = recovered.clone();
+    let sessions = recovering(move || Ok(Some(found.clone() as Arc<dyn Supervised<Steam>>)));
+    // Each observation round, the one that saw it run included, would tell it.
+    eventually(|| running(&sessions)).await;
+    assert!(recovered.read(|state| state.statuses.is_empty()));
+
+    sessions.set_status(OnlineStatus::Away);
+    assert_eq!(
+        recovered.read(|state| state.statuses.clone()),
+        [(42, OnlineStatus::Away)]
+    );
+    recovered.finish(false);
+    eventually(|| !sessions.state().busy()).await;
 }
 
 #[tokio::test]
@@ -1048,6 +1076,8 @@ type Started<P> = Result<Arc<dyn Supervised<P>>, String>;
 struct Scripted<P: Provider> {
     /// The platform of the build it starts: a Mac one unless the test says.
     platform: Platform,
+    /// How its Windows build runs in Wine: none unless the test says.
+    windows: Option<crate::wine::Installation>,
     steps: Arc<Mutex<Vec<&'static str>>>,
     /// Preparing waits until the test notifies it.
     held: Option<Arc<tokio::sync::Notify>>,
@@ -1055,17 +1085,21 @@ struct Scripted<P: Provider> {
     /// Starting waits for its cancellation instead of returning.
     awaits_cancellation: bool,
     started: Mutex<Option<Started<P>>>,
+    /// The status it started the game showing.
+    status: Arc<Mutex<Option<OnlineStatus>>>,
 }
 
 impl<P: Provider> Scripted<P> {
     fn starting(supervisor: Started<P>) -> Self {
         Self {
             platform: Platform::Mac,
+            windows: None,
             steps: Arc::default(),
             held: None,
             prepared: Ok(()),
             awaits_cancellation: false,
             started: Mutex::new(Some(supervisor)),
+            status: Arc::default(),
         }
     }
     fn steps(&self) -> Arc<Mutex<Vec<&'static str>>> {
@@ -1077,6 +1111,9 @@ impl<P: Storefront> Handover<P> for Scripted<P> {
     type Prepared = ();
     fn platform(&self) -> Platform {
         self.platform
+    }
+    fn windows(&self) -> Option<&crate::wine::Installation> {
+        self.windows.as_ref()
     }
     fn prepare(&self) -> BoxFuture<'_, Result<(), Failure>> {
         Box::pin(async move {
@@ -1091,8 +1128,14 @@ impl<P: Storefront> Handover<P> for Scripted<P> {
         let steps = self.steps.clone();
         Box::new(move || steps.lock().unwrap().push("before begin"))
     }
-    fn start(self, (): (), cancel: CancelToken) -> Result<Arc<dyn Supervised<P>>, String> {
+    fn start(
+        self,
+        (): (),
+        status: OnlineStatus,
+        cancel: CancelToken,
+    ) -> Result<Arc<dyn Supervised<P>>, String> {
         self.steps.lock().unwrap().push("start");
+        *self.status.lock().unwrap() = Some(status);
         if self.awaits_cancellation {
             let deadline = Instant::now() + Duration::from_secs(3);
             while !cancel.is_cancelled() && Instant::now() < deadline {
@@ -1128,6 +1171,38 @@ async fn a_handover_prepares_starts_the_supervisor_and_opens_its_start_gate_afte
 
     assert_eq!(launch.await.unwrap(), Ok(()));
     assert!(sessions.state().active.is_none());
+}
+
+#[tokio::test]
+async fn a_game_starts_showing_the_chosen_status_and_shows_each_change_at_once() {
+    let sessions = Sessions::<Epic>::new(Box::new(|| Ok(None)), ready());
+    eventually(|| !sessions.state().recovering).await;
+    sessions.set_status(OnlineStatus::Invisible);
+    let store = crate::epic::Store {
+        namespace: "ns".into(),
+        app_name: "app".into(),
+    };
+    let game = Fake::<Epic>::with("account".into(), store.clone(), Phase::Running);
+    let handover = Scripted::starting(Ok(game.clone() as Arc<dyn Supervised<Epic>>));
+    let started_with = handover.status.clone();
+    let admission = sessions.admit(store, "account".into()).unwrap();
+
+    let launch = tokio::spawn(admission.hand_off(handover));
+    eventually(|| game.read(|state| state.begins) == 1).await;
+    assert_eq!(*started_with.lock().unwrap(), Some(OnlineStatus::Invisible));
+    sessions.set_status(OnlineStatus::Invisible);
+    sessions.set_status(OnlineStatus::Away);
+    assert_eq!(
+        game.read(|state| state.statuses.clone()),
+        [("account".to_owned(), OnlineStatus::Away)],
+        "it started showing Invisible"
+    );
+    game.finish(false);
+    assert_eq!(launch.await.unwrap(), Ok(()));
+
+    // Without a game, it waits for the next one.
+    sessions.set_status(OnlineStatus::Online);
+    assert_eq!(game.read(|state| state.statuses.len()), 1);
 }
 
 #[tokio::test]
@@ -1322,6 +1397,19 @@ async fn a_runtime_that_fails_to_download_refuses_the_launch_before_it_prepares(
     assert!(!sessions.state().busy());
 }
 
+/// Rocket League's Windows build as a launch resolves it, whose profile
+/// names the oldest Voile release it runs in.
+fn rocket_league_on_windows() -> crate::wine::Installation {
+    let root = tempfile::tempdir().unwrap();
+    let windows = crate::wine::tests::windows_of(
+        &crate::wine::tests::locations(root.path()),
+        crate::profile::Game::Steam { app_id: 252950 },
+        &root.path().join("Rocket League"),
+    );
+    assert!(windows.minimum_voile().is_some());
+    windows
+}
+
 /// A Windows build's launch from Epic sessions whose Voile is in place while
 /// a newer release is offered, waiting for the player's answer.
 struct OfferingVoile {
@@ -1343,11 +1431,11 @@ impl OfferingVoile {
         let game = Fake::<Epic>::with("account".into(), store.clone(), Phase::Preparing);
         let mut handover = Scripted::starting(Ok(game.clone() as Arc<dyn Supervised<Epic>>));
         handover.platform = Platform::Windows;
-        let steps = handover.steps();
-        let mut admission = sessions.admit(store, "account".into()).unwrap();
         if required {
-            admission.needs_voile(Some("v2"));
+            handover.windows = Some(rocket_league_on_windows());
         }
+        let steps = handover.steps();
+        let admission = sessions.admit(store, "account".into()).unwrap();
         let launch = tokio::spawn(admission.hand_off(handover));
         let offering = Self {
             sessions,

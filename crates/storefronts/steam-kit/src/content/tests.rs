@@ -1,24 +1,33 @@
 use std::{
     collections::HashMap,
-    net::TcpListener,
-    sync::{Arc, Mutex},
-    thread,
-    time::Instant,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::{Duration, Instant},
 };
 
 use aes::cipher::{BlockCipherEncrypt, BlockModeEncrypt, KeyInit, KeyIvInit, block_padding::Pkcs7};
+use obelisk_core::testing::{Cdn, Reply, reaching_as};
 use prost::Message;
 
-use super::format::{Chunk, steam_adler};
+use super::format::Chunk;
 use super::*;
 
+mod chunk_request;
 mod mirrors;
 mod prefetch;
+mod publish;
 
 const KEY: [u8; 32] = [0x42; 32];
 
 fn encrypt(bytes: &[u8]) -> Vec<u8> {
-    let cipher = aes::Aes256::new((&KEY).into());
+    encrypt_under(&KEY, bytes)
+}
+
+/// `bytes` as a CDN serves a chunk of a depot whose key is `key`.
+fn encrypt_under(key: &[u8; 32], bytes: &[u8]) -> Vec<u8> {
+    let cipher = aes::Aes256::new(key.into());
     let iv = [0x12; 16];
     let mut encrypted_iv = aes::cipher::Block::<aes::Aes256>::default();
     encrypted_iv.copy_from_slice(&iv);
@@ -26,7 +35,7 @@ fn encrypt(bytes: &[u8]) -> Vec<u8> {
     let mut output = encrypted_iv.to_vec();
     let mut body = bytes.to_vec();
     body.resize(bytes.len() + 16, 0);
-    let encrypted = cbc::Encryptor::<aes::Aes256>::new((&KEY).into(), (&iv).into())
+    let encrypted = cbc::Encryptor::<aes::Aes256>::new(key.into(), (&iv).into())
         .encrypt_padded::<Pkcs7>(&mut body, bytes.len())
         .unwrap();
     output.extend_from_slice(encrypted);
@@ -105,7 +114,8 @@ fn vzstd(bytes: &[u8]) -> Vec<u8> {
 fn chunk(bytes: &[u8], offset: u64, compressed_size: usize) -> Chunk {
     Chunk {
         sha: Sha1::digest(bytes).to_vec(),
-        adler: steam_adler(bytes),
+        // Never checked: the SHA-1 proves the chunk.
+        adler: 0,
         offset,
         original_size: bytes.len() as u32,
         compressed_size: compressed_size as u32,
@@ -137,13 +147,22 @@ fn manifest(files: Vec<ManifestFile>, encrypted_names: bool) -> Vec<u8> {
 }
 
 fn manifest_version(files: Vec<ManifestFile>, encrypted_names: bool, manifest_id: u64) -> Vec<u8> {
+    depot_manifest(42, manifest_id, files, encrypted_names)
+}
+
+fn depot_manifest(
+    depot_id: u32,
+    manifest_id: u64,
+    files: Vec<ManifestFile>,
+    encrypted_names: bool,
+) -> Vec<u8> {
     let payload = TestPayload { files }.encode_to_vec();
     let mut crc = crc32fast::Hasher::new();
     crc.update(&(payload.len() as u32).to_le_bytes());
     crc.update(&payload);
     let crc = crc.finalize();
     let metadata = TestMetadata {
-        depot_id: 42,
+        depot_id,
         manifest_id,
         encrypted_names,
         encrypted_crc: if encrypted_names { crc } else { 0 },
@@ -200,11 +219,13 @@ fn decrypts_all_three_steam_chunk_compression_envelopes_and_rejects_corruption()
         assert!(decode_chunk(&mut encrypted.clone(), &wrong, &KEY).is_err());
         wrong = expected.clone();
         wrong.adler ^= 1;
-        assert!(decode_chunk(&mut encrypted.clone(), &wrong, &KEY).is_err());
+        assert_eq!(
+            decode_chunk(&mut encrypted.clone(), &wrong, &KEY).unwrap(),
+            bytes,
+            "the SHA-1 alone proves the chunk"
+        );
         assert!(decode_chunk(&mut encrypted.clone(), &expected, &[9; 32]).is_err());
     }
-    // zlib's standard Adler value for this input would be 0x024d0127.
-    assert_eq!(steam_adler(b"abc"), 0x024a0126);
 }
 
 #[test]
@@ -383,9 +404,7 @@ async fn a_framework_installs_its_links_and_keeps_them_on_the_next_run() {
         assert_eq!(last.completed_files, last.total_files, "run {run}");
     }
     let chunks = fixture
-        .requests
-        .lock()
-        .unwrap()
+        .requests()
         .iter()
         .filter(|path| path.contains("/chunk/"))
         .count();
@@ -535,19 +554,42 @@ fn decodes_upstream_reference_manifest_and_three_real_chunk_fixtures() {
     }
 }
 
+/// What a CDN serves of a depot at `manifest_id`, by path: its manifest, for
+/// a request bearing `request_code`, and the chunks of its `files`, each a
+/// name and the pieces its chunks hold, under the depot's `key`.
+pub(crate) fn depot_routes(
+    depot_id: u32,
+    manifest_id: u64,
+    request_code: u64,
+    key: &[u8; 32],
+    files: &[(&str, &[&[u8]])],
+) -> HashMap<String, Vec<u8>> {
+    let listed = files
+        .iter()
+        .map(|(name, pieces)| file(name, pieces))
+        .collect();
+    let mut routes = HashMap::from([(
+        format!("/{}", manifest_path(depot_id, manifest_id, request_code)),
+        zip(&depot_manifest(depot_id, manifest_id, listed, false)),
+    )]);
+    for bytes in files.iter().flat_map(|(_, pieces)| pieces.iter()) {
+        routes.insert(
+            format!("/depot/{depot_id}/chunk/{}", hex(&Sha1::digest(bytes))),
+            encrypt_under(key, &zip(bytes)),
+        );
+    }
+    routes
+}
+
 /// The host `plan` names; a fixture's `client` serves it.
 const CDN_HOST: &str = "cdn.steamcontent.com";
 
 /// How a fixture answers one request: status, body and a delay first.
 type Answer = (u16, Vec<u8>, Duration);
 
-/// A local CDN server. It answers one request at a time, so a delayed answer
-/// holds up every request queued behind it, as a busy server does.
+/// A CDN in memory that records every request.
 struct CdnFixture {
-    endpoint: Url,
-    requests: Arc<Mutex<Vec<String>>>,
-    stop: Arc<AtomicBool>,
-    thread: Option<thread::JoinHandle<()>>,
+    cdn: Cdn,
 }
 
 impl CdnFixture {
@@ -562,68 +604,17 @@ impl CdnFixture {
 
     /// `answer` receives each request's path and query.
     fn answering(answer: impl Fn(&str) -> Answer + Send + 'static) -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        listener.set_nonblocking(true).unwrap();
-        let endpoint = Url::parse(&format!("http://{}/", listener.local_addr().unwrap())).unwrap();
-        let requests = Arc::new(Mutex::new(Vec::new()));
-        let stop = Arc::new(AtomicBool::new(false));
-        let thread_requests = Arc::clone(&requests);
-        let thread_stop = Arc::clone(&stop);
-        let worker = thread::spawn(move || {
-            while !thread_stop.load(Ordering::Relaxed) {
-                let (mut stream, _) = match listener.accept() {
-                    Ok(connection) => connection,
-                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                        thread::sleep(Duration::from_millis(5));
-                        continue;
-                    }
-                    Err(error) => panic!("fixture accept: {error}"),
-                };
-                // Accepted sockets inherit nonblocking mode on macOS. The
-                // listener polls for shutdown, but each request must wait for
-                // its headers/body under the bounded socket timeouts below.
-                stream.set_nonblocking(false).unwrap();
-                stream
-                    .set_read_timeout(Some(Duration::from_secs(3)))
-                    .unwrap();
-                stream
-                    .set_write_timeout(Some(Duration::from_secs(3)))
-                    .unwrap();
-                let mut request = Vec::new();
-                let mut buffer = [0; 1024];
-                while !request.windows(4).any(|window| window == b"\r\n\r\n") {
-                    // A client that gave up on a request closes its socket.
-                    let Ok(count) = stream.read(&mut buffer) else {
-                        break;
-                    };
-                    if count == 0 {
-                        break;
-                    }
-                    request.extend_from_slice(&buffer[..count]);
-                }
-                let text = String::from_utf8(request).unwrap();
-                let target = text.split_whitespace().nth(1).unwrap_or("").to_string();
-                let path = target.split('?').next().unwrap_or("").to_string();
-                thread_requests.lock().unwrap().push(path);
-                let (code, bytes, delay) = answer(&target);
-                let until = Instant::now() + delay;
-                while Instant::now() < until && !thread_stop.load(Ordering::Relaxed) {
-                    thread::sleep(Duration::from_millis(5));
-                }
-                // The client may have abandoned the request meanwhile.
-                let _ = write!(
-                    stream,
-                    "HTTP/1.1 {code} OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                    bytes.len()
-                )
-                .and_then(|()| stream.write_all(&bytes));
-            }
-        });
+        let answer = Mutex::new(answer);
         Self {
-            endpoint,
-            requests,
-            stop,
-            thread: Some(worker),
+            cdn: Cdn::in_memory(move |arrival| {
+                let (status, body, delay) = (answer.lock().unwrap())(&arrival.target);
+                let reply = Reply::status(status, body);
+                if delay.is_zero() {
+                    reply
+                } else {
+                    Reply::After(delay, Box::new(reply))
+                }
+            }),
         }
     }
 
@@ -631,10 +622,17 @@ impl CdnFixture {
         serving(&[(CDN_HOST, self)])
     }
 
+    /// The path of every request taken.
+    fn requests(&self) -> Vec<String> {
+        self.cdn
+            .arrivals()
+            .iter()
+            .map(|arrival| arrival.path().to_owned())
+            .collect()
+    }
+
     fn chunk_requests(&self) -> usize {
-        self.requests
-            .lock()
-            .unwrap()
+        self.requests()
             .iter()
             .filter(|path| path.contains("/chunk/"))
             .count()
@@ -644,54 +642,11 @@ impl CdnFixture {
 /// A content client whose CDN hosts are the fixtures named; any other host is
 /// unreachable.
 fn serving(fixtures: &[(&str, &CdnFixture)]) -> ContentClient {
-    ContentClient {
-        client: Client::new(),
-        test_endpoints: fixtures
-            .iter()
-            .map(|(host, fixture)| ((*host).to_string(), fixture.endpoint.clone()))
-            .collect(),
-    }
-}
-
-impl Drop for CdnFixture {
-    fn drop(&mut self) {
-        self.stop.store(true, Ordering::Relaxed);
-        if let Some(worker) = self.thread.take()
-            && let Err(failure) = worker.join()
-            && !thread::panicking()
-        {
-            // Preserve server failures, but do not abort the entire test
-            // process with a second panic while a test is already unwinding.
-            std::panic::resume_unwind(failure);
-        }
-    }
-}
-
-#[test]
-fn cdn_fixture_waits_for_delayed_request_headers() {
-    let fixture = CdnFixture::new(HashMap::from([("/delayed".into(), b"response".to_vec())]));
-    let address = fixture.endpoint.socket_addrs(|| None).unwrap()[0];
-    let mut connection = std::net::TcpStream::connect(address).unwrap();
-    connection
-        .set_read_timeout(Some(Duration::from_secs(3)))
-        .unwrap();
-    // Give the fixture time to accept before any bytes arrive. A nonblocking
-    // accepted stream would fail its first read instead of waiting for headers.
-    thread::sleep(Duration::from_millis(100));
-    let mut response = String::new();
-    let result = connection
-        .write_all(b"GET /delayed HTTP/1.1\r\nHost: fixture\r\n\r\n")
-        .and_then(|()| connection.read_to_string(&mut response));
-    let requests = fixture.requests.lock().unwrap().clone();
-    // Join before assertions so a broken server reports its own failure once.
-    drop(connection);
-    drop(fixture);
-    result.unwrap();
-    assert_eq!(requests, ["/delayed"]);
-    assert_eq!(
-        response,
-        "HTTP/1.1 200 OK\r\nContent-Length: 8\r\nConnection: close\r\n\r\nresponse"
-    );
+    let hosts: Vec<_> = fixtures
+        .iter()
+        .map(|(host, fixture)| (*host, &fixture.cdn))
+        .collect();
+    ContentClient::over(reaching_as(&hosts))
 }
 
 fn plan(destination: &Path) -> DepotDownload<'static> {
@@ -768,16 +723,11 @@ async fn a_depot_s_files_are_listed_and_read_from_their_first_chunks_only() {
     let depot = client.depot_files(source, &cancel).await.unwrap();
     let mut listing = Listing::default();
     depot.list(&mut listing, 0);
-    let read = |(_, file): (usize, usize), bytes: u64| depot.read(file, bytes, &cancel);
-    let native = obelisk_core::mac_build::runs_natively(
-        &listing,
-        "Game.app/Contents/MacOS/Launcher",
-        &[],
-        read,
-    )
-    .await
-    .unwrap();
-    assert!(native);
+    // The link names the program, by its depot and its place in the manifest.
+    let launcher = listing.find("Game.app/Contents/MacOS/Launcher");
+    assert_eq!(launcher, Some(((0, 1), 5023)));
+    let head = depot.read(1, 4096, &cancel).await.unwrap();
+    assert_eq!(head, program[..4096]);
     assert_eq!(fixture.chunk_requests(), 1);
     let whole = depot.read(1, 10_000, &cancel).await.unwrap();
     assert_eq!(whole, pieces.concat());
@@ -810,9 +760,7 @@ async fn a_manifest_read_before_its_installation_is_installed_from_and_cached() 
         .await
         .unwrap();
     let manifests = fixture
-        .requests
-        .lock()
-        .unwrap()
+        .requests()
         .iter()
         .filter(|path| path.contains("/manifest/"))
         .count();
@@ -894,13 +842,13 @@ async fn downloads_atomically_and_reuses_verified_files_on_next_invocation() {
     assert_eq!(result.completed_files, 1);
     assert_eq!(result.reused_bytes, 0);
     assert!(result.content_bytes > 0);
-    assert_eq!(fixture.requests.lock().unwrap().len(), 3);
+    assert_eq!(fixture.requests().len(), 3);
     let last = events.lock().unwrap().last().unwrap().clone();
     assert_eq!(last.completed_bytes, last.total_bytes);
     assert_eq!(last.completed_files, last.total_files);
     let installed_path = directory.path().join("bin/game.exe");
     let original_metadata = fs::metadata(&installed_path).unwrap();
-    let request_count_before_check = fixture.requests.lock().unwrap().len();
+    let request_count_before_check = fixture.requests().len();
     let check_events = Arc::new(Mutex::new(Vec::new()));
     let resumed = client
         .download_depot(&plan(directory.path()), &CancelToken::new(), {
@@ -912,7 +860,7 @@ async fn downloads_atomically_and_reuses_verified_files_on_next_invocation() {
         .summary;
     assert_eq!(resumed.reused_bytes, pieces.concat().len() as u64);
     assert_eq!(resumed.content_bytes, 0);
-    let requests = fixture.requests.lock().unwrap();
+    let requests = fixture.requests();
     let verification_requests = &requests[request_count_before_check..];
     assert!(
         verification_requests.is_empty(),
@@ -996,7 +944,7 @@ async fn invalid_cache_is_refetched_and_a_new_manifest_installs_its_new_content(
         .path()
         .join(".obelisk-content/manifests/42/99.zip");
     fs::write(&cached_path, b"truncated cache").unwrap();
-    let before = fixture.requests.lock().unwrap().len();
+    let before = fixture.requests().len();
     let repaired = client
         .download_depot(&plan(directory.path()), &cancel, |_| {})
         .await
@@ -1005,7 +953,7 @@ async fn invalid_cache_is_refetched_and_a_new_manifest_installs_its_new_content(
     assert_eq!(repaired.content_bytes, 0);
     assert!(repaired.downloaded_bytes > 0);
     assert_eq!(
-        &fixture.requests.lock().unwrap()[before..],
+        &fixture.requests()[before..],
         ["/depot/42/manifest/99/5/123"]
     );
     assert!(
@@ -1017,7 +965,7 @@ async fn invalid_cache_is_refetched_and_a_new_manifest_installs_its_new_content(
     );
     let mut updated_plan = plan(directory.path());
     updated_plan.manifest_id = 100;
-    let before = fixture.requests.lock().unwrap().len();
+    let before = fixture.requests().len();
     let updated = client
         .download_depot(&updated_plan, &cancel, |_| {})
         .await
@@ -1025,10 +973,7 @@ async fn invalid_cache_is_refetched_and_a_new_manifest_installs_its_new_content(
         .summary;
     assert!(updated.content_bytes > 0);
     assert_eq!(fs::read(directory.path().join("game.exe")).unwrap(), new);
-    assert_eq!(
-        fixture.requests.lock().unwrap()[before],
-        "/depot/42/manifest/100/5/123"
-    );
+    assert_eq!(fixture.requests()[before], "/depot/42/manifest/100/5/123");
 }
 
 #[tokio::test]
@@ -1065,7 +1010,8 @@ async fn cached_manifest_still_hashes_and_repairs_corrupt_or_missing_files() {
     let good_path = directory.path().join("good.bin");
     let original = fs::metadata(&good_path).unwrap();
     let bad_path = directory.path().join("bad.bin");
-    // Preserve size and mtime: an unchanged manifest must never skip the SHA-1 read.
+    // Preserve size and mtime: an unchanged manifest never skips the SHA-1
+    // read of a verification the player asked for.
     let bad_metadata = fs::metadata(&bad_path).unwrap();
     let mut corrupted = repair.to_vec();
     corrupted[0] ^= 1;
@@ -1077,6 +1023,9 @@ async fn cached_manifest_still_hashes_and_repairs_corrupt_or_missing_files() {
         .set_modified(bad_metadata.modified().unwrap())
         .unwrap();
     fs::remove_file(directory.path().join("missing.bin")).unwrap();
+    // The player's verification forgets what the last Transfer recorded:
+    // the file still says its size, time and inode, and is read anyway.
+    obelisk_core::verification::forget_verified(directory.path()).unwrap();
     let mut cached_plan = plan(directory.path());
     cached_plan.cached_manifest = client
         .cached_manifest(directory.path(), 42, 99, &KEY)
@@ -1084,7 +1033,7 @@ async fn cached_manifest_still_hashes_and_repairs_corrupt_or_missing_files() {
         .unwrap();
     assert!(cached_plan.cached_manifest.is_some());
     cached_plan.request_code = 0;
-    let before = fixture.requests.lock().unwrap().len();
+    let before = fixture.requests().len();
     let events = Arc::new(Mutex::new(Vec::new()));
     let result = client
         .download_depot(&cached_plan, &cancel, {
@@ -1094,7 +1043,7 @@ async fn cached_manifest_still_hashes_and_repairs_corrupt_or_missing_files() {
         .await
         .unwrap()
         .summary;
-    let requests = fixture.requests.lock().unwrap();
+    let requests = fixture.requests();
     let requested = &requests[before..];
     assert_eq!(requested.len(), 2);
     assert!(requested.iter().all(|path| path.contains("/chunk/")));
@@ -1154,9 +1103,7 @@ async fn missing_or_corrupt_files_report_downloads_only_when_fetching_game_chunk
         assert_eq!(result.downloaded_bytes, manifest_bytes + chunk_bytes);
         assert_eq!(
             fixture
-                .requests
-                .lock()
-                .unwrap()
+                .requests()
                 .iter()
                 .filter(|path| path.contains("/chunk/"))
                 .count(),
@@ -1237,9 +1184,7 @@ async fn cancellation_keeps_original_and_resumes_verified_partial_chunks() {
     let kept = format!("/depot/42/chunk/{}", hex(&Sha1::digest(kept)));
     assert_eq!(
         fixture
-            .requests
-            .lock()
-            .unwrap()
+            .requests()
             .iter()
             .filter(|path| **path == kept)
             .count(),
@@ -1260,7 +1205,7 @@ async fn existing_parent_symlink_cannot_redirect_writes_outside_destination() {
         .await;
     assert!(matches!(result, Err(ContentError::UnsafePath(_))));
     assert!(!outside.path().join("game.exe").exists());
-    assert_eq!(fixture.requests.lock().unwrap().len(), 1);
+    assert_eq!(fixture.requests().len(), 1);
 }
 
 #[tokio::test]
@@ -1431,17 +1376,21 @@ async fn dropping_download_depot_cancels_its_disk_worker_and_releases_the_engine
 }
 
 #[test]
-fn body_errors_keep_their_content_messages() {
+fn cdn_errors_keep_their_content_messages() {
     assert!(matches!(
-        ContentError::from(BodyError::Size),
+        ContentError::from(CdnError::Size),
         ContentError::InvalidData(reason) if reason == "backend.steam.content.cdnResponseTooLarge"
     ));
     assert!(matches!(
-        ContentError::from(BodyError::Network),
+        ContentError::from(CdnError::Network),
         ContentError::Network
     ));
     assert!(matches!(
-        ContentError::from(BodyError::Cancelled),
+        ContentError::from(CdnError::Http(503)),
+        ContentError::Http(503)
+    ));
+    assert!(matches!(
+        ContentError::from(CdnError::Cancelled),
         ContentError::Cancelled
     ));
 }

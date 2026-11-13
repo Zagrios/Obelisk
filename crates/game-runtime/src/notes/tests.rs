@@ -2,14 +2,8 @@ use super::*;
 use serde_json::{Value, json};
 use std::collections::HashSet;
 
-fn built_in() -> Vec<Known> {
-    parsed(TABLE.as_bytes()).unwrap()
-}
-
-/// The note Obelisk keeps from a table holding only `entry`.
-fn known(entry: Value) -> Option<Known> {
-    let table = json!({"format": FORMAT, "games": [entry]});
-    parsed(table.to_string().as_bytes()).unwrap().pop()
+fn built_in() -> &'static [Known] {
+    NOTES.entries()
 }
 
 /// A note Obelisk keeps, with `key` set to `value`.
@@ -20,7 +14,7 @@ fn entry_with(key: &str, value: Value) -> Option<Known> {
         "text": {"en": "Plays offline.", "fr": "Se joue hors ligne."}
     });
     entry[key] = value;
-    known(entry)
+    checked(entry)
 }
 
 #[test]
@@ -35,8 +29,8 @@ fn no_two_notes_of_the_table_name_the_same_game() {
     for known in built_in() {
         let ids = [
             known.steam.map(|app_id| format!("steam {app_id}")),
-            known.epic.map(|epic| format!("epic {epic:?}")),
-            known.gog.map(|product| format!("gog {product}")),
+            known.epic.as_ref().map(|epic| format!("epic {epic:?}")),
+            known.gog.as_ref().map(|product| format!("gog {product}")),
         ];
         for id in ids.into_iter().flatten() {
             assert!(names.insert(id.clone()), "{id}");
@@ -72,17 +66,4 @@ fn a_note_obelisk_cannot_show_is_left_out() {
     assert!(entry_with("text", json!({"en": "a".repeat(LONGEST + 1)})).is_none());
     // A key Obelisk does not read is left aside, and never runs a game.
     assert!(entry_with("arguments", json!(["-dxlevel", "95"])).is_some());
-}
-
-#[test]
-fn a_table_that_does_not_parse_or_of_another_format_shows_no_note() {
-    let mut table: Value = serde_json::from_str(TABLE).unwrap();
-    table["format"] = 2.into();
-    assert!(parsed(table.to_string().as_bytes()).is_none());
-    assert!(parsed(b"404: Not Found").is_none());
-    assert!(parsed(br#"{"format": 1, "games": ["#).is_none());
-    assert_eq!(
-        parsed(br#"{"format": 1, "games": []}"#).map(|games| games.len()),
-        Some(0)
-    );
 }

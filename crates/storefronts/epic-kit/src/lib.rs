@@ -44,7 +44,7 @@ pub enum EpicError {
 use obelisk_core::{
     build_choice::{NOT_NATIVE, Unavailable},
     install::InstallError,
-    storefront::{StorefrontCapabilities, StorefrontDescriptor, StorefrontId},
+    publish::PublishError,
     transfer::Cancelled,
 };
 
@@ -75,15 +75,11 @@ impl From<InstallError> for EpicError {
     }
 }
 
-pub fn descriptor() -> StorefrontDescriptor {
-    StorefrontDescriptor {
-        id: StorefrontId::Epic,
-        display_name: "Epic Games",
-        capabilities: StorefrontCapabilities {
-            authentication: true,
-            owned_library: true,
-            downloads: true,
-            local_import: false,
-        },
+impl From<PublishError> for EpicError {
+    fn from(error: PublishError) -> Self {
+        match error {
+            PublishError::Mismatch => Self::Integrity,
+            PublishError::Install(error) => error.into(),
+        }
     }
 }

@@ -1,11 +1,23 @@
 # Pushing a tag vX.Y.Z builds Obelisk, signs it with the Developer ID,
 # notarizes the DMG and attaches it to a draft release of that tag, which is
-# published by hand once its notes are written.
+# published by hand once its notes are written. The Beta workflow builds betas
+# with it, such as 0.6.3.beta1, and publishes them at once as pre-releases,
+# with the commits since the tag `since` as notes.
 name: Release
 
 on:
   push:
     tags: ["v*"]
+  workflow_call:
+    inputs:
+      version:
+        description: Beta version, X.Y.Z.beta<n>, without its v
+        required: true
+        type: string
+      since:
+        description: The tag the beta's notes start from
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -21,15 +33,46 @@ jobs:
     timeout-minutes: 120
     env:
       TEAM_ID: FGW3Z8B82D
+      BETA: ${{ inputs.version }}
+      SINCE: ${{ inputs.since }}
     steps:
+      # A beta's notes read the history since the tag `since`.
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Check the tag against the app version
         run: |
-          VERSION="$(sed -n 's/^MARKETING_VERSION = //p' apps/macos/Config/App.xcconfig)"
-          if [[ "$GITHUB_REF_NAME" != "v$VERSION" ]]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match MARKETING_VERSION $VERSION in App.xcconfig."
-            exit 1
+          # scripts/version.sh says which versions there are and how they order.
+          source scripts/version.sh
+          if [[ -n "$BETA" ]]; then
+            VERSION="$BETA"
+            if [[ "$VERSION" != *.beta* || -z "$SINCE" ]] || ! version_key "$VERSION" > /dev/null; then
+              echo "::error::The Beta workflow builds X.Y.Z.beta<n> versions, not $VERSION."
+              exit 1
+            fi
+            # Every beta player gets it: only main's code.
+            if [[ "$GITHUB_REF" != refs/heads/main ]]; then
+              echo "::error::Betas are built from main, not $GITHUB_REF."
+              exit 1
+            fi
+            # A deleted release leaves its tag, which publishing would refuse, or reuse on another commit.
+            if git rev-parse --quiet --verify "refs/tags/v$VERSION" > /dev/null; then
+              echo "::error::A tag v$VERSION already exists."
+              exit 1
+            fi
+            # The beta's version is the build's alone: main keeps the last release's.
+            sed -i '' "s/^MARKETING_VERSION = .*/MARKETING_VERSION = $VERSION/" apps/macos/Config/App.xcconfig
+          else
+            VERSION="$(sed -n 's/^MARKETING_VERSION = //p' apps/macos/Config/App.xcconfig)"
+            if [[ "$GITHUB_REF_NAME" != "v$VERSION" ]]; then
+              echo "::error::Tag $GITHUB_REF_NAME does not match MARKETING_VERSION $VERSION in App.xcconfig."
+              exit 1
+            fi
+            if ! version_key "$VERSION" > /dev/null; then
+              echo "::error::MARKETING_VERSION $VERSION is not X.Y.Z or X.Y.Z.beta<n>."
+              exit 1
+            fi
           fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "KEYCHAIN=$RUNNER_TEMP/obelisk-signing.keychain-db" >> "$GITHUB_ENV"
@@ -83,12 +126,22 @@ jobs:
           printf '%s\n' "$NOTARY_KEY" > "$OBELISK_NOTARY_KEY"
           scripts/build-dmg.sh
 
-      - name: Draft the release
+      - name: Draft the release, or publish the beta
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" --draft --title "Obelisk $VERSION" --generate-notes \
-            build/dist/Obelisk-"$VERSION"-*.dmg build/dist/Obelisk-"$VERSION"-*.dmg.sha256
+          assets=(build/dist/Obelisk-"$VERSION"-*.dmg build/dist/Obelisk-"$VERSION"-*.dmg.sha256)
+          if [[ -z "$BETA" ]]; then
+            # A beta tagged by hand stays a pre-release: published as drafted, it reaches beta players only.
+            prerelease=false
+            [[ "$VERSION" != *.beta* ]] || prerelease=true
+            gh release create "$GITHUB_REF_NAME" --draft --prerelease="$prerelease" --title "Obelisk $VERSION" \
+              --generate-notes "${assets[@]}"
+            exit 0
+          fi
+          scripts/beta.sh --notes "$SINCE" > "$RUNNER_TEMP/notes.md"
+          gh release create "v$VERSION" --prerelease --target "$GITHUB_SHA" --title "Obelisk ${VERSION/.beta/ beta }" \
+            --notes-file "$RUNNER_TEMP/notes.md" "${assets[@]}"
 
       - name: Remove the signing material
         if: always()

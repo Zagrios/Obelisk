@@ -43,6 +43,8 @@ mod platforms_tests;
 mod social_tests;
 #[cfg(test)]
 pub(crate) mod test_server;
+#[cfg(test)]
+pub(crate) mod test_steam;
 
 const PROTOCOL: u32 = 65_581;
 const PROTO_MASK: u32 = 0x8000_0000;
@@ -62,6 +64,11 @@ const FREE_LICENSE: u32 = 0;
 /// Requests one query keeps in flight at once; the worker routes each reply
 /// to its own job, so they need not wait for each other.
 pub(crate) const CONCURRENT_REQUESTS: usize = 4;
+/// Servers a content directory query asks for, and the count a wider retry asks for.
+const DIRECTORY_SERVERS: u32 = 30;
+const WIDE_DIRECTORY_SERVERS: u32 = 100;
+/// Cells asked after the connection's own when its directory lists no HTTPS server.
+const FALLBACK_CELLS: [u32; 2] = [0, 1];
 const MULTI: u32 = 1;
 /// A service notification Steam pushes, routed by its header's target name.
 const SERVICE_NOTIFICATION: u32 = 146;
@@ -110,6 +117,12 @@ impl CmError {
     /// as opposed to a transient service or transport failure.
     pub fn authentication_required(&self) -> bool {
         matches!(self, Self::Rejected { result, .. } if friends::authentication_required(*result))
+    }
+
+    /// Whether Steam denies the account what it asked for, which asking
+    /// again does not change.
+    pub(crate) fn is_refusal(&self) -> bool {
+        matches!(self, Self::Rejected { result: 15, .. })
     }
 }
 
@@ -858,43 +871,24 @@ impl SteamConnection {
     }
 
     pub async fn content_servers(&self) -> Result<Vec<ContentServer>, CmError> {
-        let mut response: proto::ServerResponse = self
-            .service(
-                "ContentServerDirectory.GetServersForSteamPipe#1",
-                &proto::ServerRequest {
-                    cell_id: self.cell_id,
-                    max_servers: 30,
-                },
-            )
-            .await?;
-        response
-            .servers
-            .sort_by(|left, right| left.weighted_load.total_cmp(&right.weighted_load));
-        let servers: Vec<_> = response
-            .servers
-            .into_iter()
-            .filter(|server| {
-                !server.use_as_proxy
-                    && matches!(server.server_type.as_str(), "CDN" | "SteamCache")
-                    && matches!(server.https_support.as_str(), "mandatory" | "optional")
-                    && valid_host(&server.host)
-                    && (server.vhost.is_empty() || valid_host(&server.vhost))
-            })
-            .map(|server| ContentServer {
-                vhost: if server.vhost.is_empty() {
-                    server.host.clone()
-                } else {
-                    server.vhost
-                },
-                host: server.host,
-                allowed_app_ids: server.allowed_app_ids,
-            })
-            .collect();
-        if servers.is_empty() {
-            Err(CmError::NoContentServer)
-        } else {
-            Ok(servers)
+        // Some cells list only HTTP-only CDNs. Widen the list, then ask cells
+        // 0 and 1, rather than weakening TLS. Hosts still come only from Steam.
+        for (cell_id, max_servers) in content_server_queries(self.cell_id) {
+            let response: proto::ServerResponse = self
+                .service(
+                    "ContentServerDirectory.GetServersForSteamPipe#1",
+                    &proto::ServerRequest {
+                        cell_id,
+                        max_servers,
+                    },
+                )
+                .await?;
+            let servers = compatible_content_servers(response);
+            if !servers.is_empty() {
+                return Ok(servers);
+            }
         }
+        Err(CmError::NoContentServer)
     }
 
     pub async fn cdn_auth(
@@ -1116,6 +1110,46 @@ fn cm_url(endpoint: &str) -> Option<String> {
     }
 }
 
+fn content_server_queries(cell_id: u32) -> Vec<(u32, u32)> {
+    let mut queries = vec![
+        (cell_id, DIRECTORY_SERVERS),
+        (cell_id, WIDE_DIRECTORY_SERVERS),
+    ];
+    queries.extend(
+        FALLBACK_CELLS
+            .into_iter()
+            .filter(|&cell| cell != cell_id)
+            .map(|cell| (cell, WIDE_DIRECTORY_SERVERS)),
+    );
+    queries
+}
+
+fn compatible_content_servers(mut response: proto::ServerResponse) -> Vec<ContentServer> {
+    response
+        .servers
+        .sort_by(|left, right| left.weighted_load.total_cmp(&right.weighted_load));
+    response
+        .servers
+        .into_iter()
+        .filter(|server| {
+            !server.use_as_proxy
+                && matches!(server.server_type.as_str(), "CDN" | "SteamCache")
+                && matches!(server.https_support.as_str(), "mandatory" | "optional")
+                && valid_host(&server.host)
+                && (server.vhost.is_empty() || valid_host(&server.vhost))
+        })
+        .map(|server| ContentServer {
+            vhost: if server.vhost.is_empty() {
+                server.host.clone()
+            } else {
+                server.vhost
+            },
+            host: server.host,
+            allowed_app_ids: server.allowed_app_ids,
+        })
+        .collect()
+}
+
 fn valid_host(host: &str) -> bool {
     !host.is_empty()
         && host.len() <= 253
@@ -1234,7 +1268,7 @@ async fn connection_worker(
                 // Read-only push request after a full list or newly accepted
                 // friend. Coalesce relationship bursts without periodically
                 // refreshing statuses. Hydration never sets the account's
-                // presence: only the UI session's explicit set_online does.
+                // presence: only the UI session's explicit set_status does.
                 let mut header = heartbeat_header.clone().expect("authenticated hydration");
                 header.job_source = Some(FRIENDS_HYDRATION_JOB);
                 header.target_name = Some("Chat.RequestFriendPersonaStates#1".into());
@@ -1580,6 +1614,146 @@ mod tests {
             depot_id,
             key: vec![0; 32],
         }
+    }
+
+    fn cdn(host: &str, https_support: &str) -> proto::ServerInfo {
+        proto::ServerInfo {
+            server_type: "CDN".into(),
+            host: host.into(),
+            https_support: https_support.into(),
+            ..Default::default()
+        }
+    }
+
+    /// Plays the content directory: answers each query with the next reply and
+    /// returns the `(cell, servers)` pairs asked, after checking nothing more comes.
+    async fn serve_directory(
+        server: &mut test_server::TestServer,
+        replies: Vec<proto::ServerResponse>,
+    ) -> Vec<(u32, u32)> {
+        let mut asked = Vec::new();
+        for reply in replies {
+            let request = server.request(SERVICE_REQUEST).await;
+            let query = proto::ServerRequest::decode(&request.body[..]).unwrap();
+            asked.push((query.cell_id, query.max_servers));
+            server.reply(&request, SERVICE_RESPONSE, &reply).await;
+        }
+        assert!(server.quiet().await);
+        asked
+    }
+
+    #[tokio::test]
+    async fn content_server_discovery_stops_at_the_first_compatible_response() {
+        let queries = content_server_queries(197);
+        for usable_at in 0..queries.len() {
+            let (mut connection, mut server) = test_server::connection(TEST_STEAM_ID, true).await;
+            connection.cell_id = 197;
+            let replies = (0..=usable_at)
+                .map(|index| proto::ServerResponse {
+                    servers: vec![cdn(
+                        "cdn.example.com",
+                        if index == usable_at {
+                            "optional"
+                        } else {
+                            "unavailable"
+                        },
+                    )],
+                })
+                .collect();
+            let (result, asked) = tokio::join!(
+                connection.content_servers(),
+                serve_directory(&mut server, replies)
+            );
+            assert_eq!(asked, &queries[..=usable_at]);
+            assert_eq!(result.unwrap().len(), 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn content_server_discovery_is_bounded_when_no_response_supports_https() {
+        let (mut connection, mut server) = test_server::connection(TEST_STEAM_ID, true).await;
+        connection.cell_id = 197;
+        let replies = vec![
+            proto::ServerResponse {
+                servers: vec![cdn("cdn.example.com", "unavailable")],
+            };
+            content_server_queries(197).len()
+        ];
+        let (result, _) = tokio::join!(
+            connection.content_servers(),
+            serve_directory(&mut server, replies)
+        );
+        assert!(matches!(result, Err(CmError::NoContentServer)));
+    }
+
+    #[tokio::test]
+    async fn content_server_discovery_does_not_hide_service_errors() {
+        let (connection, mut server) = test_server::connection(TEST_STEAM_ID, true).await;
+        let directory = async {
+            let request = server.request(SERVICE_REQUEST).await;
+            server
+                .send(
+                    SERVICE_RESPONSE,
+                    proto::Header {
+                        job_target: request.header.job_source,
+                        result: Some(15),
+                        ..Default::default()
+                    },
+                    &[],
+                )
+                .await;
+            assert!(server.quiet().await);
+        };
+        let (result, ()) = tokio::join!(connection.content_servers(), directory);
+        assert!(matches!(result, Err(CmError::Rejected { result: 15, .. })));
+    }
+
+    #[test]
+    fn content_server_queries_widen_then_ask_cells_0_and_1_without_repeating_the_own_cell() {
+        assert_eq!(
+            content_server_queries(16),
+            vec![(16, 30), (16, 100), (0, 100), (1, 100)]
+        );
+        assert_eq!(content_server_queries(0), vec![(0, 30), (0, 100), (1, 100)]);
+        assert_eq!(content_server_queries(1), vec![(1, 30), (1, 100), (0, 100)]);
+    }
+
+    #[test]
+    fn compatible_content_servers_keep_only_https_cdns_with_valid_hosts() {
+        let good = proto::ServerInfo {
+            server_type: "SteamCache".into(),
+            allowed_app_ids: vec![1007],
+            ..cdn("cache2-ord1.steamcontent.com", "mandatory")
+        };
+        let selected = compatible_content_servers(proto::ServerResponse {
+            servers: vec![
+                proto::ServerInfo {
+                    use_as_proxy: true,
+                    ..good.clone()
+                },
+                proto::ServerInfo {
+                    host: "example.com/path".into(),
+                    ..good.clone()
+                },
+                proto::ServerInfo {
+                    vhost: "example.com:80".into(),
+                    ..good.clone()
+                },
+                proto::ServerInfo {
+                    https_support: "unavailable".into(),
+                    ..good.clone()
+                },
+                proto::ServerInfo {
+                    server_type: "unknown".into(),
+                    ..good.clone()
+                },
+                good,
+            ],
+        });
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].host, "cache2-ord1.steamcontent.com");
+        assert_eq!(selected[0].vhost, selected[0].host);
+        assert_eq!(selected[0].allowed_app_ids, vec![1007]);
     }
 
     #[tokio::test]

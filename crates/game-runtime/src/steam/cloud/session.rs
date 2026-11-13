@@ -9,7 +9,6 @@ use crate::{
     },
     cloud_status::UnavailableReason,
     protocol::Credentials,
-    supervisor::client::SessionAlive,
 };
 use cloud_vault::{Manifest, Preferences, Vault};
 use steam_kit::{
@@ -66,7 +65,9 @@ pub(crate) struct Adapter<R: CloudRemote = SteamCm> {
 }
 
 impl<R: CloudRemote> Adapter<R> {
-    pub fn native_storage(&self) -> Result<Option<crate::NativeStorage>, crate::Error> {
+    pub fn native_storage(
+        &self,
+    ) -> Result<Option<crate::steam::host::NativeStorage>, crate::steam::Error> {
         self.context
             .as_ref()
             .map(|context| context.prepare_sdk())
@@ -200,28 +201,8 @@ impl<R: CloudRemote> Storefront for Adapter<R> {
         let Some(metadata) = cm.cloud_metadata().await? else {
             return Ok(Availability::Unavailable(UnavailableReason::NoCloud));
         };
-        if metadata
-            .field("appidredirect")
-            .is_some_and(|v| v.text() != Some("0"))
-        {
+        if !store::follows(&metadata, &self.config, self.credentials.steam_id)? {
             return Ok(Availability::Unavailable(UnavailableReason::Unsupported));
-        }
-        if metadata.field("savefiles").is_some() {
-            match steam_kit::cloud::AutoCloudPaths::new(
-                &metadata,
-                self.credentials.steam_id,
-                &self.config.platform(),
-                &self.config.install,
-            ) {
-                // Steam keeps nothing of this build's saves, as KIBORG's Mac
-                // build, whose rules are all for Windows and Linux.
-                Err(steam_kit::cloud::CloudError::OtherPlatforms) => {
-                    return Ok(Availability::Unavailable(UnavailableReason::Unsupported));
-                }
-                paths => {
-                    paths?;
-                }
-            }
         }
         match &mut self.context {
             // A captured save can only be sent under the rules it was
@@ -307,42 +288,31 @@ fn recovery_is_settled(
     }
 }
 
-/// Cloud maintenance of one Steam game, run inside Obelisk. `idle` proves that
-/// no Steam launch or supervisor can start while it runs.
+/// Cloud maintenance of one Steam game, run inside Obelisk over Steam's CM.
+/// `idle` proves that no Steam launch or supervisor can start while it runs.
+/// It blocks.
 pub fn maintain(
-    target: MaintenanceTarget,
+    config: Config,
+    credentials: &Credentials,
+    control: Arc<Control>,
+    idle: &crate::steam::IdleGuard,
+) -> Result<(), Failure> {
+    maintain_over(SteamCm::new()?, config, credentials, control, idle)
+}
+
+/// `maintain`, over the Steam Cloud `remote` connects to.
+pub(crate) fn maintain_over<R: CloudRemote>(
+    remote: R,
+    config: Config,
     credentials: &Credentials,
     control: Arc<Control>,
     idle: &crate::steam::IdleGuard,
 ) -> Result<(), Failure> {
     let runtime = crate::executor()?;
-    runtime.block_on(maintain_with(
-        SteamCm::new()?,
-        target,
-        credentials,
-        control,
-        &|id| idle.session_alive(id),
-    ))
-}
-
-pub(crate) async fn maintain_with<R: CloudRemote>(
-    remote: R,
-    target: MaintenanceTarget,
-    credentials: &Credentials,
-    control: Arc<Control>,
-    alive: &SessionAlive<'_>,
-) -> Result<(), Failure> {
-    let config = match target {
-        MaintenanceTarget::Installed(config) => config,
-        MaintenanceTarget::Uninstalled { root, app_id } => {
-            let scope = app_scope(credentials.steam_id, app_id).into();
-            record::saved::<Context>(&root, &scope)?
-                .ok_or(Failure::Unsupported)?
-                .config
-        }
-    };
     let id = uuid::Uuid::new_v4().to_string();
-    open_with(remote, config, credentials.clone(), id, control)?
-        .maintain(alive)
-        .await
+    runtime.block_on(async {
+        open_with(remote, config, credentials.clone(), id, control)?
+            .maintain(&|id| idle.session_alive(id))
+            .await
+    })
 }

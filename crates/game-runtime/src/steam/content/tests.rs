@@ -4,8 +4,8 @@ use super::*;
 use crate::{
     installations::{Content as _, tests::eventually},
     runtimes::{
-        Runtimes,
-        tests::{FakeRuntimes, recorded},
+        Runtime, Runtimes,
+        tests::{FakeRuntimes, fake_offer, recorded},
     },
     sessions::Sessions,
 };
@@ -23,11 +23,7 @@ struct Fake {
     /// The build Steam picks; the Mac one without it.
     picked: Mutex<Option<Platform>>,
     downloads: Mutex<Vec<Transfer<Steam>>>,
-    /// Each maintenance's target, and whether a Steam launch could start
-    /// meanwhile.
-    maintained: Mutex<Vec<(steam_cloud::MaintenanceTarget, bool)>>,
     archive: Mutex<Option<Rules>>,
-    locations: Mutex<Option<Locations>>,
 }
 
 impl Fake {
@@ -105,18 +101,11 @@ impl Network for Fake {
     }
     fn maintain(
         &self,
-        target: steam_cloud::MaintenanceTarget,
+        _: steam_cloud::Config,
         _: &Credentials,
         _: Arc<Control>,
         _: &crate::steam::IdleGuard,
     ) -> Result<(), steam_cloud::Failure> {
-        let locations = self.locations.lock().unwrap().clone().unwrap();
-        let launch_could_start =
-            crate::steam::Client::idle_guard(&locations.steam_sessions, &locations.helper).is_ok();
-        self.maintained
-            .lock()
-            .unwrap()
-            .push((target, launch_could_start));
         Ok(())
     }
 }
@@ -138,7 +127,6 @@ impl Fixture {
             &library.join("home"),
         );
         let fake = Arc::new(Fake::default());
-        *fake.locations.lock().unwrap() = Some(locations.clone());
         let credentials = Credentials {
             steam_id: 42,
             account_name: "fixture".into(),
@@ -175,9 +163,6 @@ impl Fixture {
             directory: self.locations.library.join("Games/Steam"),
         }
     }
-    fn maintained(&self) -> Vec<(steam_cloud::MaintenanceTarget, bool)> {
-        self.fake.maintained.lock().unwrap().clone()
-    }
 }
 
 /// Portal 2, with its French depots.
@@ -185,17 +170,6 @@ fn portal() -> Product {
     Product {
         app_id: 620,
         language: "french".into(),
-    }
-}
-
-fn control() -> Arc<Control> {
-    Arc::new(Control::new(|_| {}))
-}
-
-fn installed_config(target: &steam_cloud::MaintenanceTarget) -> steam_cloud::Config {
-    match target {
-        steam_cloud::MaintenanceTarget::Installed(config) => config.clone(),
-        target => panic!("an installed game syncs its installation, not {target:?}"),
     }
 }
 
@@ -227,19 +201,13 @@ async fn a_windows_game_keeps_its_cloud_saves_in_its_wine_prefix_and_a_mac_game_
         fixture.installed(Platform::Mac),
     );
 
-    for receipt in [&windows, &mac] {
-        fixture
-            .content
-            .maintain(&620, Some(receipt), control())
-            .await
-            .unwrap();
-    }
+    let windows = saves::Storefront::configuration(&fixture.content, &windows)
+        .await
+        .unwrap();
+    let mac = saves::Storefront::configuration(&fixture.content, &mac)
+        .await
+        .unwrap();
 
-    let maintained = fixture.maintained();
-    let (windows, mac) = (
-        installed_config(&maintained[0].0),
-        installed_config(&maintained[1].0),
-    );
     assert_eq!(
         windows.prefix,
         Some(fixture.locations.wine_prefixes.join("steam-620-windows"))
@@ -251,57 +219,17 @@ async fn a_windows_game_keeps_its_cloud_saves_in_its_wine_prefix_and_a_mac_game_
 }
 
 #[tokio::test]
-async fn cloud_maintenance_keeps_every_steam_launch_out_while_it_runs() {
-    let fixture = Fixture::new();
-    let receipt = fixture.installed(Platform::Mac);
-
-    fixture
-        .content
-        .maintain(&620, Some(&receipt), control())
-        .await
-        .unwrap();
-
-    let (_, launch_could_start) = fixture.maintained()[0].clone();
-    assert!(!launch_could_start, "maintenance holds Steam's idle guard");
-    assert!(
-        crate::steam::Client::idle_guard(
-            &fixture.locations.steam_sessions,
-            &fixture.locations.helper
-        )
-        .is_ok(),
-        "the guard goes with the maintenance"
-    );
-}
-
-#[tokio::test]
-async fn an_uninstalled_game_syncs_what_its_saved_context_names() {
-    let fixture = Fixture::new();
-
-    fixture
-        .content
-        .maintain(&620, None, control())
-        .await
-        .unwrap();
-
-    match &fixture.maintained()[0].0 {
-        steam_cloud::MaintenanceTarget::Uninstalled { root, app_id } => {
-            assert_eq!(root, &fixture.locations.cloud_archive);
-            assert_eq!(*app_id, 620);
-        }
-        target => panic!("an uninstalled game has no installation to sync: {target:?}"),
-    }
-}
-
-#[tokio::test]
 async fn a_game_without_steam_cloud_archives_nothing_and_a_failure_is_its_cloud_key() {
     let fixture = Fixture::new();
     let receipt = fixture.installed(Platform::Mac);
 
-    fixture.content.archive(&receipt).await.unwrap();
+    let cloud = fixture.content.cloud().unwrap();
+
+    cloud.archive(&receipt).await.unwrap();
 
     *fixture.fake.archive.lock().unwrap() = Some(Err(steam_cloud::Failure::Network));
     assert_eq!(
-        fixture.content.archive(&receipt).await,
+        cloud.archive(&receipt).await,
         Err(Failure::Failed(steam_cloud::Failure::Network.key().into()))
     );
 }
@@ -362,7 +290,7 @@ async fn a_launch_gets_steam_components_for_every_build_and_voile_for_a_windows_
         .await;
     assert_eq!(
         launched,
-        Err(Failure::Failed(crate::Error::ApiMissing.to_string()))
+        Err(Failure::Failed(crate::steam::Error::ApiMissing.to_string()))
     );
     assert_eq!(*events.lock().unwrap(), ["steam components"]);
 
@@ -377,4 +305,39 @@ async fn a_launch_gets_steam_components_for_every_build_and_voile_for_a_windows_
 
     assert_eq!(launched, Err(Failure::Cancelled), "nothing is prepared");
     assert_eq!(*events.lock().unwrap(), ["steam components", "voile"]);
+}
+
+#[tokio::test]
+async fn a_windows_launch_requires_the_voile_release_its_profile_names() {
+    let fixture = Fixture::new();
+    let runtimes = FakeRuntimes::new(&[Runtime::SteamComponents], |_| {});
+    runtimes.outdate(Runtime::Voile);
+    let sessions = Sessions::<Steam>::new(Box::new(|| Ok(None)), Runtimes::from_source(runtimes));
+    eventually(|| !sessions.state().recovering).await;
+    let rocket_league = Receipt {
+        product: Product {
+            app_id: 252950,
+            language: "english".into(),
+        },
+        ..fixture.installed(Platform::Windows)
+    };
+    let shown = || {
+        sessions
+            .state()
+            .active
+            .and_then(|active| active.voile_update)
+    };
+
+    let admission = sessions.admit(252950, 42).unwrap();
+    let canceller = admission.canceller();
+    let (launched, ()) = tokio::join!(
+        fixture.content.launch(&rocket_league, admission, None),
+        async {
+            eventually(|| shown().is_some()).await;
+            assert_eq!(shown(), Some(fake_offer(true)));
+            canceller.cancel();
+        }
+    );
+
+    assert_eq!(launched, Err(Failure::Cancelled), "nothing is prepared");
 }

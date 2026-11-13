@@ -46,6 +46,8 @@ struct SettingsView: View {
                         ObeliskCard {
                             automaticUpdates
                             ObeliskCardDivider()
+                            downloadSettings
+                            ObeliskCardDivider()
                             overlay
                             ObeliskCardDivider()
                             sharePerformance
@@ -58,7 +60,7 @@ struct SettingsView: View {
                         ObeliskCard {
                             ForEach(LibrarySection.storefronts) { section in
                                 if section != LibrarySection.storefronts.first { ObeliskCardDivider() }
-                                SettingsStoreRow(section: section, status: status(of: section)) {
+                                SettingsStoreRow(section: section, status: model.standing(of: section)) {
                                     model.selection = section
                                 }
                             }
@@ -68,8 +70,23 @@ struct SettingsView: View {
                         ObeliskCard {
                             installUpdates
                             ObeliskCardDivider()
+                            betaReleases
+                            switch model.updates.returnStanding {
+                            case .ready(let release):
+                                ObeliskCardDivider()
+                                releaseReturn(release.displayVersion)
+                                    .transition(.opacity)
+                            case .unreachable(let release):
+                                ObeliskCardDivider()
+                                releaseUnreachable(release)
+                                    .transition(.opacity)
+                            case nil:
+                                EmptyView()
+                            }
+                            ObeliskCardDivider()
                             version
                         }
+                        .animation(.easeInOut(duration: 0.2), value: model.updates.returnStanding)
                     }
                     GamePageSection(title: L10n.string("ui.settings.help")) {
                         ObeliskCard {
@@ -143,6 +160,44 @@ struct SettingsView: View {
         }
     }
 
+    /// The downloads' own settings, in one row: the speed every store may
+    /// download at, and the unit speeds read in, which the limit follows.
+    private var downloadSettings: some View {
+        let limit = downloadSpeedLimitLabel
+        return ObeliskRow(title: L10n.string("ui.settings.downloads")) {
+            SymbolTile(name: "speedometer", colors: TileColors.blue)
+        } detail: {
+            Text(L10n.string("ui.settings.downloads_description"))
+        } accessory: {
+            HStack(spacing: 10) {
+                Slider(value: Binding(
+                    get: { Double(model.downloads.speedLimitChoice) },
+                    set: { model.downloads.speedLimitChoice = Int($0.rounded()) }
+                ), in: 0...Double(model.downloads.speedUnit.speedLimits.count - 1), step: 1)
+                    .frame(width: 150)
+                    .accessibilityLabel(L10n.string("ui.settings.download_speed_limit"))
+                    .accessibilityValue(limit)
+                    .accessibilityIdentifier("settings-download-speed-limit")
+                Text(limit)
+                    .monospacedDigit()
+                    .frame(width: 90, alignment: .leading)
+                Picker(L10n.string("ui.settings.download_speed_unit"), selection: Bindable(model.downloads).speedUnit) {
+                    ForEach(DownloadSpeedUnit.allCases) { Text($0.title).tag($0) }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .fixedSize()
+                .accessibilityIdentifier("settings-download-speed-unit")
+            }
+        }
+    }
+
+    private var downloadSpeedLimitLabel: String {
+        let downloads = model.downloads
+        return downloads.speedLimit == 0 ? L10n.string("ui.settings.download_speed_limit_unlimited")
+            : DownloadFormatting.speed(Double(downloads.speedLimit), in: downloads.speedUnit)
+    }
+
     private var sharePerformance: some View {
         ObeliskRow(title: L10n.string("ui.settings.share_performance")) {
             SymbolTile(name: "chart.bar.fill", colors: TileColors.violet)
@@ -184,6 +239,48 @@ struct SettingsView: View {
                 .labelsHidden()
                 .pointerCursor()
                 .accessibilityIdentifier("settings-install-updates")
+        }
+    }
+
+    private var betaReleases: some View {
+        ObeliskRow(title: L10n.string("ui.settings.beta_releases")) {
+            SymbolTile(name: "flask.fill", colors: TileColors.gold)
+        } detail: {
+            Text(L10n.string("ui.settings.beta_releases_description", AppIdentity.name))
+        } accessory: {
+            Toggle(L10n.string("ui.settings.beta_releases"), isOn: Bindable(model.updates).takesBetaReleases)
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .pointerCursor()
+                .accessibilityIdentifier("settings-beta-releases")
+        }
+    }
+
+    /// The latest release Obelisk goes back to when it quits, which a restart
+    /// puts in place now.
+    private func releaseReturn(_ release: String) -> some View {
+        ObeliskRow(title: L10n.string("ui.settings.release_return_title", AppIdentity.name, release)) {
+            SymbolTile(name: "arrow.uturn.backward", colors: TileColors.gold)
+        } detail: {
+            Text(L10n.string("ui.settings.release_return", AppIdentity.name))
+        } accessory: {
+            AccentCapsuleButton(title: L10n.string("ui.settings.restart"), identifier: "settings-release-return",
+                                 action: { model.restart() })
+        }
+    }
+
+    /// The latest release Obelisk cannot put back by itself where it is,
+    /// which the player downloads and installs.
+    private func releaseUnreachable(_ release: FeedRelease) -> some View {
+        ObeliskRow(title: L10n.string("ui.settings.release_return_title", AppIdentity.name, release.displayVersion)) {
+            SymbolTile(name: "exclamationmark.triangle.fill", colors: TileColors.gold)
+        } detail: {
+            Text(L10n.string("ui.settings.release_return_unwritable", AppIdentity.name, release.displayVersion))
+        } accessory: {
+            GlassCapsuleButton(title: L10n.string("model.game.download"), systemImage: "arrow.down",
+                                identifier: "settings-release-download") {
+                NSWorkspace.shared.open(release.url)
+            }
         }
     }
 
@@ -312,38 +409,6 @@ struct SettingsView: View {
                                 identifier: "settings-show-library-folder") {
                 NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: model.libraryDirectory)
             }
-        }
-    }
-
-    /// What a storefront's row tells of its account, as Home's tile does.
-    private func status(of section: LibrarySection) -> LibraryTile.Status {
-        switch section {
-        case .steam:
-            status(of: model.steam, in: section, showsLibrary: model.steam.showsLibrary,
-                   isRestoring: model.steam.isRestoring, account: model.steam.displayName,
-                   avatarURL: model.steam.avatarURL)
-        case .epic:
-            status(of: model.epic, in: section, showsLibrary: model.epic.showsLibrary,
-                   isRestoring: model.epic.isRestoring, account: model.epic.accountName,
-                   avatarURL: model.epic.avatarURL)
-        default:
-            status(of: model.gog, in: section, showsLibrary: model.gog.showsLibrary,
-                   isRestoring: model.gog.isRestoring, account: model.gog.accountName,
-                   avatarURL: model.gog.avatarURL)
-        }
-    }
-
-    private func status<Store: LibraryStorefront>(
-        of store: Store, in section: LibrarySection, showsLibrary: Bool, isRestoring: Bool, account: String?,
-        avatarURL: URL?
-    ) -> LibraryTile.Status {
-        if showsLibrary {
-            .signedIn(account: account, avatarURL: avatarURL, games: store.library.games.count,
-                      installed: Set(store.installations.receipts.map(\.gameID)).count)
-        } else if isRestoring || model.restoringStorefronts.contains(section) {
-            .restoring
-        } else {
-            .signedOut
         }
     }
 }
@@ -833,10 +898,10 @@ private struct DiagonalEdge: Shape {
 /// or its sign-in.
 private struct SettingsStoreRow: View {
     let section: LibrarySection
-    let status: LibraryTile.Status
+    let status: AccountStanding
     let open: () -> Void
 
-    private var name: String { section.storeName ?? section.title }
+    private var name: String { section.storeTitle }
 
     var body: some View {
         ObeliskRow(title: name) {

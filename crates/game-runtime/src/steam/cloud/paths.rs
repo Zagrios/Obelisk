@@ -97,7 +97,7 @@ impl Context {
             self.config.platform().mask(),
         )?)
     }
-    pub fn prepare_sdk(&self) -> Result<Option<crate::NativeStorage>, Failure> {
+    pub fn prepare_sdk(&self) -> Result<Option<crate::steam::host::NativeStorage>, Failure> {
         if self.metadata.field("savefiles").is_some() && self.metadata.field("quota").is_none() {
             return Ok(None);
         }
@@ -115,7 +115,7 @@ impl Context {
             })
             .collect::<Vec<_>>();
         paths.prepare_index(&files)?;
-        Ok(Some(crate::NativeStorage {
+        Ok(Some(crate::steam::host::NativeStorage {
             home: self.sdk_home()?,
             account_id: self.account_id,
             app_id: self.config.app_id,

@@ -16,8 +16,12 @@ pub struct LaunchSettings {
     pub graphics: LaunchGraphics,
     /// Direct3D 12 offers DirectX Raytracing, on D3DMetal.
     pub ray_tracing: bool,
+    /// The share of the screen's pixels the game renders at, in whole percent.
+    pub render_percent: u32,
     /// Metal's Performance HUD shows over the game, whatever renders it.
     pub performance_hud: bool,
+    /// macOS may turn its Game Mode on for the game.
+    pub game_mode: bool,
     /// What the player changed from what Obelisk knows of the game.
     pub choices: LaunchChoices,
     /// The engine the game runs on without choices.
@@ -39,8 +43,12 @@ pub struct LaunchChoices {
     pub graphics: Option<LaunchGraphics>,
     #[uniffi(default = None)]
     pub ray_tracing: Option<bool>,
+    #[uniffi(default = None)]
+    pub render_percent: Option<u32>,
     #[uniffi(default = false)]
     pub performance_hud: bool,
+    #[uniffi(default = None)]
+    pub game_mode: Option<bool>,
 }
 
 /// What runs a Windows game's Wine.
@@ -79,6 +87,11 @@ pub struct LaunchEngineOffer {
     /// The backend the game renders with there without choices.
     pub default_graphics: LaunchGraphics,
     pub graphics: Vec<LaunchGraphicsOffer>,
+    /// The lowest render resolution it offers, up to 100; None when it offers
+    /// none.
+    pub lowest_render_percent: Option<u32>,
+    /// Whether it can keep macOS's Game Mode off a game.
+    pub game_mode: bool,
 }
 
 /// One backend's offer on one engine.
@@ -94,7 +107,9 @@ impl From<View> for LaunchSettings {
             engine: view.settings.engine.into(),
             graphics: view.settings.graphics.into(),
             ray_tracing: view.settings.options.ray_tracing,
+            render_percent: view.settings.render_percent,
             performance_hud: view.settings.performance_hud,
+            game_mode: view.settings.game_mode,
             choices: view.choices.into(),
             default_engine: view.default_engine.into(),
             engines: ENGINES
@@ -115,6 +130,8 @@ fn engine_offer(offer: &EngineOffer, default: Graphics) -> LaunchEngineOffer {
         },
         default_graphics: default.into(),
         graphics: offer.graphics.iter().map(graphics_offer).collect(),
+        lowest_render_percent: offer.lowest_render_percent,
+        game_mode: offer.game_mode,
     }
 }
 
@@ -138,7 +155,9 @@ impl From<Choices> for LaunchChoices {
             engine: choices.engine.map(Into::into),
             graphics: choices.graphics.map(Into::into),
             ray_tracing: choices.ray_tracing,
+            render_percent: choices.render_percent,
             performance_hud: choices.performance_hud,
+            game_mode: choices.game_mode,
         }
     }
 }
@@ -150,7 +169,9 @@ impl From<LaunchChoices> for launch_settings::Choices {
             engine: choices.engine.map(Into::into),
             graphics: choices.graphics.map(Into::into),
             ray_tracing: choices.ray_tracing,
+            render_percent: choices.render_percent,
             performance_hud: choices.performance_hud,
+            game_mode: choices.game_mode,
         }
     }
 }
@@ -202,6 +223,7 @@ mod tests {
             std::path::Path::new("/nowhere"),
             profile::Game::Steam { app_id: 42 },
             std::path::Path::new("/nowhere"),
+            None,
         );
 
         let settings = LaunchSettings::from(view);
@@ -209,6 +231,7 @@ mod tests {
         assert_eq!(settings.engine, LaunchEngine::Rosetta);
         assert_eq!(settings.graphics, LaunchGraphics::D3dMetal);
         assert!(settings.ray_tracing);
+        assert_eq!(settings.render_percent, 100);
         assert!(!settings.performance_hud);
         assert_eq!(settings.choices, LaunchChoices::default());
         let engines: Vec<_> = settings
@@ -235,5 +258,42 @@ mod tests {
             settings.engines[0].graphics[0].options,
             [LaunchGraphicsOption::RayTracing]
         );
+        let lowest: Vec<_> = settings
+            .engines
+            .iter()
+            .map(|offer| offer.lowest_render_percent)
+            .collect();
+        assert_eq!(lowest, [None, Some(1)]);
+    }
+
+    #[test]
+    fn a_render_resolution_crosses_both_ways_and_only_the_linux_engine_keeps_it() {
+        let library = tempfile::tempdir().unwrap();
+        let choose = |choices: LaunchChoices| {
+            let view = launch_settings::choose(
+                library.path(),
+                profile::Game::Steam { app_id: 42 },
+                std::path::Path::new("/nowhere"),
+                None,
+                choices.into(),
+            )
+            .unwrap();
+            LaunchSettings::from(view)
+        };
+
+        let linux = choose(LaunchChoices {
+            engine: Some(LaunchEngine::Linux),
+            render_percent: Some(50),
+            ..LaunchChoices::default()
+        });
+        let rosetta = choose(LaunchChoices {
+            render_percent: Some(50),
+            ..LaunchChoices::default()
+        });
+
+        assert_eq!(linux.render_percent, 50);
+        assert_eq!(linux.choices.render_percent, Some(50));
+        assert_eq!(rosetta.render_percent, 100);
+        assert_eq!(rosetta.choices, LaunchChoices::default());
     }
 }

@@ -41,7 +41,7 @@ pub enum GogError {
 use obelisk_core::{
     build_choice::{NOT_NATIVE, Unavailable},
     install::InstallError,
-    storefront::{StorefrontCapabilities, StorefrontDescriptor, StorefrontId},
+    publish::PublishError,
     transfer::Cancelled,
 };
 
@@ -72,15 +72,12 @@ impl From<InstallError> for GogError {
     }
 }
 
-pub fn descriptor() -> StorefrontDescriptor {
-    StorefrontDescriptor {
-        id: StorefrontId::Gog,
-        display_name: "GOG",
-        capabilities: StorefrontCapabilities {
-            authentication: true,
-            owned_library: true,
-            downloads: true,
-            local_import: false,
-        },
+impl From<PublishError> for GogError {
+    fn from(error: PublishError) -> Self {
+        match error {
+            // Chunks are checked as they arrive; no whole file is compared.
+            PublishError::Mismatch => Self::Integrity,
+            PublishError::Install(error) => error.into(),
+        }
     }
 }

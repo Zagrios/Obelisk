@@ -1,6 +1,19 @@
 //! The only input containing secrets is the inherited, private stdin pipe.
+use obelisk_core::OnlineStatus;
 use std::io::{Read, Write};
+use std::time::Duration;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
+
+/// The native Steam host's bounded startup budget. A cold library can need
+/// over a minute to publish its licenses after authentication succeeds.
+pub const HOST_STARTUP_TIMEOUT: Duration = Duration::from_secs(180);
+/// What the supervisor waits for the host. Its clock starts at spawn and the
+/// host's only after it has loaded the engine and logged in, and a verdict
+/// still has to travel back: the margin covers both.
+pub const SUPERVISOR_STARTUP_TIMEOUT: Duration =
+    HOST_STARTUP_TIMEOUT.saturating_add(Duration::from_secs(10));
+// A budget under a minute fails the cold libraries it exists for.
+const _: () = assert!(HOST_STARTUP_TIMEOUT.as_secs() > 60);
 
 #[derive(Clone, Zeroize, ZeroizeOnDrop)]
 pub struct Credentials {
@@ -69,32 +82,21 @@ fn invalid() -> std::io::Error {
 /// is skipped. EOF between frames still releases the native host.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum HostCommand {
-    SetPresence {
-        online: bool,
-    },
+    /// Shows the account as `status` says while its game runs, or offline
+    /// once the game stopped (`None`). On the wire, Steam's persona state:
+    /// 0 for `None`, which the host's engine is told as it is.
+    SetPresence { status: Option<OnlineStatus> },
     /// Tells the game Steam's overlay opened or closed
     /// (`GameOverlayActivated_t`), as Obelisk's own overlay does.
-    OverlayState {
-        active: bool,
-        user_initiated: bool,
-    },
+    OverlayState { active: bool, user_initiated: bool },
     /// Hands the running game a lobby invitation the player accepted
     /// (`GameLobbyJoinRequested_t`).
-    AcceptLobbyInvite {
-        lobby_id: u64,
-        friend: u64,
-    },
+    AcceptLobbyInvite { lobby_id: u64, friend: u64 },
     /// Hands the running game a connect-string invitation the player
     /// accepted (`GameRichPresenceJoinRequested_t`).
-    AcceptRichInvite {
-        friend: u64,
-        connect: String,
-    },
+    AcceptRichInvite { friend: u64, connect: String },
     /// The player's answer to the purchase the game asked Steam to confirm.
-    AuthorizeMicroTxn {
-        order_id: u64,
-        approve: bool,
-    },
+    AuthorizeMicroTxn { order_id: u64, approve: bool },
 }
 impl HostCommand {
     pub const VERSION: u8 = 1;
@@ -105,6 +107,22 @@ impl HostCommand {
     const ACCEPT_LOBBY_INVITE: u8 = 3;
     const ACCEPT_RICH_INVITE: u8 = 4;
     const AUTHORIZE_MICRO_TXN: u8 = 5;
+
+    /// The persona state Steam shows for `status`; offline for `None`.
+    pub fn persona_state(status: Option<OnlineStatus>) -> u8 {
+        status.map_or(0, steam_kit::friends::persona_state)
+    }
+    /// The status a persona state byte stands for, if Obelisk sends it.
+    fn status_of(byte: u8) -> Option<Option<OnlineStatus>> {
+        [
+            None,
+            Some(OnlineStatus::Online),
+            Some(OnlineStatus::Away),
+            Some(OnlineStatus::Invisible),
+        ]
+        .into_iter()
+        .find(|status| Self::persona_state(*status) == byte)
+    }
 
     /// The next command, `None` at EOF between frames.
     pub fn read(mut input: impl Read) -> std::io::Result<Option<Self>> {
@@ -153,7 +171,9 @@ impl HostCommand {
             return None;
         }
         Some(match self {
-            Self::SetPresence { online } => (Self::SET_PRESENCE, vec![u8::from(*online)]),
+            Self::SetPresence { status } => {
+                (Self::SET_PRESENCE, vec![Self::persona_state(*status)])
+            }
             Self::OverlayState {
                 active,
                 user_initiated,
@@ -188,7 +208,7 @@ impl HostCommand {
         };
         let command = match (tag, payload.len()) {
             (Self::SET_PRESENCE, 1) => Self::SetPresence {
-                online: flag(payload[0])?,
+                status: Self::status_of(payload[0])?,
             },
             (Self::OVERLAY_STATE, 2) => Self::OverlayState {
                 active: flag(payload[0])?,
@@ -210,43 +230,6 @@ impl HostCommand {
         };
         command.valid().then_some(command)
     }
-}
-
-/// Reply of an exec helper whose preparation or exec failed. A helper that
-/// replaced itself with the game instead closes its confirmation pipe silently.
-pub const EXEC_FAILED: &[u8] = b"exec-failed\n";
-
-/// Runs an exec helper's preparation and exec. The supervisor treats EOF as a
-/// successful exec, which never returns here; every other outcome sends
-/// `EXEC_FAILED` before the confirmation pipe closes.
-pub fn exec_or_report<E: From<std::io::Error>>(
-    exec: impl FnOnce() -> Result<(), E>,
-) -> Result<(), E> {
-    exec_or_report_to(exec_confirmation()?, exec)
-}
-
-/// `confirmation` must close on exec.
-fn exec_or_report_to<E>(
-    mut confirmation: std::fs::File,
-    exec: impl FnOnce() -> Result<(), E>,
-) -> Result<(), E> {
-    let result = exec();
-    let _ = confirmation.write_all(EXEC_FAILED);
-    result
-}
-
-/// A CLOEXEC duplicate of stdout that closes atomically on a successful exec.
-/// When even that fails, the marker still reaches the supervisor through stdout.
-fn exec_confirmation() -> std::io::Result<std::fs::File> {
-    use std::os::fd::AsFd;
-    let stdout = std::io::stdout();
-    stdout
-        .as_fd()
-        .try_clone_to_owned()
-        .map(std::fs::File::from)
-        .inspect_err(|_| {
-            let _ = stdout.lock().write_all(EXEC_FAILED);
-        })
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -438,8 +421,16 @@ mod tests {
 
     fn commands() -> Vec<HostCommand> {
         vec![
-            HostCommand::SetPresence { online: true },
-            HostCommand::SetPresence { online: false },
+            HostCommand::SetPresence {
+                status: Some(OnlineStatus::Online),
+            },
+            HostCommand::SetPresence { status: None },
+            HostCommand::SetPresence {
+                status: Some(OnlineStatus::Away),
+            },
+            HostCommand::SetPresence {
+                status: Some(OnlineStatus::Invisible),
+            },
             HostCommand::OverlayState {
                 active: true,
                 user_initiated: false,
@@ -466,8 +457,10 @@ mod tests {
             command.write(&mut wire).unwrap();
         }
         assert_eq!(&wire[..5], [1, 1, 1, 0, 1], "version, tag, length, online");
-        assert_eq!(&wire[5..10], [1, 1, 1, 0, 0]);
-        assert_eq!(&wire[10..16], [1, 2, 2, 0, 1, 0]);
+        assert_eq!(&wire[5..10], [1, 1, 1, 0, 0], "offline");
+        assert_eq!(&wire[10..15], [1, 1, 1, 0, 3], "away");
+        assert_eq!(&wire[15..20], [1, 1, 1, 0, 7], "invisible");
+        assert_eq!(&wire[20..26], [1, 2, 2, 0, 1, 0]);
         let mut input = wire.as_slice();
         for command in commands() {
             assert_eq!(HostCommand::read(&mut input).unwrap(), Some(command));
@@ -486,7 +479,9 @@ mod tests {
         let mut wire = Vec::new();
         for skipped in [
             frame(9, b"future"),
+            // Busy and the states Obelisk never sends.
             frame(1, &[2]),
+            frame(1, &[8]),
             frame(1, &[1, 0]),
             frame(2, &[1, 7]),
             // An account is no lobby, a lobby is no friend.
@@ -501,14 +496,12 @@ mod tests {
         ] {
             wire.extend_from_slice(&skipped);
         }
-        HostCommand::SetPresence { online: true }
-            .write(&mut wire)
-            .unwrap();
+        let online = HostCommand::SetPresence {
+            status: Some(OnlineStatus::Online),
+        };
+        online.write(&mut wire).unwrap();
         let mut input = wire.as_slice();
-        assert_eq!(
-            HostCommand::read(&mut input).unwrap(),
-            Some(HostCommand::SetPresence { online: true })
-        );
+        assert_eq!(HostCommand::read(&mut input).unwrap(), Some(online));
         assert_eq!(HostCommand::read(&mut input).unwrap(), None);
 
         assert!(

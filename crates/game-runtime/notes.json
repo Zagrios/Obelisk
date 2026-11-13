@@ -8,6 +8,52 @@
         "en": "Plays offline and on LAN or community servers that allow insecure players. Secure (VAC) servers, Casual matchmaking included, refuse it: Steam on a Mac can't confirm the signatures of its Windows files.",
         "fr": "Se joue hors ligne et sur les serveurs LAN ou communautaires qui acceptent les joueurs non sécurisés. Les serveurs sécurisés (VAC), matchmaking Casual compris, le refusent : Steam sur Mac ne peut pas confirmer les signatures de ses fichiers Windows."
       }
+    },
+    {
+      "name": "Hunt: Showdown 1896",
+      "steam": 594650,
+      "text": {
+        "en": "The game uses several protection mechanisms on top of Easy Anti-Cheat, which stops it from launching for now. Investigation is ongoing.",
+        "fr": "Le jeu utilise plusieurs mécanismes de protection en plus d'Easy Anti-Cheat, ce qui empêche de le lancer pour l'instant. Des recherches sont en cours."
+      }
+    },
+    {
+      "name": "Fortnite",
+      "epic": {
+        "namespace": "fn",
+        "app_name": "Fortnite"
+      },
+      "text": {
+        "en": "Fortnite can't run on a Mac with Obelisk: Epic Games doesn't allow its Easy Anti-Cheat on Wine or Linux.",
+        "fr": "Fortnite ne peut pas tourner sur Mac avec Obelisk : Epic Games n'autorise pas son Easy Anti-Cheat sur Wine ni sous Linux."
+      }
+    },
+    {
+      "name": "Apex Legends",
+      "steam": 1172470,
+      "text": {
+        "en": "Apex Legends can't run on a Mac with Obelisk: since October 2024, Electronic Arts no longer allows its Easy Anti-Cheat on Wine or Linux.",
+        "fr": "Apex Legends ne peut pas tourner sur Mac avec Obelisk : depuis octobre 2024, Electronic Arts n'autorise plus son Easy Anti-Cheat sur Wine ni sous Linux."
+      }
+    },
+    {
+      "name": "VALORANT",
+      "epic": {
+        "namespace": "cbd5b3d310a54b12bf3fe8c41994174f",
+        "app_name": "602eb4abc8764c87b7f2607a1ef8c18e"
+      },
+      "text": {
+        "en": "VALORANT can't run on a Mac with Obelisk: its Vanguard anti-cheat is a Windows kernel driver, and Riot Games doesn't allow Wine or Linux.",
+        "fr": "VALORANT ne peut pas tourner sur Mac avec Obelisk : son anti-triche Vanguard est un pilote noyau Windows, et Riot Games n'autorise ni Wine ni Linux."
+      }
+    },
+    {
+      "name": "Farlight 84",
+      "steam": 1928420,
+      "text": {
+        "en": "Farlight 84 can't run on a Mac with Obelisk: its NetEase Yidun anti-cheat refuses Wine and Linux, and the game has suspended accounts that tried (a one-day ban was reported in 2025). Please don't launch it.",
+        "fr": "Farlight 84 ne peut pas tourner sur Mac avec Obelisk : son anti-triche NetEase Yidun refuse Wine et Linux, et le jeu a déjà suspendu des comptes qui ont essayé (un bannissement d'un jour a été signalé en 2025). Mieux vaut ne pas le lancer."
+      }
     }
   ]
 }

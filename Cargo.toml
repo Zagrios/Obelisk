@@ -31,7 +31,9 @@ tempfile = "3"
 uuid = { version = "1", features = ["v4"] }
 uniffi = { version = "=0.32.1" }
 tokio = { version = "1", features = ["rt-multi-thread", "time", "sync", "macros", "net"] }
-reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "form", "query", "stream"] }
+# system-proxy: the proxy macOS is set to, without which no storefront answers
+# behind one. gzip: compressed API answers; chunk requests ask for identity.
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "form", "query", "stream", "gzip", "system-proxy"] }
 prost = "0.14"
 bytes = "1"
 base64 = "0.23"
@@ -43,7 +45,9 @@ sha1 = "0.11"
 md-5 = "0.11"
 crc32fast = "1"
 unicode-normalization = "0.1"
-flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+# zlib-rs inflates about a third faster than miniz_oxide: Epic's and GOG's
+# chunks spend most of their CPU there.
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
 lzma-rs = "0.3"
 ruzstd = "0.9"
 
@@ -71,7 +75,19 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.miniz_oxide]
 opt-level = 3
+[profile.dev.package.zlib-rs]
+opt-level = 3
 [profile.dev.package.lzma-rs]
 opt-level = 3
 [profile.dev.package.ruzstd]
+opt-level = 3
+# Steam's AES-CBC and the TLS that every CDN byte crosses: unoptimized, a
+# Debug download spent most of its CPU here.
+[profile.dev.package.cbc]
+opt-level = 3
+[profile.dev.package.rustls]
+opt-level = 3
+[profile.dev.package.aws-lc-rs]
+opt-level = 3
+[profile.dev.package.aws-lc-sys]
 opt-level = 3

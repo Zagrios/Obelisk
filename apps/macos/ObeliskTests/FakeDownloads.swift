@@ -11,6 +11,7 @@ final class FakeDownloads: DownloadsBackend {
 
     private(set) var current = DownloadQueueState(revision: 0, running: nil, waiting: [], held: false)
     private(set) var calls: [Call] = []
+    private(set) var speedLimit: UInt64 = 0
     private var waiters: [CheckedContinuation<Void, Never>] = []
 
     /// Publishes a change, as Rust does after every one.
@@ -33,6 +34,7 @@ final class FakeDownloads: DownloadsBackend {
     func pause(_ id: UInt64) { calls.append(.pause(id)) }
     func resume(_ id: UInt64) { calls.append(.resume(id)) }
     func moveToTop(_ id: UInt64) { calls.append(.moveToTop(id)) }
+    func setSpeedLimit(_ bytesPerSecond: UInt64) { speedLimit = bytesPerSecond }
 }
 
 extension DownloadItem {

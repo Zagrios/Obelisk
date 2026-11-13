@@ -80,7 +80,7 @@ fn entries() -> Vec<serde_json::Map<String, serde_json::Value>> {
 
 #[test]
 fn every_game_of_the_table_passes_the_checks_a_table_read_from_main_passes() {
-    assert_eq!(table().len(), entries().len());
+    assert_eq!(PROFILES.entries().len(), entries().len());
 }
 
 /// A table entry Obelisk keeps, with `key` set to `value`, or removed
@@ -177,19 +177,9 @@ fn an_entry_that_sets_what_a_profile_may_not_is_left_out() {
 }
 
 #[test]
-fn a_table_of_another_format_is_not_read() {
-    let mut table: serde_json::Value = serde_json::from_str(TABLE).unwrap();
-    table["format"] = 2.into();
-    assert!(parsed(table.to_string().as_bytes()).is_none());
-    table.as_object_mut().unwrap().remove("format");
-    assert!(parsed(table.to_string().as_bytes()).is_none());
-    assert!(parsed(b"404: Not Found").is_none());
-}
-
-#[test]
 fn no_two_games_of_the_table_share_a_storefront_s_name() {
     let mut names = HashSet::new();
-    for known in table() {
+    for known in PROFILES.entries() {
         let ids = [
             known.steam.map(|app_id| format!("steam {app_id}")),
             known
@@ -242,7 +232,11 @@ fn a_file_of_the_table_is_inside_the_installation_and_only_one_game_holds_it() {
         "unitycrashhandler32.exe",
     ];
     let mut paths = HashSet::new();
-    for path in table().iter().filter_map(|known| known.path.as_deref()) {
+    for path in PROFILES
+        .entries()
+        .iter()
+        .filter_map(|known| known.path.as_deref())
+    {
         let name = Path::new(path)
             .file_name()
             .unwrap()
@@ -281,4 +275,95 @@ fn the_named_games_are_the_ones_the_table_names_by_a_storefront_s_id() {
     assert!(named.contains(&Game::Steam { app_id: 252950 }));
     assert!(!named.contains(&Game::Steam { app_id: 1172470 }));
     assert!(named.contains(&ROCKET_LEAGUE));
+}
+
+#[test]
+fn a_game_the_table_does_not_name_runs_on_the_linux_engine_when_its_installation_holds_easy_anti_cheat()
+ {
+    use crate::{
+        easy_anti_cheat::tests::{protect, write},
+        pe::tests::Fixture,
+    };
+    let directory = tempfile::tempdir().unwrap();
+    let install = directory.path();
+    protect(install, "Game", "start_protected_game.exe", "eldenring.exe");
+    write(
+        install,
+        "Game/eldenring.exe",
+        &Fixture::importing(&["d3d12.dll", "dxgi.dll"]).bytes(),
+    );
+    let other = Game::Steam { app_id: 42 };
+
+    assert_eq!(
+        of(other, install),
+        Profile {
+            engine: Engine::Linux,
+            graphics: Graphics::D3DMetal,
+            bootstrapper: Some("Game/start_protected_game.exe".into()),
+            ..Profile::default()
+        }
+    );
+    assert_eq!(known(other, install), None);
+}
+
+#[test]
+fn the_table_s_entry_for_a_game_wins_over_its_easy_anti_cheat_whose_bootstrapper_it_keeps() {
+    let directory = tempfile::tempdir().unwrap();
+    let install = directory.path();
+    crate::easy_anti_cheat::tests::protect(
+        install,
+        "Game",
+        "start_protected_game.exe",
+        "eldenring.exe",
+    );
+    for game in [
+        Game::Steam { app_id: 1245620 },
+        Game::Steam { app_id: 377160 },
+    ] {
+        assert_eq!(
+            of(game, install),
+            Profile {
+                bootstrapper: Some("Game/start_protected_game.exe".into()),
+                ..by_id(game)
+            }
+        );
+    }
+    assert_eq!(
+        of(Game::Steam { app_id: 377160 }, install).engine,
+        Engine::Rosetta
+    );
+}
+
+#[test]
+fn the_engine_alone_is_the_profile_s_and_only_an_untabled_installation_is_searched_for_its_anti_cheat()
+ {
+    let directory = tempfile::tempdir().unwrap();
+    let protected = directory.path().join("protected");
+    crate::easy_anti_cheat::tests::protect(
+        &protected,
+        "Game",
+        "start_protected_game.exe",
+        "eldenring.exe",
+    );
+    let other = Game::Steam { app_id: 42 };
+    let fallout_4 = Game::Steam { app_id: 377160 };
+
+    for game in [ROCKET_LEAGUE, FALL_GUYS, fallout_4, other] {
+        assert_eq!(
+            engine(game, Path::new("/nowhere")),
+            by_id(game).engine,
+            "{game:?}"
+        );
+    }
+    assert_eq!(engine(other, &protected), Engine::Linux);
+    assert_eq!(engine(other, &protected), of(other, &protected).engine);
+    let bare = directory.path().join("bare");
+    std::fs::create_dir(&bare).unwrap();
+    assert_eq!(engine(other, &bare), Engine::Rosetta);
+    // The table wins over the installation's Easy Anti-Cheat.
+    assert_eq!(engine(fallout_4, &protected), Engine::Rosetta);
+    assert_eq!(
+        engine(fallout_4, &protected),
+        of(fallout_4, &protected).engine
+    );
 }

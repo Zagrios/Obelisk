@@ -1,13 +1,13 @@
 //! Account-scoped GOG requests. Token refresh is serialized, while reads
 //! release the session lock so disconnect can invalidate them promptly.
-use std::{future::Future, sync::Arc, time::Instant};
+use std::{future::Future, sync::Arc};
 
 use obelisk_core::{
+    oauth_session::OAuthSession,
     platform::{Platform, Spelling},
-    watch::Revisions,
+    transfer::CdnClient,
 };
 use serde::Serializer;
-use tokio::sync::Mutex;
 
 use crate::{
     GogError,
@@ -50,6 +50,8 @@ pub(crate) fn content_platform(platform: Platform) -> &'static str {
 pub struct Client {
     downloads: download::Downloads,
     tokens: TokenSource,
+    /// How the Mac pick and every download reach GOG's CDN for chunks.
+    cdn: CdnClient,
     avatar_url: Option<String>,
     /// Each Mac build's verdict, by product, build and language, and the
     /// depot items the last native one read, for its download.
@@ -79,11 +81,8 @@ impl Client {
         }
         Ok(Self {
             downloads: download::Downloads::default(),
-            tokens: TokenSource {
-                api: Arc::new(api),
-                session: Arc::new(Mutex::new(Some(session))),
-                credential_events: Revisions::new(),
-            },
+            cdn: CdnClient::new(api.http.clone()),
+            tokens: TokenSource::new(api, session),
             avatar_url: profile.avatar_url,
             build_choice: Default::default(),
         })
@@ -95,19 +94,13 @@ impl Client {
     }
 
     pub async fn credentials(&self) -> Result<Credentials, GogError> {
-        self.tokens
-            .session
-            .lock()
-            .await
-            .as_ref()
-            .map(|session| session.credentials.clone())
-            .ok_or(GogError::Unauthorized)
+        self.tokens.session.credentials().await
     }
 
     /// Refresh before a long read so the caller can persist a rotated token
     /// before the read starts.
     pub async fn prepare(&self) -> Result<(), GogError> {
-        self.tokens.access_token(None).await.map(drop)
+        self.tokens.session.access_token(None).await.map(drop)
     }
 
     /// Every game the account owns, with its artwork and platforms.
@@ -152,17 +145,20 @@ impl Client {
 
     /// The revision of the credentials now, which grows with each rotation.
     pub fn credentials_revision(&self) -> u64 {
-        self.tokens.credential_events.current()
+        self.tokens.session.credentials_revision()
     }
 
     pub async fn next_credentials_revision(&self, after_revision: u64) -> Option<u64> {
-        self.tokens.credential_events.next(after_revision).await
+        self.tokens
+            .session
+            .next_credentials_revision(after_revision)
+            .await
     }
 
     /// Synchronous cancellation crosses UniFFI even when a Swift task is
     /// suspended. This affects no running content transfer.
     pub fn shutdown_observers(&self) {
-        self.tokens.credential_events.stop();
+        self.tokens.session.stop_credentials_watch();
     }
 
     /// Forgets the session. GOG offers no revocation of a Galaxy token: it
@@ -170,12 +166,13 @@ impl Client {
     pub async fn disconnect(&self) -> Result<(), GogError> {
         self.shutdown_observers();
         self.cancel_download();
-        self.tokens.session.lock().await.take();
+        self.tokens.session.discard().await;
         Ok(())
     }
 
-    /// As [`TokenSource::with_access_token`], but a result computed for a
-    /// session the account discarded meanwhile is never returned.
+    /// Runs `operation` with a current access token, once more when GOG
+    /// rejects that token. A result computed for a session the account
+    /// discarded meanwhile is never returned.
     pub(crate) async fn with_access_token<T, Fut>(
         &self,
         operation: impl Fn(String) -> Fut,
@@ -183,11 +180,7 @@ impl Client {
     where
         Fut: Future<Output = Result<T, GogError>>,
     {
-        let result = self.tokens.with_access_token(operation).await;
-        if self.tokens.session.lock().await.is_none() {
-            return Err(GogError::Unauthorized);
-        }
-        result
+        self.tokens.session.with_access_token(operation).await
     }
 }
 
@@ -196,13 +189,21 @@ impl Client {
 #[derive(Clone)]
 pub(crate) struct TokenSource {
     api: Arc<Api>,
-    session: Arc<Mutex<Option<Session>>>,
-    credential_events: Revisions,
+    session: OAuthSession<Api>,
 }
 
 impl TokenSource {
-    /// Runs `operation` with a current access token. When GOG rejects that
-    /// token, it is refreshed once and the operation runs again.
+    /// The source of the account `session` signed in.
+    fn new(api: Api, session: Session) -> Self {
+        Self {
+            session: OAuthSession::new(api.clone(), session),
+            api: Arc::new(api),
+        }
+    }
+
+    /// As [`Client::with_access_token`], but its result is returned though
+    /// the account discarded its session meanwhile: a Transfer tells its
+    /// cancellation first, then checks the session itself.
     pub(crate) async fn with_access_token<T, Fut>(
         &self,
         operation: impl Fn(String) -> Fut,
@@ -210,31 +211,9 @@ impl TokenSource {
     where
         Fut: Future<Output = Result<T, GogError>>,
     {
-        let token = self.access_token(None).await?;
-        match operation(token.clone()).await {
-            Err(GogError::Unauthorized) => operation(self.access_token(Some(&token)).await?).await,
-            result => result,
-        }
-    }
-
-    /// A current access token, renewed when it lapsed or GOG `rejected` it.
-    pub(crate) async fn access_token(&self, rejected: Option<&str>) -> Result<String, GogError> {
-        // The renewing task owns the refresh, not the caller awaiting it: a
-        // dropped caller never loses a token GOG already rotated.
-        let tokens = self.clone();
-        let rejected = rejected.map(str::to_owned);
-        tokio::spawn(async move {
-            let mut guard = tokens.session.lock().await;
-            let session = guard.as_mut().ok_or(GogError::Unauthorized)?;
-            if session.expires_at <= Instant::now()
-                || rejected.as_deref() == Some(&session.access_token)
-            {
-                *session = tokens.api.refresh(&session.credentials).await?;
-                tokens.credential_events.advance();
-            }
-            Ok(session.access_token.clone())
-        })
-        .await
-        .map_err(|_| GogError::Cancelled)?
+        self.session.with_access_token_detached(operation).await
     }
 }
+
+#[cfg(test)]
+mod tests;

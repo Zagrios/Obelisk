@@ -67,4 +67,54 @@ final class DownloadsModelTests: XCTestCase {
         try await eventually { model.running?.id == 2 }
         XCTAssertTrue(model.samples.isEmpty)
     }
+
+    func testTheSpeedLimitReachesRustAndTheUnitAndTheLimitAreRemembered() throws {
+        let suite = "ObeliskTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let queue = FakeDownloads()
+        let model = DownloadsModel(backend: queue, period: .seconds(3600), defaults: defaults)
+        XCTAssertEqual(model.speedUnit, .bytes)
+        XCTAssertEqual(model.speedLimit, 0, "downloads are unlimited until the player limits them")
+
+        model.speedUnit = .bits
+        model.speedLimitChoice = 2
+        XCTAssertEqual(model.speedLimit, 3_125_000, "25 megabits per second")
+        XCTAssertEqual(queue.speedLimit, 3_125_000)
+
+        let next = FakeDownloads()
+        let reopened = DownloadsModel(backend: next, period: .seconds(3600), defaults: defaults)
+        XCTAssertEqual(reopened.speedUnit, .bits)
+        XCTAssertEqual(reopened.speedLimit, 3_125_000)
+        XCTAssertEqual(next.speedLimit, 3_125_000, "a new start limits downloads again")
+    }
+
+    func testTheLimitsFollowTheUnitAndChangingItLeavesTheLimitAsItIs() throws {
+        let suite = "ObeliskTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let queue = FakeDownloads()
+        let model = DownloadsModel(backend: queue, period: .seconds(3600), defaults: defaults)
+        XCTAssertEqual(model.speedLimitChoice, DownloadSpeedUnit.bytes.speedLimits.count - 1, "none is the last choice")
+
+        model.speedUnit = .bits
+        model.speedLimitChoice = 4
+        XCTAssertEqual(model.speedLimit, 12_500_000, "100 megabits per second")
+
+        model.speedUnit = .bytes
+        XCTAssertEqual(model.speedLimit, 12_500_000, "a unit is only how the limit reads")
+        XCTAssertEqual(queue.speedLimit, 12_500_000)
+        XCTAssertEqual(DownloadSpeedUnit.bytes.speedLimits[model.speedLimitChoice], 10_000_000, "the nearest")
+
+        model.speedLimitChoice = 4
+        XCTAssertEqual(model.speedLimit, 25_000_000, "25 megabytes per second")
+        model.speedLimitChoice = DownloadSpeedUnit.bytes.speedLimits.count - 1
+        XCTAssertEqual(model.speedLimit, 0)
+    }
+
+    func testASpeedReadsInMegabitsWhenThePlayerChoosesThem() {
+        XCTAssertEqual(DownloadFormatting.speed(1_500_000, in: .bits), "12 Mbps")
+        XCTAssertEqual(DownloadFormatting.speed(-5, in: .bits), "0 Mbps")
+        XCTAssertEqual(DownloadFormatting.speed(625_000, in: .bits), "5 Mbps", "the lowest limit")
+    }
 }

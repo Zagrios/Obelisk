@@ -4,37 +4,24 @@
 //! Obelisk that reads only profiles never meets its keys. Obelisk is built
 //! with it, and a release build reads it again from Obelisk's `main` when it
 //! starts, keeping the last one beside its library; a development build
-//! keeps the one it was built with. A table that does not parse shows no
-//! note, and an entry that is not a note Obelisk can show is left out.
-use crate::profile::{EpicGame, Game};
-use serde::Deserialize;
-use std::{
-    collections::BTreeMap,
-    fs,
-    path::Path,
-    sync::{LazyLock, Mutex},
+//! keeps the one it was built with. A table that does not parse, or holds no
+//! note Obelisk can show, leaves the last one read, and an entry that is not
+//! a note Obelisk can show is left out.
+use crate::{
+    profile::{EpicGame, Game},
+    remote::Table,
 };
+use serde::Deserialize;
+use std::{collections::BTreeMap, path::Path, sync::LazyLock};
 
 const TABLE: &str = include_str!("../notes.json");
-/// Where the table is on Obelisk's `main`.
-const URL: &str =
-    "https://raw.githubusercontent.com/Zagrios/Obelisk/main/crates/game-runtime/notes.json";
-/// The table's format this Obelisk reads. Another one is a table it ignores.
-const FORMAT: u32 = 1;
-/// The last table read, in Obelisk's library.
-const KEPT: &str = "notes.json";
+/// The table's file, on Obelisk's `main` and kept in the library.
+pub(crate) const NAME: &str = "notes.json";
 /// The language every note has, which stands in for one it lacks.
 const FALLBACK: &str = "en";
 /// The longest note shown, in characters: a few sentences beside the
 /// game's details, not an article.
 const LONGEST: usize = 400;
-
-/// The table, as `notes.json` holds it: each game as written there.
-#[derive(Debug, Deserialize)]
-struct Table {
-    format: u32,
-    games: Vec<serde_json::Value>,
-}
 
 /// One game of the table: the storefronts' ids for it and its note by
 /// language. Other keys, such as the `name` the table's readers go by, are
@@ -49,24 +36,14 @@ struct Known {
     text: BTreeMap<String, String>,
 }
 
-/// The notes pages read now: the table Obelisk was built with until a
-/// release build reads another.
-static NOTES: LazyLock<Mutex<Vec<Known>>> =
-    LazyLock::new(|| Mutex::new(parsed(TABLE.as_bytes()).unwrap_or_default()));
+/// The notes pages read now.
+static NOTES: LazyLock<Table<Known>> = LazyLock::new(|| Table::new(NAME, TABLE, checked));
 
-/// The notes of `table` Obelisk can show, when it is a table of the format
-/// Obelisk reads. Each entry is read alone: one Obelisk cannot show leaves
-/// the others in place.
-fn parsed(table: &[u8]) -> Option<Vec<Known>> {
-    let table: Table = serde_json::from_slice(table).ok()?;
-    (table.format == FORMAT).then(|| {
-        table
-            .games
-            .into_iter()
-            .filter_map(|entry| serde_json::from_value::<Known>(entry).ok())
-            .filter(Known::allowed)
-            .collect()
-    })
+/// `entry` as Obelisk reads it, when it is a note Obelisk can show.
+fn checked(entry: serde_json::Value) -> Option<Known> {
+    serde_json::from_value::<Known>(entry)
+        .ok()
+        .filter(Known::allowed)
 }
 
 impl Known {
@@ -94,30 +71,15 @@ impl Known {
 /// has none for it.
 pub fn of(game: Game<'_>, language: &str) -> Option<String> {
     NOTES
-        .lock()
-        .unwrap()
+        .entries()
         .iter()
         .find(|known| known.names(game))
         .map(|known| known.text(language).to_owned())
 }
 
 /// Reads the table again from Obelisk's `main` and keeps it in `library`.
-/// When `main` does not answer in time, or with a table Obelisk reads, pages
-/// read the last one kept, else the one Obelisk was built with. A
-/// development build keeps the one it was built with, as edited.
 pub async fn refresh(library: &Path) {
-    if cfg!(debug_assertions) {
-        return;
-    }
-    let kept = library.join(KEPT);
-    let fetched = crate::remote::fetched(URL).await.and_then(|table| {
-        let notes = parsed(&table)?;
-        let _ = crate::remote::keep(&kept, &table);
-        Some(notes)
-    });
-    if let Some(notes) = fetched.or_else(|| parsed(&fs::read(&kept).ok()?)) {
-        *NOTES.lock().unwrap() = notes;
-    }
+    NOTES.refresh(library).await;
 }
 
 #[cfg(test)]

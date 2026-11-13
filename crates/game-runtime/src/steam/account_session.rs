@@ -10,8 +10,8 @@ use crate::{
     sessions::Failure,
 };
 use obelisk_core::{
-    Platform, installation::TransferProgress, launch::LaunchTarget, transfer::CancelToken,
-    watch::next_matching,
+    OnlineStatus, Platform, installation::TransferProgress, launch::LaunchTarget,
+    transfer::CancelToken, watch::next_matching,
 };
 use std::{
     path::Path,
@@ -19,15 +19,23 @@ use std::{
     time::Duration,
 };
 use steam_kit::{
-    client::{Client, ClientConnectError, Installation},
+    client::{Client, ClientConnectError, ClientError, Installation},
     cloud::{CloudListing, CloudMetadata},
     friends::{FriendsConnection, FriendsSnapshot},
 };
 use tokio::{sync::watch, task::AbortHandle};
 
-/// How many times the session connects again once its connection dropped,
-/// after waiting 1, 2, then 4 seconds.
-const ATTEMPTS: u32 = 3;
+/// The waits before each attempt to connect again once the connection
+/// dropped: about a minute, so the network a Mac finds again after it wakes,
+/// or a Wi-Fi that drops for a while, finds the session still trying.
+const WAITS: [Duration; 6] = [
+    Duration::from_secs(1),
+    Duration::from_secs(2),
+    Duration::from_secs(4),
+    Duration::from_secs(8),
+    Duration::from_secs(16),
+    Duration::from_secs(30),
+];
 
 /// One CM connection of the session, which ends for good once it drops.
 /// Steam's client in production; tests stand in for it.
@@ -39,6 +47,8 @@ pub trait Transport: Network {
     fn ended(&self) -> bool;
     /// Ends it now, waking every wait on it and cancelling its download.
     fn shutdown(&self);
+    /// Shows the account to its friends as `status` says.
+    fn set_status(&self, status: OnlineStatus) -> BoxFuture<'_, Result<(), ClientError>>;
 }
 
 impl Transport for Client {
@@ -50,6 +60,9 @@ impl Transport for Client {
     }
     fn shutdown(&self) {
         Client::shutdown(self);
+    }
+    fn set_status(&self, status: OnlineStatus) -> BoxFuture<'_, Result<(), ClientError>> {
+        Box::pin(Client::set_status(self, status))
     }
 }
 
@@ -96,9 +109,10 @@ impl State {
     }
 }
 
-/// Opens a CM connection of the account.
-pub(crate) type Connect<T> =
-    Box<dyn Fn() -> BoxFuture<'static, Result<Arc<T>, ClientConnectError>> + Send + Sync>;
+/// Opens a CM connection of the account, which shows it as the status says.
+pub(crate) type Connect<T> = Box<
+    dyn Fn(OnlineStatus) -> BoxFuture<'static, Result<Arc<T>, ClientConnectError>> + Send + Sync,
+>;
 
 /// A CM connection the session follows, and the revision of its friends it
 /// already published.
@@ -125,33 +139,46 @@ pub struct AccountSession<T: Transport = Client> {
     state: watch::Sender<State>,
     /// Lets a cancellation reach a Transfer waiting for the reconnection.
     waiting: Mutex<Option<CancelToken>>,
+    /// How the account shows to its friends: each connection signs in
+    /// showing it, and its games start showing it.
+    status: Mutex<OnlineStatus>,
 }
 
 impl AccountSession {
-    /// Signs `credentials` in. The first connection's failure is returned as
-    /// it is: nothing retries it.
-    pub async fn connect(credentials: Credentials) -> Result<Arc<Self>, ClientConnectError> {
-        Self::open(Box::new(move || {
-            let credentials = credentials.clone();
-            Box::pin(async move {
-                Client::connect(
-                    &credentials.account_name,
-                    credentials.steam_id,
-                    &credentials.refresh_token,
-                )
-                .await
-                .map(Arc::new)
-            })
-        }))
+    /// Signs `credentials` in, showing the account as `status` says. The
+    /// first connection's failure is returned as it is: nothing retries it.
+    pub async fn connect(
+        credentials: Credentials,
+        status: OnlineStatus,
+    ) -> Result<Arc<Self>, ClientConnectError> {
+        Self::open(
+            Box::new(move |status| {
+                let credentials = credentials.clone();
+                Box::pin(async move {
+                    Client::connect(
+                        &credentials.account_name,
+                        credentials.steam_id,
+                        &credentials.refresh_token,
+                        status,
+                    )
+                    .await
+                    .map(Arc::new)
+                })
+            }),
+            status,
+        )
         .await
     }
 }
 
 impl<T: Transport> AccountSession<T> {
     /// Opens the first connection through `connect`, which every
-    /// reconnection uses too.
-    pub(crate) async fn open(connect: Connect<T>) -> Result<Arc<Self>, ClientConnectError> {
-        let transport = connect().await?;
+    /// reconnection uses too, showing the account as `status` says.
+    pub(crate) async fn open(
+        connect: Connect<T>,
+        status: OnlineStatus,
+    ) -> Result<Arc<Self>, ClientConnectError> {
+        let transport = connect(status).await?;
         let friends = transport.next_friends(0).await;
         let after = friends.revision;
         let (state, _) = watch::channel(State {
@@ -170,6 +197,7 @@ impl<T: Transport> AccountSession<T> {
             }),
             state,
             waiting: Mutex::new(None),
+            status: Mutex::new(status),
         });
         session.spawn(&mut session.link(), Some((transport, after)));
         Ok(session)
@@ -191,6 +219,19 @@ impl<T: Transport> AccountSession<T> {
         match ready {
             Ok(state) | Err(state) => state,
         }
+    }
+
+    /// How the account shows to its friends.
+    pub fn status(&self) -> OnlineStatus {
+        *self.status.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Shows the account as `status` says, through the connection of the
+    /// moment and every later one. A connection that ended fails it; the
+    /// next one signs in showing it.
+    pub async fn set_status(&self, status: OnlineStatus) -> Result<(), ClientError> {
+        *self.status.lock().unwrap_or_else(PoisonError::into_inner) = status;
+        self.current().set_status(status).await
     }
 
     /// Replaces the CM connection, live or not, and connects again as after a
@@ -302,13 +343,17 @@ impl<T: Transport> AccountSession<T> {
         }
     }
 
-    /// Connects again, up to three times after growing waits, and makes the
-    /// new connection the one of the moment. None when the cycle ends
-    /// without one.
+    /// Connects again, once after each of `WAITS`, and makes the new
+    /// connection the one of the moment. None when the cycle ends without
+    /// one.
     async fn connect_again(session: &Weak<Self>, cycle: u64) -> Option<Following<T>> {
-        for attempt in 0..ATTEMPTS {
-            tokio::time::sleep(Duration::from_secs(1 << attempt)).await;
-            let connecting = (session.upgrade()?.connect)();
+        for wait in WAITS {
+            tokio::time::sleep(wait).await;
+            let (connecting, status) = {
+                let session = session.upgrade()?;
+                let status = session.status();
+                ((session.connect)(status), status)
+            };
             match connecting.await {
                 Ok(transport) => {
                     let friends = transport.next_friends(0).await;
@@ -324,6 +369,14 @@ impl<T: Transport> AccountSession<T> {
                     }
                     // The connection it replaces already ended.
                     link.transport = transport.clone();
+                    // The player changed the status while it signed in.
+                    let shown = session.status();
+                    if shown != status {
+                        let transport = transport.clone();
+                        session.runtime.spawn(async move {
+                            let _ = transport.set_status(shown).await;
+                        });
+                    }
                     session.publish(|state| {
                         state.phase = Phase::Connected;
                         state.transport += 1;
@@ -445,12 +498,12 @@ impl<T: Transport> Network for AccountSession<T> {
     }
     fn maintain(
         &self,
-        target: steam_cloud::MaintenanceTarget,
+        config: steam_cloud::Config,
         credentials: &Credentials,
         control: Arc<Control>,
         idle: &IdleGuard,
     ) -> Result<(), steam_cloud::Failure> {
-        self.current().maintain(target, credentials, control, idle)
+        self.current().maintain(config, credentials, control, idle)
     }
 }
 
