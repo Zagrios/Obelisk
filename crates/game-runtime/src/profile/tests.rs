@@ -106,6 +106,21 @@ fn entry_with(key: &str, value: Option<serde_json::Value>) -> Option<Known> {
 }
 
 #[test]
+fn macos_s_game_mode_stays_off_only_for_a_game_whose_entry_says_so() {
+    use serde_json::json;
+    let helldivers = by_id(Game::Steam { app_id: 553850 });
+    assert_eq!(helldivers.engine, Engine::Linux);
+    assert_eq!(helldivers.graphics, Graphics::D3DMetal);
+    assert!(!helldivers.game_mode);
+
+    assert!(Profile::default().game_mode);
+    assert!(by_id(ROCKET_LEAGUE).game_mode, "an entry that does not say");
+    let off = entry_with("game_mode", Some(json!(false))).unwrap();
+    assert_eq!(off.game_mode, Some(false));
+    assert!(entry_with("game_mode", Some(json!("off"))).is_none());
+}
+
+#[test]
 fn an_entry_that_sets_what_a_profile_may_not_is_left_out() {
     use serde_json::json;
     let kept = entry_with("gog", Some(json!("1207658924"))).unwrap();
