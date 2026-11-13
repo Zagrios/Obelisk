@@ -131,6 +131,7 @@ impl WebStore for Scripted {
         client.ask(format!("details {product} {language}"));
         Ok(WebGameDetails {
             platform: Some(GamePlatform::Windows),
+            both_builds: false,
             installation_bytes: Some(7),
         })
     }

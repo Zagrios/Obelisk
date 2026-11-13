@@ -32,6 +32,14 @@ pub struct Offered<B> {
     pub windows: Option<B>,
 }
 
+impl<B> Offered<B> {
+    /// Whether the storefront offers both builds: the player then chooses
+    /// between them on the game's page.
+    pub fn both(&self) -> bool {
+        self.mac.is_some() && self.windows.is_some()
+    }
+}
+
 /// What a launch of a Mac build starts, as its storefront names it.
 #[derive(Clone, Copy, Debug)]
 pub struct Launch<'a> {

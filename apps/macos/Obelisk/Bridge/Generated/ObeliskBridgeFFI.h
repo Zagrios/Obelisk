@@ -517,7 +517,7 @@ void uniffi_obelisk_bridge_fn_method_accountinstallations_discard(uint64_t ptr, 
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_METHOD_ACCOUNTINSTALLATIONS_INSTALL
 #define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_METHOD_ACCOUNTINSTALLATIONS_INSTALL
-void uniffi_obelisk_bridge_fn_method_accountinstallations_install(uint64_t ptr, RustBuffer offer, RustCallStatus *_Nonnull out_status
+void uniffi_obelisk_bridge_fn_method_accountinstallations_install(uint64_t ptr, RustBuffer offer, RustBuffer build, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_METHOD_ACCOUNTINSTALLATIONS_JOIN

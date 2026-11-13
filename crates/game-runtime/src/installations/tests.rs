@@ -2097,6 +2097,168 @@ async fn a_transfer_without_a_platform_gets_the_runtimes_of_the_build_steam_pick
 }
 
 #[tokio::test]
+async fn an_install_of_the_windows_build_takes_it_where_steam_picks_the_mac_build() {
+    let fixture = Fixture::new(false).await;
+
+    fixture
+        .installations
+        .install_build(fixture.offer(), Platform::Windows);
+    idle(&fixture.installations).await;
+
+    assert_eq!(
+        fixture.fake.with(|script| script.transfers.clone()),
+        [fixture.transfer(Platform::Windows)],
+    );
+    assert_eq!(fixture.receipt().platform, Platform::Windows);
+}
+
+#[tokio::test]
+async fn an_install_of_the_other_build_leaves_the_installed_one_beside_it() {
+    let fixture = Fixture::new(false).await;
+    let platforms = || {
+        let receipts = fixture.installations.state().receipts;
+        receipts
+            .iter()
+            .map(|receipt| receipt.platform)
+            .collect::<Vec<_>>()
+    };
+    fixture.installations.install(fixture.offer());
+    idle(&fixture.installations).await;
+    assert_eq!(platforms(), [Platform::Mac]);
+
+    fixture
+        .installations
+        .install_build(fixture.offer(), Platform::Windows);
+    idle(&fixture.installations).await;
+    assert_eq!(platforms(), [Platform::Mac, Platform::Windows]);
+
+    // The Mac build asked again is the installed one, gone over in place.
+    fixture
+        .installations
+        .install_build(fixture.offer(), Platform::Mac);
+    idle(&fixture.installations).await;
+    assert_eq!(platforms(), [Platform::Windows, Platform::Mac]);
+    assert_eq!(
+        fixture.fake.with(|script| script.transfers.clone()),
+        [
+            fixture.transfer(Platform::Mac),
+            fixture.transfer(Platform::Windows),
+            fixture.transfer(Platform::Mac),
+        ],
+    );
+}
+
+#[tokio::test]
+async fn an_install_of_the_mac_build_beside_the_windows_one_is_steams_pick() {
+    let fixture = Fixture::new(false).await;
+    fixture
+        .installations
+        .install_build(fixture.offer(), Platform::Windows);
+    idle(&fixture.installations).await;
+
+    fixture
+        .installations
+        .install_build(fixture.offer(), Platform::Mac);
+    idle(&fixture.installations).await;
+
+    let receipts = fixture.installations.state().receipts;
+    assert_eq!(
+        receipts.len(),
+        2,
+        "Steam picked the Mac build, which runs natively"
+    );
+    assert!(
+        receipts.iter().all(|receipt| !receipt.needs_verification),
+        "the Windows build beside it stays verified"
+    );
+}
+
+#[tokio::test]
+async fn a_verification_of_one_build_leaves_the_other_builds_stopped_download() {
+    let fixture = Fixture::new(false).await;
+    fixture
+        .installations
+        .install_build(fixture.offer(), Platform::Windows);
+    idle(&fixture.installations).await;
+    fixture.fake.with(|script| {
+        script
+            .downloads
+            .push_back(Err(Failure::Failed("backend.steam.content.network".into())))
+    });
+    fixture
+        .installations
+        .install_build(fixture.offer(), Platform::Mac);
+    idle(&fixture.installations).await;
+    let state = fixture.installations.state();
+    assert_eq!(state.last_download, Some(fixture.transfer(Platform::Mac)));
+    assert!(!state.receipts[0].needs_verification);
+
+    fixture.installations.update(&fixture.receipt().id());
+    idle(&fixture.installations).await;
+
+    assert_eq!(
+        fixture.fake.with(|script| script.transfers.last().cloned()),
+        Some(fixture.transfer(Platform::Windows)),
+    );
+    let state = fixture.installations.state();
+    assert_eq!(state.receipts.len(), 1);
+    assert_eq!(state.last_download, None);
+}
+
+#[tokio::test]
+async fn a_mac_build_steam_refuses_beside_the_windows_one_fails_and_leaves_it_verified() {
+    let fixture = Fixture::new(false).await;
+    fixture
+        .installations
+        .install_build(fixture.offer(), Platform::Windows);
+    idle(&fixture.installations).await;
+    fixture
+        .fake
+        .with(|script| script.picked = Some(Platform::Windows));
+
+    fixture
+        .installations
+        .install_build(fixture.offer(), Platform::Mac);
+    idle(&fixture.installations).await;
+
+    let state = fixture.installations.state();
+    assert_eq!(state.receipts.len(), 1);
+    assert!(!state.receipts[0].needs_verification);
+    let transfer = state.transfer.unwrap();
+    assert_eq!(transfer.state, TransferState::Failed);
+    assert_eq!(transfer.message, super::MAC_BUILD_UNAVAILABLE);
+}
+
+#[tokio::test]
+async fn a_mac_build_steam_refuses_of_a_game_not_installed_installs_nothing() {
+    let fixture = Fixture::new(false).await;
+    fixture
+        .fake
+        .with(|script| script.picked = Some(Platform::Windows));
+
+    fixture
+        .installations
+        .install_build(fixture.offer(), Platform::Mac);
+    idle(&fixture.installations).await;
+
+    let state = fixture.installations.state();
+    assert!(state.receipts.is_empty());
+    assert!(state.last_download.is_none());
+    assert_eq!(state.mac_refused, [620]);
+    assert_eq!(
+        state.transfer.unwrap().message,
+        super::MAC_BUILD_UNAVAILABLE
+    );
+
+    // Its Windows build, chosen next, installs.
+    fixture
+        .installations
+        .install_build(fixture.offer(), Platform::Windows);
+    idle(&fixture.installations).await;
+    assert_eq!(fixture.receipt().platform, Platform::Windows);
+}
+
+#[tokio::test]
 async fn a_runtime_download_shows_as_the_transfer_and_cancelling_the_transfer_stops_it_before_its_files()
  {
     let fixture = Fixture::with_runtimes(false, &[Runtime::SteamComponents]).await;

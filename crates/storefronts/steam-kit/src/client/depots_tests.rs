@@ -743,6 +743,7 @@ mod game_page {
             .await
             .unwrap();
         assert_eq!(details.platform, Some(Platform::Mac));
+        assert!(details.both_builds);
         assert_eq!(details.windows_bytes, 10 + 60);
         assert_eq!(details.macos_bytes, 40 + 60);
         assert_eq!(steam.app_queries(), [vec![SHARED_GAME], vec![BASE]]);
@@ -759,6 +760,7 @@ mod game_page {
             .await
             .unwrap();
         assert_eq!(windows.platform, Some(Platform::Windows));
+        assert!(!windows.both_builds);
         assert_eq!(windows.macos_bytes, 0);
         assert_eq!(windows.windows_bytes, 50);
         let no_program = steam

@@ -9,6 +9,7 @@ final class FakeInstallations<Store: InstallationStorefront>: InstallationsBacke
     enum Call: Equatable {
         case diagnostic(Bool)
         case install(GameOffer)
+        case installBuild(GameOffer, GamePlatform)
         case update(InstallationReceipt<Store.GameID>)
         case cancel(Store.GameID)
         case checkUpdates
@@ -66,7 +67,9 @@ final class FakeInstallations<Store: InstallationStorefront>: InstallationsBacke
     }
 
     func setDiagnostic(_ running: Bool) { record(.diagnostic(running)) }
-    func install(_ offer: GameOffer) { record(.install(offer)) }
+    func install(_ offer: GameOffer, build: GamePlatform?) {
+        record(build.map { .installBuild(offer, $0) } ?? .install(offer))
+    }
     func update(_ receipt: InstallationReceipt<Store.GameID>) { record(.update(receipt)) }
     func cancel(_ game: Store.GameID) { record(.cancel(game)) }
     func checkUpdates() { record(.checkUpdates) }
@@ -217,14 +220,23 @@ final class InstallationsFixture {
     private(set) var backend = FakeInstallations<SteamGames>()
     private(set) var reported: [String] = []
     private let installed: Bool
+    /// The preferences of this fixture alone.
+    private let suite = "ObeliskTests.Installations.\(UUID().uuidString)"
+    private let defaults: UserDefaults
 
     init(installed: Bool = true, quitting: FakeQuitting = FakeQuitting()) {
         self.installed = installed
         sessions = SteamGameSessions(quitting: quitting.quitting)
         receipt = .steam(appId: 620, name: "Portal 2", directory: "/fixture/Games/Steam/steam-620-macos",
                          platform: .mac, totalBytes: 100)
-        installations = SteamInstallations(sessions: sessions, cloud: SteamCloudModel(sessions: sessions))
+        defaults = UserDefaults(suiteName: suite)!
+        installations = SteamInstallations(sessions: sessions, cloud: SteamCloudModel(sessions: sessions),
+                                           defaults: defaults)
     }
+
+    /// Ends the preferences a test wrote: only a launch of one of two
+    /// installed builds writes any.
+    func finish() { defaults.removePersistentDomain(forName: suite) }
 
     /// What Steam offers to install of Portal 2; Steam picks its build as
     /// the Transfer starts.

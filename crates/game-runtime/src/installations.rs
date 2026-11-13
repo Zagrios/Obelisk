@@ -254,6 +254,12 @@ pub struct State<S: Storefront> {
     pub updates: Vec<String>,
     /// The games whose Transfer waits in the download queue.
     pub queued: Vec<S::Game>,
+    /// The build each of those Transfers installs, where it is known before
+    /// the storefront picks: the game's other build still launches meanwhile.
+    pub queued_builds: Vec<(S::Game, Platform)>,
+    /// The games whose Mac build, asked for by their player, the storefront's
+    /// pick refused since Obelisk started: their page no longer offers it.
+    pub mac_refused: Vec<S::Game>,
 }
 
 /// One of the account's Transfers in the download queue.
@@ -261,6 +267,9 @@ struct Queued<S: Storefront> {
     id: u64,
     transfer: Transfer<S>,
     job: Job,
+    /// Its Mac build, which its player asked for, has yet to be the
+    /// storefront's pick: it installs that build or none.
+    mac_asked: bool,
 }
 
 /// What a queued Transfer does once its turn comes.
@@ -462,16 +471,21 @@ impl<S: Storefront> Shared<S> {
         }
         // A game whose move waits still launches until its turn.
         let mut queued = Vec::new();
+        let mut queued_builds = Vec::new();
         for waiting in &inner.queued {
             let game = waiting.transfer.game();
             if Some(waiting.id) != inner.running
                 && matches!(waiting.job, Job::Transfer { .. })
                 && !queued.contains(&game)
             {
+                if let Some(platform) = waiting.transfer.platform {
+                    queued_builds.push((game.clone(), platform));
+                }
                 queued.push(game);
             }
         }
         inner.state.queued = queued;
+        inner.state.queued_builds = queued_builds;
         let mut after = inner.state.clone();
         after.revision = before.revision;
         if after != before {
@@ -599,8 +613,14 @@ impl<S: Storefront> Shared<S> {
 
     /// Queues `transfer` when the gate lets it. `automatic` names the receipt
     /// Obelisk updates on its own: its failure shows only on its game, and it
-    /// waits for the next update check.
-    fn download(self: &Arc<Self>, transfer: Transfer<S>, automatic: Option<String>) {
+    /// waits for the next update check. `mac_asked` is of a Mac build the
+    /// storefront's pick has yet to allow.
+    fn download(
+        self: &Arc<Self>,
+        transfer: Transfer<S>,
+        automatic: Option<String>,
+        mac_asked: bool,
+    ) {
         let queued = self.update(|inner| {
             let game = transfer.game();
             if !self.gate(inner).modify.allows(&game) {
@@ -633,6 +653,7 @@ impl<S: Storefront> Shared<S> {
                 job: Job::Transfer {
                     automatic: automatic.clone(),
                 },
+                mac_asked,
             });
             true
         });
@@ -655,7 +676,13 @@ impl<S: Storefront> Shared<S> {
             inner
                 .queued
                 .iter()
-                .filter(|queued| queued.transfer.game() == game && queued.job != Job::Move)
+                .filter(|queued| {
+                    queued.transfer.game() == game
+                        && queued.job != Job::Move
+                        // The install of the game's other build keeps its place.
+                        && (queued.transfer.platform.is_none()
+                            || queued.transfer.platform == transfer.platform)
+                })
                 .map(|queued| queued.id)
                 .collect()
         });
@@ -671,6 +698,7 @@ impl<S: Storefront> Shared<S> {
                 id,
                 transfer: transfer.clone(),
                 job: Job::Launch,
+                mac_asked: false,
             })
         });
         if turn.await.is_err() {
@@ -684,7 +712,7 @@ impl<S: Storefront> Shared<S> {
     /// Runs the queued Transfer `id` `begin_in` announced, and ends it in
     /// the queue. One the queue stopped to pause it stays queued.
     async fn run(self: &Arc<Self>, id: u64, transfer: &Transfer<S>) -> Result<Receipt<S>, Failure> {
-        let outcome = self.perform(transfer).await;
+        let outcome = self.perform(id, transfer).await;
         self.finish(id);
         outcome
     }
@@ -714,13 +742,14 @@ impl<S: Storefront> Shared<S> {
                 .map(|receipt| {
                     let transfer = inner
                         .resumable(&receipt.game())
+                        .filter(|stopped| stopped.lands_on(receipt))
                         .unwrap_or_else(|| receipt.transfer());
                     (transfer, receipt.id())
                 })
                 .collect()
         };
         for (transfer, id) in transfers {
-            self.download(transfer, Some(id));
+            self.download(transfer, Some(id), false);
         }
     }
 
@@ -784,11 +813,19 @@ impl<S: Storefront> Shared<S> {
         Some(available)
     }
 
-    /// Runs the Transfer `begin_in` announced, whose turn came in the queue:
-    /// the storefront begins it, its runtimes come, then the game's files.
-    async fn perform(self: &Arc<Self>, transfer: &Transfer<S>) -> Result<Receipt<S>, Failure> {
+    /// Runs the queued Transfer `id` `begin_in` announced, whose turn came in
+    /// the queue: the storefront begins it, its runtimes come, then the
+    /// game's files.
+    async fn perform(
+        self: &Arc<Self>,
+        id: u64,
+        transfer: &Transfer<S>,
+    ) -> Result<Receipt<S>, Failure> {
         let name = transfer.progress_name();
-        let cancel = self.inner.lock().unwrap().transfer_cancel.clone();
+        let (cancel, mac_asked) = {
+            let inner = self.inner.lock().unwrap();
+            (inner.transfer_cancel.clone(), inner.mac_asked(id))
+        };
         if cancel.is_cancelled() {
             self.update(|inner| {
                 if let Some(progress) = &mut inner.state.transfer {
@@ -801,7 +838,31 @@ impl<S: Storefront> Shared<S> {
         // How the Transfer stopped while it got a runtime.
         let mut stopped = None;
         let result = async {
-            let platform = self.content.begin(transfer).await?;
+            // A Mac build its player asked for is read as the storefront
+            // would pick it.
+            let picked = Transfer {
+                platform: transfer.platform.filter(|_| !mac_asked),
+                ..transfer.clone()
+            };
+            let platform = self.content.begin(&picked).await?;
+            // The storefront picked the Windows build where the player asked
+            // for the Mac build: nothing is installed in its place.
+            if mac_asked && platform == Platform::Windows {
+                // Nor does it leave anything to resume.
+                let game = transfer.game();
+                self.update(|inner| {
+                    inner.state.last_download = None;
+                    if !inner.state.mac_refused.contains(&game) {
+                        inner.state.mac_refused.push(game);
+                    }
+                });
+                stopped = Some(TransferProgress {
+                    state: TransferState::Failed,
+                    message: MAC_BUILD_UNAVAILABLE.into(),
+                    ..TransferProgress::new(&name)
+                });
+                return Err(Failure::Failed(MAC_BUILD_UNAVAILABLE.into()));
+            }
             let got = self
                 .sessions
                 .runtimes()
@@ -894,6 +955,10 @@ impl<S: Storefront> Shared<S> {
         outcome
     }
 }
+
+/// The message key of a Mac build its player asked for and the storefront's
+/// pick refused.
+pub const MAC_BUILD_UNAVAILABLE: &str = "backend.install.macBuildUnavailable";
 
 /// Blocking work off the async runtime; `failed` names a lost join.
 pub(crate) async fn blocking<T: Send + 'static>(
@@ -1035,6 +1100,14 @@ fn maintenance_source(number: u64) -> String {
 }
 
 impl<S: Storefront> Inner<S> {
+    /// Whether the queued Transfer `id` is of a Mac build the storefront's
+    /// pick has yet to allow.
+    fn mac_asked(&self, id: u64) -> bool {
+        self.queued
+            .iter()
+            .any(|queued| queued.id == id && queued.mac_asked)
+    }
+
     /// The Transfer of `game` that stopped before its receipt.
     fn resumable(&self, game: &S::Game) -> Option<Transfer<S>> {
         self.state
@@ -1122,6 +1195,8 @@ impl<S: Storefront> Installations<S> {
                 cloud_sync: None,
                 updates: Vec::new(),
                 queued: Vec::new(),
+                queued_builds: Vec::new(),
+                mac_refused: Vec::new(),
             },
             signed_out: false,
             diagnostic: false,
@@ -1228,18 +1303,53 @@ impl<S: Storefront> Installations<S> {
     /// game's installation in place. A Transfer of the game that stopped
     /// before its receipt resumes instead.
     pub fn install(&self, offer: Offer<S>) {
+        self.install_asking(offer, None);
+    }
+
+    /// As `install`, of the build its player chose on the page of a game
+    /// whose storefront offers both: the game's other build stays as it is,
+    /// installed beside it. The Windows build is taken without reading the
+    /// Mac build, whose publisher may have left it behind; the Mac build
+    /// still goes through the storefront's pick, and its Transfer fails
+    /// where the pick refuses it, rather than install the Windows build.
+    pub fn install_build(&self, offer: Offer<S>, asked: Platform) {
+        self.install_asking(offer, Some(asked));
+    }
+
+    /// Installs `offer`, of the build `asked` when its player chose one. A
+    /// Transfer of the game that stopped resumes only when it may be of that
+    /// build, and an installed build updates in place only when it is that
+    /// one.
+    fn install_asking(&self, offer: Offer<S>, asked: Option<Platform>) {
         let fresh = offer.transfer(self.shared.folder.path().join(S::GAMES_DIRECTORY));
-        let transfer = {
+        let wanted = Transfer {
+            platform: asked,
+            ..fresh.clone()
+        };
+        let (transfer, mac_asked) = {
             let inner = self.shared.inner.lock().unwrap();
             // An installed build first, else the folder a stopped download
             // left.
-            let installed = inner.book.landing_or_incomplete(&fresh);
-            inner
+            let installed = inner.book.landing_or_incomplete(&wanted);
+            let transfer = inner
                 .resumable(&fresh.game())
+                .filter(|stopped| {
+                    asked.is_none() || stopped.platform.is_none() || stopped.platform == asked
+                })
                 .or_else(|| installed.map(Receipt::transfer))
-                .unwrap_or(fresh)
+                .unwrap_or(fresh);
+            // A build that is settled stays, else it is the one asked for.
+            let transfer = Transfer {
+                platform: transfer.platform.or(asked),
+                ..transfer
+            };
+            // The pick allowed a Mac build that has a receipt, or the record
+            // of a download begun; any other is asked of it first.
+            let mac_asked = transfer.platform == Some(Platform::Mac)
+                && inner.book.landing_or_incomplete(&transfer).is_none();
+            (transfer, mac_asked)
         };
-        self.download(transfer);
+        self.shared.download(transfer, None, mac_asked);
     }
 
     /// Verifies the files of the installation `receipt` names, and repairs or
@@ -1250,8 +1360,10 @@ impl<S: Storefront> Installations<S> {
         let found = {
             let inner = self.shared.inner.lock().unwrap();
             inner.book.receipt(receipt).map(|receipt| {
+                // Not the game's other build, whose download may have stopped.
                 let transfer = inner
                     .resumable(&receipt.game())
+                    .filter(|stopped| stopped.lands_on(receipt))
                     .unwrap_or_else(|| receipt.transfer());
                 (PathBuf::from(&receipt.directory), transfer)
             })
@@ -1263,7 +1375,7 @@ impl<S: Storefront> Installations<S> {
     }
 
     fn download(&self, transfer: Transfer<S>) {
-        self.shared.download(transfer, None);
+        self.shared.download(transfer, None, false);
     }
 
     /// Whether Obelisk queues each newer build as soon as it is known,
@@ -1838,6 +1950,7 @@ impl<S: Storefront> Resident for Shared<S> {
                     id,
                     transfer,
                     job: Job::Move,
+                    mac_asked: false,
                 });
             }
             !outside.is_empty()

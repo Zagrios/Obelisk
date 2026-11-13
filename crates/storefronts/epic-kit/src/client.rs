@@ -72,6 +72,8 @@ pub struct GameDetails {
     /// The Mac build, unless a download found that its game does not run
     /// natively. Unknown when Epic could not tell.
     pub platform: Option<Platform>,
+    /// Whether Epic offers the account both builds.
+    pub both_builds: bool,
     /// Unknown when Epic serves no manifest of the build.
     pub installation_bytes: Option<u64>,
 }
@@ -199,8 +201,9 @@ impl Client {
             })
             .await?;
         Ok(match shown {
-            Some((platform, size)) => GameDetails {
+            Some((platform, both_builds, size)) => GameDetails {
                 platform: Some(platform),
+                both_builds,
                 installation_bytes: size,
             },
             None => GameDetails::default(),

@@ -130,6 +130,8 @@ pub struct GameDetails {
     /// found that its game does not run natively while it has a Windows
     /// build. None when the account can install neither.
     pub platform: Option<Platform>,
+    /// Whether the account can install both builds.
+    pub both_builds: bool,
     pub windows_bytes: u64,
     pub macos_bytes: u64,
 }
@@ -707,6 +709,7 @@ impl Client {
             app: Arc::clone(&app),
         }
         .offered(!macos.is_empty(), !windows.is_empty());
+        let both_builds = offered.both();
         // Only a download reads the Mac build's files: the page shows the Mac
         // build until one found that its game does not run natively.
         let game = OwnedApp {
@@ -723,6 +726,7 @@ impl Client {
             app_id,
             name: app.name.clone(),
             platform,
+            both_builds,
             windows_bytes,
             macos_bytes,
         })

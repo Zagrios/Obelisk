@@ -121,6 +121,9 @@ struct GameDetailPage<Model: LibraryStorefront, HeroArtwork: View, Cover: View, 
                 Color.clear.frame(height: Self.coverOverlap)
                 GameLaunchRow(metrics: metrics, note: note) {
                     GamePageAction(installations: installations, gameName: name)
+                    if let choice = installations.selectedBuildChoice {
+                        GameBuildSwitch(choice: choice, choose: installations.chooseBuild)
+                    }
                     if let id = Model.Store.storeGameID(game.id) {
                         GameReportButton(subject: .game(store: Model.Store.storefront, id: id, name: name),
                                          gameName: name)

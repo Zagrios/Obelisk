@@ -585,7 +585,8 @@ final class WebAccountModel<Store: WebStorefront> {
     private var installationSelection: InstallationSelection<Store>? {
         guard let game = selectedGame else { return nil }
         let platform = selectedGameDetails?.platform ?? game.preferredPlatform
-        return InstallationSelection(game: game.id, platform: platform, offer: game.offer)
+        return InstallationSelection(game: game.id, platform: platform, offer: game.offer,
+                                     bothBuilds: selectedGameDetails?.bothBuilds ?? false)
     }
 
     /// The account's part of the installation actions.

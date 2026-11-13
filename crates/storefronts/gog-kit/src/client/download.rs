@@ -352,22 +352,23 @@ impl Client {
             .await
     }
 
-    /// The build the game's page shows before any download, and its size
-    /// with the depots of `language`: the Mac build, unless a download found
-    /// that its game does not run natively and GOG has a Windows build of
-    /// it. None of the build's files is read.
+    /// The build the game's page shows before any download, whether GOG
+    /// offers both, and its size with the depots of `language`: the Mac
+    /// build, unless a download found that its game does not run natively
+    /// and GOG has a Windows build of it. None of the build's files is read.
     pub(super) async fn shown_build(
         &self,
         access_token: &str,
         product_id: &str,
         language: &str,
-    ) -> Result<(Platform, Option<u64>), GogError> {
+    ) -> Result<(Platform, bool, Option<u64>), GogError> {
         let game = CurrentBuilds {
             client: self,
             product_id,
             language,
         };
         let offered = game.builds().await?;
+        let both = offered.both();
         let (platform, build) = self
             .build_choice
             .shown(&game, offered)
@@ -381,7 +382,7 @@ impl Client {
             Err(GogError::Unauthorized) => return Err(GogError::Unauthorized),
             Err(_) => None,
         };
-        Ok((platform, size))
+        Ok((platform, both, size))
     }
 
     /// The size of the listed `build` an installation in `language` holds.
