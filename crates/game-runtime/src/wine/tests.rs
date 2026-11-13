@@ -1661,3 +1661,55 @@ fn a_program_that_imports_direct3d_12_without_11_renders_through_d3dmetal_where_
     );
     assert_eq!(Graphics::default_for(Engine::Linux, None), Graphics::Dxmt);
 }
+
+#[test]
+fn a_program_that_brings_the_direct3d_12_agility_sdk_renders_through_d3dmetal_where_dxmt_is_the_default()
+ {
+    let (_directory, root) = installation();
+    let path = root.join("Game.exe");
+    let graphics = |engine, imports: &[&str], delayed: &[&str], exports: &[&str]| {
+        let fixture = crate::pe::tests::Fixture {
+            imports,
+            delayed,
+            exports,
+            ..crate::pe::tests::Fixture::default()
+        };
+        fs::write(&path, fixture.bytes()).unwrap();
+        Graphics::default_for(engine, crate::pe::Program::open(&path).as_ref())
+    };
+    let agility = &["D3D12SDKPath", "D3D12SDKVersion"];
+    // As Killing Floor 3, an Unreal Engine 5 game: both Direct3Ds delay
+    // imported, Direct3D 12 first, no Direct3D 11 to fall back on.
+    assert_eq!(
+        graphics(
+            Engine::Linux,
+            &["dxgi.dll"],
+            &["d3d12.dll", "d3d11.dll"],
+            agility
+        ),
+        Graphics::D3DMetal
+    );
+    assert_eq!(
+        graphics(Engine::Linux, &["d3d12.dll", "d3d11.dll"], &[], agility),
+        Graphics::D3DMetal
+    );
+    // Without the Agility SDK, a program that imports both stays on DXMT.
+    assert_eq!(
+        graphics(
+            Engine::Linux,
+            &["dxgi.dll"],
+            &["d3d12.dll", "d3d11.dll"],
+            &[]
+        ),
+        Graphics::Dxmt
+    );
+    // The Agility SDK alone, without Direct3D 12 imported, changes nothing.
+    assert_eq!(
+        graphics(Engine::Linux, &["d3d11.dll"], &[], agility),
+        Graphics::Dxmt
+    );
+    assert_eq!(
+        graphics(Engine::Rosetta, &["d3d11.dll"], &["d3d12.dll"], agility),
+        Graphics::D3DMetal
+    );
+}

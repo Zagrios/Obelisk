@@ -78,13 +78,20 @@ impl Graphics {
 
     /// What renders `program` on `engine` when neither the game's profile
     /// nor its player picks another backend: the engine's default, unless
-    /// that is DXMT and the program imports Direct3D 12 without Direct3D 11,
-    /// as ELDEN RING does, since DXMT has no Direct3D 12.
+    /// that is DXMT and the program renders with Direct3D 12, since DXMT has
+    /// no Direct3D 12. It does when it imports Direct3D 12 without
+    /// Direct3D 11, as ELDEN RING does, or imports both and brings
+    /// Microsoft's Direct3D 12 Agility SDK, as Unreal Engine 5 games do:
+    /// Unreal picks Direct3D 12 first, and a game such as Killing Floor 3
+    /// has no Direct3D 11 to fall back on.
     pub(crate) fn default_for(engine: Engine, program: Option<&crate::pe::Program>) -> Self {
         let imports = program.map(crate::pe::Program::imports).unwrap_or_default();
         let imported = |dll: &str| imports.iter().any(|import| import == dll);
+        let agility = || program.is_some_and(|program| program.exports("D3D12SDKVersion"));
         match Self::default_on(engine) {
-            Self::Dxmt if imported("d3d12.dll") && !imported("d3d11.dll") => Self::D3DMetal,
+            Self::Dxmt if imported("d3d12.dll") && (!imported("d3d11.dll") || agility()) => {
+                Self::D3DMetal
+            }
             graphics => graphics,
         }
     }
