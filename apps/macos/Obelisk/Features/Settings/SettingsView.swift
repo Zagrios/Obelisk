@@ -139,7 +139,7 @@ struct SettingsView: View {
             SymbolTile(name: "arrow.clockwise", colors: TileColors.violet)
         } detail: {
             Text(L10n.string("ui.settings.language_restart", AppIdentity.name,
-                             L10n.locale.localizedString(forLanguageCode: language) ?? AppLanguage.name(of: language)))
+                             L10n.locale.localizedString(forIdentifier: language) ?? AppLanguage.name(of: language)))
         } accessory: {
             AccentCapsuleButton(title: L10n.string("ui.settings.restart"), identifier: "settings-restart",
                                  action: { model.restart() })
@@ -709,7 +709,8 @@ private struct LanguagePicker: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(spacing: 20) {
+        // From the top: a name on two lines, as "Português (Brasil)", keeps its flag level with the others.
+        HStack(alignment: .top, spacing: 20) {
             ForEach(AppLanguage.choices) { option($0) }
         }
         .accessibilityElement(children: .contain)

@@ -148,7 +148,8 @@ impl Network for EpicClient {
                 &config.app_name,
                 config.platform,
             )
-            .await?)
+            .await?
+            .rules)
         })
     }
     fn maintain<'a>(

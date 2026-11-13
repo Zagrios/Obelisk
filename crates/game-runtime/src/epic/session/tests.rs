@@ -352,6 +352,30 @@ async fn unmanaged_cloud_files_are_read_with_the_view_and_republished() {
 }
 
 #[tokio::test]
+async fn a_game_without_cloud_notes_why_in_its_diagnostics_until_it_has_one() {
+    let game = EpicGame::game();
+    let note = cloud_note(&game.config);
+    game.cloud.set_rules(None);
+    let _ = game.open().prepare(&no_other_session).await;
+    let written = fs::read_to_string(&note).unwrap();
+    assert!(
+        written.starts_with(
+            "Epic Cloud is unavailable for game (namespace): the catalog names no Cloud save \
+             folder for this build.\n"
+        ),
+        "{written}"
+    );
+    assert!(
+        written.ends_with("Catalog attributes naming a Cloud:\n  none\n"),
+        "{written}"
+    );
+
+    game.cloud.set_rules(Some(rules()));
+    game.open().prepare(&no_other_session).await.unwrap();
+    assert!(!note.exists());
+}
+
+#[tokio::test]
 async fn changed_epic_cloud_rules_need_a_dedicated_conversion() {
     let game = EpicGame::game();
     fs::write(Harness::save(&game), b"progress").unwrap();
