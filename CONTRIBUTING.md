@@ -109,7 +109,7 @@ The interface is in English, French, German, Italian, Japanese, Portuguese (Braz
 - Add a text in every language together: `LANGUAGES` in `scripts/verify-localization.py` lists them.
 - Text that has to stay in code, such as technical diagnostics, is in English.
 - `python3 scripts/verify-localization.py` checks the catalog and every key the code uses.
-- The language picker lists every translation the app bundle contains. Each one needs its flag in `Assets.xcassets`, as an image set named `Flag-<code>`, taken from the same [Free Flat Flags](https://github.com/Zagrios/bs-manager/blob/chore/ressources/Img/free_flat_flags_227.zip) set as the others. A language several countries speak shows two flags split across the diagonal, as English shows the United States' and the United Kingdom's: `AppLanguage.countries` names them. A language whose code is not its country's names it there too, as Japanese (`ja`) names Japan (`jp`).
+- The language picker lists every translation the app bundle contains. Each one needs its flag in `Assets.xcassets`, as an image set named `Flag-<country>` such as `Flag-jp`, taken from the same [Free Flat Flags](https://github.com/Zagrios/bs-manager/blob/chore/ressources/Img/free_flat_flags_227.zip) set as the others. A language several countries speak shows two flags split across the diagonal, as English shows the United States' and the United Kingdom's: `AppLanguage.countries` names them. Any other language shows the flag of the country it is spoken in most, as Japanese shows Japan's.
 
 ## Editing the Xcode project
 

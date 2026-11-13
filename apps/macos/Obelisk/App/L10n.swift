@@ -47,7 +47,7 @@ enum GameLocale {
         guard let first = preferredLanguages.first else { return nil }
         let language = Locale.Language(identifier: first)
         guard let code = language.languageCode?.identifier, code != "und",
-              let place = Locale.Language(identifier: language.maximalIdentifier).region?.identifier ?? region
+              let place = language.likelyRegion ?? region
         else { return nil }
         return "\(code)_\(place).UTF-8"
     }
@@ -80,22 +80,20 @@ enum AppLanguage: Hashable, Identifiable {
     }
 
     /// The Mac's language first, then every translation by its own name.
-    static var choices: [AppLanguage] {
-        [.system] + L10n.available
-            .sorted { name(of: $0).localizedStandardCompare(name(of: $1)) == .orderedAscending }
-            .map(AppLanguage.language)
-    }
+    static let choices: [AppLanguage] = [.system] + L10n.available
+        .sorted { name(of: $0).localizedStandardCompare(name(of: $1)) == .orderedAscending }
+        .map(AppLanguage.language)
 
-    /// The countries whose flags stand for a language: several for one they
-    /// share, one for a language whose code is not its country's. Any other
-    /// language shows the flag its own code names.
-    static let countries = ["en": ["us", "gb"], "ja": ["jp"], "pt-BR": ["br"], "zh-Hans": ["cn"]]
+    /// The countries whose flags stand for a language several of them speak;
+    /// any other language shows the flag of the country it is spoken in most.
+    static let countries = ["en": ["us", "gb"]]
 
     /// The flags that stand for this translation, as asset names: one, or two
     /// split across the diagonal. The Mac's language has none.
     var flags: [String] {
         guard let code else { return [] }
-        return Self.countries[code, default: [code]].map { "Flag-\($0)" }
+        let country = Locale.Language(identifier: code).likelyRegion?.lowercased() ?? code
+        return Self.countries[code, default: [country]].map { "Flag-\($0)" }
     }
 
     /// A language's name in itself, as language menus show it: "Français".
@@ -168,5 +166,13 @@ struct LocalizedStrings {
     private struct Message: Decodable {
         let key: String
         let args: [String]
+    }
+}
+
+extension Locale.Language {
+    /// The region the language is spoken in most when it names none, as Japan
+    /// for `ja`; the one it names otherwise.
+    var likelyRegion: String? {
+        Locale.Language(identifier: maximalIdentifier).region?.identifier
     }
 }
