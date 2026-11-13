@@ -8589,6 +8589,10 @@ public struct SteamGameArtwork: Equatable, Hashable {
      * as Rust's for its staging branch.
      */
     public var parent: UInt32?
+    /**
+     * What the app is when not a full game, which its cover says.
+     */
+    public var kind: SteamAppKind?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -8605,12 +8609,16 @@ public struct SteamGameArtwork: Equatable, Hashable {
         /**
          * The app whose artwork stands in for the game's missing images, such
          * as Rust's for its staging branch.
-         */parent: UInt32? = nil) {
+         */parent: UInt32? = nil, 
+        /**
+         * What the app is when not a full game, which its cover says.
+         */kind: SteamAppKind? = nil) {
         self.cover = cover
         self.hero = hero
         self.logo = logo
         self.header = header
         self.parent = parent
+        self.kind = kind
     }
 
     
@@ -8633,7 +8641,8 @@ public struct FfiConverterTypeSteamGameArtwork: FfiConverterRustBuffer {
                 hero: FfiConverterOptionString.read(from: &buf), 
                 logo: FfiConverterOptionString.read(from: &buf), 
                 header: FfiConverterOptionString.read(from: &buf), 
-                parent: FfiConverterOptionUInt32.read(from: &buf)
+                parent: FfiConverterOptionUInt32.read(from: &buf), 
+                kind: FfiConverterOptionTypeSteamAppKind.read(from: &buf)
         )
     }
 
@@ -8643,6 +8652,7 @@ public struct FfiConverterTypeSteamGameArtwork: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.logo, into: &buf)
         FfiConverterOptionString.write(value.header, into: &buf)
         FfiConverterOptionUInt32.write(value.parent, into: &buf)
+        FfiConverterOptionTypeSteamAppKind.write(value.kind, into: &buf)
     }
 }
 
@@ -11992,6 +12002,88 @@ public func FfiConverterTypeSessionStorefront_lower(_ value: SessionStorefront) 
 
 
 
+/**
+ * What the library lists beside full games, as Steam types it.
+ */
+
+public enum SteamAppKind: Equatable, Hashable {
+    
+    case demo
+    /**
+     * A beta its name calls a playtest, as Steam's playtests are named.
+     */
+    case playtest
+    /**
+     * Any other beta, such as an open beta or a game's beta branch.
+     */
+    case beta
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension SteamAppKind: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSteamAppKind: FfiConverterRustBuffer {
+    typealias SwiftType = SteamAppKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SteamAppKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .demo
+        
+        case 2: return .playtest
+        
+        case 3: return .beta
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: SteamAppKind, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .demo:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .playtest:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .beta:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSteamAppKind_lift(_ buf: RustBuffer) throws -> SteamAppKind {
+    return try FfiConverterTypeSteamAppKind.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSteamAppKind_lower(_ value: SteamAppKind) -> RustBuffer {
+    return FfiConverterTypeSteamAppKind.lower(value)
+}
+
+
+
 
 public enum SteamChatEvent: Equatable, Hashable {
     
@@ -14027,6 +14119,30 @@ fileprivate struct FfiConverterOptionTypeLaunchGraphics: FfiConverterRustBuffer 
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeLaunchGraphics.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeSteamAppKind: FfiConverterRustBuffer {
+    typealias SwiftType = SteamAppKind?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeSteamAppKind.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeSteamAppKind.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
