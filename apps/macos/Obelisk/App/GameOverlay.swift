@@ -99,13 +99,15 @@ struct GameOverlayEnvironment {
     var voile: String
     /// Follows the applications macOS activates; tests tell them instead.
     var observesActivations: Bool
+    /// Where the player's shortcut is kept; nowhere for the test host.
+    var defaults: UserDefaults? = nil
 
     static var live: GameOverlayEnvironment {
         GameOverlayEnvironment(
             hotKey: CarbonOverlayHotKey(), presenter: GameOverlayPanelPresenter(),
             toaster: OverlayToastPanelPresenter(), notifier: SteamInviteNotifier(),
             frontmost: { NSWorkspace.shared.frontmostApplication.map(OverlayApplication.init) },
-            voile: ObeliskLocations.live.voile, observesActivations: true
+            voile: ObeliskLocations.live.voile, observesActivations: true, defaults: .standard
         )
     }
 
@@ -117,13 +119,23 @@ struct GameOverlayEnvironment {
     }
 }
 
-/// Obelisk's in-game overlay, common to every storefront: Shift-Tab shows it
-/// over the running game, with the friends of the game's storefront, its
-/// achievements and web pages. It follows the running Game session, and
-/// takes Shift-Tab only while the game, or the overlay itself, is in front.
+/// Obelisk's in-game overlay, common to every storefront: its shortcut,
+/// Shift-Tab unless the player chose another, shows it over the running
+/// game, with the friends of the game's storefront, its achievements and web
+/// pages. It follows the running Game session, and takes the shortcut only
+/// while the game, or the overlay itself, is in front.
 @MainActor @Observable
 final class GameOverlayController {
     private(set) var isPresented = false
+    /// The keys that show and close it, kept from one launch to the next.
+    var shortcut: OverlayShortcut {
+        didSet {
+            guard shortcut != oldValue else { return }
+            shortcut.save(in: environment.defaults)
+            environment.hotKey.unregister()
+            updateHotKey()
+        }
+    }
     /// What shows; navigating inside the overlay replaces it.
     private(set) var request: OverlayRequest = .home
     private(set) var session: OverlaySession?
@@ -160,6 +172,7 @@ final class GameOverlayController {
         self.epic = epic
         self.gog = gog
         self.environment = environment
+        shortcut = OverlayShortcut(defaults: environment.defaults)
         if environment.observesActivations {
             activations = NSWorkspace.shared.notificationCenter.addObserver(
                 forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
@@ -334,7 +347,7 @@ final class GameOverlayController {
             friend: friend,
             message: steam.gameName(appId: invite.appId).map { L10n.string("ui.overlay.invites.toast", name, $0) }
                 ?? L10n.string("ui.chat.invite.receivedUnknown", name),
-            hint: L10n.string("ui.overlay.invites.toastHint")
+            hint: hint("ui.overlay.invites.toastHint", chosen: "ui.overlay.invites.toastHint_keys")
         )
         avatars.activate(account: friends?.account)
         environment.toaster.show(toast, avatars: avatars, over: gameApplication) { [weak self] in
@@ -540,11 +553,13 @@ final class GameOverlayController {
 
     /// While a game in exclusive fullscreen captures the displays, every key
     /// goes to it, Shift-Tab too: Voile's Wine then hands the displays back
-    /// and tells of the press, as it does for Command-Tab.
+    /// and tells of the press, as it does for Command-Tab. It knows no other
+    /// shortcut, so a press it tells of is the overlay's only while the
+    /// shortcut is Shift-Tab.
     static let capturedOverlayKey = Notification.Name("com.zagrios.obelisk.overlayKey")
 
     func overlayKeyPressed(in application: OverlayApplication) {
-        guard session != nil, !isPresented, isGame(application) else { return }
+        guard shortcut == .shiftTab, session != nil, !isPresented, isGame(application) else { return }
         gameApplication = application
         present(.home, userInitiated: true)
     }
@@ -569,10 +584,16 @@ final class GameOverlayController {
         installations.receipts.filter { $0.gameID == game && $0.platform == .mac }.map(\.directory)
     }
 
-    /// Shift-Tab is the overlay's while the game or the overlay is in front.
+    /// What the shortcut does, as the overlay tells its player: the text
+    /// that names Shift-Tab, else the one that takes the `chosen` keys.
+    func hint(_ shiftTab: String, chosen: String) -> String {
+        shortcut == .shiftTab ? L10n.string(shiftTab) : L10n.string(chosen, shortcut.name)
+    }
+
+    /// The shortcut is the overlay's while the game or the overlay is in front.
     private func updateHotKey() {
         if session != nil && (gameIsFrontmost || isPresented) {
-            environment.hotKey.register { [weak self] in self?.toggle() }
+            environment.hotKey.register(shortcut) { [weak self] in self?.toggle() }
         } else {
             environment.hotKey.unregister()
         }
@@ -582,7 +603,7 @@ final class GameOverlayController {
 @MainActor
 final class InertOverlayHotKey: OverlayHotKey {
     private(set) var isRegistered = false
-    func register(_ action: @escaping @MainActor () -> Void) { isRegistered = true }
+    func register(_ shortcut: OverlayShortcut, _ action: @escaping @MainActor () -> Void) { isRegistered = true }
     func unregister() { isRegistered = false }
 }
 

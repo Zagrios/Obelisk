@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -218,12 +219,7 @@ struct SettingsView: View {
         } detail: {
             Text(L10n.string("ui.settings.overlay_description", AppIdentity.name))
         } accessory: {
-            HStack(spacing: 5) {
-                KeyCap(text: L10n.string("ui.settings.key_shift"))
-                KeyCap(text: L10n.string("ui.settings.key_tab"))
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(L10n.string("ui.settings.overlay_shortcut"))
+            OverlayShortcutRecorder(shortcut: Bindable(model.overlay).shortcut)
         }
     }
 
@@ -642,6 +638,70 @@ private struct KeyCap: View {
             // The key's lower edge, as on a keyboard.
             .background(.primary.opacity(0.12), in: shape.offset(y: 1.5))
             .fixedSize()
+    }
+}
+
+/// The overlay's shortcut as key caps. A click on them waits for the next
+/// key press, which becomes the shortcut: Escape or a click leaves it as it
+/// was, Delete brings Shift-Tab back, and a key that cannot be it only beeps.
+private struct OverlayShortcutRecorder: View {
+    @Binding var shortcut: OverlayShortcut
+    @State private var monitor: Any?
+
+    var body: some View {
+        Button {
+            if monitor == nil { record() }
+        } label: {
+            HStack(spacing: 5) {
+                if monitor == nil {
+                    ForEach(shortcut.caps, id: \.self) { KeyCap(text: $0) }
+                } else {
+                    KeyCap(text: L10n.string("ui.settings.overlay_shortcut_recording"))
+                }
+            }
+        }
+        .obeliskButtonStyle(.plain)
+        .pointerCursor()
+        .help(L10n.string("ui.settings.overlay_shortcut_help"))
+        .accessibilityLabel(L10n.string("ui.settings.overlay"))
+        .accessibilityValue(shortcut == .shiftTab ? L10n.string("ui.settings.overlay_shortcut") : shortcut.name)
+        .accessibilityHint(L10n.string("ui.settings.overlay_shortcut_help"))
+        .accessibilityIdentifier("settings-overlay-shortcut")
+        .onDisappear(perform: stop)
+    }
+
+    private func record() {
+        let events: NSEvent.EventTypeMask = [.keyDown, .leftMouseDown, .rightMouseDown]
+        monitor = NSEvent.addLocalMonitorForEvents(matching: events) { event in
+            MainActor.assumeIsolated {
+                if event.type == .keyDown { take(event) } else { stop() }
+            }
+            // The key press, or the click that ends the wait, is the recorder's alone.
+            return nil
+        }
+    }
+
+    private func take(_ event: NSEvent) {
+        let alone = event.modifierFlags.intersection([.control, .option, .shift, .command]).isEmpty
+        switch (Int(event.keyCode), alone) {
+        case (kVK_Escape, true):
+            stop()
+        case (kVK_Delete, true), (kVK_ForwardDelete, true):
+            shortcut = .shiftTab
+            stop()
+        default:
+            if let chosen = OverlayShortcut(event) {
+                shortcut = chosen
+                stop()
+            } else {
+                NSSound.beep()
+            }
+        }
+    }
+
+    private func stop() {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
     }
 }
 

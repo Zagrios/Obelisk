@@ -112,7 +112,7 @@ private struct OverlayTopBar: View {
             }
             .font(.system(size: 22, weight: .semibold))
             .monospacedDigit()
-            Text(L10n.string("ui.overlay.closeHint"))
+            Text(overlay.hint("ui.overlay.closeHint", chosen: "ui.overlay.closeHint_keys"))
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 10)
