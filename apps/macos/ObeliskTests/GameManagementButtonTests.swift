@@ -28,11 +28,17 @@ final class GameManagementButtonTests: XCTestCase {
             guard let element = accessibilityElement(in: fixture.host, identifier: "game-management-menu") else {
                 throw XCTSkip("This macOS host does not expose the SwiftUI menu through in-process accessibility")
             }
-            let names = ["accessibilityLabel", "accessibilityTitle"].compactMap { attribute($0, of: element) as? String }
+            // A SwiftUI menu names itself in its title, as an attributed string.
+            let names = ["accessibilityLabel", "accessibilityTitle"].compactMap { name in
+                let value = attribute(name, of: element)
+                return value as? String ?? (value as? NSAttributedString)?.string
+            }
             XCTAssertTrue(names.contains(L10n.string("ui.game.manage_named", "Portal 2")))
             if let control = element as? NSControl {
                 XCTAssertEqual(control.isEnabled, isAvailable)
-            } else if let enabled = attribute("accessibilityEnabled", of: element) as? NSNumber {
+            } else if element.responds(to: NSSelectorFromString("isAccessibilityEnabled")),
+                      let enabled = element.value(forKey: "accessibilityEnabled") as? NSNumber {
+                // The getter is isAccessibilityEnabled: the key finds it, the plain selector does not.
                 XCTAssertEqual(enabled.boolValue, isAvailable)
             } else {
                 throw XCTSkip("The SwiftUI menu does not expose its enabled state through in-process accessibility")

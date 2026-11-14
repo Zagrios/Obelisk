@@ -2117,6 +2117,8 @@ async fn the_account_asks_one_cloud_question_whichever_sync_asks_it_until_it_is_
             .launches
             .push_back(Ok(Some(next.clone() as Arc<dyn Supervised<Steam>>)))
     });
+    // The sync goes before the launch that ran it: a launch started meanwhile is refused.
+    eventually(|| installations.state().gate.launch.allows(&620)).await;
     installations.launch("620-macos");
     next.reach(Phase::Finalizing, conflict(7));
     eventually(|| sync().is_some_and(|sync| sync.question.is_some())).await;
