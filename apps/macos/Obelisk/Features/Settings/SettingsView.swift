@@ -656,7 +656,8 @@ private struct KeyCap: View {
 
 /// The overlay's shortcut as key caps. A click on them waits for the next
 /// key press, which becomes the shortcut: Escape or a click leaves it as it
-/// was, Delete brings Shift-Tab back, and a key that cannot be it only beeps.
+/// was, as does leaving the window; Delete brings Shift-Tab back, and a key
+/// that cannot be it only beeps.
 private struct OverlayShortcutRecorder: View {
     @Binding var shortcut: OverlayShortcut
     @State private var monitor: Any?
@@ -681,6 +682,9 @@ private struct OverlayShortcutRecorder: View {
         .accessibilityHint(L10n.string("ui.settings.overlay_shortcut_help"))
         .accessibilityIdentifier("settings-overlay-shortcut")
         .onDisappear(perform: stop)
+        // A wait its player walked away from ends: a later key press in Obelisk is not the shortcut.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in stop() }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in stop() }
     }
 
     private func record() {
