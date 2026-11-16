@@ -2,7 +2,8 @@
 //! storefront: the engine that runs one, the graphics backend its Direct3D
 //! goes through there, the program started instead of its publisher's, what
 //! that program needs besides (arguments, environment variables and DLL
-//! overrides), and the oldest Voile release it runs in. The table is
+//! overrides), the oldest Voile release it runs in, and whether macOS's
+//! Game Mode stays off for it. The table is
 //! `profiles.json`. Obelisk is built with it, and a release build reads it
 //! again from Obelisk's `main` as Obelisk starts and as a Windows game
 //! launches, keeping the last one beside its library; a development build
@@ -92,6 +93,10 @@ pub(crate) struct Profile {
     /// waits for the newest when an older one is in place, and runs in the
     /// newest installed otherwise, as every game does.
     pub minimum_voile: Option<&'static str>,
+    /// Whether macOS may turn its Game Mode on for it, as for every game
+    /// unless its entry says no: some run slower with it. It only stays off
+    /// on an engine that can keep it off, and its player may turn it back on.
+    pub game_mode: bool,
 }
 
 static NONE: BTreeMap<String, String> = BTreeMap::new();
@@ -108,6 +113,7 @@ impl Default for Profile {
             variables: &NONE,
             dll_overrides: &NONE,
             minimum_voile: None,
+            game_mode: true,
         }
     }
 }
@@ -135,6 +141,9 @@ struct Known {
     #[serde(default)]
     dll_overrides: BTreeMap<String, String>,
     minimum_voile: Option<String>,
+    /// Only an entry that sets it holds it: an Obelisk that predates it
+    /// leaves out an entry with a field it does not know.
+    game_mode: Option<bool>,
 }
 
 /// An Epic game as a table names it: its namespace and app name.
@@ -229,6 +238,7 @@ impl Known {
             variables: &self.variables,
             dll_overrides: &self.dll_overrides,
             minimum_voile: self.minimum_voile.as_deref(),
+            game_mode: self.game_mode.unwrap_or(true),
         }
     }
 
