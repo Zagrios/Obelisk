@@ -344,8 +344,8 @@ async fn cloud_configuration_requires_ownership_and_reads_the_rules_of_the_platf
             .cloud_configuration("space", "item", "app", platform)
             .await;
         match expected {
-            "none" => assert!(result.unwrap().is_none()),
-            "some" => assert!(result.unwrap().is_some()),
+            "none" => assert!(result.unwrap().rules.is_none()),
+            "some" => assert!(result.unwrap().rules.is_some()),
             _ => assert!(result.is_err()),
         }
     }
@@ -396,6 +396,7 @@ async fn game_details_name_the_build_a_download_installs_whose_manifest_may_be_u
         .await
         .unwrap();
     assert_eq!(details.platform, Some(Platform::Windows));
+    assert!(!details.both_builds);
     assert_eq!(details.installation_bytes, None);
     assert_eq!(
         mock.requests().len(),
@@ -481,8 +482,12 @@ async fn a_game_s_page_shows_its_mac_build_until_a_download_found_it_is_not_nati
     let client = mock.client(false);
     let shown = client.game_details("space", "base", "game").await.unwrap();
     assert_eq!(shown.platform, Some(Platform::Mac));
+    assert!(shown.both_builds);
     assert_eq!(
-        client.platform("space", "base", "game").await.unwrap(),
+        client
+            .platform("space", "base", "game", None)
+            .await
+            .unwrap(),
         Platform::Windows
     );
     let shown = client.game_details("space", "base", "game").await.unwrap();
@@ -550,7 +555,10 @@ async fn a_mac_build_whose_program_holds_an_arm64_slice_is_picked_and_keeps_its_
     ]);
     let client = mock.client(false);
     assert_eq!(
-        client.platform("space", "base", "game").await.unwrap(),
+        client
+            .platform("space", "base", "game", None)
+            .await
+            .unwrap(),
         Platform::Mac
     );
     assert_eq!(mock.requests().len(), 4, "only the program's chunk is read");
@@ -610,7 +618,9 @@ async fn only_a_mac_build_in_a_form_obelisk_does_not_install_gives_way_to_the_wi
             live_asset("windows.manifest"),
         ));
         let mock = Mock::new(replies);
-        mock.client(false).platform("space", "base", "game").await
+        mock.client(false)
+            .platform("space", "base", "game", None)
+            .await
     };
     // A manifest older than those Obelisk installs.
     let mut old = manifest_without_program();

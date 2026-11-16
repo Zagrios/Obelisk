@@ -73,6 +73,9 @@ mkdir -m 700 "$sockets" || exit 1
 helpers=()
 game=
 finish() {
+    # Ending already: wsd stopped with a window still open asks the launcher to end the game, which must not run
+    # this again or turn a game's own exit status into 143.
+    trap '' TERM INT HUP
     [ -n "$game" ] && kill -TERM "$game" 2>/dev/null
     for helper in ${helpers[@]+"${helpers[@]}"}; do kill -TERM "$helper" 2>/dev/null; done
     # They end within a few milliseconds of SIGTERM; a helper still there after a second is killed.

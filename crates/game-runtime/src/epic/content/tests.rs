@@ -70,7 +70,11 @@ impl Network for Fake {
             Ok("fixture-exchange-code".into())
         })
     }
-    fn platform<'a>(&'a self, _: &'a Product) -> BoxFuture<'a, Result<Platform, Failure>> {
+    fn platform<'a>(
+        &'a self,
+        _: &'a Product,
+        _: Option<Platform>,
+    ) -> BoxFuture<'a, Result<Platform, Failure>> {
         Box::pin(async move {
             self.call("platform");
             Ok(Platform::Windows)
@@ -173,6 +177,7 @@ impl Fixture {
             product: product(),
             name: "Fixture".into(),
             platform: Some(platform),
+            chosen: None,
             directory: self.locations.library.join("Games/Epic"),
         }
     }

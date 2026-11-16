@@ -140,6 +140,7 @@ impl From<client::GameDetails> for WebGameDetails {
     fn from(details: client::GameDetails) -> Self {
         Self {
             platform: details.platform.map(Into::into),
+            both_builds: details.both_builds,
             installation_bytes: details.installation_bytes,
         }
     }

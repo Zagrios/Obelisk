@@ -33,7 +33,12 @@ impl Fake {
 }
 
 impl Network for Fake {
-    fn platform<'a>(&'a self, _: u32, _: &'a str) -> BoxFuture<'a, Result<Platform, Failure>> {
+    fn platform<'a>(
+        &'a self,
+        _: u32,
+        _: &'a str,
+        _: Option<Platform>,
+    ) -> BoxFuture<'a, Result<Platform, Failure>> {
         Box::pin(async move {
             self.calls.lock().unwrap().push("platform".into());
             let picked = *self.picked.lock().unwrap();
@@ -160,6 +165,7 @@ impl Fixture {
             product: portal(),
             name: "Portal 2".into(),
             platform: Some(platform),
+            chosen: None,
             directory: self.locations.library.join("Games/Steam"),
         }
     }

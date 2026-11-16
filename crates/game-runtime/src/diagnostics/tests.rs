@@ -96,7 +96,12 @@ fn the_build_launched_last_names_the_logs() {
         fortnite,
         home.join("Library/Logs/Obelisk/Epic/wine-Fortnite.log")
     );
-    assert_eq!(files(home, Some(Epic("Fortnite")), now), [fortnite]);
+    assert_eq!(
+        files(home, Some(Epic("Fortnite")), now),
+        std::slice::from_ref(&fortnite)
+    );
+    let cloud = write(&cloud_note(home, Epic("Fortnite")), now, seconds(30));
+    assert_eq!(files(home, Some(Epic("Fortnite")), now), [fortnite, cloud]);
 }
 
 #[test]
@@ -171,11 +176,12 @@ fn names_on_disk_stay_those_older_versions_wrote() {
         format!("Steam/failed-42-{run}.json"),
     ]
     .map(|name| write(&logs.join(name), now, seconds(60)));
-    let epic = write(&logs.join("Epic/game-app.log"), now, seconds(60));
+    let epic = ["Epic/game-app.log", "Epic/cloud-app.log"]
+        .map(|name| write(&logs.join(name), now, seconds(60)));
     let gog = write(&logs.join("GOG/game-7.log"), now, seconds(60));
 
     assert_eq!(files(home, Some(Steam(42)), now), steam);
-    assert_eq!(files(home, Some(Epic("app")), now), [epic]);
+    assert_eq!(files(home, Some(Epic("app")), now), epic);
     assert_eq!(files(home, Some(Gog("7")), now), [gog]);
 }
 

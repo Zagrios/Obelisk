@@ -49,7 +49,9 @@ final class AppModelTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set(["fr-CA"], forKey: "AppleLanguages")
         XCTAssertEqual(AppLanguage(defaults: defaults, domain: suite), .language("fr"))
-        defaults.set(["de-DE"], forKey: "AppleLanguages")
+        defaults.set(["zh-Hans-CN"], forKey: "AppleLanguages")
+        XCTAssertEqual(AppLanguage(defaults: defaults, domain: suite), .language("zh-Hans"))
+        defaults.set(["ko-KR"], forKey: "AppleLanguages")
         XCTAssertEqual(AppLanguage(defaults: defaults, domain: suite), .language("en"))
     }
 

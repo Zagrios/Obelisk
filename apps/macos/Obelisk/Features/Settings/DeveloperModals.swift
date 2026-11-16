@@ -98,6 +98,15 @@ struct DeveloperModal: Identifiable {
                     Variant("Too many reports") { $0.bugReport(.app, answer: 429) },
                 ]),
             DeveloperModal(
+                id: "support", title: "Support Obelisk",
+                detail: "Over the whole window, by itself the third time Obelisk starts, and from the top of "
+                    + "Settings. Opens the real pages and copies the real link; the counts are made up.",
+                symbol: "heart.fill",
+                variants: [
+                    Variant("Counts") { $0.support(stars: 1284, members: 2410) },
+                    Variant("No count") { $0.support(stars: nil, members: nil) },
+                ]),
+            DeveloperModal(
                 id: "launch-settings", title: "Launch Settings",
                 detail: "From a Windows game's management menu.",
                 symbol: "slider.horizontal.3",
@@ -319,6 +328,14 @@ final class DeveloperModals {
         return BugReportSources(diagnostics: diagnostics, crashReports: folder,
                                 process: "obelisk-developer-modals", home: NSHomeDirectory(), unifiedLog: { "" },
                                 voile: { nil })
+    }
+
+    /// The ways to support Obelisk, beside the `stars` GitHub and the
+    /// `members` Discord would tell, or none as when they do not answer.
+    func support(stars: Int?, members: Int?) {
+        let model = SupportModel(stars: { stars }, members: { members })
+        model.present()
+        present { close in SupportSheet(model: model, close: close) }
     }
 
     /// A folder the player picked: by default 23 games, 271 GB of them to

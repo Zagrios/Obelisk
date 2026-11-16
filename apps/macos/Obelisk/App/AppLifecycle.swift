@@ -33,7 +33,7 @@ final class AppLifecycle: NSObject, NSApplicationDelegate {
         // Windows processes froze on their own. None of them can belong to
         // this Obelisk yet.
         // The test host is no Obelisk of its own: it leaves every game alone.
-        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
+        if !AppIdentity.isTestHost {
             // The unified log a bug report carries then says how hot the Mac was.
             ThermalLog.shared.start()
             let locations = ObeliskLocations.live

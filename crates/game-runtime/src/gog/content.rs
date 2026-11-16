@@ -23,12 +23,13 @@ pub trait Network: Send + Sync + 'static {
     /// The account the session is signed in to now.
     fn account_id(&self) -> BoxFuture<'_, Result<String, Failure>>;
     /// The build a Transfer without a platform installs, with the depots of
-    /// `language`: the Mac build when its game runs natively on Apple
-    /// silicon, else the Windows build.
+    /// `language`: the one its player `chosen`, else the Mac build when its
+    /// game runs natively on Apple silicon, else the Windows build.
     fn platform<'a>(
         &'a self,
         product: &'a Product,
         language: &'a str,
+        chosen: Option<Platform>,
     ) -> BoxFuture<'a, Result<Platform, Failure>>;
     /// Runs `transfer` into the folder it names, with the depots of `language`.
     fn download<'a>(
@@ -61,9 +62,10 @@ impl Network for GogClient {
         &'a self,
         product: &'a Product,
         language: &'a str,
+        chosen: Option<Platform>,
     ) -> BoxFuture<'a, Result<Platform, Failure>> {
         Box::pin(async move {
-            GogClient::platform(self, &product.product_id, language)
+            GogClient::platform(self, &product.product_id, language, chosen)
                 .await
                 .map_err(failed)
         })
@@ -166,7 +168,7 @@ impl<N: Network> installations::Content<Gog> for Content<N> {
                 None => {
                     let platform = self
                         .network
-                        .platform(&transfer.product, &self.language)
+                        .platform(&transfer.product, &self.language, transfer.chosen)
                         .await;
                     self.credentials.save_later();
                     platform

@@ -371,7 +371,7 @@ async fn a_mac_build_whose_program_holds_an_arm64_slice_is_picked_and_its_downlo
     let gog = Gog::answering(replies);
     let client = signed_in_reaching(gog.api.clone(), reaching(&[&build.cdn]));
 
-    let platform = client.platform("7", "en-US").await.unwrap();
+    let platform = client.platform("7", "en-US", None).await.unwrap();
     assert_eq!(platform, Platform::Mac);
     // The file that names the play task, then the first chunk of its program.
     assert_eq!(

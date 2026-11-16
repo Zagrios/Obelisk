@@ -95,6 +95,134 @@ final class GameActionTests: XCTestCase {
         XCTAssertEqual(fixture.backend.actions, [.install(fixture.offer())])
     }
 
+    func testAGameWithBothBuildsInstallsAndPlaysTheOneItsPlayerChose() async throws {
+        let fixture = InstallationsFixture(installed: false)
+        let installations = fixture.connect()
+        XCTAssertNil(installations.selectedBuildChoice, "The storefront offers one build")
+
+        var both = fixture.selection(620)
+        both.bothBuilds = true
+        installations.selection = { both }
+        XCTAssertEqual(installations.selectedBuildChoice, GameBuildChoice(chosen: .mac, installed: []))
+        installations.chooseBuild(.windows)
+        installations.selectedAction?.perform()
+        XCTAssertEqual(fixture.backend.actions, [.installBuild(fixture.offer(), .windows)])
+
+        // The Mac build is installed: it plays, and the Windows build still installs beside it.
+        fixture.backend.publish { $0.receipts = [fixture.receipt] }
+        try await eventually { !installations.receipts.isEmpty }
+        XCTAssertEqual(installations.selectedBuildChoice, GameBuildChoice(chosen: .windows, installed: [.mac]))
+        XCTAssertNil(installations.selectedReceipt)
+        XCTAssertEqual(installations.selectedAction?.kind, .download(.install))
+        installations.chooseBuild(.mac)
+        XCTAssertEqual(installations.selectedReceipt, fixture.receipt)
+        XCTAssertEqual(installations.selectedAction?.kind, .launch)
+
+        // A download of the Windows build that stopped resumes as that build alone.
+        let stopped = InstallationReceipt<UInt32>(id: "620-windows", gameID: 620, name: fixture.receipt.name,
+                                                  directory: "/games/steam-620-windows", platform: .windows,
+                                                  totalBytes: 0)
+        fixture.backend.publish { $0.incomplete = [stopped] }
+        try await eventually { !installations.incompleteReceipts.isEmpty }
+        XCTAssertEqual(installations.selectedAction?.kind, .launch)
+        installations.chooseBuild(.windows)
+        XCTAssertEqual(installations.selectedAction?.kind, .download(.resume))
+
+        // Queued, it leaves the installed Mac build free to launch.
+        fixture.backend.publish {
+            $0.queued = [620]
+            $0.queuedBuilds = [620: .windows]
+        }
+        try await eventually { installations.isQueued(620) }
+        XCTAssertEqual(installations.selectedAction?.kind, .queued)
+        installations.chooseBuild(.mac)
+        XCTAssertEqual(installations.selectedAction?.kind, .launch)
+
+        // Its Transfer under way holds the page on its build.
+        fixture.backend.publish {
+            $0.queued = []
+            $0.queuedBuilds = [:]
+            $0.downloading = true
+            $0.transferGame = 620
+            $0.resumable = 620
+            $0.resumableBuild = .windows
+        }
+        try await eventually { installations.selectedBuildChoice?.isLocked == true }
+        XCTAssertEqual(installations.selectedBuildChoice?.chosen, .windows)
+
+        // A download of the Mac build that stopped leaves the Windows build nothing to resume.
+        fixture.backend.publish {
+            $0.downloading = false
+            $0.receipts = []
+            $0.incomplete = []
+            $0.resumableBuild = .mac
+        }
+        try await eventually { installations.selectedBuildChoice?.isLocked == false }
+        installations.chooseBuild(.windows)
+        XCTAssertEqual(installations.selectedAction?.kind, .download(.install))
+        installations.chooseBuild(.mac)
+        XCTAssertEqual(installations.selectedAction?.kind, .download(.resume))
+
+        // The Mac build the pick refused fails its Transfer: the page reads the game's details again,
+        // which then show the Windows build alone, as for a Mac build that does not run natively.
+        fixture.backend.publish {
+            $0.resumable = nil
+            $0.resumableBuild = nil
+            $0.transferGame = 620
+            $0.transfer = GameTransfer(game: "620", state: .failed, completedBytes: 0, totalBytes: 0,
+                                       networkBytes: 0, contentBytes: 0, currentFile: "",
+                                       message: "backend.install.macBuildUnavailable")
+        }
+        try await eventually { fixture.failedTransfers == [620] }
+        both.platform = .windows
+        XCTAssertNil(installations.selectedBuildChoice)
+        XCTAssertEqual(installations.selectedAction?.kind, .download(.install))
+    }
+
+    func testAGameSyncsItsInstalledBuildsCloudSavesWhileItsOtherBuildIsChosen() async throws {
+        let fixture = InstallationsFixture(installed: true)
+        let installations = fixture.connect()
+        var both = fixture.selection(620)
+        both.bothBuilds = true
+        installations.selection = { both }
+        try await eventually { !installations.receipts.isEmpty }
+
+        installations.chooseBuild(.windows)
+        XCTAssertNil(installations.selectedReceipt)
+        installations.syncCloud()
+
+        XCTAssertEqual(fixture.backend.actions, [.maintain(620, installed: fixture.receipt)])
+    }
+
+    func testTheLibraryPlaysTheBuildLastPlayedOfTwoInstalled() async throws {
+        let fixture = InstallationsFixture(installed: true)
+        defer { fixture.finish() }
+        let installations = fixture.connect()
+        let windows = InstallationReceipt<UInt32>(id: "620-windows", gameID: 620, name: fixture.receipt.name,
+                                                  directory: "/games/steam-620-windows", platform: .windows,
+                                                  totalBytes: 0)
+        try await eventually { installations.receipts.count == 1 }
+        XCTAssertNil(GameActions(installations, in: .library)(fixture.selection(620)).build,
+                     "One installed build needs no name")
+        fixture.backend.publish { $0.receipts = [fixture.receipt, windows] }
+        try await eventually { installations.receipts.count == 2 }
+        let library = GameActions(installations, in: .library)
+
+        // Steam's pick, until one of them is played; its card names it.
+        XCTAssertEqual(library(fixture.selection(620)).build, .mac)
+        library(fixture.selection(620)).perform()
+        XCTAssertEqual(fixture.backend.actions, [.launch(fixture.receipt)])
+        XCTAssertEqual(installations.selectedBuildChoice?.chosen, .mac)
+
+        // Played from its page, the Windows build is the one the library plays next.
+        installations.chooseBuild(.windows)
+        installations.selectedAction?.perform()
+        library(fixture.selection(620)).perform()
+        XCTAssertEqual(fixture.backend.actions, [.launch(fixture.receipt), .launch(windows), .launch(windows)])
+        XCTAssertEqual(GameActions(installations, in: .library)(fixture.selection(620)).build, .windows)
+        XCTAssertEqual(installations.receiptToLaunch(for: 620, preferring: .mac), windows)
+    }
+
     func testALibraryDownloadNeedsAnOffer() async throws {
         let fixture = InstallationsFixture(installed: false)
         let actions = GameActions(fixture.connect(), in: .library)

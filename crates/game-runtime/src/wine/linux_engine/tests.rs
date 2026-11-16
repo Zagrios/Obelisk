@@ -465,6 +465,29 @@ fn the_launcher_starts_the_window_server_with_the_render_resolution_it_was_given
 }
 
 #[test]
+fn a_window_server_that_asks_the_launcher_to_end_while_it_ends_keeps_the_game_s_exit_status() {
+    use std::os::unix::fs::PermissionsExt;
+    let (_directory, root) = installation();
+    let runtime = recording_runtime(&root);
+    // wsd stopped with a window still open asks its parent, the launcher, to
+    // end the game.
+    let wsd = runtime.join("engine/wsd");
+    fs::write(
+        &wsd,
+        r#"#!/bin/sh
+trap 'kill -TERM $PPID; kill $listener; exit 0' TERM
+/usr/bin/nc -lU "$2/wsd.sock" &
+listener=$!
+wait $listener
+"#,
+    )
+    .unwrap();
+    fs::set_permissions(&wsd, fs::Permissions::from_mode(0o755)).unwrap();
+
+    run_launcher_of(&runtime, &root, &[], &[]);
+}
+
+#[test]
 fn the_launcher_s_game_bundle_is_a_game_that_says_when_game_mode_is_kept_off() {
     for (options, off) in [(&[][..], false), (&["--game-mode", "off"], true)] {
         let (_directory, root) = installation();

@@ -3,10 +3,10 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// Obelisk's settings: a hero drawn from Obelisk's icon, its prism and the
-/// stores' beams, reaching under the title bar band; then the appearance, the
-/// language, the games, the storage, the storefronts and help, each a card of rows
-/// as a game page's. The
-/// bar's backdrop and the page's title show once the hero scrolled under it.
+/// stores' beams, reaching under the title bar band; then the ways to support
+/// Obelisk, the appearance, the language, the games, the storage, the
+/// storefronts and help, each a card of rows as a game page's. The bar's
+/// backdrop and the page's title show once the hero scrolled under it.
 struct SettingsView: View {
     @Bindable var model: AppModel
     @State private var showsBackdrop = false
@@ -24,6 +24,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 0) {
                 SettingsHero(height: Self.heroHeight)
                 VStack(alignment: .leading, spacing: 34) {
+                    ObeliskCard { support }
                     GamePageSection(title: L10n.string("ui.settings.appearance")) {
                         ObeliskCard {
                             AppearancePicker(selection: $model.appearance)
@@ -132,6 +133,18 @@ struct SettingsView: View {
         .errorAlert(L10n.string("ui.settings.games_folder_failed"), message: Bindable(model.gamesFolder).failure)
     }
 
+    /// Opens the ways to support Obelisk, which it showed by itself once.
+    private var support: some View {
+        ObeliskRow(title: L10n.string("ui.support.title", AppIdentity.name)) {
+            SymbolTile(name: "heart.fill", colors: TileColors.red)
+        } detail: {
+            Text(L10n.string("ui.support.message", AppIdentity.name))
+        } accessory: {
+            GlassCapsuleButton(title: L10n.string("ui.support.open"), systemImage: "heart",
+                               identifier: "settings-support", action: model.support.present)
+        }
+    }
+
     /// Asks for the restart a newly chosen language waits for.
     private var languageRestart: some View {
         let language = model.language.resolved(system: AppLanguage.systemLanguages)
@@ -139,7 +152,7 @@ struct SettingsView: View {
             SymbolTile(name: "arrow.clockwise", colors: TileColors.violet)
         } detail: {
             Text(L10n.string("ui.settings.language_restart", AppIdentity.name,
-                             L10n.locale.localizedString(forLanguageCode: language) ?? AppLanguage.name(of: language)))
+                             L10n.locale.localizedString(forIdentifier: language) ?? AppLanguage.name(of: language)))
         } accessory: {
             AccentCapsuleButton(title: L10n.string("ui.settings.restart"), identifier: "settings-restart",
                                  action: { model.restart() })
@@ -709,7 +722,8 @@ private struct LanguagePicker: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(spacing: 20) {
+        // From the top: a name on two lines, as "Português (Brasil)", keeps its flag level with the others.
+        HStack(alignment: .top, spacing: 20) {
             ForEach(AppLanguage.choices) { option($0) }
         }
         .accessibilityElement(children: .contain)

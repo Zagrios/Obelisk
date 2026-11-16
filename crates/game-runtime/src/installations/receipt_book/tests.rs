@@ -132,6 +132,7 @@ fn transfer(app_id: u32, platform: Platform) -> Transfer<Steam> {
         product: product(app_id),
         name: format!("Game {app_id}"),
         platform: Some(platform),
+        chosen: None,
         directory: PathBuf::from("/library"),
     }
 }
