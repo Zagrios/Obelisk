@@ -69,6 +69,8 @@ final class AppModel {
     let estimates: PerformanceEstimates
     /// Obelisk's own new versions.
     let updates: AppUpdates
+    /// The ways to support Obelisk, which it shows by itself once.
+    let support: SupportModel
 
     /// The last library of every storefront account.
     @ObservationIgnored let libraryCache: LibraryCache
@@ -81,9 +83,8 @@ final class AppModel {
          epic: EpicModel? = nil, gog: GogModel? = nil, downloads: DownloadsModel? = nil,
          gamesFolder: GamesFolderModel? = nil,
          performance: PerformanceReports? = nil, estimates: PerformanceEstimates? = nil, updates: AppUpdates? = nil,
-         thermal: ThermalLog = .shared,
-         overlay: GameOverlayEnvironment = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil
-            ? .live : .inert) {
+         support: SupportModel? = nil, thermal: ThermalLog = .shared,
+         overlay: GameOverlayEnvironment = AppIdentity.isTestHost ? .inert : .live) {
         libraryDirectory = directory.path
         self.defaults = defaults
         appearance = AppAppearance(rawValue: defaults.string(forKey: "appearance") ?? "system") ?? .system
@@ -112,6 +113,7 @@ final class AppModel {
         self.thermal = thermal
         self.estimates = estimates ?? PerformanceEstimates()
         self.updates = updates ?? AppUpdates(defaults: defaults)
+        self.support = support ?? SupportModel(defaults: defaults)
         self.downloads.progress = { [weak self] item in self?.downloadTransfer(item) }
         applyAutomaticUpdates()
         reportPerformance()
@@ -252,6 +254,25 @@ final class AppModel {
     /// The sheet of `prompt`, asked by its storefront's account.
     func promptSheet(for prompt: AccountPrompt) -> AnyView {
         account(prompt.section)?.promptSheet(prompt.kind) ?? AnyView(EmptyView())
+    }
+
+    // MARK: Support
+
+    /// Shows the ways to support Obelisk once it started for the third time,
+    /// a moment after its window opened, to a player whose library shows. A
+    /// start where something else is over the window by then, or a game runs,
+    /// leaves it to the next one.
+    func offerSupport(after delay: Duration = .seconds(2)) async {
+        guard support.isDue else { return }
+        try? await Task.sleep(for: delay)
+        guard !Task.isCancelled, homeContent == .libraries, !isWindowTaken, !runsGame else { return }
+        support.offer()
+    }
+
+    /// Whether a sheet or an alert is over a window of Obelisk, or the
+    /// download queue is open. The windows tell: each view presents its own.
+    private var isWindowTaken: Bool {
+        downloads.isPresented || NSApp.windows.contains { $0.attachedSheet != nil }
     }
 
     // MARK: Friends

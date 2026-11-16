@@ -230,7 +230,7 @@ final class AppUpdates {
     /// other, so the last choice is the one kept; the test host keeps none, so
     /// it never touches the player's.
     private static func keepLiveVoileChoice(_ take: Bool) {
-        guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return }
+        guard !AppIdentity.isTestHost else { return }
         let locations = ObeliskLocations.live
         voileChoices.async { _ = takeVoilePrereleases(locations: locations, take: take) }
     }

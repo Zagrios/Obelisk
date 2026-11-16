@@ -56,23 +56,17 @@ struct SteamCloudPromptView: View {
     }
 }
 
-/// A copy of the saves to keep: a card that outlines itself in the accent
-/// color under the pointer.
+/// A copy of the saves to keep, as a card to choose.
 private struct CloudCopyChoice: View {
     let title: String
     let symbol: String
     let colors: [Color]
     let identifier: String
     let action: () -> Void
-    @State private var isHovered = false
     @Environment(\.isEnabled) private var isEnabled
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        let palette = ObeliskPalette(colorScheme: colorScheme)
-        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
-        let highlighted = isHovered && isEnabled
-        Button(action: action) {
+        ChoiceCard(identifier: identifier, action: action) {
             VStack(alignment: .leading, spacing: 14) {
                 SymbolTile(name: symbol, colors: colors, size: 36)
                 Text(title)
@@ -83,21 +77,8 @@ private struct CloudCopyChoice: View {
             }
             .padding(16)
             .frame(maxWidth: .infinity, minHeight: 112, alignment: .topLeading)
-            .background(highlighted ? AnyShapeStyle(ObeliskStyle.accent.opacity(0.1)) : AnyShapeStyle(palette.surface),
-                        in: shape)
-            .overlay {
-                shape.strokeBorder(highlighted ? AnyShapeStyle(ObeliskStyle.accent.opacity(0.7))
-                                                : AnyShapeStyle(palette.border),
-                                   lineWidth: highlighted ? 1.5 : 1)
-            }
-            .contentShape(shape)
-            .opacity(isEnabled ? 1 : 0.55)
         }
-        .obeliskButtonStyle(.plain)
-        .onHover { isHovered = $0 }
-        .animation(.easeOut(duration: 0.15), value: highlighted)
         .accessibilityLabel(title)
-        .accessibilityIdentifier(identifier)
     }
 }
 

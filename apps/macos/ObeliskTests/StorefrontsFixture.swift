@@ -170,6 +170,7 @@ final class StorefrontsFixture {
             gamesFolder: GamesFolderModel(library: root, backend: FakeGamesFolder(path: gamesFolder),
                                           workspace: NotificationCenter()),
             performance: PerformanceReports(isEnabled: true, mac: Self.mac) { await sent.add($0) },
+            support: SupportModel(defaults: defaults, stars: { nil }, members: { nil }),
             thermal: ThermalLog(snapshot: { ThermalSnapshot(thermalState: .nominal, lowPowerMode: false, onBattery: false) },
                                 write: { thermalLines.values.append($0) })
         )
