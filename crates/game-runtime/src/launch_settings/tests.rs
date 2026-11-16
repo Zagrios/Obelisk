@@ -24,6 +24,7 @@ const FALL_GUYS: Game<'static> = Game::Epic {
 /// Rocket League's Steam build, which reads its language from its command
 /// line as its Epic one does.
 const ROCKET_LEAGUE_ON_STEAM: Game<'static> = Game::Steam { app_id: 252950 };
+const KILLING_FLOOR: Game<'static> = Game::Steam { app_id: 1250 };
 
 /// An installation that holds no file of the table.
 fn nowhere() -> &'static Path {
@@ -505,6 +506,12 @@ fn the_profile_s_variables_and_dll_overrides_and_the_player_s_hud_are_carried() 
             .settings
             .variables["SteamDeck"],
         "1"
+    );
+    assert_eq!(
+        of(library, KILLING_FLOOR, nowhere(), None)
+            .settings
+            .variables["WINE_GL_FRAME_LOCK"],
+        "75"
     );
     let hud = Choices {
         performance_hud: true,
