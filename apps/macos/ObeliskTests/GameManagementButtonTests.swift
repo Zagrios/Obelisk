@@ -36,9 +36,7 @@ final class GameManagementButtonTests: XCTestCase {
             XCTAssertTrue(names.contains(L10n.string("ui.game.manage_named", "Portal 2")))
             if let control = element as? NSControl {
                 XCTAssertEqual(control.isEnabled, isAvailable)
-            } else if element.responds(to: NSSelectorFromString("isAccessibilityEnabled")),
-                      let enabled = element.value(forKey: "accessibilityEnabled") as? NSNumber {
-                // The getter is isAccessibilityEnabled: the key finds it, the plain selector does not.
+            } else if let enabled = attribute("isAccessibilityEnabled", of: element) as? NSNumber {
                 XCTAssertEqual(enabled.boolValue, isAvailable)
             } else {
                 throw XCTSkip("The SwiftUI menu does not expose its enabled state through in-process accessibility")
