@@ -104,9 +104,16 @@ final class GameActionTests: XCTestCase {
         both.bothBuilds = true
         installations.selection = { both }
         XCTAssertEqual(installations.selectedBuildChoice, GameBuildChoice(chosen: .mac, installed: []))
+        // The build the page opened on is no choice yet: the storefront picks, as it does for the library.
+        installations.selectedAction?.perform()
+        XCTAssertEqual(fixture.backend.actions, [.install(fixture.offer())])
+        installations.chooseBuild(.mac)
+        installations.selectedAction?.perform()
+        XCTAssertEqual(fixture.backend.actions.last, .installBuild(fixture.offer(), .mac), "Chosen, the Mac build alone")
         installations.chooseBuild(.windows)
         installations.selectedAction?.perform()
-        XCTAssertEqual(fixture.backend.actions, [.installBuild(fixture.offer(), .windows)])
+        XCTAssertEqual(fixture.backend.actions.last, .installBuild(fixture.offer(), .windows))
+        XCTAssertEqual(fixture.backend.actions.count, 3)
 
         // The Mac build is installed: it plays, and the Windows build still installs beside it.
         fixture.backend.publish { $0.receipts = [fixture.receipt] }
