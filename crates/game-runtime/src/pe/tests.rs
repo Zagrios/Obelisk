@@ -13,6 +13,7 @@ pub(crate) struct Fixture<'a> {
     pub dotnet: bool,
     pub imports: &'a [&'a str],
     pub delayed: &'a [&'a str],
+    pub exports: &'a [&'a str],
     pub description: Option<&'a str>,
     /// Its version resource counts its texts' lengths in bytes, as some
     /// programs do, rather than in characters.
@@ -26,6 +27,7 @@ impl Default for Fixture<'_> {
             dotnet: false,
             imports: &[],
             delayed: &[],
+            exports: &[],
             description: None,
             lengths_in_bytes: false,
         }
@@ -59,6 +61,9 @@ impl Fixture<'_> {
         }
         if !self.delayed.is_empty() {
             directories[DELAY_IMPORTS] = descriptors(&mut data, self.delayed, 32, 4);
+        }
+        if !self.exports.is_empty() {
+            directories[EXPORTS] = export_directory(&mut data, self.exports);
         }
         if self.dotnet {
             directories[CLR] = put(&mut data, &[1; 72]);
@@ -144,6 +149,21 @@ fn descriptors(data: &mut Vec<u8>, dlls: &[&str], size: usize, name_at: usize) -
         table[at..at + 4].copy_from_slice(&name.to_le_bytes());
     }
     put(data, &table)
+}
+
+/// An export directory naming `names`: the names, the table of their
+/// addresses, then the directory, which gives their count at 24 and the
+/// table's address at 32.
+fn export_directory(data: &mut Vec<u8>, names: &[&str]) -> u32 {
+    let addresses: Vec<u8> = names
+        .iter()
+        .flat_map(|name| put(data, format!("{name}\0").as_bytes()).to_le_bytes())
+        .collect();
+    let table = put(data, &addresses);
+    let mut directory = [0u8; 40];
+    directory[24..28].copy_from_slice(&(names.len() as u32).to_le_bytes());
+    directory[32..36].copy_from_slice(&table.to_le_bytes());
+    put(data, &directory)
 }
 
 /// A resource directory holding an icon type, then `version` as the version
@@ -252,6 +272,22 @@ fn a_program_lists_the_dlls_it_imports_as_it_loads_and_as_it_first_calls_them() 
 }
 
 #[test]
+fn a_program_tells_whether_it_exports_a_name() {
+    let (_directory, program) = opened(&Fixture {
+        exports: &["D3D12SDKPath", "D3D12SDKVersion"],
+        ..Fixture::importing(&["d3d12.dll"])
+    });
+    let program = program.unwrap();
+    assert!(program.exports("D3D12SDKVersion"));
+    assert!(program.exports("D3D12SDKPath"));
+    // Names match as they are written.
+    assert!(!program.exports("d3d12sdkversion"));
+    assert!(!program.exports("D3D12SDK"));
+    let (_directory, none) = opened(&Fixture::importing(&["d3d12.dll"]));
+    assert!(!none.unwrap().exports("D3D12SDKVersion"));
+}
+
+#[test]
 fn a_program_gives_the_description_of_its_version_resource() {
     let description = "Easy Anti-Cheat Bootstrapper (EOS)";
     let (_directory, program) = opened(&Fixture::described(description));
@@ -289,6 +325,7 @@ fn a_file_that_is_no_program_or_stops_short_of_its_headers_reads_as_nothing() {
     let whole = Fixture {
         imports: &["dxgi.dll"],
         delayed: &["d3d12.dll"],
+        exports: &["D3D12SDKVersion"],
         dotnet: true,
         ..Fixture::described("A game")
     }
@@ -298,6 +335,9 @@ fn a_file_that_is_no_program_or_stops_short_of_its_headers_reads_as_nothing() {
         std::fs::write(&path, &whole[..length]).unwrap();
         if let Some(program) = Program::open(&path) {
             assert!(program.imports().len() <= 2);
+            // Whatever it still holds of its names, reading them stays in
+            // bounds.
+            let _ = program.exports("D3D12SDKVersion");
             let description = program.description();
             assert!(description.is_none() || description.as_deref() == Some("A game"));
         }
