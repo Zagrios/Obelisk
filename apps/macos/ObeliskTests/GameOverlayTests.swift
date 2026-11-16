@@ -24,9 +24,12 @@ final class GameOverlayTests: XCTestCase {
         XCTAssertEqual(OverlayShortcut(try pressed(48, .shift, "\t")), .shiftTab)
         XCTAssertEqual(OverlayShortcut(try pressed(48, .option, "\t"))?.name, "⌥⇥")
         XCTAssertEqual(OverlayShortcut(try pressed(100, [], "\u{F70B}"))?.name, "F8", "A function key alone")
-        let controlShiftM = try XCTUnwrap(OverlayShortcut(try pressed(46, [.control, .shift], "M")))
-        XCTAssertEqual(controlShiftM.name, "⌃⇧M")
-        XCTAssertEqual(controlShiftM.caps, ["⌃", L10n.string("ui.settings.key_shift"), "M"])
+        let controlShiftReturn = try XCTUnwrap(OverlayShortcut(try pressed(36, [.control, .shift], "\r")))
+        XCTAssertEqual(controlShiftReturn.name, "⌃⇧↩")
+        XCTAssertEqual(controlShiftReturn.caps, ["⌃", L10n.string("ui.settings.key_shift"), "↩"])
+        // A letter reads as its key cap on the Mac's own layout: M on QWERTY, a comma on AZERTY.
+        let controlM = try pressed(46, .control, "m")
+        XCTAssertEqual(OverlayShortcut(controlM)?.key, controlM.characters(byApplyingModifiers: [])?.uppercased())
     }
 
     @MainActor
