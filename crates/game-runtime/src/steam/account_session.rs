@@ -440,8 +440,14 @@ impl<T: Transport> Network for AccountSession<T> {
         &'a self,
         app_id: u32,
         language: &'a str,
+        chosen: Option<Platform>,
     ) -> BoxFuture<'a, Result<Platform, Failure>> {
-        Box::pin(async move { self.serving().await?.platform(app_id, language).await })
+        Box::pin(async move {
+            self.serving()
+                .await?
+                .platform(app_id, language, chosen)
+                .await
+        })
     }
     fn download<'a>(
         &'a self,

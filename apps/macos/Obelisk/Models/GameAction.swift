@@ -68,6 +68,9 @@ struct GameAction {
     let isCancellable: Bool
     /// Where the button shows, which changes how it shows a wait.
     let place: GameActionPlace
+    /// The build it acts on, of a game with both installed: a library card
+    /// has no switch, and names the build its button launches.
+    let build: GamePlatform?
     /// The game's Transfer, read only in the body of the view showing its
     /// progress, so a progress tick redraws that view alone.
     let transfer: @MainActor () -> GameTransfer?
@@ -81,7 +84,7 @@ struct GameAction {
     var needsConfirmation: Bool { kind == .running(.forceQuit) }
 
     init(kind: Kind, title: String, isAvailable: Bool, launches: Bool, isCancellable: Bool = false,
-         place: GameActionPlace = .page,
+         place: GameActionPlace = .page, build: GamePlatform? = nil,
          transfer: @escaping @MainActor () -> GameTransfer? = { nil },
          stepFraction: @escaping @MainActor () -> Double? = { nil },
          perform: @escaping @MainActor () -> Void = {}, cancel: @escaping @MainActor () -> Void = {}) {
@@ -91,6 +94,7 @@ struct GameAction {
         self.launches = launches
         self.isCancellable = isCancellable
         self.place = place
+        self.build = build
         self.transfer = transfer
         self.stepFraction = stepFraction
         self.perform = perform
@@ -113,8 +117,15 @@ struct GameActions<Store: InstallationStorefront> {
     private let verifying: Bool
     private let uninstalling: Store.GameID?
     private let queued: Set<Store.GameID>
+    /// The build each of those Transfers installs, when it is known.
+    private let queuedBuilds: [Store.GameID: GamePlatform]
     /// The games whose install resumes a Transfer that stopped.
     private let resumable: Set<Store.GameID>
+    /// The game whose Transfer stopped in this run of Obelisk, and its build
+    /// when it is known.
+    private let stopped: (game: Store.GameID, build: GamePlatform?)?
+    /// The builds of each game whose download stopped before its receipt.
+    private let incomplete: [Store.GameID: Set<GamePlatform>]
     private let isConnected: Bool
     private let isRecovering: Bool
     private let session: GameSessions<Store>.ActiveGame?
@@ -133,8 +144,12 @@ struct GameActions<Store: InstallationStorefront> {
         verifying = installations.isVerifyingBeforeLaunch
         uninstalling = installations.uninstallGame
         queued = Set(installations.queuedGames)
+        queuedBuilds = installations.queuedBuilds
+        incomplete = Dictionary(grouping: installations.incompleteReceipts, by: \.gameID)
+            .mapValues { Set($0.map(\.platform)) }
         resumable = Set(installations.incompleteReceipts.map(\.gameID))
             .union([installations.resumableGame].compactMap { $0 })
+        stopped = installations.resumableGame.map { ($0, installations.resumableBuild) }
         isConnected = installations.isConnected
         isRecovering = installations.sessions.isRecovering
         session = installations.accountSession
@@ -149,10 +164,13 @@ struct GameActions<Store: InstallationStorefront> {
 
     func callAsFunction(_ selection: InstallationSelection<Store>) -> GameAction {
         let game = selection.game
-        let receipt = Receipt.preferred(among: receipts[game] ?? [], platform: selection.platform)
+        let receipt = Receipt.shown(among: receipts[game] ?? [], for: selection,
+                                    lastPlayed: installations.lastPlayedBuild(of: game))
         let update = place == .page && receipt?.updateAvailable == true
         let ownSession = session?.game == game ? session : nil
-        let kind = self.kind(of: game, session: ownSession, receipt: receipt, update: update)
+        let isQueued = isQueued(selection)
+        let kind = self.kind(of: game, session: ownSession, receipt: receipt, update: update,
+                             resumes: resumes(selection), isQueued: isQueued)
         let installations = installations
         return GameAction(
             kind: kind,
@@ -160,8 +178,9 @@ struct GameActions<Store: InstallationStorefront> {
             isAvailable: isAvailable(kind, of: selection),
             launches: ownSession != nil || (receipt != nil && !update),
             isCancellable: cancellableSync == game || transferring == game || launching == game
-                || queued.contains(game),
+                || isQueued,
             place: place,
+            build: (receipts[game]?.count ?? 0) > 1 ? receipt?.platform : nil,
             transfer: { installations.transfer(for: game) },
             stepFraction: {
                 guard installations.accountSession?.game == game else { return nil }
@@ -178,11 +197,32 @@ struct GameActions<Store: InstallationStorefront> {
         )
     }
 
+    /// Whether installing `selection` resumes a Transfer that stopped. Of a
+    /// game whose player chooses its build, only one of that build does, or
+    /// one that stopped before its build was known.
+    private func resumes(_ selection: InstallationSelection<Store>) -> Bool {
+        let game = selection.game
+        guard selection.choosesBuild else { return resumable.contains(game) }
+        let begun = incomplete[game] ?? []
+        if begun.contains(selection.platform) { return true }
+        guard let stopped, stopped.game == game else { return false }
+        return stopped.build.map { $0 == selection.platform } ?? begun.isEmpty
+    }
+
+    /// Whether a Transfer of `selection` waits in the queue. Of a game whose
+    /// player chooses its build, one of the other build leaves this one free
+    /// to launch; one whose build is not known holds both.
+    private func isQueued(_ selection: InstallationSelection<Store>) -> Bool {
+        guard queued.contains(selection.game) else { return false }
+        guard selection.choosesBuild, let build = queuedBuilds[selection.game] else { return true }
+        return build == selection.platform
+    }
+
     /// The one order every place reads a game's state in. `session` is this
     /// account's Game session of `game`, if any; `update` tells that the
     /// page offers the installation's newer build.
     private func kind(of game: Store.GameID, session: GameSessions<Store>.ActiveGame?, receipt: Receipt?,
-                      update: Bool) -> GameAction.Kind {
+                      update: Bool, resumes: Bool, isQueued: Bool) -> GameAction.Kind {
         let isLaunching = launching == game
         if synchronizing == game { return .step(.cloudSync) }
         if isLaunching, let runtime = session?.runtime { return .step(.runtime(runtime)) }
@@ -190,10 +230,10 @@ struct GameActions<Store: InstallationStorefront> {
         if transferring == game { return .transferring(isLaunching ? .launch : .files) }
         if uninstalling == game { return .waiting(.uninstall) }
         if isLaunching { return .waiting(verifying ? .verification : .launch) }
-        if queued.contains(game) { return .queued }
+        if isQueued { return .queued }
         if let session { return .waiting(session.ended ? .closing : .launch) }
         if receipt != nil { return update ? .download(.update) : .launch }
-        return .download(resumable.contains(game) && installations.canModify(game) ? .resume : .install)
+        return .download(resumes && installations.canModify(game) ? .resume : .install)
     }
 
     private func title(of kind: GameAction.Kind) -> String {
@@ -251,7 +291,8 @@ struct GameActions<Store: InstallationStorefront> {
         case .download:
             guard let offer = selection.offer else { return {} }
             let game = selection.game
-            return { installations.install(offer, of: game) }
+            let build = selection.choosesBuild ? selection.platform : nil
+            return { installations.install(offer, of: game, build: build) }
         case .running, .queued, .transferring, .waiting, .step:
             return {}
         }
@@ -260,7 +301,7 @@ struct GameActions<Store: InstallationStorefront> {
 
 extension GameInstallations {
     /// The Game action of the game on screen.
-    var selectedAction: GameAction? { selection().map { GameActions(self, in: .page)($0) } }
+    var selectedAction: GameAction? { shownSelection().map { GameActions(self, in: .page)($0) } }
 }
 
 /// Both stores use the same progress text, accessibility and transfer controls.

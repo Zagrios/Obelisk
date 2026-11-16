@@ -33,9 +33,14 @@ pub trait Network: Send + Sync + 'static {
     fn account_id(&self) -> BoxFuture<'_, Result<String, Failure>>;
     /// A short-lived code the game signs in with.
     fn exchange_code(&self) -> BoxFuture<'_, Result<String, Failure>>;
-    /// The build a Transfer without a platform installs: the Mac build when
-    /// its game runs natively on Apple silicon, else the Windows build.
-    fn platform<'a>(&'a self, product: &'a Product) -> BoxFuture<'a, Result<Platform, Failure>>;
+    /// The build a Transfer without a platform installs: the one its player
+    /// `chosen`, else the Mac build when its game runs natively on Apple
+    /// silicon, else the Windows build.
+    fn platform<'a>(
+        &'a self,
+        product: &'a Product,
+        chosen: Option<Platform>,
+    ) -> BoxFuture<'a, Result<Platform, Failure>>;
     /// Runs `transfer` into the folder its begin settled the platform of.
     fn download<'a>(
         &'a self,
@@ -79,13 +84,18 @@ impl Network for EpicClient {
     fn exchange_code(&self) -> BoxFuture<'_, Result<String, Failure>> {
         Box::pin(async move { EpicClient::exchange_code(self).await.map_err(failed) })
     }
-    fn platform<'a>(&'a self, product: &'a Product) -> BoxFuture<'a, Result<Platform, Failure>> {
+    fn platform<'a>(
+        &'a self,
+        product: &'a Product,
+        chosen: Option<Platform>,
+    ) -> BoxFuture<'a, Result<Platform, Failure>> {
         Box::pin(async move {
             EpicClient::platform(
                 self,
                 &product.namespace,
                 &product.catalog_item_id,
                 &product.app_name,
+                chosen,
             )
             .await
             .map_err(failed)
@@ -239,7 +249,10 @@ impl<N: Network> installations::Content<Epic> for Content<N> {
             match transfer.platform {
                 Some(platform) => Ok(platform),
                 None => {
-                    let platform = self.network.platform(&transfer.product).await;
+                    let platform = self
+                        .network
+                        .platform(&transfer.product, transfer.chosen)
+                        .await;
                     // The call may have renewed the account's credentials.
                     self.credentials.save_later();
                     platform

@@ -210,6 +210,7 @@ impl Network for FakeCloud {
     fn platform<'a>(
         &'a self,
         _: &'a Product,
+        _: Option<Platform>,
     ) -> BoxFuture<'a, std::result::Result<Platform, Failure>> {
         unreachable!("Cloud saves pick no build")
     }

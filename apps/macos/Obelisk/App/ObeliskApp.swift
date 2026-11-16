@@ -10,8 +10,11 @@ struct ObeliskApp: App {
         // setenv is only safe while no other thread reads the environment:
         // before AppModel, whose Rust side starts threads. The test host
         // starts no game, and its environment stays as it is.
-        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil { GameLocale.adopt() }
-        _model = State(wrappedValue: AppModel())
+        if !AppIdentity.isTestHost { GameLocale.adopt() }
+        let model = AppModel()
+        // Nor does the test host count as a start of Obelisk.
+        if !AppIdentity.isTestHost { model.support.countStart() }
+        _model = State(wrappedValue: model)
     }
 
     var body: some Scene {
@@ -21,9 +24,11 @@ struct ObeliskApp: App {
                 .environment(\.locale, L10n.locale)
                 .task {
                     // The test host is no Obelisk of its own: it signs no account in.
-                    if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
-                        await model.restoreStorefronts()
-                    }
+                    if !AppIdentity.isTestHost { await model.restoreStorefronts() }
+                }
+                .task {
+                    // Nor does it ask for support.
+                    if !AppIdentity.isTestHost { await model.offerSupport() }
                 }
         }
         .defaultSize(width: 1120, height: 760)

@@ -5,6 +5,11 @@ enum AppIdentity {
     static let name = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Obelisk"
     static let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.0"
     static let storageIdentifier = "com.zagrios.obelisk"
+    /// Obelisk's repository on GitHub.
+    static let repository = URL(string: "https://github.com/Zagrios/obelisk")!
+    /// Whether this process is the tests' host rather than an Obelisk of its
+    /// own: it leaves the player's accounts, games and settings alone.
+    static let isTestHost = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 
     /// Prefix of the Keychain items sessions are saved in. Debug builds are signed by another
     /// team than releases, and macOS asks for the login password each time one team's build

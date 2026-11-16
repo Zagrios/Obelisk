@@ -4,7 +4,7 @@ import Foundation
 /// opened with what Obelisk knows filled in: GitHub fills a form's fields
 /// from query items named after their ids.
 enum GitHubIssues {
-    static let newIssue = URL(string: "https://github.com/Zagrios/obelisk/issues/new")!
+    static let newIssue = AppIdentity.repository.appending(path: "issues/new")
     /// How long the description's start may be in a title, after its prefix.
     static let titleLimit = 80
     /// GitHub refuses very long URLs; the report keeps the whole description.

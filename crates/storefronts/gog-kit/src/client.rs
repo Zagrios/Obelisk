@@ -134,13 +134,7 @@ impl Client {
                 }
             })
             .await?;
-        Ok(match shown {
-            Some((platform, size)) => GameDetails {
-                platform: Some(platform),
-                installation_bytes: size,
-            },
-            None => GameDetails::default(),
-        })
+        Ok(shown.unwrap_or_default())
     }
 
     /// The revision of the credentials now, which grows with each rotation.

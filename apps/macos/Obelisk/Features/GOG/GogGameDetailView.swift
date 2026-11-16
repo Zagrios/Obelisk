@@ -12,7 +12,7 @@ struct GogGameDetailView: View {
             model: model,
             game: game,
             context: context,
-            size: (installations.selectedReceipt?.totalBytes ?? model.selectedGameDetails?.installationBytes)
+            size: (installations.selectedReceipt?.totalBytes ?? model.selectedBuildBytes)
                 .map(GameFormatting.bytes)
         ) {
             GameOperationStatus(installations: installations, game: game.productId)

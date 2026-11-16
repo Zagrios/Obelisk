@@ -75,6 +75,68 @@ struct GameManagementButton: View {
     }
 }
 
+/// The builds of a game its storefront offers both of, beside its launch
+/// button: the page plays, installs and manages the one chosen, and a check
+/// marks each installed one. The switch holds still while a Transfer of the
+/// game runs.
+struct GameBuildSwitch: View {
+    let choice: GameBuildChoice
+    let choose: (GamePlatform) -> Void
+    @Namespace private var selection
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HStack(spacing: 2) {
+            segment(.windows, title: GamePlatform.windows.name)
+            segment(.mac, title: GamePlatform.mac.name)
+        }
+        .padding(3)
+        .frame(height: 36)
+        .modifier(StorefrontControlGlass(interactive: false))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(L10n.string("ui.game.build"))
+        .accessibilityIdentifier("game-build-switch")
+    }
+
+    private func segment(_ build: GamePlatform, title: String) -> some View {
+        let isChosen = choice.chosen == build
+        let isInstalled = choice.installed.contains(build)
+        return Button {
+            withAnimation(.snappy(duration: 0.2)) { choose(build) }
+        } label: {
+            HStack(spacing: 5) {
+                if isInstalled {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 12, weight: .bold))
+                        // The gradient's deeper green where the chosen build's pill is light.
+                        .foregroundStyle(ObeliskStyle.launchGradient[isChosen && colorScheme == .dark ? 1 : 0])
+                        .accessibilityHidden(true)
+                }
+                Text(title).font(.system(size: 12, weight: .semibold))
+            }
+            // The chosen build reads as a solid pill, its text in the page's color.
+            .foregroundStyle(isChosen ? AnyShapeStyle(Color(nsColor: .windowBackgroundColor))
+                : AnyShapeStyle(.secondary))
+            .padding(.horizontal, 12)
+            .frame(maxHeight: .infinity)
+            .background {
+                if isChosen {
+                    // Not `.primary`, which here follows the label's own text color.
+                    Capsule().fill(Color(nsColor: .labelColor).opacity(0.92))
+                        .matchedGeometryEffect(id: "chosen", in: selection)
+                }
+            }
+            .contentShape(.capsule)
+        }
+        .obeliskButtonStyle(.plain)
+        .disabled(choice.isLocked)
+        .opacity(choice.isLocked && !isChosen ? 0.45 : 1)
+        .accessibilityAddTraits(isChosen ? .isSelected : [])
+        .accessibilityValue(isInstalled ? L10n.string("ui.game.build_installed") : "")
+        .help(isInstalled ? L10n.string("ui.game.build_installed") : title)
+    }
+}
+
 extension View {
     /// Asks before `removal` deletes `gameName`'s files.
     func removalConfirmation(_ removal: GameRemoval, _ gameName: String, isPresented: Binding<Bool>,
@@ -302,4 +364,9 @@ struct GameMetricSymbol: View {
             .foregroundStyle(isWarning ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
             .frame(width: 26, height: 26)
     }
+}
+
+extension GamePlatform {
+    /// How a game's page and its cards name the build.
+    var name: String { L10n.string(self == .mac ? "ui.game.build_mac" : "ui.game.build_windows") }
 }
