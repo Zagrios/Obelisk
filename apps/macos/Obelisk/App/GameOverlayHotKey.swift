@@ -9,40 +9,61 @@ struct OverlayShortcut: Equatable {
     let keyCode: UInt32
     let modifiers: UInt32
     /// How the key reads on its key cap, as its keyboard typed it when it
-    /// was chosen. Tab reads in Obelisk's language instead.
+    /// was chosen.
     let key: String
 
-    static let shiftTab = OverlayShortcut(keyCode: UInt32(kVK_Tab), modifiers: UInt32(shiftKey), key: "")
-    private static var preference: String { "overlay.shortcut" }
+    static let shiftTab = OverlayShortcut(keyCode: UInt32(kVK_Tab), modifiers: UInt32(shiftKey), key: "⇥")
+    private static let preference = "overlay.shortcut"
 
+    /// The modifiers in the order macOS shows them: the event's flag, the
+    /// hot key's bit and the menu's glyph.
+    private static let modifierKeys: [(flag: NSEvent.ModifierFlags, bit: Int, glyph: String)] = [
+        (.control, controlKey, "⌃"), (.option, optionKey, "⌥"), (.shift, shiftKey, "⇧"), (.command, cmdKey, "⌘"),
+    ]
+
+    /// The keys that type no character of their own, as their key caps read.
+    private static let named: [Int: String] = [
+        kVK_Tab: "⇥", kVK_Space: "␣", kVK_Return: "↩", kVK_Delete: "⌫", kVK_ForwardDelete: "⌦",
+        kVK_LeftArrow: "←", kVK_RightArrow: "→", kVK_UpArrow: "↑", kVK_DownArrow: "↓",
+        kVK_Home: "↖", kVK_End: "↘", kVK_PageUp: "⇞", kVK_PageDown: "⇟",
+        kVK_F1: "F1", kVK_F2: "F2", kVK_F3: "F3", kVK_F4: "F4", kVK_F5: "F5", kVK_F6: "F6",
+        kVK_F7: "F7", kVK_F8: "F8", kVK_F9: "F9", kVK_F10: "F10", kVK_F11: "F11", kVK_F12: "F12",
+        kVK_F13: "F13", kVK_F14: "F14", kVK_F15: "F15", kVK_F16: "F16", kVK_F17: "F17", kVK_F18: "F18",
+        kVK_F19: "F19", kVK_F20: "F20",
+    ]
+
+    /// Its keys as key caps, modifiers first; Shift and Tab read in Obelisk's language.
+    @MainActor var caps: [String] {
+        spelled(shift: L10n.string("ui.settings.key_shift"), tab: L10n.string("ui.settings.key_tab"))
+    }
+
+    /// Its keys in a sentence, as a menu spells a shortcut: ⌥⇥.
+    var name: String { spelled(shift: "⇧", tab: "⇥").joined() }
+
+    private func spelled(shift: String, tab: String) -> [String] {
+        Self.modifierKeys.filter { modifiers & UInt32($0.bit) != 0 }.map { $0.bit == shiftKey ? shift : $0.glyph }
+            + [keyCode == UInt32(kVK_Tab) ? tab : key]
+    }
+}
+
+extension OverlayShortcut {
     /// The keys a key press chooses, or nil for one that cannot be the
     /// overlay's: a key alone, which its game would lose, unless it is a
     /// function key.
     init?(_ event: NSEvent) {
-        var modifiers: UInt32 = 0
-        if event.modifierFlags.contains(.control) { modifiers |= UInt32(controlKey) }
-        if event.modifierFlags.contains(.option) { modifiers |= UInt32(optionKey) }
-        if event.modifierFlags.contains(.shift) { modifiers |= UInt32(shiftKey) }
-        if event.modifierFlags.contains(.command) { modifiers |= UInt32(cmdKey) }
-        let isTab = Int(event.keyCode) == kVK_Tab
+        let modifiers = Self.modifierKeys.reduce(UInt32(0)) { bits, modifier in
+            event.modifierFlags.contains(modifier.flag) ? bits | UInt32(modifier.bit) : bits
+        }
         let named = Self.named[Int(event.keyCode)]
-        let isFunctionKey = named?.hasPrefix("F") == true
-        guard modifiers != 0 || isFunctionKey,
-              let key = isTab ? "" : named ?? event.characters(byApplyingModifiers: [])?.uppercased(),
-              isTab || !key.isEmpty
+        guard modifiers != 0 || named?.hasPrefix("F") == true,
+              let key = named ?? event.characters(byApplyingModifiers: [])?.uppercased(), !key.isEmpty
         else { return nil }
         self.init(keyCode: UInt32(event.keyCode), modifiers: modifiers, key: key)
     }
 
-    init(keyCode: UInt32, modifiers: UInt32, key: String) {
-        self.keyCode = keyCode
-        self.modifiers = modifiers
-        self.key = key
-    }
-
     /// The shortcut `defaults` keeps, else Shift-Tab.
-    init(defaults: UserDefaults?) {
-        let kept = defaults?.dictionary(forKey: Self.preference)
+    init(defaults: UserDefaults) {
+        let kept = defaults.dictionary(forKey: Self.preference)
         guard let keyCode = kept?["keyCode"] as? Int, let modifiers = kept?["modifiers"] as? Int,
               let key = kept?["key"] as? String
         else {
@@ -53,46 +74,13 @@ struct OverlayShortcut: Equatable {
     }
 
     /// Keeps it in `defaults`; Shift-Tab is kept as no choice.
-    func save(in defaults: UserDefaults?) {
+    func save(in defaults: UserDefaults) {
         if self == .shiftTab {
-            defaults?.removeObject(forKey: Self.preference)
+            defaults.removeObject(forKey: Self.preference)
         } else {
-            defaults?.set(["keyCode": Int(keyCode), "modifiers": Int(modifiers), "key": key],
-                          forKey: Self.preference)
+            defaults.set(["keyCode": Int(keyCode), "modifiers": Int(modifiers), "key": key], forKey: Self.preference)
         }
     }
-
-    /// Its keys as key caps, modifiers first in the order macOS shows them.
-    @MainActor var caps: [String] {
-        var caps: [String] = []
-        if modifiers & UInt32(controlKey) != 0 { caps.append("⌃") }
-        if modifiers & UInt32(optionKey) != 0 { caps.append("⌥") }
-        if modifiers & UInt32(shiftKey) != 0 { caps.append(L10n.string("ui.settings.key_shift")) }
-        if modifiers & UInt32(cmdKey) != 0 { caps.append("⌘") }
-        caps.append(keyCode == UInt32(kVK_Tab) ? L10n.string("ui.settings.key_tab") : key)
-        return caps
-    }
-
-    /// Its keys in a sentence, as a menu spells a shortcut: ⌥⇥.
-    var name: String {
-        var name = ""
-        if modifiers & UInt32(controlKey) != 0 { name += "⌃" }
-        if modifiers & UInt32(optionKey) != 0 { name += "⌥" }
-        if modifiers & UInt32(shiftKey) != 0 { name += "⇧" }
-        if modifiers & UInt32(cmdKey) != 0 { name += "⌘" }
-        return name + (keyCode == UInt32(kVK_Tab) ? "⇥" : key)
-    }
-
-    /// The keys that type no character of their own, as their key caps read.
-    private static let named: [Int: String] = [
-        kVK_Space: "␣", kVK_Return: "↩", kVK_Delete: "⌫", kVK_ForwardDelete: "⌦",
-        kVK_LeftArrow: "←", kVK_RightArrow: "→", kVK_UpArrow: "↑", kVK_DownArrow: "↓",
-        kVK_Home: "↖", kVK_End: "↘", kVK_PageUp: "⇞", kVK_PageDown: "⇟",
-        kVK_F1: "F1", kVK_F2: "F2", kVK_F3: "F3", kVK_F4: "F4", kVK_F5: "F5", kVK_F6: "F6",
-        kVK_F7: "F7", kVK_F8: "F8", kVK_F9: "F9", kVK_F10: "F10", kVK_F11: "F11", kVK_F12: "F12",
-        kVK_F13: "F13", kVK_F14: "F14", kVK_F15: "F15", kVK_F16: "F16", kVK_F17: "F17", kVK_F18: "F18",
-        kVK_F19: "F19", kVK_F20: "F20",
-    ]
 }
 
 /// The overlay's hot key. Registering it takes the keys from every

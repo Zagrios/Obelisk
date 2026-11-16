@@ -130,7 +130,7 @@ Obelisk is signed and notarized by Apple, so it opens without a security warning
 
 ### In-game overlay
 
-Press **Shift+Tab** during a game to open the overlay without leaving it. It shows your friends, the game's achievements, its store page and the invitations you received. Steam games can also ask you there to authorize an in-game purchase.
+Press **Shift+Tab** during a game to open the overlay without leaving it; Settings lets you pick other keys. It shows your friends, the game's achievements, its store page and the invitations you received. Steam games can also ask you there to authorize an in-game purchase.
 
 <img src="https://github.com/user-attachments/assets/77b7c3f4-f817-4640-be39-c06bd8f6d4c0" />
 

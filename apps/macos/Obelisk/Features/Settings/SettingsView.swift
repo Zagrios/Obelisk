@@ -694,22 +694,17 @@ private struct OverlayShortcutRecorder: View {
         }
     }
 
+    /// Escape and Delete alone are no shortcut, so they end the wait.
     private func take(_ event: NSEvent) {
-        let alone = event.modifierFlags.intersection([.control, .option, .shift, .command]).isEmpty
-        switch (Int(event.keyCode), alone) {
-        case (kVK_Escape, true):
-            stop()
-        case (kVK_Delete, true), (kVK_ForwardDelete, true):
+        if let chosen = OverlayShortcut(event) {
+            shortcut = chosen
+        } else if [kVK_Delete, kVK_ForwardDelete].contains(Int(event.keyCode)) {
             shortcut = .shiftTab
-            stop()
-        default:
-            if let chosen = OverlayShortcut(event) {
-                shortcut = chosen
-                stop()
-            } else {
-                NSSound.beep()
-            }
+        } else if Int(event.keyCode) != kVK_Escape {
+            NSSound.beep()
+            return
         }
+        stop()
     }
 
     private func stop() {

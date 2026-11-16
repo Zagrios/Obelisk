@@ -76,8 +76,8 @@ final class AppModel {
     @ObservationIgnored let libraryCache: LibraryCache
     @ObservationIgnored private let defaults: UserDefaults
 
-    /// The test host's models register no Shift-Tab, open no overlay and post
-    /// no notification.
+    /// The test host's models register no overlay shortcut, open no overlay
+    /// and post no notification.
     init(directory: URL = AppIdentity.libraryDirectory, defaults: UserDefaults = .standard,
          defaultsDomain: String = Bundle.main.bundleIdentifier ?? AppIdentity.storageIdentifier, steam: SteamModel? = nil,
          epic: EpicModel? = nil, gog: GogModel? = nil, downloads: DownloadsModel? = nil,
@@ -102,7 +102,8 @@ final class AppModel {
             directory: directory, libraryCache: libraryCache,
             onlineStatus: OnlineStatusChoice(storeID: EpicGames.storeID, defaults: defaults))
         self.gog = gog ?? GogModel(directory: directory, libraryCache: libraryCache)
-        self.overlay = GameOverlayController(steam: self.steam, epic: self.epic, gog: self.gog, environment: overlay)
+        self.overlay = GameOverlayController(steam: self.steam, epic: self.epic, gog: self.gog, defaults: defaults,
+                                             environment: overlay)
         self.steam.overlay = self.overlay
         self.steam.notifier = overlay.notifier
         self.downloads = downloads ?? DownloadsModel(defaults: defaults)

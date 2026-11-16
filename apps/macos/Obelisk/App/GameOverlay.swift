@@ -99,15 +99,13 @@ struct GameOverlayEnvironment {
     var voile: String
     /// Follows the applications macOS activates; tests tell them instead.
     var observesActivations: Bool
-    /// Where the player's shortcut is kept; nowhere for the test host.
-    var defaults: UserDefaults? = nil
 
     static var live: GameOverlayEnvironment {
         GameOverlayEnvironment(
             hotKey: CarbonOverlayHotKey(), presenter: GameOverlayPanelPresenter(),
             toaster: OverlayToastPanelPresenter(), notifier: SteamInviteNotifier(),
             frontmost: { NSWorkspace.shared.frontmostApplication.map(OverlayApplication.init) },
-            voile: ObeliskLocations.live.voile, observesActivations: true, defaults: .standard
+            voile: ObeliskLocations.live.voile, observesActivations: true
         )
     }
 
@@ -131,7 +129,7 @@ final class GameOverlayController {
     var shortcut: OverlayShortcut {
         didSet {
             guard shortcut != oldValue else { return }
-            shortcut.save(in: environment.defaults)
+            shortcut.save(in: defaults)
             environment.hotKey.unregister()
             updateHotKey()
         }
@@ -154,6 +152,8 @@ final class GameOverlayController {
     @ObservationIgnored var showLibrary: @MainActor () -> Void = {}
 
     @ObservationIgnored private let environment: GameOverlayEnvironment
+    /// Where the shortcut is kept.
+    @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private var voileMatch: GameApplicationMatch?
     /// The game's application last in front, whose screen the overlay covers.
     @ObservationIgnored private var gameApplication: OverlayApplication?
@@ -167,12 +167,14 @@ final class GameOverlayController {
     /// What the Steam game was last told of the overlay, in order.
     @ObservationIgnored private var steamNotice: Task<Void, Never>?
 
-    init(steam: SteamModel, epic: EpicModel, gog: GogModel, environment: GameOverlayEnvironment = .live) {
+    init(steam: SteamModel, epic: EpicModel, gog: GogModel, defaults: UserDefaults = .standard,
+         environment: GameOverlayEnvironment = .live) {
         self.steam = steam
         self.epic = epic
         self.gog = gog
         self.environment = environment
-        shortcut = OverlayShortcut(defaults: environment.defaults)
+        self.defaults = defaults
+        shortcut = OverlayShortcut(defaults: defaults)
         if environment.observesActivations {
             activations = NSWorkspace.shared.notificationCenter.addObserver(
                 forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
@@ -281,7 +283,7 @@ final class GameOverlayController {
         hide(returningFocus: true)
     }
 
-    /// The player's Shift-Tab.
+    /// The player's shortcut.
     func toggle() {
         if isPresented { hide() } else { present(.home, userInitiated: true) }
     }
@@ -523,7 +525,7 @@ final class GameOverlayController {
         follow(running)
     }
 
-    /// A game that stops running takes its overlay and its Shift-Tab along.
+    /// A game that stops running takes its overlay and its shortcut along.
     private func follow(_ running: OverlaySession?) {
         guard running?.id != session?.id else {
             if running != session { session = running }

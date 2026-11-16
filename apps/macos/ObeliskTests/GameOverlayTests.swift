@@ -42,10 +42,10 @@ final class GameOverlayTests: XCTestCase {
         XCTAssertEqual(fixture.hotKey.shortcut, .shiftTab)
 
         // Chosen while the game is in front, the new keys take the hot key at once.
-        let optionTab = OverlayShortcut(keyCode: 48, modifiers: 0x0800, key: "")
+        let optionTab = OverlayShortcut(keyCode: 48, modifiers: 0x0800, key: "⇥")
         overlay.shortcut = optionTab
         XCTAssertEqual(fixture.hotKey.shortcut, optionTab)
-        XCTAssertEqual(optionTab.name, "⌥⇥")
+        XCTAssertEqual(OverlayShortcut(defaults: fixture.defaults), optionTab)
         XCTAssertEqual(overlay.hint("ui.overlay.closeHint", chosen: "ui.overlay.closeHint_keys"),
                        L10n.string("ui.overlay.closeHint_keys", "⌥⇥"))
         fixture.hotKey.press()
@@ -53,19 +53,18 @@ final class GameOverlayTests: XCTestCase {
         fixture.hotKey.press()
         XCTAssertFalse(overlay.isPresented)
 
-        // Voile's Wine only tells of Shift-Tab, which is the game's again.
+        // Voile's Wine only tells of Shift-Tab, which no longer opens the overlay.
         overlay.overlayKeyPressed(in: Self.game)
         XCTAssertFalse(overlay.isPresented)
+    }
 
-        // Kept from one launch to the next; Shift-Tab is kept as no choice.
-        let suite = "ObeliskTests.Overlay.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
+    @MainActor
+    func testTheShortcutIsKeptFromOneLaunchToTheNextAndShiftTabAsNoChoice() {
+        let defaults = isolatedDefaults()
         XCTAssertEqual(OverlayShortcut(defaults: defaults), .shiftTab)
         let controlF8 = OverlayShortcut(keyCode: 100, modifiers: 0x1000, key: "F8")
         controlF8.save(in: defaults)
         XCTAssertEqual(OverlayShortcut(defaults: defaults), controlF8)
-        XCTAssertEqual(controlF8.name, "⌃F8")
         OverlayShortcut.shiftTab.save(in: defaults)
         XCTAssertNil(defaults.object(forKey: "overlay.shortcut"))
     }
@@ -327,6 +326,8 @@ final class OverlayFixture {
     let epicSessions = EpicGameSessions()
     let gogSessions = GogGameSessions()
     let voile: URL
+    /// The test's own, where the overlay keeps its shortcut.
+    let defaults = isolatedDefaults()
     /// The application in front, as the overlay asks.
     var frontmost: OverlayApplication? {
         get { front.application }
@@ -350,7 +351,7 @@ final class OverlayFixture {
         self.front = front
         presenter.showsPanel = showsPanel
         app = AppModel(
-            directory: directory, steam: steam,
+            directory: directory, defaults: defaults, steam: steam,
             epic: EpicModel(directory: directory, keychain: MemoryStore<WebAccountCredentials>(nil), gameSessions: epicSessions),
             gog: GogModel(directory: directory, keychain: MemoryStore<WebAccountCredentials>(nil), gameSessions: gogSessions),
             overlay: GameOverlayEnvironment(hotKey: hotKey, presenter: presenter, toaster: toaster,
