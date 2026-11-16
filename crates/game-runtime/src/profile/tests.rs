@@ -117,7 +117,6 @@ fn macos_s_game_mode_stays_off_only_for_a_game_whose_entry_says_so() {
     assert!(by_id(ROCKET_LEAGUE).game_mode, "an entry that does not say");
     let off = entry_with("game_mode", Some(json!(false))).unwrap();
     assert_eq!(off.game_mode, Some(false));
-    assert!(entry_with("game_mode", Some(json!("off"))).is_none());
 }
 
 #[test]
@@ -185,6 +184,11 @@ fn an_entry_that_sets_what_a_profile_may_not_is_left_out() {
             "a release that is no version",
             "minimum_voile",
             Some(json!("latest")),
+        ),
+        (
+            "a Game Mode that is no bool",
+            "game_mode",
+            Some(json!("off")),
         ),
     ] {
         assert!(entry_with(key, value).is_none(), "{what}");

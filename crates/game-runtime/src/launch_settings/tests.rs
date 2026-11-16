@@ -323,7 +323,7 @@ fn a_render_resolution_the_linux_engine_offers_applies_and_is_kept_but_all_pixel
 }
 
 #[test]
-fn only_the_linux_engine_keeps_game_mode_off_and_only_off_is_kept() {
+fn only_the_linux_engine_keeps_game_mode_off_and_only_off_is_kept_where_the_profile_leaves_it_on() {
     let off = |engine| Choices {
         engine: Some(engine),
         game_mode: Some(false),

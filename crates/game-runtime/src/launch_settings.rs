@@ -359,7 +359,10 @@ impl Choices {
                 .render_percent
                 .filter(|percent| offered.offers_render_percent(*percent))
                 .unwrap_or(FULL_RENDER_PERCENT),
-            game_mode: !offered.game_mode || self.game_mode.unwrap_or(profile.game_mode),
+            game_mode: self
+                .game_mode
+                .filter(|_| offered.game_mode)
+                .unwrap_or(default_game_mode(profile, engine)),
             locale: None,
         }
     }
@@ -407,7 +410,8 @@ fn default_graphics(profile: &Profile, engine: Engine) -> Graphics {
 
 /// Whether macOS may turn its Game Mode on for `profile`'s game on `engine`
 /// without choices: always on an engine that cannot keep it off, else as its
-/// profile says.
+/// profile says, whichever engine the profile names: Game Mode slows the
+/// game, not one engine.
 fn default_game_mode(profile: &Profile, engine: Engine) -> bool {
     !offer(engine).game_mode || profile.game_mode
 }
