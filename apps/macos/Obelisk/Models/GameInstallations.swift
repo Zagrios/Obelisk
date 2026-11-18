@@ -507,8 +507,8 @@ final class GameInstallations<Store: InstallationStorefront> {
         if let choice = buildChoice(of: shown) {
             shown.platform = choice.chosen
             shown.choosesBuild = true
-            shown.installsChosenBuild = chosenBuild?.game == shown.game
-                || (receipts + incompleteReceipts).contains { $0.gameID == shown.game }
+            shown.installsChosenBuild = chosenBuild?.game == shown.game || !choice.installed.isEmpty
+                || incompleteReceipts.contains { $0.gameID == shown.game }
         }
         return shown
     }
