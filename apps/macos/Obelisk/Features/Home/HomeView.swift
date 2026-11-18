@@ -21,13 +21,14 @@ struct HomeView: View {
 
     /// A storefront's game whose page Home opened.
     private enum OpenGame {
-        case steam(SteamGame), epic(EpicGame), gog(GogGame)
+        case steam(SteamGame), epic(EpicGame), gog(GogGame), custom(CustomGame)
 
         var title: String {
             switch self {
             case let .steam(game): game.name
             case let .epic(game): game.title
             case let .gog(game): game.title
+            case let .custom(game): game.title
             }
         }
 
@@ -36,6 +37,7 @@ struct HomeView: View {
             case .steam: .steam
             case .epic: .epic
             case .gog: .gog
+            case .custom: .custom
             }
         }
     }
@@ -50,6 +52,7 @@ struct HomeView: View {
         case .steam: return opened(model.steam.selectedGame).map(OpenGame.steam)
         case .epic: return opened(model.epic.selectedGame).map(OpenGame.epic)
         case .gog: return opened(model.gog.selectedGame).map(OpenGame.gog)
+        case .custom: return model.custom.games.first(where: { $0.id == id.game }).map(OpenGame.custom)
         default: return nil
         }
     }
@@ -117,6 +120,9 @@ struct HomeView: View {
                 heroArtwork: GogView.heroArtwork(game), cover: GogView.cover(game)
             ))
             .id(game.id)
+        case let .custom(game):
+            CustomGameDetailView(model: model.custom, game: game)
+                .id(game.id)
         }
     }
 
@@ -233,8 +239,9 @@ private struct HomePage: View {
         let steam: HomeLibrary
         let epic: HomeLibrary
         let gog: HomeLibrary
+        let custom: HomeLibrary
 
-        var all: [HomeLibrary] { [steam, epic, gog] }
+        var all: [HomeLibrary] { [steam, epic, gog, custom] }
 
         /// The library of a storefront's section; Home and Settings have none.
         subscript(section: LibrarySection) -> HomeLibrary? {
@@ -242,6 +249,7 @@ private struct HomePage: View {
             case .steam: steam
             case .epic: epic
             case .gog: gog
+            case .custom: custom
             case .home, .settings: nil
             }
         }
@@ -254,7 +262,8 @@ private struct HomePage: View {
             epic: model.epic.homeLibrary(in: .epic, cover: EpicView.cover, heroArtwork: EpicView.heroArtwork,
                                          heroLogo: EpicView.heroLogo),
             gog: model.gog.homeLibrary(in: .gog, cover: GogView.cover, heroArtwork: GogView.heroArtwork,
-                                       heroLogo: GogView.heroLogo)
+                                       heroLogo: GogView.heroLogo),
+            custom: model.custom.homeLibrary()
         )
     }
 
@@ -267,6 +276,7 @@ private struct HomePage: View {
                                    heroArtwork: EpicView.heroArtwork, heroLogo: EpicView.heroLogo),
             model.gog.homeResults(matching: query, in: .gog, cover: GogView.cover,
                                   heroArtwork: GogView.heroArtwork, heroLogo: GogView.heroLogo),
+            model.custom.homeResults(matching: query),
         ], title: \.title, rank: { _ in nil })
     }
 

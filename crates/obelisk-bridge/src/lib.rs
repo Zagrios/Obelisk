@@ -40,6 +40,8 @@ mod presence;
 pub use presence::OnlineStatus;
 mod downloads;
 pub use downloads::*;
+mod custom;
+pub use custom::*;
 mod library_cache;
 pub use library_cache::{CachedEpicGame, CachedGogGame, CachedSteamGame, GameLaunch, LibraryCache};
 
