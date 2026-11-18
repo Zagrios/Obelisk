@@ -682,8 +682,8 @@ private struct OverlayShortcutRecorder: View {
         .accessibilityHint(L10n.string("ui.settings.overlay_shortcut_help"))
         .accessibilityIdentifier("settings-overlay-shortcut")
         .onDisappear(perform: stop)
-        // A wait its player walked away from ends: a later key press in Obelisk is not the shortcut.
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in stop() }
+        // A wait its player walked away from ends: a later key press in Obelisk is not the shortcut. Leaving
+        // Obelisk resigns its key window too.
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in stop() }
     }
 
@@ -712,8 +712,9 @@ private struct OverlayShortcutRecorder: View {
     }
 
     private func stop() {
-        if let monitor { NSEvent.removeMonitor(monitor) }
-        monitor = nil
+        guard let monitor else { return }
+        NSEvent.removeMonitor(monitor)
+        self.monitor = nil
     }
 }
 
