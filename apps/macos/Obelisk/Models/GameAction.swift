@@ -291,7 +291,7 @@ struct GameActions<Store: InstallationStorefront> {
         case .download:
             guard let offer = selection.offer else { return {} }
             let game = selection.game
-            let build = selection.choosesBuild ? selection.platform : nil
+            let build = selection.installsChosenBuild ? selection.platform : nil
             return { installations.install(offer, of: game, build: build) }
         case .running, .queued, .transferring, .waiting, .step:
             return {}

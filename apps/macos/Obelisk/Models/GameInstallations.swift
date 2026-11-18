@@ -68,6 +68,11 @@ struct InstallationSelection<Store: InstallationStorefront> {
     /// Whether `platform` is the build its player chose on the game's page:
     /// the game's other build then never stands in for it.
     var choosesBuild = false
+    /// Whether a new installation is of `platform` and no other build: its
+    /// player chose it, or a build of the game is on disk already. The build
+    /// the page merely opened on gives way to the storefront's pick, as a
+    /// Mac build that does not run natively does to the Windows one.
+    var installsChosenBuild = false
 }
 
 /// The builds of the game on screen its player chooses between, on its page:
@@ -502,6 +507,8 @@ final class GameInstallations<Store: InstallationStorefront> {
         if let choice = buildChoice(of: shown) {
             shown.platform = choice.chosen
             shown.choosesBuild = true
+            shown.installsChosenBuild = chosenBuild?.game == shown.game || !choice.installed.isEmpty
+                || incompleteReceipts.contains { $0.gameID == shown.game }
         }
         return shown
     }
