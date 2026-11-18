@@ -1,12 +1,13 @@
 import AppKit
+import Carbon.HIToolbox
 import SwiftUI
 import UniformTypeIdentifiers
 
 /// Obelisk's settings: a hero drawn from Obelisk's icon, its prism and the
-/// stores' beams, reaching under the title bar band; then the appearance, the
-/// language, the games, the storage, the storefronts and help, each a card of rows
-/// as a game page's. The
-/// bar's backdrop and the page's title show once the hero scrolled under it.
+/// stores' beams, reaching under the title bar band; then the ways to support
+/// Obelisk, the appearance, the language, the games, the storage, the
+/// storefronts and help, each a card of rows as a game page's. The bar's
+/// backdrop and the page's title show once the hero scrolled under it.
 struct SettingsView: View {
     @Bindable var model: AppModel
     @State private var showsBackdrop = false
@@ -24,6 +25,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 0) {
                 SettingsHero(height: Self.heroHeight)
                 VStack(alignment: .leading, spacing: 34) {
+                    ObeliskCard { support }
                     GamePageSection(title: L10n.string("ui.settings.appearance")) {
                         ObeliskCard {
                             AppearancePicker(selection: $model.appearance)
@@ -70,8 +72,23 @@ struct SettingsView: View {
                         ObeliskCard {
                             installUpdates
                             ObeliskCardDivider()
+                            betaReleases
+                            switch model.updates.returnStanding {
+                            case .ready(let release):
+                                ObeliskCardDivider()
+                                releaseReturn(release.displayVersion)
+                                    .transition(.opacity)
+                            case .unreachable(let release):
+                                ObeliskCardDivider()
+                                releaseUnreachable(release)
+                                    .transition(.opacity)
+                            case nil:
+                                EmptyView()
+                            }
+                            ObeliskCardDivider()
                             version
                         }
+                        .animation(.easeInOut(duration: 0.2), value: model.updates.returnStanding)
                     }
                     GamePageSection(title: L10n.string("ui.settings.help")) {
                         ObeliskCard {
@@ -117,6 +134,18 @@ struct SettingsView: View {
         .errorAlert(L10n.string("ui.settings.games_folder_failed"), message: Bindable(model.gamesFolder).failure)
     }
 
+    /// Opens the ways to support Obelisk, which it showed by itself once.
+    private var support: some View {
+        ObeliskRow(title: L10n.string("ui.support.title", AppIdentity.name)) {
+            SymbolTile(name: "heart.fill", colors: TileColors.red)
+        } detail: {
+            Text(L10n.string("ui.support.message", AppIdentity.name))
+        } accessory: {
+            GlassCapsuleButton(title: L10n.string("ui.support.open"), systemImage: "heart",
+                               identifier: "settings-support", action: model.support.present)
+        }
+    }
+
     /// Asks for the restart a newly chosen language waits for.
     private var languageRestart: some View {
         let language = model.language.resolved(system: AppLanguage.systemLanguages)
@@ -124,7 +153,7 @@ struct SettingsView: View {
             SymbolTile(name: "arrow.clockwise", colors: TileColors.violet)
         } detail: {
             Text(L10n.string("ui.settings.language_restart", AppIdentity.name,
-                             L10n.locale.localizedString(forLanguageCode: language) ?? AppLanguage.name(of: language)))
+                             L10n.locale.localizedString(forIdentifier: language) ?? AppLanguage.name(of: language)))
         } accessory: {
             AccentCapsuleButton(title: L10n.string("ui.settings.restart"), identifier: "settings-restart",
                                  action: { model.restart() })
@@ -203,12 +232,7 @@ struct SettingsView: View {
         } detail: {
             Text(L10n.string("ui.settings.overlay_description", AppIdentity.name))
         } accessory: {
-            HStack(spacing: 5) {
-                KeyCap(text: L10n.string("ui.settings.key_shift"))
-                KeyCap(text: L10n.string("ui.settings.key_tab"))
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(L10n.string("ui.settings.overlay_shortcut"))
+            OverlayShortcutRecorder(shortcut: Bindable(model.overlay).shortcut)
         }
     }
 
@@ -224,6 +248,48 @@ struct SettingsView: View {
                 .labelsHidden()
                 .pointerCursor()
                 .accessibilityIdentifier("settings-install-updates")
+        }
+    }
+
+    private var betaReleases: some View {
+        ObeliskRow(title: L10n.string("ui.settings.beta_releases")) {
+            SymbolTile(name: "flask.fill", colors: TileColors.gold)
+        } detail: {
+            Text(L10n.string("ui.settings.beta_releases_description", AppIdentity.name))
+        } accessory: {
+            Toggle(L10n.string("ui.settings.beta_releases"), isOn: Bindable(model.updates).takesBetaReleases)
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .pointerCursor()
+                .accessibilityIdentifier("settings-beta-releases")
+        }
+    }
+
+    /// The latest release Obelisk goes back to when it quits, which a restart
+    /// puts in place now.
+    private func releaseReturn(_ release: String) -> some View {
+        ObeliskRow(title: L10n.string("ui.settings.release_return_title", AppIdentity.name, release)) {
+            SymbolTile(name: "arrow.uturn.backward", colors: TileColors.gold)
+        } detail: {
+            Text(L10n.string("ui.settings.release_return", AppIdentity.name))
+        } accessory: {
+            AccentCapsuleButton(title: L10n.string("ui.settings.restart"), identifier: "settings-release-return",
+                                 action: { model.restart() })
+        }
+    }
+
+    /// The latest release Obelisk cannot put back by itself where it is,
+    /// which the player downloads and installs.
+    private func releaseUnreachable(_ release: FeedRelease) -> some View {
+        ObeliskRow(title: L10n.string("ui.settings.release_return_title", AppIdentity.name, release.displayVersion)) {
+            SymbolTile(name: "exclamationmark.triangle.fill", colors: TileColors.gold)
+        } detail: {
+            Text(L10n.string("ui.settings.release_return_unwritable", AppIdentity.name, release.displayVersion))
+        } accessory: {
+            GlassCapsuleButton(title: L10n.string("model.game.download"), systemImage: "arrow.down",
+                                identifier: "settings-release-download") {
+                NSWorkspace.shared.open(release.url)
+            }
         }
     }
 
@@ -588,6 +654,65 @@ private struct KeyCap: View {
     }
 }
 
+/// The overlay's shortcut as key caps. A click on them waits for the next
+/// key press, which becomes the shortcut: Escape or a click leaves it as it
+/// was, Delete brings Shift-Tab back, and a key that cannot be it only beeps.
+private struct OverlayShortcutRecorder: View {
+    @Binding var shortcut: OverlayShortcut
+    @State private var monitor: Any?
+
+    var body: some View {
+        Button {
+            if monitor == nil { record() }
+        } label: {
+            HStack(spacing: 5) {
+                if monitor == nil {
+                    ForEach(shortcut.caps, id: \.self) { KeyCap(text: $0) }
+                } else {
+                    KeyCap(text: L10n.string("ui.settings.overlay_shortcut_recording"))
+                }
+            }
+        }
+        .obeliskButtonStyle(.plain)
+        .pointerCursor()
+        .help(L10n.string("ui.settings.overlay_shortcut_help"))
+        .accessibilityLabel(L10n.string("ui.settings.overlay"))
+        .accessibilityValue(shortcut == .shiftTab ? L10n.string("ui.settings.overlay_shortcut") : shortcut.name)
+        .accessibilityHint(L10n.string("ui.settings.overlay_shortcut_help"))
+        .accessibilityIdentifier("settings-overlay-shortcut")
+        .onDisappear(perform: stop)
+    }
+
+    private func record() {
+        let events: NSEvent.EventTypeMask = [.keyDown, .leftMouseDown, .rightMouseDown]
+        monitor = NSEvent.addLocalMonitorForEvents(matching: events) { event in
+            MainActor.assumeIsolated {
+                if event.type == .keyDown { take(event) } else { stop() }
+            }
+            // The key press, or the click that ends the wait, is the recorder's alone.
+            return nil
+        }
+    }
+
+    /// Escape and Delete alone are no shortcut, so they end the wait.
+    private func take(_ event: NSEvent) {
+        if let chosen = OverlayShortcut(event) {
+            shortcut = chosen
+        } else if [kVK_Delete, kVK_ForwardDelete].contains(Int(event.keyCode)) {
+            shortcut = .shiftTab
+        } else if Int(event.keyCode) != kVK_Escape {
+            NSSound.beep()
+            return
+        }
+        stop()
+    }
+
+    private func stop() {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+    }
+}
+
 /// The three appearances as small windows of Obelisk, the chosen one ringed in
 /// the accent color; the ring slides to a new choice.
 private struct AppearancePicker: View {
@@ -652,7 +777,8 @@ private struct LanguagePicker: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(spacing: 20) {
+        // From the top: a name on two lines, as "Português (Brasil)", keeps its flag level with the others.
+        HStack(alignment: .top, spacing: 20) {
             ForEach(AppLanguage.choices) { option($0) }
         }
         .accessibilityElement(children: .contain)

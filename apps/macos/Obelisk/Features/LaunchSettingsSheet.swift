@@ -192,7 +192,13 @@ struct LaunchSettingsSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     ObeliskCard { argumentsRow }
-                    ObeliskCard { engineRow(settings) }
+                    ObeliskCard {
+                        engineRow(settings)
+                        if model.engineOffer?.gameMode == true {
+                            ObeliskCardDivider()
+                            gameModeRow(settings)
+                        }
+                    }
                     SheetSection(title: L10n.string("ui.launch_settings.cpu")) {
                         ObeliskCard { translatorRow }
                     }
@@ -275,6 +281,22 @@ struct LaunchSettingsSheet: View {
                         .tag(offer.engine)
                 }
             }
+        }
+    }
+
+    private func gameModeRow(_ settings: LaunchSettings) -> some View {
+        ObeliskRow(title: L10n.string("ui.launch_settings.game_mode")) {
+            SymbolTile(name: "gamecontroller.fill", colors: TileColors.green)
+        } detail: {
+            Text(L10n.string("ui.launch_settings.game_mode_detail"))
+        } accessory: {
+            Toggle(L10n.string("ui.launch_settings.game_mode"),
+                   isOn: Binding(get: { settings.gameMode },
+                                 set: { allowed in model.choose { $0.gameMode = allowed } }))
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .pointerCursor()
+                .accessibilityIdentifier("launch-settings-game-mode")
         }
     }
 

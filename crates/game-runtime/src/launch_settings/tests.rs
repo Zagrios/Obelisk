@@ -21,6 +21,8 @@ const FALL_GUYS: Game<'static> = Game::Epic {
     namespace: "50118b7f954e450f8823df1614b24e80",
     app_name: "0a2d9f6403244d12969e11da6713137b",
 };
+/// A game whose profile keeps macOS's Game Mode off, on the Linux engine.
+const HELLDIVERS_2: Game<'static> = Game::Steam { app_id: 553850 };
 /// Rocket League's Steam build, which reads its language from its command
 /// line as its Epic one does.
 const ROCKET_LEAGUE_ON_STEAM: Game<'static> = Game::Steam { app_id: 252950 };
@@ -115,6 +117,7 @@ fn every_kind_of_choices() -> [Choices; 5] {
             ray_tracing: Some(true),
             render_percent: Some(100),
             performance_hud: false,
+            game_mode: Some(true),
         },
         Choices {
             arguments: Some("-dx11 \"+exec autoexec.cfg\"".into()),
@@ -317,6 +320,62 @@ fn a_render_resolution_the_linux_engine_offers_applies_and_is_kept_but_all_pixel
     let view = chosen(OTHER, linux(100));
     assert_eq!(view.settings.render_percent, 100);
     assert_eq!(view.choices.render_percent, None);
+}
+
+#[test]
+fn only_the_linux_engine_keeps_game_mode_off_and_only_off_is_kept_where_the_profile_leaves_it_on() {
+    let off = |engine| Choices {
+        engine: Some(engine),
+        game_mode: Some(false),
+        ..Choices::default()
+    };
+
+    let linux = chosen(OTHER, off(Engine::Linux));
+    assert!(!linux.settings.game_mode);
+    assert_eq!(linux.choices, off(Engine::Linux));
+
+    let rosetta = chosen(OTHER, off(Engine::Rosetta));
+    assert!(rosetta.settings.game_mode);
+    assert_eq!(rosetta.choices, Choices::default());
+
+    let on = Choices {
+        game_mode: Some(true),
+        ..off(Engine::Linux)
+    };
+    let view = chosen(OTHER, on);
+    assert!(view.settings.game_mode);
+    assert_eq!(view.choices.game_mode, None);
+}
+
+#[test]
+fn a_profile_keeps_game_mode_off_until_its_player_turns_it_on_and_only_on_is_kept() {
+    let with = |game_mode| Choices {
+        game_mode,
+        ..Choices::default()
+    };
+
+    let untouched = chosen(HELLDIVERS_2, Choices::default());
+    assert!(!untouched.settings.game_mode);
+    assert_eq!(untouched.choices, Choices::default());
+
+    let off = chosen(HELLDIVERS_2, with(Some(false)));
+    assert!(!off.settings.game_mode);
+    assert_eq!(off.choices, Choices::default(), "the profile already says");
+
+    let on = chosen(HELLDIVERS_2, with(Some(true)));
+    assert!(on.settings.game_mode);
+    assert_eq!(on.choices, with(Some(true)));
+
+    // Rosetta's Wine cannot keep it off, whatever the profile says.
+    let rosetta = chosen(
+        HELLDIVERS_2,
+        Choices {
+            engine: Some(Engine::Rosetta),
+            ..Choices::default()
+        },
+    );
+    assert!(rosetta.settings.game_mode);
+    assert_eq!(rosetta.choices.game_mode, None);
 }
 
 #[test]

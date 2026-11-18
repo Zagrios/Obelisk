@@ -10,7 +10,7 @@ use cloud_vault::{Manifest, Preferences, RemoteView, Vault};
 use epic_kit::{
     EpicError,
     client::Client as EpicClient,
-    cloud::{CloudGame, CloudRules, ResolvedCloudRules},
+    cloud::{CloudCatalog, CloudGame, CloudRules, ResolvedCloudRules},
 };
 use std::{collections::BTreeMap, future::Future};
 mod remote;
@@ -88,6 +88,51 @@ impl sync::Failure for Error {
     }
 }
 
+/// The note of why the game under `config` has no Cloud.
+fn cloud_note(config: &Configuration) -> std::path::PathBuf {
+    crate::diagnostics::cloud_note(
+        &config.home,
+        crate::diagnostics::Game::Epic(&config.app_name),
+    )
+}
+
+/// Writes in the diagnostics of the game under `config` why it has no Cloud
+/// here: its catalog names no save folder for its build, or `rules` Obelisk
+/// cannot follow. `attributes` are what the catalog says of a Cloud. A
+/// failure to write it changes nothing.
+fn note_unavailable(
+    config: &Configuration,
+    rules: Option<&CloudRules>,
+    attributes: &BTreeMap<String, String>,
+) {
+    use std::fmt::Write as _;
+    let why = match rules {
+        None => "the catalog names no Cloud save folder for this build",
+        Some(_) => "Obelisk cannot follow the Cloud save rules",
+    };
+    let mut note = format!(
+        "Epic Cloud is unavailable for {} ({}): {why}.\nBuild: {:?}\n",
+        config.app_name, config.namespace, config.platform
+    );
+    if let Some(rules) = rules {
+        let _ = writeln!(note, "Rules: {rules:?}");
+    }
+    note.push_str("Catalog attributes naming a Cloud:\n");
+    for (name, value) in attributes {
+        let _ = writeln!(note, "  {name} = {value}");
+    }
+    if attributes.is_empty() {
+        note.push_str("  none\n");
+    }
+    let file = cloud_note(config);
+    if file
+        .parent()
+        .is_some_and(|folder| crate::files::private_directory(folder).is_ok())
+    {
+        let _ = obelisk_core::write_atomic(&file, note.as_bytes());
+    }
+}
+
 impl<R: CloudRemote> Storefront for Adapter<R> {
     type Failure = Error;
     type Record = Context;
@@ -142,7 +187,7 @@ impl<R: CloudRemote> Storefront for Adapter<R> {
         Ok(())
     }
     async fn rules(&mut self, _: &mut (), vault: &mut Vault, _: bool) -> Result<Availability> {
-        let rules = self
+        let catalog = self
             .api
             .cloud_configuration(
                 &self.config.namespace,
@@ -151,18 +196,25 @@ impl<R: CloudRemote> Storefront for Adapter<R> {
                 self.config.platform,
             )
             .await?;
-        let Some(rules) = rules else {
-            return Ok(Availability::Unavailable(UnavailableReason::Unsupported));
+        let rules = match catalog.rules {
+            Some(rules)
+                if supports_rules(
+                    &self.config,
+                    &self.account,
+                    &rules,
+                    vault,
+                    self.context.is_some(),
+                )? =>
+            {
+                rules
+            }
+            rules => {
+                note_unavailable(&self.config, rules.as_ref(), &catalog.attributes);
+                return Ok(Availability::Unavailable(UnavailableReason::Unsupported));
+            }
         };
-        if !supports_rules(
-            &self.config,
-            &self.account,
-            &rules,
-            vault,
-            self.context.is_some(),
-        )? {
-            return Ok(Availability::Unavailable(UnavailableReason::Unsupported));
-        }
+        // A game with Cloud now needs no note of why it had none.
+        let _ = std::fs::remove_file(cloud_note(&self.config));
         // Reinterpreting an existing account snapshot under new save rules can
         // turn unselected files into deletions. Require a dedicated conversion.
         if self

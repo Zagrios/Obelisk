@@ -18,6 +18,18 @@ pub struct LibraryArtwork {
     /// The app whose artwork stands in for the game's missing images, such
     /// as Rust's for its staging branch.
     pub parent: Option<u32>,
+    /// What the app is when not a full game, which its cover says.
+    pub kind: Option<AppKind>,
+}
+
+/// What the library lists beside full games, as Steam types it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AppKind {
+    Demo,
+    /// A beta its name calls a playtest, as Steam's playtests are named.
+    Playtest,
+    /// Any other beta, such as an open beta or a game's beta branch.
+    Beta,
 }
 
 /// The artwork `pics`, a game's whole PICS app info, names in `language`, or
@@ -38,7 +50,26 @@ pub fn library_artwork(pics: &Value, language: &str) -> LibraryArtwork {
         logo: image("library_logo"),
         header: image("library_header").or_else(|| localized(&common["header_image"])),
         parent: positive(&common["parent"]).and_then(|parent| u32::try_from(parent).ok()),
+        kind: kind(common),
     }
+}
+
+/// What `common` says the app is when not a full game. Steam types a
+/// playtest as a beta, and names it one.
+fn kind(common: &Value) -> Option<AppKind> {
+    let kind = common["type"].as_str()?;
+    if kind.eq_ignore_ascii_case("demo") {
+        return Some(AppKind::Demo);
+    }
+    if !kind.eq_ignore_ascii_case("beta") {
+        return None;
+    }
+    let name = common["name"].as_str().unwrap_or_default();
+    Some(if name.to_ascii_lowercase().contains("playtest") {
+        AppKind::Playtest
+    } else {
+        AppKind::Beta
+    })
 }
 
 /// A number of a game's PICS app info, which PICS mostly writes as text;
@@ -93,6 +124,7 @@ mod tests {
                 logo: Some("logo.png".into()),
                 header: Some("31bac6/library_header.jpg".into()),
                 parent: None,
+                kind: None,
             }
         );
         assert_eq!(
@@ -117,9 +149,23 @@ mod tests {
             library_artwork(&pics, "english"),
             LibraryArtwork {
                 parent: Some(252_490),
+                kind: Some(AppKind::Beta),
                 ..LibraryArtwork::default()
             }
         );
+    }
+
+    #[test]
+    fn a_demo_a_playtest_or_a_beta_says_so() {
+        for (kind, name, expected) in [
+            ("Demo", "Trials Rising Demo", Some(AppKind::Demo)),
+            ("Beta", "WARDOGS Playtest", Some(AppKind::Playtest)),
+            ("beta", "Open Beta", Some(AppKind::Beta)),
+            ("Game", "Playtest Simulator", None),
+        ] {
+            let pics = json!({ "common": { "type": kind, "name": name } });
+            assert_eq!(library_artwork(&pics, "english").kind, expected, "{name}");
+        }
     }
 
     #[test]

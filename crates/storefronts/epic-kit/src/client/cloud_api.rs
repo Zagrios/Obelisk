@@ -18,7 +18,7 @@ use super::{Client, endpoint, validate_identity};
 use crate::{
     EpicError,
     auth::{bounded_bytes, check_status, credential_free},
-    cloud::{CloudGame, CloudListing, CloudRules, codec, identity, relative_path},
+    cloud::{CloudCatalog, CloudGame, CloudListing, CloudRules, codec, identity, relative_path},
     content,
     content_manifest::{Chunk, ChunkGuid},
 };
@@ -100,7 +100,7 @@ impl Client {
         catalog_item_id: &str,
         app_name: &str,
         platform: Platform,
-    ) -> Result<Option<CloudRules>, EpicError> {
+    ) -> Result<CloudCatalog, EpicError> {
         validate_identity(namespace, catalog_item_id, app_name)?;
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]
@@ -131,7 +131,7 @@ impl Client {
                 .append_pair("locale", "en");
             let mut catalog: BTreeMap<String, Catalog> = self.api.get(url, &token).await?;
             let item = catalog.remove(catalog_item_id).ok_or(EpicError::Protocol)?;
-            CloudRules::from_attributes(&item.custom_attributes, platform)
+            CloudCatalog::from_attributes(&item.custom_attributes, platform)
         })
         .await
     }

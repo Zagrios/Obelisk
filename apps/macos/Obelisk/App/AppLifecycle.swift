@@ -5,6 +5,8 @@ import SwiftUI
 /// menu bar, as Steam does, so its Game sessions and Transfers go on. It really
 /// quits from its menu bar item, after stopping a running game, when macOS
 /// logs out, restarts or shuts down, or for Sparkle to install a new version.
+/// A latest release waiting to replace the pre-release it runs takes its
+/// place as it ends.
 @MainActor
 final class AppLifecycle: NSObject, NSApplicationDelegate {
     /// Asks the menu bar item, which can open windows, to show the library.
@@ -16,6 +18,8 @@ final class AppLifecycle: NSObject, NSApplicationDelegate {
     var games: (running: @MainActor () -> Bool, stop: @MainActor () async -> Void) = ({ false }, {})
     /// The library cache, whose last changes are still being written.
     var libraryCache: LibraryCache?
+    /// Obelisk's own updates, whose return to the latest release ends with it.
+    var updates: AppUpdates?
     /// Games are being stopped before Obelisk ends.
     private var stopping = false
     /// Obelisk is ending: its termination is let through.
@@ -29,7 +33,7 @@ final class AppLifecycle: NSObject, NSApplicationDelegate {
         // Windows processes froze on their own. None of them can belong to
         // this Obelisk yet.
         // The test host is no Obelisk of its own: it leaves every game alone.
-        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
+        if !AppIdentity.isTestHost {
             // The unified log a bug report carries then says how hot the Mac was.
             ThermalLog.shared.start()
             let locations = ObeliskLocations.live
@@ -67,6 +71,7 @@ final class AppLifecycle: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         libraryCache?.flush()
+        updates?.finishReturn()
         if reopens { Self.reopenOnceExited() }
     }
 
@@ -185,6 +190,7 @@ struct AppMenuBarLabel: View {
         Image("MenuBarIcon")
             .onAppear {
                 lifecycle.libraryCache = model.libraryCache
+                lifecycle.updates = model.updates
                 model.overlay.showLibrary = { lifecycle.show() }
                 model.restart = { lifecycle.restart() }
                 model.updates.quitToInstall = { install in lifecycle.update(install) }

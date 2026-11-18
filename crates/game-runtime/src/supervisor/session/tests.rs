@@ -206,8 +206,11 @@ fn helper(directory: &Path, helper: Helper) -> String {
         ),
         // A background process keeps the confirmation pipe open past exit.
         Helper::Unconfirmed => "/bin/sleep 2 &\nexit 7\n".into(),
-        // Within the reply window that follows reaping, not before it.
-        Helper::Late => "/bin/sleep 0.05 &\n".into(),
+        // A background shell keeps the confirmation pipe open until the
+        // game, which takes the helper's pid, has been reaped: its end then
+        // falls in the reply window that follows, without a guessed delay.
+        // It spins rather than sleeps, as a short sleep can outlast the window.
+        Helper::Late => "(while kill -0 $$; do :; done) 2>/dev/null &\n".into(),
     };
     let field = |name: &str| {
         format!(

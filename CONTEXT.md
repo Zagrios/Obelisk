@@ -11,11 +11,11 @@ One account-scoped attempt to install, verify or repair a game's files. Its life
 A record identifying a game installation whose required files were successfully installed. Partial download data is not an installation receipt.
 
 **Offer**:
-What a storefront says Obelisk can install of one game, with Steam's language, before any folder is chosen. The storefront picks its build as the Transfer starts: the Mac build when its game runs natively on Apple silicon, as its program's first bytes tell, else the Windows build. A Mac build its storefront refuses, or that holds what Obelisk cannot install, gives way to the Windows build like one whose game does not run natively; a failure that may pass, such as an outage, stops the Transfer instead. Until a download found that a Mac build's game does not run natively, the game's page shows the Mac build. A Mac build without an arm64 slice, Intel or 32-bit, is never installed, nor launched. A new installation starts from an offer; an installed game launches, updates and uninstalls from its Installation receipt alone.
+What a storefront says Obelisk can install of one game, with Steam's language, before any folder is chosen. The storefront picks its build as the Transfer starts: the Mac build when its game runs natively on Apple silicon, as its program's first bytes tell, else the Windows build. A Mac build its storefront refuses, or that holds what Obelisk cannot install, gives way to the Windows build like one whose game does not run natively; a failure that may pass, such as an outage, stops the Transfer instead. Until a download found that a Mac build's game does not run natively, the game's page shows the Mac build. A Mac build without an arm64 slice, Intel or 32-bit, is never installed, nor launched. Where the storefront offers both builds, the player chooses one on the game's page, and may install each beside the other: the Windows build is then taken without reading the Mac build, for a game whose Mac build its publisher left behind. A Mac build chosen there that the pick refuses installs nothing, nor leaves anything to resume: its Transfer fails, and the page then shows the Windows build, as for a game whose Mac build does not run natively. Of two installed builds, the library and an invitation play the one last played, and the page starts on it. A new installation starts from an offer; an installed game launches, updates and uninstalls from its Installation receipt alone.
 _Avoid_: download request, install target
 
 **Platform**:
-Which of a game's builds a Transfer installs, picked by the storefront as it starts, or an Installation receipt records: the Mac build, which runs natively, or the Windows build, which runs in Wine. Each storefront spells it its own way in its requests, receipts and folder names; Obelisk names it one way everywhere else.
+Which of a game's builds a Transfer installs, picked by the storefront as it starts unless the player chose the Windows build, or an Installation receipt records: the Mac build, which runs natively, or the Windows build, which runs in Wine. Each storefront spells it its own way in its requests, receipts and folder names; Obelisk names it one way everywhere else.
 _Avoid_: OS, os list (Steam's declared platforms, Linux included), macos/osx/Mac as values
 
 **Games folder**:
@@ -82,6 +82,10 @@ _Avoid_: redistributable (Steam's name for the package, not the run), dependency
 What Obelisk downloads beside a game's own files for it to run: Voile for a Windows build, Valve's Steam components for every Steam game. A Transfer gets the missing ones before the game's files, and a launch that still misses one gets it after its Admission, before its game is prepared. A launch that finds a newer Voile release asks the player there, with what it brings: they take it before the game starts, or skip it for that launch, unless the game needs it. A Voile release a newer one replaced goes only once no game of any storefront may still run from it.
 _Avoid_: dependency, prerequisite (a Prerequisite runs inside a Wine prefix)
 
+**Beta releases**:
+The player's choice, in Settings, to take the pre-releases of Obelisk and Voile too: GitHub releases published with the pre-release box ticked, the betas such as Obelisk 0.6.3.beta1 or Voile v26.3.0-26.beta1 that the Beta workflows build every two hours when main changed. Obelisk and Voile then each run the newest version, pre-release or release. Turned off, each goes back to its latest release: Obelisk as it next quits, having got and checked that release itself, since Sparkle never installs an older version; Voile at the next Windows launch, which leaves a pre-release in place as it leaves a withdrawn release.
+_Avoid_: beta channel (the feed's list Sparkle reads), nightly
+
 **Steam host**:
 The sandboxed process that holds a Steam game's Steam session beside it, run from Valve's Steam components: it signs in as the account, proves the game's license, and carries what the game asks of Steam, its overlays, invitations and purchases. Each Steam Game session has one; losing it never ends the game.
 _Avoid_: runtime (what Obelisk downloads), native runtime
@@ -127,7 +131,7 @@ Signing a storefront account out while its Game sessions may still run. It stops
 _Avoid_: sign-out cancel, logout kill
 
 **Game action**:
-What the player can do with one game of an account now, as its button shows it: download, resume or update it, launch it, wait for its queued Transfer, follow its Transfer, wait while it is uninstalled, launched or its session closes, follow a step outside any Transfer (a runtime its launch waits for, or a Cloud sync), or end its running game. A game's page and its library show the same action, except for an installed game whose storefront offers a newer build: the page offers the update alone, while the library launches it and the launch installs the update first. A Game session of another account is not this account's running game.
+What the player can do with one game of an account now, as its button shows it: download, resume or update it, launch it, wait for its queued Transfer, follow its Transfer, wait while it is uninstalled, launched or its session closes, follow a step outside any Transfer (a runtime its launch waits for, or a Cloud sync), or end its running game. A game's page and its library show the same action, except for an installed game whose storefront offers a newer build: the page offers the update alone, while the library launches it and the launch installs the update first; and for a game whose player chooses its build, whose page shows the action of the chosen build. A Game session of another account is not this account's running game.
 _Avoid_: primary action, card action
 
 **Update watch**:

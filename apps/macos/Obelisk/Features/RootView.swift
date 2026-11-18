@@ -51,6 +51,9 @@ struct RootView: View {
             BugReportSheet(model: report) { model.bugReport = nil }
         }
         .environment(\.reportBug) { model.reportBug($0) }
+        .sheet(isPresented: Bindable(model.support).isPresented) {
+            SupportSheet(model: model.support) { model.support.isPresented = false }
+        }
         .environment(model.estimates)
         .environment(model.steam.libraryArtwork)
         // A store belongs to the library it opened from.

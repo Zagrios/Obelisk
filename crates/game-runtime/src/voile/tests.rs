@@ -53,10 +53,16 @@ fn lay(root: &Path, folder: &str, manifest: &str) {
 
 /// The feed Obelisk read last, in `root`, offering `releases`.
 fn feed(root: &Path, releases: &str) {
+    feed_with_prereleases(root, releases, "");
+}
+
+/// The feed Obelisk read last, in `root`, offering `releases` and
+/// `prereleases`.
+fn feed_with_prereleases(root: &Path, releases: &str, prereleases: &str) {
     fs::create_dir_all(root).unwrap();
     fs::write(
         root.join(feed::KEPT),
-        format!(r#"{{"format": 1, "releases": [{releases}]}}"#),
+        format!(r#"{{"format": 1, "releases": [{releases}], "prereleases": [{prereleases}]}}"#),
     )
     .unwrap();
 }
@@ -91,7 +97,7 @@ fn the_checked_in_release_names_its_archive_and_obelisk_s_contract() {
 
 #[test]
 fn versions_order_by_their_numbers() {
-    assert_eq!(numbers("v26.3.0-16"), Some(vec![26, 3, 0, 16]));
+    assert_eq!(numbers("v26.3.0-16"), Some(vec![26, 3, 0, 16, 1, 0]));
     assert!(numbers("v26.3.0-10") > numbers("v26.3.0-9"));
     assert!(numbers("v26.4.0-1") > numbers("v26.3.0-16"));
     assert_eq!(numbers("current"), None);
@@ -99,6 +105,31 @@ fn versions_order_by_their_numbers() {
     assert!(is_version("v26.3.0-16"));
     assert!(!is_version("v26.3"));
     assert!(!is_version("26.3.0-16"));
+    assert!(!is_version("v26.3.0.1-16"));
+    assert!(!is_version("v26.3.0-+16"));
+    assert!(
+        !is_version("v26.3.0-16-dev2"),
+        "a local build is no release"
+    );
+}
+
+#[test]
+fn a_beta_comes_after_the_release_before_and_before_its_own() {
+    assert_eq!(numbers("v26.3.0-16.beta2"), Some(vec![26, 3, 0, 16, 0, 2]));
+    assert!(numbers("v26.3.0-15") < numbers("v26.3.0-16.beta1"));
+    assert!(numbers("v26.3.0-16.beta1") < numbers("v26.3.0-16.beta2"));
+    assert!(numbers("v26.3.0-16.beta9") < numbers("v26.3.0-16.beta10"));
+    assert!(numbers("v26.3.0-16.beta10") < numbers("v26.3.0-16"));
+    assert!(
+        !is_version("v26.3.0-16.beta1"),
+        "a profile names releases only"
+    );
+    assert!(is_beta("v26.3.0-16.beta1"));
+    assert!(!is_beta("v26.3.0-16"));
+    assert!(!is_beta("v26.3.0-16.beta"));
+    assert!(!is_version("v26.3.0-16.beta"));
+    assert!(!is_version("v26.3.0-16.betax"));
+    assert!(!is_version("v26.3.0-16.beta1.beta2"));
 }
 
 #[test]
@@ -159,7 +190,7 @@ fn a_withdrawn_release_runs_no_game_and_goes_with_the_others_replaced() {
 fn the_release_wanted_is_the_newest_the_feed_offers_for_obelisk_s_contract() {
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path();
-    assert_eq!(&wanted(&feed::offered(root)), release(), "no feed read yet");
+    assert_eq!(&Offer::read(root).wanted(), release(), "no feed read yet");
     feed(
         root,
         &[
@@ -170,7 +201,7 @@ fn the_release_wanted_is_the_newest_the_feed_offers_for_obelisk_s_contract() {
         ]
         .join(","),
     );
-    let wanted = wanted(&feed::offered(root));
+    let wanted = Offer::read(root).wanted();
     assert_eq!(wanted.version, "v1.0.0-3");
     assert_eq!(wanted.url, "https://example.invalid/voile-v1.0.0-3.tar.xz");
 }
@@ -385,4 +416,170 @@ fn the_development_linux_runtime_takes_precedence() {
     fs::write(root.join("current/linux/engine/fexdarwin-run"), "engine").unwrap();
     fs::write(root.join("current/linux/wine/bin/wine"), "wine").unwrap();
     assert_eq!(linux_runtime(&root), Some(root.join("current/linux")));
+}
+
+#[test]
+fn a_player_without_beta_releases_leaves_a_pre_release_for_the_newest_release() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    lay(root, "v1.0.0-2", r#"{"version": "v1.0.0-2"}"#);
+    feed_with_prereleases(
+        root,
+        &offered("v1.0.0-2", 1, None),
+        &noted("v1.0.0-3", "A pre-release"),
+    );
+    assert_eq!(
+        standing(root, None),
+        Standing::Current,
+        "nothing newer to take"
+    );
+    assert_eq!(
+        asks(root, Some("v1.0.0-3")),
+        None,
+        "a game that needs a pre-release runs in the newest release"
+    );
+
+    // The pre-release a player took while they took beta releases.
+    lay(root, "v1.0.0-3", r#"{"version": "v1.0.0-3"}"#);
+    assert_eq!(runtime(root), Some(root.join("v1.0.0-2")));
+    assert_eq!(linux_runtime(root), Some(root.join("v1.0.0-2/linux")));
+    remove_replaced(root);
+    assert_eq!(names(root), ["feed.json", "v1.0.0-2"]);
+
+    // Once the release before it is gone, a launch waits for the release.
+    fs::remove_dir_all(root.join("v1.0.0-2")).unwrap();
+    lay(root, "v1.0.0-3", r#"{"version": "v1.0.0-3"}"#);
+    assert_eq!(runtime(root), None);
+    assert_eq!(standing(root, None), Standing::Missing);
+    assert_eq!(Offer::read(root).wanted().version, "v1.0.0-2");
+}
+
+#[test]
+fn a_player_who_takes_beta_releases_runs_the_newest_release_or_pre_release() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    lay(root, "v1.0.0-2", r#"{"version": "v1.0.0-2"}"#);
+    feed_with_prereleases(
+        root,
+        &offered("v1.0.0-2", 1, None),
+        &[
+            offered("v1.0.0-5", 1, Some("breaks a game")),
+            noted("v1.0.0-4", "Newest pre-release"),
+            noted("v1.0.0-3", "Older pre-release"),
+        ]
+        .join(","),
+    );
+    take_prereleases(root, true).unwrap();
+    take_prereleases(root, true).unwrap();
+
+    let notes = |version: &str, notes: &str| Notes {
+        version: version.into(),
+        notes: notes.into(),
+    };
+    assert_eq!(
+        standing(root, None),
+        Standing::Outdated(Update {
+            version: "v1.0.0-4".into(),
+            required: false,
+            releases: vec![
+                notes("v1.0.0-4", "Newest pre-release"),
+                notes("v1.0.0-3", "Older pre-release"),
+            ],
+        })
+    );
+    assert_eq!(asks(root, Some("v1.0.0-4")), Some(true));
+
+    lay(root, "v1.0.0-4", r#"{"version": "v1.0.0-4"}"#);
+    assert_eq!(runtime(root), Some(root.join("v1.0.0-4")));
+    remove_replaced(root);
+    assert_eq!(names(root), ["feed.json", "prereleases", "v1.0.0-4"]);
+
+    // A release newer than every pre-release is the one wanted.
+    feed_with_prereleases(
+        root,
+        &[offered("v1.0.0-6", 1, None), offered("v1.0.0-2", 1, None)].join(","),
+        &offered("v1.0.0-4", 1, None),
+    );
+    assert_eq!(Offer::read(root).wanted().version, "v1.0.0-6");
+
+    // Turned off, the pre-release in place is left for the newest release.
+    take_prereleases(root, false).unwrap();
+    take_prereleases(root, false).unwrap();
+    assert_eq!(names(root), ["feed.json", "v1.0.0-4"]);
+    assert_eq!(runtime(root), None);
+    assert_eq!(standing(root, None), Standing::Missing);
+}
+
+#[test]
+fn a_pre_release_turned_into_a_release_runs_for_every_player() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    lay(root, "v1.0.0-3", r#"{"version": "v1.0.0-3"}"#);
+    feed_with_prereleases(
+        root,
+        &[offered("v1.0.0-3", 1, None), offered("v1.0.0-2", 1, None)].join(","),
+        "",
+    );
+    assert_eq!(runtime(root), Some(root.join("v1.0.0-3")));
+    assert_eq!(standing(root, None), Standing::Current);
+}
+
+#[test]
+fn a_player_who_takes_beta_releases_runs_the_newest_beta_until_its_release() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    lay(root, "v1.0.0-2", r#"{"version": "v1.0.0-2"}"#);
+    lay(root, "v1.0.0-3.beta2", r#"{"version": "v1.0.0-3.beta2"}"#);
+    feed_with_prereleases(
+        root,
+        &offered("v1.0.0-2", 1, None),
+        &[
+            offered("v1.0.0-3.beta10", 1, None),
+            offered("v1.0.0-3.beta2", 1, None),
+        ]
+        .join(","),
+    );
+    assert_eq!(runtime(root), Some(root.join("v1.0.0-2")), "betas off");
+    take_prereleases(root, true).unwrap();
+    assert_eq!(runtime(root), Some(root.join("v1.0.0-3.beta2")));
+    assert_eq!(Offer::read(root).wanted().version, "v1.0.0-3.beta10");
+    assert!(
+        matches!(standing(root, None), Standing::Outdated(update) if update.version == "v1.0.0-3.beta10")
+    );
+
+    // Its release comes after every beta of it.
+    feed_with_prereleases(
+        root,
+        &[offered("v1.0.0-3", 1, None), offered("v1.0.0-2", 1, None)].join(","),
+        &offered("v1.0.0-3.beta10", 1, None),
+    );
+    assert_eq!(Offer::read(root).wanted().version, "v1.0.0-3");
+}
+
+#[test]
+fn a_beta_the_feed_no_longer_lists_is_still_left_without_beta_releases() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    lay(root, "v1.0.0-2", r#"{"version": "v1.0.0-2"}"#);
+    lay(root, "v1.0.0-3.beta1", r#"{"version": "v1.0.0-3.beta1"}"#);
+    feed(root, &offered("v1.0.0-2", 1, None));
+    assert_eq!(runtime(root), Some(root.join("v1.0.0-2")));
+    remove_replaced(root);
+    assert_eq!(names(root), ["feed.json", "v1.0.0-2"]);
+
+    lay(root, "v1.0.0-3.beta1", r#"{"version": "v1.0.0-3.beta1"}"#);
+    take_prereleases(root, true).unwrap();
+    assert_eq!(runtime(root), Some(root.join("v1.0.0-3.beta1")));
+
+    // A beta turned into a release is one for every player.
+    take_prereleases(root, false).unwrap();
+    feed(
+        root,
+        &[
+            offered("v1.0.0-3.beta1", 1, None),
+            offered("v1.0.0-2", 1, None),
+        ]
+        .join(","),
+    );
+    assert_eq!(runtime(root), Some(root.join("v1.0.0-3.beta1")));
 }

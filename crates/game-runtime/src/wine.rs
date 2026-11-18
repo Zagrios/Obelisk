@@ -201,6 +201,9 @@ impl Config {
         if self.settings.render_percent != crate::launch_settings::FULL_RENDER_PERCENT {
             header.push_str(&format!(" render_percent={}", self.settings.render_percent));
         }
+        if !self.settings.game_mode {
+            header.push_str(" game_mode=off");
+        }
         // Only a development runtime has no manifest.
         let voile = crate::voile::release_of(&self.runtime);
         header.push_str(&format!(

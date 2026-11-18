@@ -43,6 +43,7 @@ fn obelisk_reads_the_releases_of_a_feed_of_its_format() {
             },
             notes: String::new(),
             withdrawn: None,
+            prerelease: false,
         }]
     );
     assert_eq!(releases(br#"{"format": 2, "releases": []}"#), None);
@@ -57,4 +58,46 @@ fn the_feed_kept_is_the_one_launches_read() {
     crate::remote::keep(&root.join(KEPT), SIGNED).unwrap();
     assert_eq!(offered(&root), releases(SIGNED).unwrap());
     assert_eq!(fs::read(root.join(KEPT)).unwrap(), SIGNED);
+}
+
+#[test]
+fn obelisk_reads_the_pre_releases_after_the_releases() {
+    let entry = |version: &str| {
+        format!(
+            r#"{{"version": "{version}", "contract": 1, "url": "https://example.invalid/{version}", "size": 3, "sha256": "{}"}}"#,
+            "a".repeat(64)
+        )
+    };
+    let feed = format!(
+        r#"{{"format": 1, "releases": [{}], "prereleases": [{}, {}]}}"#,
+        entry("v1.0.0-2"),
+        entry("v1.0.0-3"),
+        entry("v1.0.0-2"),
+    );
+    let read: Vec<_> = releases(feed.as_bytes())
+        .unwrap()
+        .into_iter()
+        .map(|offered| (offered.release.version, offered.prerelease))
+        .collect();
+    assert_eq!(
+        read,
+        [
+            ("v1.0.0-2".to_string(), false),
+            ("v1.0.0-3".to_string(), true)
+        ],
+        "a version that is both is a release"
+    );
+}
+
+#[test]
+fn the_player_s_choice_of_beta_releases_stays_beside_the_feed() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().join("Voile");
+    assert!(!takes_prereleases(&root));
+    take_prereleases(&root, false).unwrap();
+    assert!(!root.exists(), "turning it off creates nothing");
+    take_prereleases(&root, true).unwrap();
+    assert!(takes_prereleases(&root));
+    take_prereleases(&root, false).unwrap();
+    assert!(!takes_prereleases(&root));
 }

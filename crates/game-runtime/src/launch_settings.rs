@@ -3,10 +3,11 @@
 //! picks the arguments added to its command line, its engine, then the CPU
 //! translator that engine has, then the graphics backend that renders its
 //! Direct3D there and that backend's options, each offered as the engine
-//! allows, the render resolution on the engines that offer one, and Metal's
-//! Performance HUD over the game. Only what differs from the profile is kept,
-//! one file per installation in Obelisk's library, named after the
-//! installation's folder as its Wine prefix is. It goes when the
+//! allows, the render resolution on the engines that offer one, Metal's
+//! Performance HUD over the game, and whether macOS's Game Mode comes on for
+//! it, on the engines that can keep it off. Only what differs from the
+//! profile is kept, one file per installation in Obelisk's library, named
+//! after the installation's folder as its Wine prefix is. It goes when the
 //! installation is uninstalled, and a change applies from the game's next
 //! launch.
 //!
@@ -61,6 +62,10 @@ pub struct Settings {
     /// The share of the screen's pixels the game renders at; always one `engine` offers.
     #[serde(default = "full_render_percent")]
     pub render_percent: u32,
+    /// macOS may turn its Game Mode on for the game; false only on an engine
+    /// that can keep it off.
+    #[serde(default = "game_mode")]
+    pub game_mode: bool,
     /// The player's locale, such as `it_IT`, as `of` and `choose` were given
     /// it. The Linux engine's guest takes its Windows locale from it: the
     /// supervisor that builds an Epic or GOG target has no environment of
@@ -122,6 +127,12 @@ pub const FULL_RENDER_PERCENT: u32 = 100;
 /// predates it lacks: a derived default would be 0.
 fn full_render_percent() -> u32 {
     FULL_RENDER_PERCENT
+}
+
+/// The serde default of `Settings::game_mode`, which a handoff that predates
+/// it lacks: macOS chose alone then.
+fn game_mode() -> bool {
+    true
 }
 
 /// The launch settings of the Windows installation of `game` in `install`,
@@ -216,6 +227,10 @@ pub struct Choices {
     /// Metal's Performance HUD shows over the game, whatever renders it.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub performance_hud: bool,
+    /// False where the profile leaves Game Mode to macOS, true where the
+    /// profile keeps it off: only what differs from the profile is kept.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub game_mode: Option<bool>,
 }
 
 /// What translates a game's x86 code on one engine.
@@ -240,6 +255,8 @@ pub struct EngineOffer {
     /// The lowest render resolution it offers, up to all of the pixels; None
     /// when it offers none.
     pub lowest_render_percent: Option<u32>,
+    /// Whether it can keep macOS's Game Mode off a game.
+    pub game_mode: bool,
 }
 
 /// What one graphics backend offers on one engine.
@@ -250,8 +267,9 @@ pub struct GraphicsOffer {
 }
 
 /// Every engine, the translator it has and the backends it renders with.
-/// Rosetta's Wine takes D3DMetal's options and no render resolution; the Linux
-/// engine's render servers take no options yet.
+/// Rosetta's Wine takes D3DMetal's options and no render resolution, and
+/// macOS never takes its games for games; the Linux engine's render servers
+/// take no options yet.
 pub const ENGINES: [EngineOffer; 2] = [
     EngineOffer {
         engine: Engine::Rosetta,
@@ -267,6 +285,7 @@ pub const ENGINES: [EngineOffer; 2] = [
             },
         ],
         lowest_render_percent: None,
+        game_mode: false,
     },
     EngineOffer {
         engine: Engine::Linux,
@@ -283,6 +302,7 @@ pub const ENGINES: [EngineOffer; 2] = [
         ],
         // wsd keeps the desktop at 640x480 pixels or more: on a Retina MacBook, below about 25 gives the same one.
         lowest_render_percent: Some(1),
+        game_mode: true,
     },
 ];
 
@@ -339,6 +359,10 @@ impl Choices {
                 .render_percent
                 .filter(|percent| offered.offers_render_percent(*percent))
                 .unwrap_or(FULL_RENDER_PERCENT),
+            game_mode: self
+                .game_mode
+                .filter(|_| offered.game_mode)
+                .unwrap_or(default_game_mode(profile, engine)),
             locale: None,
         }
     }
@@ -363,6 +387,8 @@ impl Choices {
             render_percent: (applied.render_percent != FULL_RENDER_PERCENT)
                 .then_some(applied.render_percent),
             performance_hud: self.performance_hud,
+            game_mode: (applied.game_mode != default_game_mode(profile, applied.engine))
+                .then_some(applied.game_mode),
         }
     }
 
@@ -380,6 +406,14 @@ fn default_graphics(profile: &Profile, engine: Engine) -> Graphics {
     } else {
         Graphics::default_on(engine)
     }
+}
+
+/// Whether macOS may turn its Game Mode on for `profile`'s game on `engine`
+/// without choices: always on an engine that cannot keep it off, else as its
+/// profile says, whichever engine the profile names: Game Mode slows the
+/// game, not one engine.
+fn default_game_mode(profile: &Profile, engine: Engine) -> bool {
+    !offer(engine).game_mode || profile.game_mode
 }
 
 /// The options the profile gives its own engine and backend; any other

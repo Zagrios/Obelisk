@@ -123,9 +123,12 @@ impl CloudRemote for FakeCloud {
         _catalog_item_id: &str,
         _app_name: &str,
         _platform: Platform,
-    ) -> std::result::Result<Option<CloudRules>, EpicError> {
+    ) -> std::result::Result<CloudCatalog, EpicError> {
         self.failure(Call::Configuration)?;
-        Ok(self.rules.lock().unwrap().clone())
+        Ok(CloudCatalog {
+            rules: self.rules.lock().unwrap().clone(),
+            attributes: BTreeMap::new(),
+        })
     }
 
     async fn cloud_list(
@@ -207,6 +210,7 @@ impl Network for FakeCloud {
     fn platform<'a>(
         &'a self,
         _: &'a Product,
+        _: Option<Platform>,
     ) -> BoxFuture<'a, std::result::Result<Platform, Failure>> {
         unreachable!("Cloud saves pick no build")
     }
@@ -238,7 +242,8 @@ impl Network for FakeCloud {
                 &config.app_name,
                 config.platform,
             )
-            .await?)
+            .await?
+            .rules)
         })
     }
     fn maintain<'a>(

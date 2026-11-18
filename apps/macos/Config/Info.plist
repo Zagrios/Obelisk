@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!-- What Xcode adds to the Info.plist it generates. Sparkle reads the latest release's appcast.xml, which
-     .github/workflows/appcast.yml signs with the private key of SUPublicEDKey. Obelisk checks once a day without
-     asking first, and installs a new version when it quits until the player turns that off in Settings. -->
+     .github/workflows/appcast.yml signs with the private key of SUPublicEDKey; it lists the newest pre-release, when
+     newer than that release, on the beta channel, which Obelisk takes only with Settings' beta versions on. Obelisk
+     checks once a day without asking first, and installs a new version when it quits until the player turns that off
+     in Settings. -->
 <plist version="1.0">
 <dict>
 	<key>SUFeedURL</key>

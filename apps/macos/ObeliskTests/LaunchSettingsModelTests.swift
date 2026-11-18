@@ -7,7 +7,8 @@ final class LaunchSettingsModelTests: XCTestCase {
         LaunchSettings(
             engine: engine, graphics: engine == .rosetta ? .d3dMetal : .dxmt, rayTracing: true,
             renderPercent: engine == .linux ? choices.renderPercent ?? RenderPercent.native : RenderPercent.native,
-            performanceHud: choices.performanceHud, choices: choices, defaultEngine: .rosetta,
+            performanceHud: choices.performanceHud, gameMode: engine != .linux || choices.gameMode ?? true,
+            choices: choices, defaultEngine: .rosetta,
             engines: [
                 LaunchEngineOffer(
                     engine: .rosetta, translator: .rosetta, defaultGraphics: .d3dMetal,
@@ -15,12 +16,12 @@ final class LaunchSettingsModelTests: XCTestCase {
                         LaunchGraphicsOffer(graphics: .d3dMetal, options: [.rayTracing]),
                         LaunchGraphicsOffer(graphics: .dxmt, options: []),
                     ],
-                    lowestRenderPercent: nil
+                    lowestRenderPercent: nil, gameMode: false
                 ),
                 LaunchEngineOffer(
                     engine: .linux, translator: .fex, defaultGraphics: .dxmt,
                     graphics: [LaunchGraphicsOffer(graphics: .dxmt, options: [])],
-                    lowestRenderPercent: 1
+                    lowestRenderPercent: 1, gameMode: true
                 ),
             ]
         )
@@ -51,6 +52,29 @@ final class LaunchSettingsModelTests: XCTestCase {
         XCTAssertEqual(model.engineOffer?.translator, .fex)
         XCTAssertEqual(model.graphicsOffer?.graphics, .dxmt)
         XCTAssertEqual(model.graphicsOffer?.options, [])
+    }
+
+    @MainActor
+    func testGameModeIsOfferedByTheLinuxEngineOnlyAndTurnsOff() async throws {
+        var saved: [LaunchChoices] = []
+        let model = LaunchSettingsModel(
+            load: { Self.settings() },
+            save: { choices in
+                saved.append(choices)
+                return Self.settings(choices: choices, engine: choices.engine ?? .rosetta)
+            }
+        )
+        await model.appear()
+        XCTAssertEqual(model.engineOffer?.gameMode, false)
+
+        model.choose { $0.engine = .linux }
+        try await waitUntil { model.settings?.engine == .linux }
+        XCTAssertEqual(model.engineOffer?.gameMode, true)
+        XCTAssertEqual(model.settings?.gameMode, true)
+
+        model.choose { $0.gameMode = false }
+        try await waitUntil { model.settings?.gameMode == false }
+        XCTAssertEqual(saved.last, LaunchChoices(engine: .linux, gameMode: false))
     }
 
     @MainActor

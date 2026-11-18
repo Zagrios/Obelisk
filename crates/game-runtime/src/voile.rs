@@ -6,8 +6,11 @@
 //! in view, or starts the game in the release in place unless it needs the
 //! newer one. A Windows build's Transfer gets a release before the game's
 //! files when none is installed. The release built into Obelisk stands in for
-//! the feed until one was read. A development runtime that voile's
-//! install-dev.sh put in `current` takes precedence.
+//! the feed until one was read. A player who takes beta releases runs Voile's
+//! pre-releases too, whichever is newest; one who does not leaves a
+//! pre-release in place for the newest release, as Obelisk leaves a
+//! withdrawn release. A development runtime that voile's install-dev.sh put
+//! in `current` takes precedence.
 //!
 //! The release also carries the Linux engine's runtime, in its `linux` folder.
 use crate::runtimes::{Standing, Update};
@@ -30,6 +33,7 @@ mod feed;
 
 use feed::Offered;
 pub(crate) use feed::refresh;
+pub use feed::take_prereleases;
 
 const RELEASE: &str = include_str!("../voile-release.json");
 /// Where install-dev.sh puts a locally built runtime.
@@ -103,7 +107,7 @@ pub fn runtime(root: &Path) -> Option<PathBuf> {
     if let Some(development) = development(root) {
         return Some(development);
     }
-    newest(root, &feed::offered(root)).map(|(_, runtime)| runtime)
+    newest(root, &Offer::read(root)).map(|(_, runtime)| runtime)
 }
 
 /// The runtime install-dev.sh put in `root`, when there is one.
@@ -129,7 +133,7 @@ pub fn linux_runtime(root: &Path) -> Option<PathBuf> {
     if has_engine(&development) {
         return Some(development);
     }
-    let linux = newest(root, &feed::offered(root))?.1.join(LINUX);
+    let linux = newest(root, &Offer::read(root))?.1.join(LINUX);
     has_engine(&linux).then_some(linux)
 }
 
@@ -170,32 +174,54 @@ fn version(runtime: &Path) -> Option<String> {
     manifest(runtime).map(|manifest| manifest.version)
 }
 
-/// The numbers of a release's version, which order releases: `v26.3.0-16`
-/// is [26, 3, 0, 16].
+/// The numbers that order a release's version, as Voile's tags write it:
+/// `v<CrossOver version>-<revision>`, such as `v26.3.0-16`, which is
+/// [26, 3, 0, 16, 1, 0]. Its betas come before it: `v26.3.0-16.beta2` is
+/// [26, 3, 0, 16, 0, 2]. Anything else names no release.
 fn numbers(version: &str) -> Option<Vec<u64>> {
-    version
-        .strip_prefix('v')?
-        .split(['.', '-'])
-        .map(|number| number.parse().ok())
-        .collect()
+    let version = version.strip_prefix('v')?;
+    let (release, stage) = match version.split_once(".beta") {
+        Some((release, beta)) => (release, [0, digits(beta)?]),
+        None => (version, [1, 0]),
+    };
+    let (crossover, revision) = release.split_once('-')?;
+    let mut numbers = crossover
+        .split('.')
+        .map(digits)
+        .collect::<Option<Vec<_>>>()?;
+    if numbers.len() != 3 {
+        return None;
+    }
+    numbers.push(digits(revision)?);
+    numbers.extend(stage);
+    Some(numbers)
 }
 
-/// Whether `version` names a release as Voile's tags do, such as
-/// `v26.3.0-16`.
+/// The number `text` writes in digits alone: no sign, unlike `str::parse`.
+fn digits(text: &str) -> Option<u64> {
+    if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    text.parse().ok()
+}
+
+/// Whether `version` names a release, not a beta, as Voile's tags do, such
+/// as `v26.3.0-16`. Profiles name releases only: an Obelisk older than betas
+/// leaves out an entry whose `minimum_voile` it cannot read.
 pub(crate) fn is_version(version: &str) -> bool {
-    numbers(version).is_some_and(|numbers| numbers.len() == 4)
+    numbers(version).is_some_and(|numbers| numbers[4] == 1)
+}
+
+/// Whether `version` names a beta, such as `v26.3.0-16.beta2`: a pre-release
+/// even where the feed no longer lists it.
+fn is_beta(version: &str) -> bool {
+    numbers(version).is_some_and(|numbers| numbers[4] == 0)
 }
 
 /// The newest release installed in `root` that Obelisk runs, with its
 /// version's numbers: a folder named after the release its runtime.json
-/// names, of Obelisk's contract, that the last feed read, which `offered`
-/// those, does not withdraw.
-fn newest(root: &Path, offered: &[Offered]) -> Option<(Vec<u64>, PathBuf)> {
-    let withdrawn: Vec<&str> = offered
-        .iter()
-        .filter(|offered| offered.withdrawn.is_some())
-        .map(|offered| offered.release.version.as_str())
-        .collect();
+/// names, of Obelisk's contract, that `offer` does not leave.
+fn newest(root: &Path, offer: &Offer) -> Option<(Vec<u64>, PathBuf)> {
     fs::read_dir(root)
         .ok()?
         .flatten()
@@ -207,27 +233,65 @@ fn newest(root: &Path, offered: &[Offered]) -> Option<(Vec<u64>, PathBuf)> {
             (has_wine(&runtime)
                 && manifest.version == name
                 && manifest.contract == contract()
-                && !withdrawn.contains(&name.as_str()))
+                && !offer.leaves(&name))
             .then_some((order, runtime))
         })
         .max_by(|a, b| a.0.cmp(&b.0))
 }
 
-/// The releases the last feed read `offered` that Obelisk runs, with their
-/// version's numbers: of its contract, and not withdrawn.
-fn runnable(offered: &[Offered]) -> impl Iterator<Item = (Vec<u64>, &Offered)> {
-    offered
-        .iter()
-        .filter(|offered| offered.contract == contract() && offered.withdrawn.is_none())
-        .filter_map(|offered| Some((numbers(&offered.release.version)?, offered)))
+/// What the last feed read in a runtimes' folder offers the player, as they
+/// chose to take beta releases or not.
+struct Offer {
+    offered: Vec<Offered>,
+    /// The player takes Voile's pre-releases too.
+    prereleases: bool,
 }
 
-/// The release Obelisk wants of those the last feed read `offered`: the
-/// newest it runs, else the one it was built with.
-fn wanted(offered: &[Offered]) -> Release {
-    runnable(offered)
-        .max_by(|a, b| a.0.cmp(&b.0))
-        .map_or_else(|| release().clone(), |(_, newest)| newest.release.clone())
+impl Offer {
+    fn read(root: &Path) -> Self {
+        Self {
+            offered: feed::offered(root),
+            prereleases: feed::takes_prereleases(root),
+        }
+    }
+
+    /// Whether Obelisk leaves `offered` for the newest release left: it is
+    /// withdrawn, or a pre-release while the player takes none.
+    fn left(&self, offered: &Offered) -> bool {
+        offered.withdrawn.is_some() || (offered.prerelease && !self.prereleases)
+    }
+
+    /// Whether Obelisk leaves the release named `version`, as `left` tells.
+    /// A release the feed does not name stays, unless it is a beta while the
+    /// player takes none: the feed keeps no beta older than its newest
+    /// release.
+    fn leaves(&self, version: &str) -> bool {
+        match self
+            .offered
+            .iter()
+            .find(|offered| offered.release.version == version)
+        {
+            Some(offered) => self.left(offered),
+            None => !self.prereleases && is_beta(version),
+        }
+    }
+
+    /// The releases Obelisk runs, with their version's numbers: of its
+    /// contract, and not left.
+    fn runnable(&self) -> impl Iterator<Item = (Vec<u64>, &Offered)> {
+        self.offered
+            .iter()
+            .filter(|offered| offered.contract == contract() && !self.left(offered))
+            .filter_map(|offered| Some((numbers(&offered.release.version)?, offered)))
+    }
+
+    /// The release Obelisk wants: the newest it runs, else the one it was
+    /// built with.
+    fn wanted(&self) -> Release {
+        self.runnable()
+            .max_by(|a, b| a.0.cmp(&b.0))
+            .map_or_else(|| release().clone(), |(_, newest)| newest.release.clone())
+    }
 }
 
 /// What a launch makes of the runtimes in `root`, for a game whose profile
@@ -237,11 +301,11 @@ pub(crate) fn standing(root: &Path, minimum: Option<&str>) -> Standing {
     if development(root).is_some() {
         return Standing::Current;
     }
-    let offered = feed::offered(root);
-    let Some((installed, _)) = newest(root, &offered) else {
+    let offer = Offer::read(root);
+    let Some((installed, _)) = newest(root, &offer) else {
         return Standing::Missing;
     };
-    let version = wanted(&offered).version;
+    let version = offer.wanted().version;
     let Some(wanted) = numbers(&version) else {
         return Standing::Current;
     };
@@ -253,7 +317,8 @@ pub(crate) fn standing(root: &Path, minimum: Option<&str>) -> Standing {
     let required = minimum
         .and_then(numbers)
         .is_some_and(|minimum| installed < minimum && wanted >= minimum);
-    let mut newer: Vec<_> = runnable(&offered)
+    let mut newer: Vec<_> = offer
+        .runnable()
         .filter(|(order, _)| *order > installed && *order <= wanted)
         .collect();
     newer.sort_by(|a, b| b.0.cmp(&a.0));
@@ -316,7 +381,7 @@ impl Install {
             Some(_) => release().clone(),
             None => {
                 self.cancellable(feed::refresh(root)).await?;
-                wanted(&feed::offered(root))
+                Offer::read(root).wanted()
             }
         };
         self.install(root, &release, archive).await
@@ -455,11 +520,12 @@ impl Install {
 }
 
 /// Removes the releases in `root` games no longer run in: all but the newest
-/// Obelisk runs, beside the development runtime, the last feed read and
-/// unfinished installs. `runtimes` calls it once a launch finds no Game
-/// session, of any storefront, that may run a game from one.
+/// Obelisk runs, beside the development runtime, the last feed read, the
+/// player's choice of beta releases and unfinished installs. `runtimes` calls
+/// it once a launch finds no Game session, of any storefront, that may run a
+/// game from one.
 pub fn remove_replaced(root: &Path) {
-    let Some((_, kept)) = newest(root, &feed::offered(root)) else {
+    let Some((_, kept)) = newest(root, &Offer::read(root)) else {
         return;
     };
     let kept = kept
@@ -469,6 +535,7 @@ pub fn remove_replaced(root: &Path) {
         name != DEVELOPMENT
             && Some(name) != kept.as_deref()
             && name != feed::KEPT
+            && name != feed::PRERELEASES
             && !name.starts_with(UNFINISHED)
     });
 }

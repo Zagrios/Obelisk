@@ -98,6 +98,15 @@ struct DeveloperModal: Identifiable {
                     Variant("Too many reports") { $0.bugReport(.app, answer: 429) },
                 ]),
             DeveloperModal(
+                id: "support", title: "Support Obelisk",
+                detail: "Over the whole window, by itself the third time Obelisk starts, and from the top of "
+                    + "Settings. Opens the real pages and copies the real link; the counts are made up.",
+                symbol: "heart.fill",
+                variants: [
+                    Variant("Counts") { $0.support(stars: 1284, members: 2410) },
+                    Variant("No count") { $0.support(stars: nil, members: nil) },
+                ]),
+            DeveloperModal(
                 id: "launch-settings", title: "Launch Settings",
                 detail: "From a Windows game's management menu.",
                 symbol: "slider.horizontal.3",
@@ -321,6 +330,14 @@ final class DeveloperModals {
                                 voile: { nil })
     }
 
+    /// The ways to support Obelisk, beside the `stars` GitHub and the
+    /// `members` Discord would tell, or none as when they do not answer.
+    func support(stars: Int?, members: Int?) {
+        let model = SupportModel(stars: { stars }, members: { members })
+        model.present()
+        present { close in SupportSheet(model: model, close: close) }
+    }
+
     /// A folder the player picked: by default 23 games, 271 GB of them to
     /// copy to an APFS disk with room for them.
     func gamesFolder(chosen: URL? = URL(filePath: "/Volumes/Games SSD/Jeux"), games: Int = 23,
@@ -345,10 +362,10 @@ final class DeveloperModals {
             LaunchEngineOffer(engine: .rosetta, translator: .rosetta, defaultGraphics: .d3dMetal, graphics: [
                 LaunchGraphicsOffer(graphics: .d3dMetal, options: [.rayTracing]),
                 LaunchGraphicsOffer(graphics: .dxmt, options: []),
-            ], lowestRenderPercent: nil),
+            ], lowestRenderPercent: nil, gameMode: false),
             LaunchEngineOffer(engine: .linux, translator: .fex, defaultGraphics: .dxmt,
                               graphics: [LaunchGraphicsOffer(graphics: .dxmt, options: [])],
-                              lowestRenderPercent: 1),
+                              lowestRenderPercent: 1, gameMode: true),
         ]
         let engine = choices.engine ?? .rosetta
         let offer = engines.first { $0.engine == engine } ?? engines[0]
@@ -358,6 +375,7 @@ final class DeveloperModals {
             ? RenderPercent.native : (choices.renderPercent ?? RenderPercent.native)
         return LaunchSettings(engine: engine, graphics: graphics, rayTracing: choices.rayTracing ?? false,
                               renderPercent: renderPercent, performanceHud: choices.performanceHud,
+                              gameMode: !offer.gameMode || choices.gameMode ?? true,
                               choices: choices, defaultEngine: .rosetta, engines: engines)
     }
 

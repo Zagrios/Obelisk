@@ -62,6 +62,15 @@ pub fn installed_voile_release(locations: ObeliskLocations) -> Option<String> {
     game_runtime::voile::installed_release(Path::new(&locations.voile))
 }
 
+/// Whether Windows games run in Voile's pre-releases too, as Settings' beta
+/// releases choose: the next launch takes the newest release or pre-release,
+/// else it leaves a pre-release in place for the newest release. Returns
+/// whether the choice was kept.
+#[uniffi::export]
+pub fn take_voile_prereleases(locations: ObeliskLocations, take: bool) -> bool {
+    game_runtime::voile::take_prereleases(Path::new(&locations.voile), take).is_ok()
+}
+
 impl From<&ObeliskLocations> for game_runtime::Locations {
     fn from(locations: &ObeliskLocations) -> Self {
         Self {
@@ -84,6 +93,57 @@ impl From<&ObeliskLocations> for game_runtime::Locations {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A Voile release laid in `voile` as an install lays it.
+    fn lay(voile: &Path, version: &str) {
+        let runtime = voile.join(version);
+        std::fs::create_dir_all(runtime.join("bin")).unwrap();
+        std::fs::write(runtime.join("bin/wine"), "wine").unwrap();
+        std::fs::write(
+            runtime.join("runtime.json"),
+            format!(r#"{{"version": "{version}"}}"#),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn beta_releases_choose_the_voile_release_windows_games_run_in() {
+        let directory = tempfile::tempdir().unwrap();
+        let library = directory.path().to_string_lossy().into_owned();
+        let locations = obelisk_locations(library, "/Obelisk.app".into(), "/home".into());
+        let voile = Path::new(&locations.voile);
+        lay(voile, "v1.0.0-2");
+        lay(voile, "v1.0.0-3");
+        let entry = |version: &str| {
+            format!(
+                r#"{{"version": "{version}", "contract": 1, "url": "https://example.invalid/{version}", "size": 3, "sha256": "{}"}}"#,
+                "a".repeat(64)
+            )
+        };
+        std::fs::write(
+            voile.join("feed.json"),
+            format!(
+                r#"{{"format": 1, "releases": [{}], "prereleases": [{}]}}"#,
+                entry("v1.0.0-2"),
+                entry("v1.0.0-3")
+            ),
+        )
+        .unwrap();
+        assert_eq!(
+            installed_voile_release(locations.clone()).as_deref(),
+            Some("v1.0.0-2")
+        );
+        assert!(take_voile_prereleases(locations.clone(), true));
+        assert_eq!(
+            installed_voile_release(locations.clone()).as_deref(),
+            Some("v1.0.0-3")
+        );
+        assert!(take_voile_prereleases(locations.clone(), false));
+        assert_eq!(
+            installed_voile_release(locations).as_deref(),
+            Some("v1.0.0-2")
+        );
+    }
 
     #[test]
     fn locations_name_every_folder_once() {

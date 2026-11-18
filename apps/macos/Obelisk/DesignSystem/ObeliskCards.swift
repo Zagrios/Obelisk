@@ -59,10 +59,17 @@ struct SymbolTile: View {
     var size: CGFloat = 32
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
         Image(systemName: name)
             .font(.system(size: size * 0.44, weight: .semibold))
-            .foregroundStyle(.white)
+            .onTile(colors: colors, size: size)
+    }
+}
+
+private extension View {
+    /// This glyph, white on a rounded tile of `colors`, top to bottom.
+    func onTile(colors: [Color], size: CGFloat) -> some View {
+        let shape = RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
+        return foregroundStyle(.white)
             .frame(width: size, height: size)
             .background(LinearGradient(colors: colors, startPoint: .top, endPoint: .bottom), in: shape)
             .overlay { shape.strokeBorder(.white.opacity(0.16), lineWidth: 0.5) }
@@ -109,6 +116,57 @@ struct StoreTile: View {
         }
         .overlay { shape.strokeBorder(.white.opacity(0.14), lineWidth: 0.5) }
         .accessibilityHidden(true)
+    }
+}
+
+/// A service's logo, white on a tile of its colors, as `SymbolTile` shows a
+/// symbol.
+struct LogoTile: View {
+    let asset: String
+    let colors: [Color]
+    var size: CGFloat = 32
+
+    var body: some View {
+        Image(asset)
+            .renderingMode(.template)
+            .resizable()
+            .scaledToFit()
+            .frame(width: size * 0.56, height: size * 0.56)
+            .onTile(colors: colors, size: size)
+    }
+}
+
+/// A choice that is a card of its own: it outlines itself in the accent color
+/// under the pointer.
+struct ChoiceCard<Label: View>: View {
+    let identifier: String
+    let action: () -> Void
+    @ViewBuilder let label: Label
+    @State private var isHovered = false
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        let palette = ObeliskPalette(colorScheme: colorScheme)
+        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
+        let highlighted = isHovered && isEnabled
+        Button(action: action) {
+            label
+                .background(highlighted ? AnyShapeStyle(ObeliskStyle.accent.opacity(0.1))
+                                        : AnyShapeStyle(palette.surface),
+                            in: shape)
+                .overlay {
+                    shape.strokeBorder(highlighted ? AnyShapeStyle(ObeliskStyle.accent.opacity(0.7))
+                                                    : AnyShapeStyle(palette.border),
+                                       lineWidth: highlighted ? 1.5 : 1)
+                }
+                .contentShape(shape)
+                .opacity(isEnabled ? 1 : 0.55)
+        }
+        .obeliskButtonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .animation(.easeOut(duration: 0.15), value: highlighted)
+        .accessibilityIdentifier(identifier)
     }
 }
 

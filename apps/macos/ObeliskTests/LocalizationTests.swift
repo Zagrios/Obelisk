@@ -11,12 +11,32 @@ final class LocalizationTests: XCTestCase {
         for identifier in ["it", "it-IT", "it_CH"] {
             XCTAssertEqual(L10n.resolvedLanguage(preferredLanguages: [identifier]), "it", identifier)
         }
-        for identifier in ["en", "en-US", "en_GB", "de-DE", "ja-JP", "zh-Hant", ""] {
+        for (language, identifiers) in [("de", ["de", "de-DE", "de_AT"]), ("es", ["es", "es-ES", "es-MX", "es-419"]),
+                                        ("ja", ["ja", "ja-JP"])] {
+            for identifier in identifiers {
+                XCTAssertEqual(L10n.resolvedLanguage(preferredLanguages: [identifier]), language, identifier)
+            }
+        }
+        for identifier in ["en", "en-US", "en_GB", "ko-KR", ""] {
             XCTAssertEqual(L10n.resolvedLanguage(preferredLanguages: [identifier]), "en", identifier)
         }
         XCTAssertEqual(L10n.resolvedLanguage(preferredLanguages: []), "en")
-        XCTAssertEqual(L10n.resolvedLanguage(preferredLanguages: ["de-DE", "fr-FR"]), "en")
-        XCTAssertEqual(L10n.resolvedLanguage(preferredLanguages: ["de-DE"], available: ["en", "fr", "de"]), "de")
+        XCTAssertEqual(L10n.resolvedLanguage(preferredLanguages: ["ko-KR", "fr-FR"]), "en")
+        XCTAssertEqual(L10n.resolvedLanguage(preferredLanguages: ["ko-KR"], available: ["en", "fr", "ko"]), "ko")
+    }
+
+    func testALanguageTranslatedForOneScriptOrOneRegionIsOnlyThatOnes() {
+        for identifier in ["zh", "zh-Hans", "zh-CN", "zh-Hans-CN", "zh-SG"] {
+            XCTAssertEqual(L10n.resolvedLanguage(preferredLanguages: [identifier]), "zh-Hans", identifier)
+        }
+        for identifier in ["pt", "pt-BR", "pt_BR"] {
+            XCTAssertEqual(L10n.resolvedLanguage(preferredLanguages: [identifier]), "pt-BR", identifier)
+        }
+        for identifier in ["zh-Hant", "zh-TW", "zh-HK", "pt-PT"] {
+            XCTAssertEqual(L10n.resolvedLanguage(preferredLanguages: [identifier]), "en", identifier)
+        }
+        XCTAssertEqual(LocalizedStrings(language: "zh-CN").string("app.library"), "库")
+        XCTAssertEqual(LocalizedStrings(language: "pt-BR").string("app.library"), "Biblioteca")
     }
 
     func testItalianIsTranslatedWithItsPlurals() {
@@ -41,16 +61,21 @@ final class LocalizationTests: XCTestCase {
     }
 
     func testTheLanguageChoicesAreTheMacsThenEveryTranslationByItsOwnName() {
-        XCTAssertEqual(AppLanguage.choices, [.system, .language("en"), .language("fr"), .language("it")])
-        XCTAssertEqual(AppLanguage.name(of: "en"), "English")
-        XCTAssertEqual(AppLanguage.name(of: "fr"), "Français")
-        XCTAssertEqual(AppLanguage.name(of: "it"), "Italiano")
+        XCTAssertEqual(AppLanguage.choices,
+                       [.system] + ["de", "en", "es", "fr", "it", "pt-BR", "ja", "zh-Hans"].map(AppLanguage.language))
+        for (code, name) in [("de", "Deutsch"), ("en", "English"), ("es", "Español"), ("fr", "Français"), ("it", "Italiano"),
+                             ("ja", "日本語"), ("pt-BR", "Português (Brasil)"), ("zh-Hans", "简体中文")] {
+            XCTAssertEqual(AppLanguage.name(of: code), name)
+        }
         XCTAssertEqual(AppLanguage.language("fr").resolved(system: ["en-US"]), "fr")
         XCTAssertEqual(AppLanguage.system.resolved(system: ["fr-BE", "en"]), "fr")
-        XCTAssertEqual(AppLanguage.system.resolved(system: ["ja-JP"]), "en")
+        XCTAssertEqual(AppLanguage.system.resolved(system: ["ko-KR"]), "en")
         XCTAssertEqual(AppLanguage.language("en").flags, ["Flag-us", "Flag-gb"])
         XCTAssertEqual(AppLanguage.language("fr").flags, ["Flag-fr"])
         XCTAssertEqual(AppLanguage.language("it").flags, ["Flag-it"])
+        XCTAssertEqual(AppLanguage.language("ja").flags, ["Flag-jp"])
+        XCTAssertEqual(AppLanguage.language("pt-BR").flags, ["Flag-br"])
+        XCTAssertEqual(AppLanguage.language("zh-Hans").flags, ["Flag-cn"])
         XCTAssertEqual(AppLanguage.system.flags, [])
         for code in L10n.available {
             let flags = AppLanguage.language(code).flags
@@ -62,14 +87,17 @@ final class LocalizationTests: XCTestCase {
     }
 
     func testBothTranslationsArePackagedAndUnsupportedLanguagesUseEnglish() {
-        XCTAssertTrue(Bundle.main.localizations.contains("en"))
-        XCTAssertTrue(Bundle.main.localizations.contains("fr"))
-        XCTAssertTrue(Bundle.main.localizations.contains("it"))
+        for code in ["de", "en", "es", "fr", "it", "ja", "pt-BR", "zh-Hans"] {
+            XCTAssertTrue(Bundle.main.localizations.contains(code), code)
+        }
         XCTAssertEqual(Bundle.main.developmentLocalization, "en")
         XCTAssertEqual(LocalizedStrings(language: "en").string("app.library"), "Library")
         XCTAssertEqual(LocalizedStrings(language: "fr-CA").string("app.library"), "Bibliothèque")
         XCTAssertEqual(LocalizedStrings(language: "it-IT").string("app.library"), "Libreria")
-        XCTAssertEqual(LocalizedStrings(language: "de-DE").string("app.library"), "Library")
+        XCTAssertEqual(LocalizedStrings(language: "de-DE").string("app.library"), "Bibliothek")
+        XCTAssertEqual(LocalizedStrings(language: "es-MX").string("app.library"), "Biblioteca")
+        XCTAssertEqual(LocalizedStrings(language: "ja-JP").string("app.library"), "ライブラリ")
+        XCTAssertEqual(LocalizedStrings(language: "ko-KR").string("app.library"), "Library")
     }
 
     func testGameCountsUseEachLanguagesPluralRules() {

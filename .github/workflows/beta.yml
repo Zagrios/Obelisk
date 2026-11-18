@@ -1,0 +1,58 @@
+# Every two hours, builds a beta of Obelisk when main changed since the
+# highest version published, release or beta, beyond the files a build never
+# reads and the tables players read from main anyway (scripts/beta.sh names
+# them). The beta continues the newest beta's version, else takes the next
+# patch's first number, such as 0.6.3.beta1 after 0.6.2, or main's newer
+# MARKETING_VERSION's; it is published at once as a pre-release with the
+# commits since as notes, then written into the appcast: only players who take
+# beta versions get it. A beta
+# whose build failed is built again once main changed. Run it from the Actions
+# tab to check now, or to build again after a failure.
+name: Beta
+
+on:
+  schedule:
+    - cron: "47 */2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: beta
+  cancel-in-progress: false
+
+jobs:
+  decide:
+    runs-on: ubuntu-latest
+    outputs:
+      due: ${{ steps.decide.outputs.due }}
+      version: ${{ steps.decide.outputs.version }}
+      since: ${{ steps.decide.outputs.since }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Look for changes since the newest release or beta
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -o pipefail
+          scripts/beta.sh | tee -a "$GITHUB_OUTPUT"
+
+  build:
+    needs: decide
+    if: needs.decide.outputs.due == 'true'
+    uses: ./.github/workflows/release.yml
+    with:
+      version: ${{ needs.decide.outputs.version }}
+      since: ${{ needs.decide.outputs.since }}
+    secrets: inherit
+
+  # A release made with the workflow's own token starts no workflow.
+  appcast:
+    needs: build
+    uses: ./.github/workflows/appcast.yml
+    secrets: inherit

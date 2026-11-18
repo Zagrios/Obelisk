@@ -32,6 +32,10 @@ pub struct Transfer<S: Storefront> {
     pub name: String,
     /// None while the storefront picks the build, as the Transfer starts.
     pub platform: Option<Platform>,
+    /// The build its player chose on the game's page, which the pick installs
+    /// or refuses; none lets the storefront pick. It matters only while
+    /// `platform` is none.
+    pub chosen: Option<Platform>,
     /// The parent folder the installation directory goes in.
     pub directory: PathBuf,
 }
@@ -185,6 +189,7 @@ impl<S: Storefront> Receipt<S> {
             product: self.product.clone(),
             name: self.name.clone(),
             platform: Some(self.platform),
+            chosen: None,
             directory: parent(&self.directory),
         }
     }
@@ -200,12 +205,18 @@ impl<S: Storefront> Transfer<S> {
         S::transfer_name(&self.game())
     }
 
+    /// The build it installs, as far as it is known before the storefront
+    /// picks: the settled one, else the one its player chose.
+    pub fn build(&self) -> Option<Platform> {
+        self.platform.or(self.chosen)
+    }
+
     /// Whether it goes over `receipt`'s installation: its game's of its
-    /// platform, or of any platform while the storefront picks the build.
+    /// build, or of any build while the storefront picks it.
     pub(super) fn lands_on(&self, receipt: &Receipt<S>) -> bool {
         receipt.game() == self.game()
             && self
-                .platform
+                .build()
                 .is_none_or(|platform| platform == receipt.platform)
     }
 }
@@ -217,6 +228,7 @@ impl<S: Storefront> Offer<S> {
             product: self.product,
             name: self.name,
             platform: None,
+            chosen: None,
             directory,
         }
     }

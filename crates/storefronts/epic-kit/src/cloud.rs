@@ -50,6 +50,38 @@ pub struct CloudRules {
     pub exclude: Vec<String>,
 }
 
+/// What a game's catalog item says of its Cloud.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct CloudCatalog {
+    /// The rules of the build, when the catalog names a save folder for it.
+    pub rules: Option<CloudRules>,
+    /// Each attribute whose name mentions a Cloud, with its value cut to 400
+    /// characters, to tell why a game has none.
+    pub attributes: BTreeMap<String, String>,
+}
+
+impl CloudCatalog {
+    pub(crate) fn from_attributes(
+        attributes: &BTreeMap<String, serde_json::Value>,
+        platform: Platform,
+    ) -> Result<Self, EpicError> {
+        Ok(Self {
+            rules: CloudRules::from_attributes(attributes, platform)?,
+            attributes: attributes
+                .iter()
+                .filter(|(name, _)| name.to_ascii_lowercase().contains("cloud"))
+                .map(|(name, value)| {
+                    let value = value.get("value").unwrap_or(value);
+                    let text = value
+                        .as_str()
+                        .map_or_else(|| value.to_string(), str::to_owned);
+                    (name.clone(), text.chars().take(400).collect())
+                })
+                .collect(),
+        })
+    }
+}
+
 /// The build of a game that runs, and where its save folder's variables point.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CloudPlatform {

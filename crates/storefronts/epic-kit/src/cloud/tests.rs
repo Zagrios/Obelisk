@@ -66,6 +66,27 @@ fn mac_rules_require_explicit_metadata_and_preserve_both_platforms() {
 }
 
 #[test]
+fn a_catalog_without_cloud_for_the_build_still_tells_what_it_says_of_one() {
+    use serde_json::json;
+    let attrs = BTreeMap::from([
+        ("CloudSaveFolder_MAC".into(), json!({"value":"{Home}/Game"})),
+        ("cloudIncludeList".into(), json!({"value":"x".repeat(500)})),
+        ("CloudEnabled".into(), json!({"value":true})),
+        ("CanRunOffline".into(), json!({"value":"true"})),
+    ]);
+    let catalog = CloudCatalog::from_attributes(&attrs, Platform::Windows).unwrap();
+    assert_eq!(catalog.rules, None);
+    assert_eq!(
+        catalog.attributes,
+        BTreeMap::from([
+            ("CloudEnabled".into(), "true".into()),
+            ("CloudSaveFolder_MAC".into(), "{Home}/Game".into()),
+            ("cloudIncludeList".into(), "x".repeat(400)),
+        ])
+    );
+}
+
+#[test]
 fn resolver_confines_roots_and_keeps_missing_installation_recoverable() {
     let temp = tempfile::tempdir().unwrap();
     let home = temp.path().join("home");

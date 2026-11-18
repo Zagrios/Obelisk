@@ -930,6 +930,18 @@ fn the_game_s_log_names_a_render_resolution_below_all_pixels() {
 }
 
 #[test]
+fn the_game_s_log_names_game_mode_kept_off() {
+    let (_directory, root) = installation();
+    let mut linux = linux_config(&root);
+    linux.settings.game_mode = false;
+
+    assert_eq!(
+        linux.log_header(),
+        "obelisk: engine=wine-linux graphics=d3dmetal game_mode=off voile=development\n"
+    );
+}
+
+#[test]
 fn wine_reports_its_errors_unless_the_runtime_names_other_channels() {
     let (_directory, root) = installation();
     let config = config(&root);
@@ -1315,6 +1327,7 @@ fn a_configuration_reaches_its_game_session_whole() {
             dll_overrides: BTreeMap::from([("xaudio2_7".to_owned(), "n,b".to_owned())]),
             performance_hud: true,
             render_percent: 50,
+            game_mode: false,
             locale: Some("it_IT".into()),
         },
     };
@@ -1322,8 +1335,8 @@ fn a_configuration_reaches_its_game_session_whole() {
     let again: Config = serde_json::from_slice(&serde_json::to_vec(&config).unwrap()).unwrap();
 
     assert_eq!(again, config);
-    // A handoff that predates the locale or the render resolution still opens,
-    // without one.
+    // A handoff that predates the locale, the render resolution or Game Mode
+    // still opens, without one.
     for (field, expected) in [
         (
             "locale",
@@ -1336,6 +1349,13 @@ fn a_configuration_reaches_its_game_session_whole() {
             "render_percent",
             Settings {
                 render_percent: 100,
+                ..config.settings.clone()
+            },
+        ),
+        (
+            "game_mode",
+            Settings {
+                game_mode: true,
                 ..config.settings.clone()
             },
         ),
