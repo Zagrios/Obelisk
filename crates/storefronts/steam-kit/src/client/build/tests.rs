@@ -250,6 +250,7 @@ fn launch(executable: &str, kind: &str) -> crate::cm::LaunchConfig {
         launch_type: kind.into(),
         os_list: Vec::new(),
         os_arch: None,
+        beta_key: None,
     }
 }
 

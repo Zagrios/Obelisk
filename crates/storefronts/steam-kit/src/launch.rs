@@ -49,11 +49,19 @@ pub fn plan(
     })
 }
 
-/// The publisher's launch option a build for `platform` starts with.
+/// The publisher's launch option a build for `platform` starts with. Obelisk
+/// installs the public branch, so an option of another branch alone, as a
+/// development build's program, names a file the installation lacks.
 pub(crate) fn configuration(app: &AppInfo, platform: Platform) -> Option<&LaunchConfig> {
     app.launch_configs
         .iter()
         .filter(|config| supports_platform(&config.os_list, platform))
+        .filter(|config| {
+            config
+                .beta_key
+                .as_deref()
+                .is_none_or(|branch| branch.eq_ignore_ascii_case("public"))
+        })
         .filter_map(|config| launch_rank(config).map(|rank| (config, rank)))
         .min_by_key(|(config, rank)| {
             (
@@ -109,6 +117,7 @@ mod tests {
             launch_type: kind.into(),
             os_list: vec![os.into()],
             os_arch: None,
+            beta_key: None,
         }
     }
     fn file(root: &Path, relative: &str) {
@@ -135,6 +144,26 @@ mod tests {
         );
         assert_eq!(plan.target.arguments, ["--title", "My game"]);
         assert!(!plan.target.is_application_bundle);
+    }
+
+    #[test]
+    fn skips_the_programs_of_branches_obelisk_does_not_install() {
+        // CONTROL Resonant lists its development builds' programs first, each
+        // under its branch, and gives no option a type.
+        let on = |branch: &str, executable: &str| LaunchConfig {
+            beta_key: Some(branch.into()),
+            ..config(executable, "windows", "")
+        };
+        let game = app(vec![
+            on("milestone", "profile/Game_prof.exe"),
+            on("development", "development/Game_dev.exe"),
+            config("Game.exe", "windows", ""),
+        ]);
+        let chosen = configuration(&game, Platform::Windows).unwrap();
+        assert_eq!(chosen.executable, "Game.exe");
+
+        let public = app(vec![on("Public", "Game.exe")]);
+        assert!(configuration(&public, Platform::Windows).is_some());
     }
 
     #[test]

@@ -161,6 +161,9 @@ pub struct LaunchConfig {
     pub launch_type: String,
     pub os_list: Vec<String>,
     pub os_arch: Option<String>,
+    /// The branch whose builds alone have this option, such as a
+    /// development build's program; none for an option of every branch.
+    pub beta_key: Option<String>,
 }
 
 fn string_at(tree: &kv::Kv, path: &[&str]) -> String {
@@ -231,6 +234,7 @@ pub(super) fn parse_app(app_id: u32, bytes: &[u8]) -> Result<AppInfo, CmError> {
                 launch_type: string_at(launch, &["type"]),
                 os_list: os_list(launch, &["config", "oslist"]),
                 os_arch: optional_at(launch, &["config", "osarch"]),
+                beta_key: optional_at(launch, &["config", "betakey"]),
             });
         }
     }
@@ -400,7 +404,10 @@ mod tests {
     fn parses_download_filters_shared_depots_and_launches() {
         let app = parse_app(42, br#""appinfo" {
             "appid" "42" "common" { "name" "Test" "type" "Game" "FreeToDownload" "1" "oslist" "windows" }
-            "config" { "installdir" "Test" "launch" { "0" { "executable" "game.exe" "workingdir" "bin" "type" "default" "config" { "oslist" "windows" } } } }
+            "config" { "installdir" "Test" "launch" {
+                "0" { "executable" "game.exe" "workingdir" "bin" "type" "default" "config" { "oslist" "windows" } }
+                "1" { "executable" "dev/game.exe" "config" { "betakey" "development" } }
+            } }
             "depots" {
                 "43" { "config" { "oslist" "windows,macos" "osarch" "64" "language" "french" }
                     "manifests" { "public" { "gid" "123456789012345" "size" "1000" "download" "500" } } }
@@ -420,6 +427,11 @@ mod tests {
         assert_eq!(app.launch_configs[0].executable, "game.exe");
         assert_eq!(app.launch_configs[0].working_directory, "bin");
         assert_eq!(app.launch_configs[0].launch_type, "default");
+        assert_eq!(app.launch_configs[0].beta_key, None);
+        assert_eq!(
+            app.launch_configs[1].beta_key.as_deref(),
+            Some("development")
+        );
     }
 
     #[test]
