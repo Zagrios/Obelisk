@@ -53,8 +53,6 @@ pub(super) struct RosettaWine;
 
 static FACTS: Facts = Facts {
     name: "wine-macos",
-    // Wine is an Intel program: Rosetta runs it and the Windows game inside it.
-    architecture: Architecture::Intel,
     // It ships with the Linux engine's host programs, in every runtime.
     input_service: Some("linux/engine/obelisk-input"),
     graphics: Graphics::D3DMetal,
@@ -91,6 +89,12 @@ static FACTS: Facts = Facts {
 impl Adapter for RosettaWine {
     fn facts(&self) -> &'static Facts {
         &FACTS
+    }
+
+    /// Wine is an Intel program: Rosetta runs it and the Windows game
+    /// inside it.
+    fn architecture(&self, _config: &Config) -> Architecture {
+        Architecture::Intel
     }
 
     fn runtime(&self, voile: &Path) -> Option<PathBuf> {

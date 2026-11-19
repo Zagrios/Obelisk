@@ -475,12 +475,29 @@ fn the_engine_s_launcher_alone_gets_a_grace_and_wine_for_macos_alone_an_input_se
         rosetta.input_service(),
         Some(root.join("runtime/linux/engine/obelisk-input"))
     );
-    assert_eq!(rosetta.architecture(), Architecture::Intel);
 
     let linux = engine_config(&root, Engine::Linux);
     assert_eq!(linux.launcher_grace(), Some(Duration::from_secs(2)));
     assert_eq!(linux.input_service(), None);
-    assert_eq!(linux.architecture(), Architecture::Arm64);
+}
+
+#[test]
+fn a_game_asks_for_rosetta_unless_the_linux_engine_renders_it_with_dxmt() {
+    let (_directory, root) = installation();
+    let with = |engine, graphics| {
+        let mut config = engine_config(&root, engine);
+        config.settings.graphics = graphics;
+        config.architecture()
+    };
+
+    assert_eq!(
+        with(Engine::Rosetta, Graphics::D3DMetal),
+        Architecture::Intel
+    );
+    assert_eq!(with(Engine::Rosetta, Graphics::Dxmt), Architecture::Intel);
+    assert_eq!(with(Engine::Linux, Graphics::Dxmt), Architecture::Arm64);
+    // D3DMetal's render server is an Intel program.
+    assert_eq!(with(Engine::Linux, Graphics::D3DMetal), Architecture::Intel);
 }
 
 #[test]

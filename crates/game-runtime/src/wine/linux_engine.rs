@@ -83,8 +83,6 @@ pub(super) struct LinuxEngine;
 
 static FACTS: Facts = Facts {
     name: "wine-linux",
-    // The launcher is a native program.
-    architecture: Architecture::Arm64,
     input_service: None,
     graphics: Graphics::Dxmt,
     launcher_grace: Some(LAUNCHER_GRACE),
@@ -119,6 +117,16 @@ static FACTS: Facts = Facts {
 impl Adapter for LinuxEngine {
     fn facts(&self) -> &'static Facts {
         &FACTS
+    }
+
+    /// The launcher, the engine and DXMT's render server are native
+    /// programs. D3DMetal is an Intel library: the launcher starts the Intel
+    /// render server for it, which does not start without Rosetta.
+    fn architecture(&self, config: &Config) -> Architecture {
+        match config.settings.graphics {
+            Graphics::Dxmt => Architecture::Arm64,
+            Graphics::D3DMetal => Architecture::Intel,
+        }
     }
 
     fn runtime(&self, voile: &Path) -> Option<PathBuf> {

@@ -128,9 +128,9 @@ impl Config {
         self.settings.engine.adapter()
     }
 
-    /// How the game starts.
+    /// What starting the game asks of the Mac: `Intel` asks for Rosetta.
     pub(crate) fn architecture(&self) -> Architecture {
-        self.adapter().facts().architecture
+        self.adapter().architecture(self)
     }
 
     /// How long the engine's launcher gets on a Force Quit to stop its own
@@ -238,6 +238,9 @@ impl Config {
 trait Adapter {
     /// What the engine is, whatever the game.
     fn facts(&self) -> &'static Facts;
+    /// What starting `config`'s game asks of the Mac: `Intel` when any of
+    /// what runs it is an Intel program, which Rosetta translates.
+    fn architecture(&self, config: &Config) -> Architecture;
     /// Its runtime among Voile's in `voile`, once installed.
     fn runtime(&self, voile: &Path) -> Option<PathBuf>;
     /// Its prefix of the installation whose Rosetta prefix is `rosetta`.
@@ -304,8 +307,6 @@ trait Adapter {
 struct Facts {
     /// How the game's log names it.
     name: &'static str,
-    /// How its games start.
-    architecture: Architecture,
     /// The gamepad service its supervisor runs while the game does, inside
     /// its runtime; none when the engine's launcher starts its own.
     input_service: Option<&'static str>,

@@ -203,8 +203,9 @@ pub(crate) struct ArgumentFile<'a> {
     pub bytes: &'a [u8],
 }
 
-/// What a request starts: the target, the architecture it runs as, and the
-/// private folder that holds its `ArgumentFile`.
+/// What a request starts: the target, what starting it asks of the Mac
+/// (`Intel` asks for Rosetta), and the private folder that holds its
+/// `ArgumentFile`.
 pub(crate) struct Started {
     pub target: Target,
     pub architecture: Architecture,

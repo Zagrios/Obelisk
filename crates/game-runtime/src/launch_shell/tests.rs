@@ -642,6 +642,7 @@ pub(crate) fn a_windows_build_on_the_linux_engine_takes_its_store_title_in_the_d
     request.wine = Some(wine::Config {
         settings: crate::launch_settings::Settings {
             engine: wine::Engine::Linux,
+            graphics: wine::Graphics::default_on(wine::Engine::Linux),
             ..Default::default()
         },
         ..rosetta
@@ -699,6 +700,7 @@ pub(crate) fn a_private_file_lives_as_long_as_its_game_and_is_placed_where_the_e
         prefix: root.join("game-linux/prefix"),
         settings: crate::launch_settings::Settings {
             engine: wine::Engine::Linux,
+            graphics: wine::Graphics::default_on(wine::Engine::Linux),
             ..rosetta.settings.clone()
         },
         ..rosetta.clone()
