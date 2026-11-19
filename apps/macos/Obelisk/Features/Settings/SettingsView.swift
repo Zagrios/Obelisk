@@ -783,7 +783,7 @@ private struct LanguagePicker: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        // Nine flags in one row are wider than the card in a small window.
+        // One row of every flag is wider than the card.
         BalancedRows(spacing: 20, rowSpacing: 16) {
             ForEach(AppLanguage.choices) { option($0) }
         }
@@ -836,12 +836,6 @@ private struct BalancedRows: Layout {
     var spacing: CGFloat
     var rowSpacing: CGFloat
 
-    private struct Rows {
-        var columns: Int
-        var columnWidth: CGFloat
-        var heights: [CGFloat]
-    }
-
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let available = proposal.width.flatMap { $0.isFinite ? $0 : nil }
         let rows = rows(width: available, subviews: subviews)
@@ -867,8 +861,8 @@ private struct BalancedRows: Layout {
 
     /// How many columns, how wide, and each row's height, for this width
     /// (none: every view in one row, each column at its minimum).
-    private func rows(width: CGFloat?, subviews: Subviews) -> Rows {
-        guard !subviews.isEmpty else { return Rows(columns: 0, columnWidth: 0, heights: []) }
+    private func rows(width: CGFloat?, subviews: Subviews) -> (columns: Int, columnWidth: CGFloat, heights: [CGFloat]) {
+        guard !subviews.isEmpty else { return (0, 0, []) }
         // A column is at least as wide as the widest view can shrink to.
         let minimum = subviews.map { $0.sizeThatFits(ProposedViewSize(width: 0, height: nil)).width }.max() ?? 0
         let fitting = width.map { max(1, Int(($0 + spacing) / (minimum + spacing))) } ?? subviews.count
@@ -880,7 +874,7 @@ private struct BalancedRows: Layout {
                 .map { $0.sizeThatFits(ProposedViewSize(width: columnWidth, height: nil)).height }
                 .max() ?? 0
         }
-        return Rows(columns: columns, columnWidth: columnWidth, heights: heights)
+        return (columns, columnWidth, heights)
     }
 }
 
