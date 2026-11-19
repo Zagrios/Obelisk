@@ -1,11 +1,11 @@
 //! Why a game cannot be readied or started, whatever its storefront: its
 //! Mac build's slices, its program, or the Wine that runs it.
 
-/// `IncompatibleArchitecture` and `WineUnavailable` are localization keys every
-/// storefront shows as they are. Steam shows `InvalidApplication` and
-/// `NotExecutable` as they are too, while Epic and GOG call them unsupported.
-/// Each storefront names `Storage`, `StartFailed` and `Unavailable` with its
-/// own keys, as it does `supervisor::Error`.
+/// `IncompatibleArchitecture`, `WineUnavailable` and `WineIncomplete` are
+/// localization keys every storefront shows as they are. Steam shows
+/// `InvalidApplication` and `NotExecutable` as they are too, while Epic and
+/// GOG call them unsupported. Each storefront names `Storage`, `StartFailed`
+/// and `Unavailable` with its own keys, as it does `supervisor::Error`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum Error {
     /// A Mac build without an arm64 slice, installed before Obelisk
@@ -18,6 +18,10 @@ pub enum Error {
     NotExecutable,
     #[error("backend.runtime.wineUnavailable")]
     WineUnavailable,
+    /// The installed runtime lacks a file the game cannot start without,
+    /// which security software took out of it.
+    #[error("backend.runtime.wineIncomplete")]
+    WineIncomplete,
     #[error("launch storage failed")]
     Storage,
     #[error("launch start failed")]

@@ -107,7 +107,8 @@ impl From<crate::launch::Error> for Error {
             E::IncompatibleArchitecture
             | E::InvalidApplication
             | E::NotExecutable
-            | E::WineUnavailable => Self::Launch(error),
+            | E::WineUnavailable
+            | E::WineIncomplete => Self::Launch(error),
         }
     }
 }
@@ -470,6 +471,7 @@ mod error_tests {
             ),
             (Launch::NotExecutable, "backend.runtime.notExecutable"),
             (Launch::WineUnavailable, "backend.runtime.wineUnavailable"),
+            (Launch::WineIncomplete, "backend.runtime.wineIncomplete"),
             (Launch::Storage, "backend.steam.runtime.storageFailed"),
             (Launch::StartFailed, "backend.steam.runtime.startFailed"),
             (Launch::Unavailable, "backend.steam.runtime.unavailable"),

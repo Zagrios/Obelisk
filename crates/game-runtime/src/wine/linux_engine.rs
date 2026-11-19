@@ -67,6 +67,12 @@ const HOST_PID: &str = "steam-hostpid.so";
 const PREFIX: &str = "prefix";
 /// Neptune's Direct3D, which replaces Wine's in the prefix.
 const DIRECT3D: [&str; 3] = ["d3d11.dll", "dxgi.dll", "d3d12.dll"];
+/// Wine's own 64-bit DLLs, in the runtime.
+const WINE_DLLS: &str = "wine/lib/wine/x86_64-windows";
+/// The one of them that hands Neptune's Direct3D to the render server; a
+/// prefix's system32 holds a copy. A game without either ends once its
+/// Direct3D fails to load, with nothing said.
+const NEPTUNE: &str = "nptunix.dll";
 /// Creating a prefix through the engine takes about a minute.
 const BOOT_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 /// Records, in a runtime, the macOS build Rosetta translated its D3DMetal for.
@@ -142,6 +148,12 @@ impl Adapter for LinuxEngine {
     /// it, the storefront furnishes the prefix, and Neptune's Direct3D goes
     /// into it before each launch. Storefront prerequisites do not run there.
     /// D3DMetal is translated before a game that renders with it starts.
+    /// Fails with WineIncomplete, before the prefix is created too, when the
+    /// runtime lost a library a launch takes from it: security software has
+    /// taken Neptune's out of players' runtimes as Voile installed. A prefix
+    /// such a runtime created lacks its copy of Neptune's for good, since
+    /// Wine fills system32 once per release, so a prefix without it gets the
+    /// runtime's.
     fn ready(
         &self,
         config: &Config,
@@ -150,6 +162,11 @@ impl Adapter for LinuxEngine {
     ) -> Result<(), Error> {
         if !installed(config) {
             return Err(Error::WineUnavailable);
+        }
+        let direct3d = DIRECT3D.map(|library| config.runtime.join("windows").join(library));
+        let neptune = config.runtime.join(WINE_DLLS).join(NEPTUNE);
+        if !direct3d.iter().chain([&neptune]).all(|file| file.is_file()) {
+            return Err(Error::WineIncomplete);
         }
         crate::files::private_directory(home(&config.prefix)?)?;
         if !config.prefix.join("system.reg").is_file() {
@@ -160,11 +177,12 @@ impl Adapter for LinuxEngine {
         }
         storefront.furnish_prefix(config)?;
         let system32 = config.prefix.join("drive_c/windows/system32");
-        for library in DIRECT3D {
-            fs::copy(
-                config.runtime.join("windows").join(library),
-                system32.join(library),
-            )?;
+        for (library, name) in direct3d.iter().zip(DIRECT3D) {
+            fs::copy(library, system32.join(name))?;
+        }
+        let copy = system32.join(NEPTUNE);
+        if !copy.exists() {
+            fs::copy(&neptune, copy)?;
         }
         match config.log.parent() {
             Some(logs) => crate::files::private_directory(logs)?,

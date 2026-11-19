@@ -167,7 +167,9 @@ macro_rules! session_error_conversions {
             fn from(error: $crate::launch::Error) -> Self {
                 use $crate::launch::Error as E;
                 match error {
-                    E::IncompatibleArchitecture | E::WineUnavailable => Self::Launch(error),
+                    E::IncompatibleArchitecture | E::WineUnavailable | E::WineIncomplete => {
+                        Self::Launch(error)
+                    }
                     E::InvalidApplication | E::NotExecutable => Self::Unsupported,
                     // Epic's `Storage` key speaks of saves, not of readying a launch.
                     E::Storage | E::StartFailed | E::Unavailable => Self::Session,

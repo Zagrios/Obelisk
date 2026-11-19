@@ -33789,6 +33789,59 @@
         }
       }
     },
+    "backend.runtime.wineIncomplete": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wine, das Windows-Spiele ausführt, fehlen Dateien. Sicherheitssoftware wie ein Virenschutz hat sie möglicherweise entfernt. Fügen Sie den Bibliotheksordner von Obelisk (Einstellungen › Speicher) zu deren Ausnahmen hinzu, löschen Sie den Ordner „Voile“ darin und starten Sie das Spiel erneut."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wine, which runs Windows games, is missing files. Security software, such as an antivirus, may have removed them. Add Obelisk’s library folder (Settings › Storage) to its exclusions, delete the “Voile” folder inside it, then launch the game again."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A Wine, que ejecuta los juegos de Windows, le faltan archivos. Puede que un software de seguridad, como un antivirus, los haya eliminado. Añade la carpeta de la biblioteca de Obelisk (Ajustes › Almacenamiento) a sus exclusiones, elimina la carpeta «Voile» que contiene y vuelve a iniciar el juego."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Il manque des fichiers à Wine, qui fait tourner les jeux Windows. Un logiciel de sécurité, comme un antivirus, les a peut-être supprimés. Ajoutez le dossier de la bibliothèque d'Obelisk (Paramètres › Stockage) à ses exclusions, supprimez le dossier « Voile » qu'il contient, puis relancez le jeu."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A Wine, che esegue i giochi Windows, mancano dei file. Un software di sicurezza, come un antivirus, potrebbe averli rimossi. Aggiungi la cartella della libreria di Obelisk (Impostazioni › Archiviazione) alle sue esclusioni, elimina la cartella «Voile» al suo interno, poi avvia di nuovo il gioco."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Windowsゲームを実行するWineのファイルが不足しています。ウイルス対策ソフトなどのセキュリティソフトが削除した可能性があります。Obeliskのライブラリフォルダー（設定 › ストレージ）をそのソフトの除外対象に追加し、中の「Voile」フォルダーを削除してから、ゲームをもう一度起動してください。"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Faltam arquivos no Wine, que executa jogos de Windows. Um software de segurança, como um antivírus, pode tê-los removido. Adicione a pasta da biblioteca do Obelisk (Configurações › Armazenamento) às exclusões dele, apague a pasta “Voile” dentro dela e inicie o jogo novamente."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用于运行 Windows 游戏的 Wine 缺少文件。杀毒软件等安全软件可能已将其删除。请将 Obelisk 的库文件夹（设置 › 存储空间）添加到该软件的排除项，删除其中的“Voile”文件夹，然后重新启动游戏。"
+          }
+        }
+      }
+    },
     "backend.runtime.wineUnavailable": {
       "extractionState": "manual",
       "localizations": {

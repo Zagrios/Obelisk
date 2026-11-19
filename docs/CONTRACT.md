@@ -29,6 +29,7 @@ A release of a new contract reaches only the Obelisk builds of that contract. Ol
 - `linux/engine/fexdarwin-run`, `linux/engine/wsd`, `linux/engine/wsdctl`, `linux/engine/obelisk-input`, `linux/engine/run-with-timeout.sh`
 - `linux/root`, the Linux guest's root, and `linux/wine`, bound at `/opt/wine`
 - `linux/windows/{d3d11,dxgi,d3d12}.dll`, copied into the Linux engine's prefix on each launch
+- `linux/wine/lib/wine/x86_64-windows/nptunix.dll`, copied into a Linux engine's prefix that lacks it; a launch refuses a runtime without it or without one of the three above
 - `linux/steam/linux64`, Valve's Linux steamclient, bound at `/opt/steam`
 - `linux/guest/steam-hostpid.so`, preloaded in the guest
 - `linux/graphics/libexec/virgl_render_server`, `linux/graphics/dxmt-native.framework`

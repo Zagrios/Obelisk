@@ -70,7 +70,7 @@ pub(crate) trait Setup: 'static {
     const TITLE: &'static str;
     /// The game as Obelisk's profiles and logs name it.
     const GAME: profile::Game<'static>;
-    const LAUNCH_KEYS: [(launch::Error, &'static str); 7];
+    const LAUNCH_KEYS: [(launch::Error, &'static str); 8];
     const SUPERVISOR_KEYS: [(supervisor::Error, &'static str); 8];
 
     fn account() -> String;

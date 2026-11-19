@@ -350,7 +350,7 @@ impl Setup for Fixture {
     const GAME: Game<'static> = Game::Gog {
         product_id: "1207658924",
     };
-    const LAUNCH_KEYS: [(crate::launch::Error, &'static str); 7] = {
+    const LAUNCH_KEYS: [(crate::launch::Error, &'static str); 8] = {
         use crate::launch::Error as Launch;
         [
             (
@@ -358,6 +358,7 @@ impl Setup for Fixture {
                 "backend.runtime.macBuildNotNative",
             ),
             (Launch::WineUnavailable, "backend.runtime.wineUnavailable"),
+            (Launch::WineIncomplete, "backend.runtime.wineIncomplete"),
             (Launch::InvalidApplication, "backend.gog.unsupported"),
             (Launch::NotExecutable, "backend.gog.unsupported"),
             (Launch::Storage, "backend.gog.session"),

@@ -51,10 +51,15 @@ pub(crate) fn locations(root: &Path) -> crate::Locations {
 }
 
 /// Installs the Linux engine's runtime as Voile's development runtime: its
-/// engine, its Wine and Neptune's Direct3D, each a placeholder.
+/// engine, its Wine with Neptune's library and Neptune's Direct3D, each a
+/// placeholder.
 pub(crate) fn engine_runtime(locations: &crate::Locations) -> PathBuf {
     let runtime = locations.voile.join("current/linux");
-    for file in ["engine/fexdarwin-run", "wine/bin/wine"] {
+    for file in [
+        "engine/fexdarwin-run",
+        "wine/bin/wine",
+        "wine/lib/wine/x86_64-windows/nptunix.dll",
+    ] {
         fs::create_dir_all(runtime.join(file).parent().unwrap()).unwrap();
         fs::write(runtime.join(file), "").unwrap();
     }
@@ -652,6 +657,42 @@ fn the_program_a_profile_names_instead_is_the_one_readied_and_the_one_started() 
     ));
     assert!(calls(&locations.wine_prefixes).is_empty());
     assert!(!other.prefix().exists());
+}
+
+#[test]
+fn a_runtime_that_lost_a_library_readies_no_game_and_a_prefix_without_neptune_s_gets_the_runtime_s()
+{
+    let (_directory, root) = installation();
+    let locations = locations(&root);
+    let runtime = engine_runtime(&locations);
+    let neptune = runtime.join("wine/lib/wine/x86_64-windows/nptunix.dll");
+    let (install, target) = game(&root);
+    let windows = windows_of(&locations, ELDEN_RING, &install);
+    let copy = windows
+        .prefix()
+        .join("drive_c/windows/system32/nptunix.dll");
+    let ready = || windows.ready(&locations, &target, &Plain::default());
+
+    // Security software took a library as Voile installed: nothing is
+    // readied, not even a prefix.
+    for lost in [&neptune, &runtime.join("windows/dxgi.dll")] {
+        fs::remove_file(lost).unwrap();
+        assert!(matches!(ready(), Err(Error::WineIncomplete)));
+        assert!(!windows.prefix().exists());
+        fs::write(lost, "the runtime's").unwrap();
+    }
+
+    // The runtime is whole again, and the prefix it made while it was not
+    // lacks its copy.
+    fs::create_dir_all(copy.parent().unwrap()).unwrap();
+    fs::write(windows.prefix().join("system.reg"), "registry").unwrap();
+    ready().unwrap();
+    assert_eq!(fs::read(&copy).unwrap(), b"the runtime's");
+
+    // The copy Wine made is left as it is.
+    fs::write(&copy, "wine's").unwrap();
+    ready().unwrap();
+    assert_eq!(fs::read(&copy).unwrap(), b"wine's");
 }
 
 #[test]
