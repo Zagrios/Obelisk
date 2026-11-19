@@ -29,6 +29,7 @@ jobs:
       due: ${{ steps.decide.outputs.due }}
       version: ${{ steps.decide.outputs.version }}
       since: ${{ steps.decide.outputs.since }}
+      stale: ${{ steps.decide.outputs.stale }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -51,8 +52,13 @@ jobs:
       since: ${{ needs.decide.outputs.since }}
     secrets: inherit
 
-  # A release made with the workflow's own token starts no workflow.
+  # A release made with the workflow's own token starts no workflow. With no
+  # beta to build, the feed is written again when it misses the newest beta:
+  # the job that should have listed it failed.
   appcast:
-    needs: build
+    needs: [decide, build]
+    if: >-
+      !cancelled() && (needs.build.result == 'success'
+        || (needs.build.result == 'skipped' && needs.decide.outputs.stale == 'true'))
     uses: ./.github/workflows/appcast.yml
     secrets: inherit

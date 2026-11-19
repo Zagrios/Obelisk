@@ -4,8 +4,8 @@
 # anyway; and the version it takes: the next beta of that beta's version, else of the next patch, or of main's
 # MARKETING_VERSION when that is newer, such as 0.6.3.beta2 after the release 0.6.2 and its beta 1 (scripts/version.sh
 # says how Sparkle orders them). A beta whose build failed is built again only once main changed, or when the workflow
-# is run by hand ($GITHUB_EVENT_NAME workflow_dispatch). Prints `due`, `version` (without its v) and `since` (that
-# highest version's tag) as KEY=VALUE lines for $GITHUB_OUTPUT.
+# is run by hand ($GITHUB_EVENT_NAME workflow_dispatch). Prints `due`, `version` (without its v), `since` (that
+# highest version's tag) and `stale` (whether the feed misses the beta `since`) as KEY=VALUE lines for $GITHUB_OUTPUT.
 #
 # With --notes SINCE, prints the beta's notes instead: the subject of each commit since the tag SINCE.
 #
@@ -114,4 +114,14 @@ if [[ "$due" == true && "${GITHUB_EVENT_NAME:-}" != workflow_dispatch ]]; then
         fi
     fi
 fi
-printf 'due=%s\nversion=%s\nsince=%s\n' "$due" "$version" "$since"
+
+# The feed, attached to the latest release, lists the newest beta once the Appcast job wrote it. When that job
+# failed, such as on a runner GitHub never gave, nothing else writes the feed before the next beta. A feed GitHub
+# fails to give says nothing.
+stale=false
+if [[ "$since" == *.beta* ]] &&
+    feed="$(gh release download -R "$REPOSITORY" --pattern appcast.xml --output - 2>/dev/null)" &&
+    [[ "$feed" != *"/releases/download/$since/"* ]]; then
+    stale=true
+fi
+printf 'due=%s\nversion=%s\nsince=%s\nstale=%s\n' "$due" "$version" "$since" "$stale"
