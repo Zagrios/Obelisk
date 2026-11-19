@@ -30,9 +30,12 @@ struct CachedLibraryGame<Game> {
 @MainActor
 @Observable
 final class AccountLibrary<Store: InstallationStorefront, Game: LibraryGame> where Game.ID == Store.GameID {
-    /// The games as the storefront lists them.
+    /// The games as the storefront lists them, which its installations are told.
     private(set) var games: [Game] = [] {
-        didSet { changes &+= 1 }
+        didSet {
+            changes &+= 1
+            installations.lists(games.map(\.id))
+        }
     }
     var searchText = ""
     var filter: StorefrontLibraryFilter = .all

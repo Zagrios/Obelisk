@@ -13,7 +13,7 @@ final class AppModelStorefrontsTests: XCTestCase {
     // MARK: Prompts
 
     private func prompt(_ section: LibrarySection, _ kind: AccountPrompt.Kind) -> AccountPrompt {
-        AccountPrompt(section: section, kind: kind)
+        AccountPrompt(slot: AccountSlot(section), kind: kind)
     }
 
     /// Every prompt waiting at once: three storefronts, a newer Voile, Rosetta
@@ -405,7 +405,7 @@ final class AppModelStorefrontsTests: XCTestCase {
 
     /// The storefronts Home still tells as restoring.
     private func restoring(_ app: AppModel) -> [LibrarySection] {
-        LibrarySection.storefronts.filter { app.standing(of: $0) == .restoring }
+        LibrarySection.storefronts.filter { app.standing(of: AccountSlot($0)) == .restoring }
     }
 
     func testEveryStorefrontRestoresAtOnceAndLeavesTheRestoringListWhenItsOwnRestorationEnds() async throws {
@@ -552,6 +552,7 @@ final class AppModelStorefrontsTests: XCTestCase {
         for (item, title) in known {
             let game = app.downloadGame(item)
             XCTAssertEqual(game.title, title, "The library names the game, not the queue")
+            XCTAssertEqual(game.source, item.storefront.section.title, "A storefront's only account is not named")
             XCTAssertNotNil(game.cover)
             XCTAssertNotNil(game.artwork)
         }
@@ -662,7 +663,7 @@ final class AppModelStorefrontsTests: XCTestCase {
         fixture.steam.open(StorefrontsFixture.portal)
         fixture.epic.open(StorefrontsFixture.epicGame())
         fixture.gog.open(StorefrontsFixture.gogGame())
-        fixture.app.homeGame = HomeGame.ID(section: .epic, game: "fixture:one")
+        fixture.app.homeGame = HomeGame.ID(slot: .epic, game: "fixture:one")
     }
 
     private func gamesFixture() -> StorefrontsFixture {
@@ -682,7 +683,7 @@ final class AppModelStorefrontsTests: XCTestCase {
         XCTAssertNil(fixture.steam.selectedGame, "A storefront shows its library, not the game left open in it")
         XCTAssertNotNil(fixture.epic.selectedGame)
         XCTAssertNotNil(fixture.gog.selectedGame)
-        XCTAssertEqual(app.homeGame, HomeGame.ID(section: .epic, game: "fixture:one"),
+        XCTAssertEqual(app.homeGame, HomeGame.ID(slot: .epic, game: "fixture:one"),
                        "Another storefront's game page is Home's to close")
 
         app.show(.home)
@@ -782,17 +783,17 @@ final class AppModelStorefrontsTests: XCTestCase {
         let fixture = gamesFixture()
         defer { fixture.finish() }
         await fixture.signIn()
-        func library<Model: LibraryStorefront>(_ model: Model, _ section: LibrarySection) -> HomeLibrary {
-            model.homeLibrary(in: section, cover: { _ in EmptyView() }, heroArtwork: { _ in EmptyView() },
+        func library<Model: LibraryStorefront>(_ model: Model) -> HomeLibrary {
+            model.homeLibrary(cover: { _ in EmptyView() }, heroArtwork: { _ in EmptyView() },
                               heroLogo: { _ in EmptyView() })
         }
-        let steam = library(fixture.steam, .steam)
-        let epic = library(fixture.epic, .epic)
-        let gog = library(fixture.gog, .gog)
+        let steam = library(fixture.steam)
+        let epic = library(fixture.epic)
+        let gog = library(fixture.gog)
 
-        XCTAssertEqual(steam.covers.map(\.id), [HomeGame.ID(section: .steam, game: "620")])
-        XCTAssertEqual(epic.covers.map(\.id), [HomeGame.ID(section: .epic, game: "fixture:one")])
-        XCTAssertEqual(gog.covers.map(\.id), [HomeGame.ID(section: .gog, game: "1207658924")])
+        XCTAssertEqual(steam.covers.map(\.id), [HomeGame.ID(slot: .steam, game: "620")])
+        XCTAssertEqual(epic.covers.map(\.id), [HomeGame.ID(slot: .epic, game: "fixture:one")])
+        XCTAssertEqual(gog.covers.map(\.id), [HomeGame.ID(slot: .gog, game: "1207658924")])
 
         try XCTUnwrap(epic.covers.first).open()
         XCTAssertEqual(fixture.epic.selectedGame?.id, "fixture:one")

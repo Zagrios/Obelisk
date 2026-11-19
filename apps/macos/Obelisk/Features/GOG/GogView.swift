@@ -64,7 +64,5 @@ struct GogView: View {
         Button(L10n.string("ui.library.refresh"), systemImage: "arrow.clockwise", action: model.refresh)
             .disabled(model.isLoadingGames)
         Toggle(L10n.string("ui.account.remember_me"), isOn: $model.rememberSession)
-        Divider()
-        Button(L10n.string("ui.account.sign_out"), systemImage: "rectangle.portrait.and.arrow.right", action: model.signOut)
     }
 }

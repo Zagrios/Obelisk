@@ -11,9 +11,10 @@ use crate::{
 };
 use obelisk_core::{OnlineStatus, Platform, transfer::CancelToken};
 use std::{
+    any::Any,
     fmt,
     sync::{
-        Arc, Mutex,
+        Arc, Mutex, OnceLock,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
@@ -430,6 +431,8 @@ struct Shared<P: Storefront> {
     published: watch::Sender<State<P>>,
     recover: Recovery<P>,
     runtimes: Arc<Runtimes>,
+    /// What the storefront's accounts share beside its Game sessions.
+    commons: OnceLock<Arc<dyn Any + Send + Sync>>,
 }
 impl<P: Storefront> Shared<P> {
     fn update<T>(&self, change: impl FnOnce(&mut Inner<P>) -> T) -> T {
@@ -687,6 +690,7 @@ impl<P: Storefront> Sessions<P> {
             published,
             recover,
             runtimes: runtimes.clone(),
+            commons: OnceLock::new(),
         });
         // A game an earlier Obelisk started may run from a replaced release;
         // once recovered, it shows as any observed session. Every game this
@@ -715,6 +719,18 @@ impl<P: Storefront> Sessions<P> {
     /// too.
     pub(crate) fn runtimes(&self) -> &Arc<Runtimes> {
         &self.shared.runtimes
+    }
+
+    /// What the storefront's accounts share beside its Game sessions, made
+    /// by the first that asks: their installations keep one value there, of
+    /// one type.
+    pub(crate) fn commons<T: Default + Send + Sync + 'static>(&self) -> Arc<T> {
+        self.shared
+            .commons
+            .get_or_init(|| Arc::new(T::default()))
+            .clone()
+            .downcast()
+            .expect("the storefront's accounts share one value")
     }
 
     /// Waits for a revision newer than `after`, or returns at once.

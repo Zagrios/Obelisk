@@ -13,6 +13,7 @@ fn idle() -> Reservation<u32> {
         downloading: false,
         transferring: None,
         queued: vec![],
+        elsewhere: vec![],
     }
 }
 
@@ -285,6 +286,7 @@ fn a_job_that_may_start_could_have_been_queued() {
                                 uninstalling,
                                 transferring,
                                 queued: queued.to_vec(),
+                                elsewhere: vec![],
                             };
                             for game in [620, 730] {
                                 for (name, job) in [("transfer", TRANSFER), ("move", Job::Move)] {

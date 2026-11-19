@@ -164,7 +164,6 @@ impl Client {
             || receipt.catalog_item_id != catalog_item_id
             || receipt.app_name != app_name
             || receipt.platform != platform
-            || receipt.account_id != credentials.account_id
             || Path::new(&receipt.directory).canonicalize().ok().as_ref() != Some(root)
         {
             return Err(launch_error("incompleteInstallation"));
@@ -179,7 +178,7 @@ impl Client {
             .await?;
         // Disconnect may complete while the account APIs are in flight.
         let current = self.credentials().await?;
-        if current.account_id != receipt.account_id {
+        if current.account_id != credentials.account_id {
             return Err(EpicError::Unauthorized);
         }
         target.arguments.extend(

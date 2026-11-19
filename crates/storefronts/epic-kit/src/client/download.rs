@@ -22,6 +22,9 @@ pub struct Installation {
     pub app_name: String,
     pub namespace: String,
     pub catalog_item_id: String,
+    /// The account whose Transfer installed it last. Any account of the
+    /// storefront that owns the game launches it: Epic answers for that at
+    /// each launch.
     pub account_id: String,
     pub directory: String,
     #[serde(serialize_with = "write_platform")]

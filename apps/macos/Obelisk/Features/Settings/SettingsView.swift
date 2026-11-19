@@ -60,10 +60,11 @@ struct SettingsView: View {
                     }
                     GamePageSection(title: L10n.string("ui.settings.stores")) {
                         ObeliskCard {
-                            ForEach(LibrarySection.storefronts) { section in
-                                if section != LibrarySection.storefronts.first { ObeliskCardDivider() }
-                                SettingsStoreRow(section: section, status: model.standing(of: section)) {
-                                    model.selection = section
+                            let slots = model.accounts.map(\.slot)
+                            ForEach(slots) { slot in
+                                if slot != slots.first { ObeliskCardDivider() }
+                                SettingsStoreRow(slot: slot, status: model.standing(of: slot)) {
+                                    model.selection = .account(slot)
                                 }
                             }
                         }
@@ -971,10 +972,12 @@ private struct DiagonalEdge: Shape {
 /// A storefront and its account, as Home's tile tells it, opening its library
 /// or its sign-in.
 private struct SettingsStoreRow: View {
-    let section: LibrarySection
+    /// The account's slot, which names the row among every account's.
+    let slot: AccountSlot
     let status: AccountStanding
     let open: () -> Void
 
+    private var section: LibrarySection { slot.section }
     private var name: String { section.storeTitle }
 
     var body: some View {
@@ -986,7 +989,7 @@ private struct SettingsStoreRow: View {
             accessory
         }
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("settings-store-\(section.rawValue)")
+        .accessibilityIdentifier("settings-store-\(slot.id)")
     }
 
     @ViewBuilder private var detail: some View {
@@ -1022,13 +1025,13 @@ private struct SettingsStoreRow: View {
         case .signedIn:
             GlassCapsuleButton(title: L10n.string("ui.settings.open"),
                                 accessibilityLabel: L10n.string("ui.settings.open_store", name),
-                                identifier: "settings-open-\(section.rawValue)", action: open)
+                                identifier: "settings-open-\(slot.id)", action: open)
         case .restoring:
             EmptyView()
         case .signedOut:
             AccentCapsuleButton(title: L10n.string("ui.account.sign_in"),
                                  accessibilityLabel: L10n.string("ui.home.sign_in_store", name),
-                                 identifier: "settings-sign-in-\(section.rawValue)", action: open)
+                                 identifier: "settings-sign-in-\(slot.id)", action: open)
         }
     }
 }

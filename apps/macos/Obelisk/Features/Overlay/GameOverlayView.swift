@@ -135,7 +135,7 @@ private struct OverlayGameArtwork: View {
 
     var body: some View {
         if case .steam(let appId)? = overlay.session?.game {
-            SteamArtwork(appId: appId, portrait: false)
+            SteamArtwork(appId: appId, portrait: false, library: overlay.steam.libraryArtwork)
         } else {
             StorefrontArtwork(imageURL: overlay.gameArtwork, maxPixelSize: maxPixelSize)
         }

@@ -4,8 +4,10 @@ import Foundation
 struct EpicKeychain: CredentialStore {
     private let store: KeychainStore<StoredEpicCredentials>
 
-    init(service: String = AppIdentity.keychainService + ".epic") {
-        store = KeychainStore(service: service, account: "epic-session", label: L10n.string("model.brand.epic"))
+    /// The item of `slot`'s account.
+    init(slot: AccountSlot = AccountSlot(.epic), service: String = AppIdentity.keychainService + ".epic") {
+        store = KeychainStore(service: service, account: "epic-session" + slot.suffix,
+                              label: L10n.string("model.brand.epic"))
     }
 
     func load() async throws -> WebAccountCredentials? {

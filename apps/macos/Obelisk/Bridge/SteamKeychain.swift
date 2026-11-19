@@ -4,8 +4,10 @@ import Foundation
 struct SteamKeychain: CredentialStore {
     private let store: KeychainStore<StoredCredentials>
 
-    init(service: String = AppIdentity.keychainService + ".steam") {
-        store = KeychainStore(service: service, account: "steam-session", label: L10n.string("model.brand.steam"))
+    /// The item of `slot`'s account.
+    init(slot: AccountSlot = AccountSlot(.steam), service: String = AppIdentity.keychainService + ".steam") {
+        store = KeychainStore(service: service, account: "steam-session" + slot.suffix,
+                              label: L10n.string("model.brand.steam"))
     }
 
     func load() async throws -> SteamCredentials? {

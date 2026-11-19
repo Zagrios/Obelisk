@@ -254,10 +254,17 @@ extension StorefrontsFixture {
 }
 
 extension DownloadItem {
-    /// A Transfer of `game` of `storefront` waiting in the download queue.
-    static func queued(_ storefront: SessionStorefront, game: String, name: String = "Queued name") -> DownloadItem {
-        DownloadItem(id: 1, storefront: storefront, account: "account", game: game, name: name, kind: .install,
-                     automatic: false, launching: false, paused: false)
+    /// A Transfer of `game` of `storefront` waiting in the download queue, of
+    /// the fixture's account of that storefront unless `account` names another.
+    static func queued(_ storefront: SessionStorefront, game: String, name: String = "Queued name",
+                       account: String? = nil) -> DownloadItem {
+        let signedIn = switch storefront {
+        case .steam: String(StorefrontsFixture.steamAccount)
+        case .epic: StorefrontsFixture.epicAccount
+        case .gog: StorefrontsFixture.gogAccount
+        }
+        return DownloadItem(id: 1, storefront: storefront, account: account ?? signedIn, game: game, name: name,
+                            kind: .install, automatic: false, launching: false, paused: false)
     }
 }
 

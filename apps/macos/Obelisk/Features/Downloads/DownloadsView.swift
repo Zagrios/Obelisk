@@ -1,10 +1,14 @@
 import Charts
 import SwiftUI
 
-/// What the download queue shows of a game: its title, and its cover and
-/// wide artwork once its storefront's library knows it, built when shown.
+/// What the download queue shows of a game: its title, where its Transfer
+/// comes from, and its cover and wide artwork once its storefront's library
+/// knows it, built when shown.
 struct DownloadGame {
     let title: String
+    /// Its storefront, named with its account once the storefront holds
+    /// several: the app tells it, which knows every account.
+    var source = ""
     let cover: (() -> AnyView)?
     let artwork: (() -> AnyView)?
 }
@@ -61,10 +65,6 @@ enum DownloadFormatting {
         case .repair: L10n.string("ui.downloads.kind_repair")
         case .move: L10n.string("ui.downloads.kind_move")
         }
-    }
-
-    static func storefront(_ storefront: SessionStorefront) -> String {
-        storefront.section.title
     }
 }
 
@@ -521,9 +521,9 @@ private struct DownloadCurrentCard: View {
     }
 
     private var detail: String {
-        guard let transfer else { return DownloadFormatting.storefront(item.storefront) }
+        guard let transfer else { return game.source }
         return [
-            DownloadFormatting.storefront(item.storefront),
+            game.source,
             transfer.countedFilesText,
             transfer.downloadedGameDataText,
         ]
@@ -583,7 +583,7 @@ private struct DownloadQueueRow: View {
     private var subtitle: String {
         [
             DownloadFormatting.kind(item.kind),
-            DownloadFormatting.storefront(item.storefront),
+            game.source,
             item.automatic ? L10n.string("ui.downloads.automatic") : nil,
             downloads.held && item.automatic ? L10n.string("ui.downloads.waiting_for_game") : nil,
         ]

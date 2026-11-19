@@ -31,7 +31,7 @@ extension OnlineStatus: CaseIterable, Identifiable {
 @Observable
 final class OnlineStatusChoice {
     private(set) var status: OnlineStatus
-    @ObservationIgnored private var followers: [@MainActor (OnlineStatus) -> Void] = []
+    @ObservationIgnored private var followers: [Follower] = []
     @ObservationIgnored private let key: String
     @ObservationIgnored private let defaults: UserDefaults
 
@@ -42,16 +42,29 @@ final class OnlineStatusChoice {
         status = OnlineStatus.allCases.first { $0.stored == stored } ?? .online
     }
 
-    /// Tells `follower` the status now, then each one the player picks.
-    func follow(_ follower: @escaping @MainActor (OnlineStatus) -> Void) {
-        followers.append(follower)
-        follower(status)
+    /// What shows the status, for as long as it lives.
+    private struct Follower {
+        weak var owner: AnyObject?
+        let tell: @MainActor (OnlineStatus) -> Void
+    }
+
+    /// Tells `owner` the status now, then each one the player picks, for as
+    /// long as `owner` lives. One that already follows is told nothing more:
+    /// a storefront's accounts share what follows it, such as its Game
+    /// sessions.
+    func follow<Owner: AnyObject>(_ owner: Owner, _ tell: @escaping @MainActor (Owner, OnlineStatus) -> Void) {
+        followers.removeAll { $0.owner == nil }
+        guard !followers.contains(where: { $0.owner === owner }) else { return }
+        followers.append(Follower(owner: owner) { [weak owner] status in
+            if let owner { tell(owner, status) }
+        })
+        tell(owner, status)
     }
 
     func choose(_ status: OnlineStatus) {
         guard status != self.status else { return }
         self.status = status
         defaults.set(status.stored, forKey: key)
-        for follower in followers { follower(status) }
+        for follower in followers { follower.tell(status) }
     }
 }

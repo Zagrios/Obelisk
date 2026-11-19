@@ -23,8 +23,12 @@ Where Obelisk installs games: its own folder in its library until the player cho
 _Avoid_: library folder (Obelisk's own data), install location
 
 **Receipt book**:
-The Installation receipts one storefront account keeps, in a file of its own. Those of installations whose disk is connected show; those whose disk is not stay in the file, hidden, until it comes back. Beside them, in a second file, it keeps the records of new installations whose Transfer has not succeeded; these are not Installation receipts. A change to it, such as a finished Transfer, a move or an uninstall, applies to the receipts as they are when it happens, never as they were when the action began.
+The Installation receipts one storefront account keeps, in a file of its own. Those of installations whose disk is connected show; those whose disk is not stay in the file, hidden, until it comes back. Beside them, in a second file, it keeps the records of new installations whose Transfer has not succeeded; these are not Installation receipts. A change to it, such as a finished Transfer, a move or an uninstall, applies to the receipts as they are when it happens, never as they were when the action began. It also holds the installations the account's Neighbours hold, of the games its library lists.
 _Avoid_: installation list
+
+**Neighbours**:
+The accounts of one storefront signed in at once, which share its installations: a game two of them own is installed once, in one folder, with one Wine prefix and one set of launch settings. Each keeps a receipt of it in its own Receipt book, taken from the one that installed it as soon as its library lists the game, so the game shows installed for both and stays so once the other signs out. What one does to the installation, a Transfer started or finished, a move, it tells the others, whose receipts follow at once; an automatic update one of them started is the storefront's one try until the next update check. An uninstall removes it for all of them: each one's Cloud archive takes its saves before the files go, and a failure of any keeps the game. Home shows such a game once, for the account that played it last.
+_Avoid_: sibling accounts, shared library (each account keeps its own library)
 
 **Speed limit**:
 The most the player lets Obelisk download per second, set in Settings. Every storefront's Transfers share it, so it bounds their total rather than each connection; it applies from the next bytes on, to a Transfer under way too, and a lower choice than 625 kB/s is raised to it. It holds games only: the downloads of Obelisk's own runtime, Voile and Valve's components, are not held by it.
@@ -37,6 +41,10 @@ _Avoid_: login, CM connection (one connection of an account session)
 **Web account session**:
 The Account session of a storefront whose account signs in on its web page and whose credentials rotate: Epic's and GOG's. One session serves both: a storefront supplies only how its requests name a game for playtimes and achievements, its game record and its extras, Epic's friends, status and web sign-in address, GOG's avatar. It holds an access token, renewed once it lapsed or the storefront rejected it: a renewal may rotate the credentials the Keychain keeps, and a request answered after sign-out is refused. It tells playtimes in seconds.
 _Avoid_: Epic session, GOG session
+
+**Account slot**:
+One storefront account's place in Obelisk, whether or not an account is signed in there: its library's row in the sidebar, and where its saved session is kept. Each storefront starts with one. The player adds another from an account's menu to sign a second account in, and every signed-in account stays connected at once, each with its own library, Receipt book and friends; an account signs in on one slot only. Signing an account out takes its slot away, unless it is its storefront's last, which then offers its sign-in; a slot the player leaves without signing in goes too, as does one found with nothing saved at launch. A slot whose saved session could not restore yet, as without a network, stays to restore next time; one whose storefront refuses its saved session forgets it, and goes once the player has read why. A storefront's accounts share its Game sessions, so one of its games runs at a time, and how the player shows to their friends; signed in at once, they are Neighbours, and share its installations. Once a storefront holds several accounts, the sidebar names each library by its account, as do the download queue for each Transfer and Home for each game.
+_Avoid_: profile, account tab (the slot's row in the sidebar)
 
 **Library cache**:
 The last library each storefront account loaded, with everything the storefront returned for each game and the game's last launch from Obelisk. The library shows from it while the account's session connects; the session keeps it as it loads, and signing the account out forgets it. It keeps each playtime as its storefront told it, Epic's in seconds and GOG's in minutes, and Obelisk reads both in seconds. It is not the catalog of games added by hand.
@@ -91,7 +99,7 @@ The sandboxed process that holds a Steam game's Steam session beside it, run fro
 _Avoid_: runtime (what Obelisk downloads), native runtime
 
 **Reservation**:
-The exclusive claim a Game session or Cloud maintenance holds on a game's installation. While it exists, no Transfer, uninstall or other launch of that game can start.
+The exclusive claim a Game session or Cloud maintenance holds on a game's installation. While it exists, no Transfer, uninstall or other launch of that game can start, from any account of the storefront: what one account's Transfer, uninstall or launch holds is held for its Neighbours too, and a game one of them downloads shows as queued on the others, which may take it out of the queue as well.
 _Avoid_: lock, busy state
 
 **Admission**:

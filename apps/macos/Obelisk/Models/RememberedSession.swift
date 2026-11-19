@@ -9,6 +9,36 @@ protocol CredentialStore<Credentials>: Sendable {
     func remove() async throws
 }
 
+/// One slot's saved session in the Keychain, and whether it holds one, as
+/// its own reads and writes told.
+@MainActor
+final class SavedSession<Credentials: Sendable> {
+    private let store: any CredentialStore<Credentials>
+    /// Whether the Keychain holds a session to restore; nil until a read or
+    /// a write told, so a read that failed never counts as nothing saved.
+    private(set) var isHeld: Bool?
+
+    init(_ store: any CredentialStore<Credentials>) {
+        self.store = store
+    }
+
+    func load() async throws -> Credentials? {
+        let credentials = try await store.load()
+        isHeld = credentials != nil
+        return credentials
+    }
+
+    func save(_ credentials: Credentials) async throws {
+        try await store.save(credentials)
+        isHeld = true
+    }
+
+    func remove() async throws {
+        try await store.remove()
+        isHeld = false
+    }
+}
+
 /// A signed-in Rust session whose refresh credentials rotate with its calls,
 /// as Epic's and GOG's do. It saves each rotation through `persist`.
 struct RotatingSession<Credentials: Sendable>: Sendable {
@@ -39,7 +69,7 @@ final class RememberedSession<Credentials: Sendable> {
         let revision: UUID
     }
 
-    @ObservationIgnored private let store: any CredentialStore<Credentials>
+    @ObservationIgnored private let store: SavedSession<Credentials>
     /// The account the credentials name.
     @ObservationIgnored private let accountID: (Credentials) -> String
     /// Shown when the session could not be saved.
@@ -50,7 +80,7 @@ final class RememberedSession<Credentials: Sendable> {
 
     init(keychain store: any CredentialStore<Credentials>, accountID: @escaping (Credentials) -> String,
          notSaved: String) {
-        self.store = store
+        self.store = SavedSession(store)
         self.accountID = accountID
         self.notSaved = notSaved
     }
@@ -58,6 +88,9 @@ final class RememberedSession<Credentials: Sendable> {
     deinit {
         account?.session.shutdownObservers()
     }
+
+    /// Whether the Keychain holds a session to restore; nil until told.
+    var holdsSavedSession: Bool? { store.isHeld }
 
     func load() async throws -> Credentials? {
         await storageTask?.value

@@ -142,9 +142,14 @@ final class GameOverlayController {
     /// The friends column's keyboard state and conversation.
     let focus = FriendsPanelFocus()
     let avatars = FriendsAvatarCache()
-    let steam: SteamModel
-    let epic: EpicModel
-    let gog: GogModel
+    @ObservationIgnored private let steamAccounts: AccountList<SteamModel>
+    @ObservationIgnored private let epicAccounts: AccountList<EpicModel>
+    @ObservationIgnored private let gogAccounts: AccountList<GogModel>
+    /// The account the overlay shows of each storefront: the one whose game
+    /// runs.
+    var steam: SteamModel { steamAccounts.playing }
+    var epic: EpicModel { epicAccounts.playing }
+    var gog: GogModel { gogAccounts.playing }
     /// Whether the overlay shows. A Steam game learns it too, as it pauses
     /// or stops reading input while Steam's own overlay shows.
     @ObservationIgnored var onVisibilityChanged: (@MainActor (Bool) -> Void)?
@@ -167,11 +172,11 @@ final class GameOverlayController {
     /// What the Steam game was last told of the overlay, in order.
     @ObservationIgnored private var steamNotice: Task<Void, Never>?
 
-    init(steam: SteamModel, epic: EpicModel, gog: GogModel, defaults: UserDefaults = .standard,
-         environment: GameOverlayEnvironment = .live) {
-        self.steam = steam
-        self.epic = epic
-        self.gog = gog
+    init(steam: AccountList<SteamModel>, epic: AccountList<EpicModel>, gog: AccountList<GogModel>,
+         defaults: UserDefaults = .standard, environment: GameOverlayEnvironment = .live) {
+        steamAccounts = steam
+        epicAccounts = epic
+        gogAccounts = gog
         self.environment = environment
         self.defaults = defaults
         shortcut = OverlayShortcut(defaults: defaults)
@@ -307,7 +312,7 @@ final class GameOverlayController {
     /// meantime refuses it, which changes nothing.
     private func tellSteam(active: Bool) {
         guard let session, case .steam = session.game else { return }
-        let sessions = steam.gameSessions
+        let sessions = steamAccounts.gameSessions
         let userInitiated = openedByPlayer
         let previous = steamNotice
         steamNotice = Task {
@@ -506,13 +511,13 @@ final class GameOverlayController {
 
     /// The running session of any storefront: one game runs at a time.
     private var runningSession: OverlaySession? {
-        if let active = steam.gameSessions.active, active.running {
+        if let active = steamAccounts.gameSessions.active, active.running {
             return OverlaySession(id: active.id, game: .steam(appId: active.game), startedAt: active.startedAt)
         }
-        if let active = epic.gameSessions.active, active.running {
+        if let active = epicAccounts.gameSessions.active, active.running {
             return OverlaySession(id: active.id, game: .epic(active.game), startedAt: active.startedAt)
         }
-        if let active = gog.gameSessions.active, active.running {
+        if let active = gogAccounts.gameSessions.active, active.running {
             return OverlaySession(id: active.id, game: .gog(active.game), startedAt: active.startedAt)
         }
         return nil

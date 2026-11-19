@@ -13,6 +13,8 @@ enum SteamLoginStart: Sendable, Equatable {
 @MainActor
 @Observable
 final class SteamModel {
+    let slot: AccountSlot
+    @ObservationIgnored var isSignedInElsewhere: @MainActor (String) -> Bool = { _ in false }
     private(set) var displayName: String?
     private(set) var avatarURL: URL?
     private(set) var friends: FriendsPresentationState?
@@ -63,7 +65,7 @@ final class SteamModel {
     let library: AccountLibrary<SteamGames, SteamGame>
 
     @ObservationIgnored private let directory: URL
-    @ObservationIgnored private let keychain: any CredentialStore<SteamCredentials>
+    @ObservationIgnored private let keychain: SavedSession<SteamCredentials>
     /// Signs the account in, showing it to its friends as the status says.
     @ObservationIgnored private let connectSession: @Sendable (SteamCredentials, OnlineStatus) async throws -> any SteamSessionProtocol
     @ObservationIgnored private let loadNews: @Sendable (UInt32) async throws -> [SteamNews]
@@ -85,10 +87,10 @@ final class SteamModel {
     let chat: SteamChatModel
     /// Friends' invitations, into the running game or another.
     let invitations: SteamReceivedInvitations
-    /// Tells of an invitation while no running game shows the overlay.
-    @ObservationIgnored var notifier: (any SteamInviteNotifying)? {
-        didSet { notifier?.answer = { [weak self] answer, invite in self?.answerNotice(answer, invite) } }
-    }
+    /// Tells of an invitation while no running game shows the overlay. Every
+    /// Steam account shares it, and whoever owns it routes its answers to
+    /// `answerNotice`.
+    @ObservationIgnored var notifier: (any SteamInviteNotifying)?
     /// The in-game purchase the running game waits on.
     let purchase: SteamPurchaseAuthorization
     /// How the account shows to its friends, from the account's menu.
@@ -100,9 +102,12 @@ final class SteamModel {
     @ObservationIgnored private var transport: UInt64?
     @ObservationIgnored private var login: (any SteamLoginProtocol)?
     private var steamId: UInt64? { sessionCredentials?.steamId }
+    var accountID: String? { steamId.map { String($0) } }
     /// The saved session's restoration; true when it ended without a newer
     /// sign-in or sign-out.
     @ObservationIgnored private var restoration: Task<Bool, Never>?
+    /// Its slot went: it signs nothing in again.
+    @ObservationIgnored private var retired = false
     /// Whether the QR sign-in was offered once the restoration ended.
     @ObservationIgnored private var offeredSignIn = false
     @ObservationIgnored private var generation = 0
@@ -123,7 +128,8 @@ final class SteamModel {
 
     init(
         directory: URL,
-        keychain: any CredentialStore<SteamCredentials> = SteamKeychain(),
+        slot: AccountSlot = AccountSlot(.steam),
+        keychain: (any CredentialStore<SteamCredentials>)? = nil,
         connect: (@Sendable (SteamCredentials) async throws -> any SteamSessionProtocol)? = nil,
         news: @escaping @Sendable (UInt32) async throws -> [SteamNews] = { try await steamNews(appId: $0) },
         webCookies: @escaping @Sendable (any SteamSessionProtocol) async throws -> [SteamWebCookie] = {
@@ -145,7 +151,8 @@ final class SteamModel {
         onlineStatus: OnlineStatusChoice? = nil
     ) {
         self.directory = directory
-        self.keychain = keychain
+        self.slot = slot
+        self.keychain = SavedSession(keychain ?? SteamKeychain(slot: slot))
         if let connect {
             self.connectSession = { credentials, _ in try await connect(credentials) }
         } else {
@@ -178,8 +185,8 @@ final class SteamModel {
         self.purchase = SteamPurchaseAuthorization(sessions: gameSessions)
         self.onlineStatus = onlineStatus ?? OnlineStatusChoice(storeID: LibrarySection.steam.rawValue)
         // The chat has no session yet: the session signs in showing the status.
-        self.onlineStatus.follow(self.chat.setStatus)
-        self.onlineStatus.follow(gameSessions.setStatus)
+        self.onlineStatus.follow(self.chat) { $0.setStatus($1) }
+        self.onlineStatus.follow(gameSessions) { $0.setStatus($1) }
         wakeObserver = SystemWakeObservation { [weak self] in
             Task { @MainActor [weak self] in self?.retryFriends() }
         }
@@ -200,6 +207,10 @@ final class SteamModel {
     }
 
     var isConnected: Bool { sessionCredentials != nil }
+
+    var isVacant: Bool {
+        !isRestoring && !isConnecting && !isConnected && keychain.isHeld == false
+    }
 
     var unreadCount: Int { chat.totalUnread }
 
@@ -271,8 +282,13 @@ final class SteamModel {
         do {
             if let credentials = try await keychain.load() {
                 guard current == generation else { return false }
-                showCachedLibrary(of: credentials.steamId)
-                await connect(credentials, generation: current, persist: false)
+                if isSignedInElsewhere(String(credentials.steamId)) {
+                    // Another slot holds the account: this one's copy goes.
+                    try await keychain.remove()
+                } else {
+                    showCachedLibrary(of: credentials.steamId)
+                    await connect(credentials, generation: current, persist: false)
+                }
             }
         } catch {
             guard current == generation else { return false }
@@ -304,7 +320,7 @@ final class SteamModel {
     }
 
     func beginQR() {
-        guard !isConnected && !isRestoring && !isConnecting else { return }
+        guard !isConnected && !isRestoring && !isConnecting && !retired else { return }
         generation += 1
         let current = generation
         loginTask?.cancel()
@@ -416,6 +432,11 @@ final class SteamModel {
     // it internal lets integration tests replace accounts without real login.
     func connect(_ credentials: SteamCredentials, generation current: Int, persist: Bool) async {
         guard current == generation && !Task.isCancelled else { return }
+        let account = String(credentials.steamId)
+        guard !isSignedInElsewhere(account) else {
+            errorMessage = L10n.string("model.account.alreadySignedIn")
+            return
+        }
         isConnecting = true
         do {
             let connector = connectSession
@@ -430,6 +451,13 @@ final class SteamModel {
             }
             guard current == generation && !Task.isCancelled else {
                 connected.shutdown()
+                return
+            }
+            // Another slot signed the account in while this one connected.
+            guard !isSignedInElsewhere(account) else {
+                connected.shutdown()
+                isConnecting = false
+                errorMessage = L10n.string("model.account.alreadySignedIn")
                 return
             }
             stopFriends()
@@ -479,6 +507,13 @@ final class SteamModel {
             guard current == generation && !Task.isCancelled else { return }
             isConnecting = false
             errorMessage = Self.message(error)
+            // Steam refuses the saved session for good: it goes, as nothing
+            // restores it, and its slot then holds nothing.
+            guard !persist, case SteamError.AuthenticationRequired = error else { return }
+            do { try await keychain.remove() }
+            catch {
+                if current == generation { storageWarning = error.localizedDescription }
+            }
         }
     }
 
@@ -657,13 +692,15 @@ final class SteamModel {
     /// game when its overlay can show, else in a macOS notification.
     private func announce(_ invites: [SteamReceivedInvite]) {
         guard let invite = invites.first else { return }
-        if overlay?.announce(invite) == true { return }
+        // The overlay shows the invitations of the running game's account.
+        let plays = steamId != nil && gameSessions.active?.account == steamId
+        if plays, overlay?.announce(invite) == true { return }
         let name = friends?.friend(invite.friendSteamId)?.displayName ?? L10n.string("ui.overlay.invites.someone")
         notifier?.notify(invite, friend: name, game: gameName(appId: invite.appId))
     }
 
     /// The player answered an invitation's notification.
-    private func answerNotice(_ answer: SteamInviteAnswer, _ invite: SteamReceivedInvite) {
+    func answerNotice(_ answer: SteamInviteAnswer, _ invite: SteamReceivedInvite) {
         switch answer {
         case .join:
             // A notice outlives its invitation: only one still listed joins.
@@ -861,6 +898,12 @@ final class SteamModel {
             isRestoring = false
             beginQR()
         }
+    }
+
+    /// The sign-out before it ended the sign-in under way: only the QR
+    /// code it offers next is left to stop.
+    func retire() {
+        retired = true
     }
 
     func open(_ game: SteamGame) {

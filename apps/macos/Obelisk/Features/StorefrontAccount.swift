@@ -6,7 +6,18 @@ import SwiftUI
 /// `WebAccountModel` (Epic, GOG) are its adapters, through `LibraryStorefront`.
 @MainActor
 protocol StorefrontAccount: AnyObject {
-    var section: LibrarySection { get }
+    /// Its place in Obelisk, which tells it from its storefront's other accounts.
+    var slot: AccountSlot { get }
+    /// The signed-in account, as its storefront names it; nil signed out.
+    var accountID: String? { get }
+    /// The signed-in account's name, once its storefront told it.
+    var accountName: String? { get }
+    /// Whether the account its storefront names so is signed in on another
+    /// slot, which its storefront's accounts tell: an account signs in once.
+    var isSignedInElsewhere: @MainActor (String) -> Bool { get set }
+    /// Whether its slot holds nothing: its restoration ended with no account
+    /// signed in, none signing in, and no saved session left to restore.
+    var isVacant: Bool { get }
     /// Whether its library shows: connected, or its Library cache while the
     /// saved session restores.
     var showsLibrary: Bool { get }
@@ -33,6 +44,9 @@ protocol StorefrontAccount: AnyObject {
     func retryFriends()
 
     func signOut()
+    /// Ends what its sign-out left, once its slot went: nothing signs in on
+    /// it again. It follows `signOut()`.
+    func retire()
     func refresh()
     /// Restores its saved session, offering no sign-in. Returns when the
     /// restoration and the first library load end.
@@ -46,9 +60,8 @@ protocol StorefrontAccount: AnyObject {
     /// The running Transfer's progress, when it is the game Rust names
     /// `game`'s.
     func transfer(named game: String) -> GameTransfer?
-    /// Any Game session, one still preparing included.
+    /// Any Game session of its storefront, one still preparing included.
     var hasGameSession: Bool { get }
-    func stopGames() async
 
     /// The directories its Installation receipts name.
     var installedDirectories: [String] { get }
@@ -79,15 +92,21 @@ enum AccountStanding: Equatable {
 struct AccountPrompt: Hashable {
     /// In the order an account asks them.
     enum Kind: Hashable { case voile, rosetta, cloud }
-    let section: LibrarySection
+    /// The account that asks.
+    let slot: AccountSlot
     let kind: Kind
+}
+
+extension StorefrontAccount {
+    /// Its storefront's section.
+    var section: LibrarySection { slot.section }
+    /// What shows its library in the sidebar.
+    var tab: LibraryTab { .account(slot) }
 }
 
 // MARK: Library storefronts
 
 extension LibraryStorefront {
-    var section: LibrarySection { Store.storefront.section }
-
     var standing: AccountStanding {
         if showsLibrary {
             return .signedIn(account: accountName, avatarURL: avatarURL, games: library.games.count,
@@ -131,8 +150,6 @@ extension LibraryStorefront {
     func transfer(named game: String) -> GameTransfer? { installations.transfer(named: game) }
 
     var hasGameSession: Bool { gameSessions.active != nil }
-
-    func stopGames() async { await gameSessions.stop() }
 
     var installedDirectories: [String] { installations.receipts.map(\.directory) }
 

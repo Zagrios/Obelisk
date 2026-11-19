@@ -198,6 +198,9 @@ protocol InstallationsBackend<Store>: AnyObject {
     /// Whether each newer build installs as soon as it is known, rather than
     /// at the game's next launch.
     func setAutomaticUpdates(_ enabled: Bool)
+    /// The games the account's library lists: the account holds the
+    /// installations of them its storefront's other accounts hold.
+    func lists(_ games: [Store.GameID])
     /// Launches `receipt`'s installation, updating or repairing it first
     /// when it needs it.
     func launch(_ receipt: InstallationReceipt<Store.GameID>)
@@ -291,6 +294,8 @@ final class GameInstallations<Store: InstallationStorefront> {
     let cloud: CloudModel<Store>
     private var account: Store.AccountID?
     @ObservationIgnored private var backend: (any InstallationsBackend<Store>)?
+    /// The games the account's library lists, which its installations are told.
+    @ObservationIgnored private var listed: [Store.GameID] = []
     @ObservationIgnored private var port: InstallationPort<Store>?
     @ObservationIgnored private var revision: UInt64 = 0
     @ObservationIgnored private var report: InstallationReport?
@@ -332,6 +337,7 @@ final class GameInstallations<Store: InstallationStorefront> {
         cloud.connect(account: account, backend: backend)
         backend.setDiagnostic(diagnosticReservation)
         backend.setAutomaticUpdates(updatesAutomatically)
+        backend.lists(listed)
         apply(backend.snapshot())
         backend.checkUpdates()
         activity = ApplicationActivityObservation { [weak self] active in
@@ -347,6 +353,16 @@ final class GameInstallations<Store: InstallationStorefront> {
                 apply(snapshot)
             }
         }
+    }
+
+    /// The account's library lists `games`: a game another account of the
+    /// storefront installed shows installed for this one too.
+    func lists(_ games: [Store.GameID]) {
+        guard listed != games else { return }
+        listed = games
+        guard let backend else { return }
+        backend.lists(games)
+        apply(backend.snapshot())
     }
 
     /// Stops the account's Transfer. A running game keeps its Game session.
@@ -787,6 +803,7 @@ final class NoInstallations<Store: InstallationStorefront>: InstallationsBackend
     func cancel(_ game: Store.GameID) {}
     func checkUpdates() {}
     func setAutomaticUpdates(_ enabled: Bool) {}
+    func lists(_ games: [Store.GameID]) {}
     func launch(_ receipt: InstallationReceipt<Store.GameID>) {}
     func join(_ receipt: InstallationReceipt<Store.GameID>, invite: SteamGameInvite) {}
     func uninstall(_ receipt: InstallationReceipt<Store.GameID>) {}
@@ -826,6 +843,7 @@ final class RustInstallations<Store: InstallationStorefront>: InstallationsBacke
     func cancel(_ game: Store.GameID) { core.cancel(game: Store.name(game)) }
     func checkUpdates() { core.checkUpdates() }
     func setAutomaticUpdates(_ enabled: Bool) { core.setAutomaticUpdates(enabled: enabled) }
+    func lists(_ games: [Store.GameID]) { core.lists(games: games.map(Store.name)) }
     func launch(_ receipt: InstallationReceipt<Store.GameID>) { core.launch(installation: receipt.id) }
     func join(_ receipt: InstallationReceipt<Store.GameID>, invite: SteamGameInvite) {
         core.join(installation: receipt.id, invite: invite)

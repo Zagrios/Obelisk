@@ -15,9 +15,9 @@ struct RootView: View {
             Group {
                 switch model.selection {
                 case .home: HomeView(model: model)
-                case .steam: SteamView(model: model.steam)
-                case .epic: EpicView(model: model.epic)
-                case .gog: GogView(model: model.gog)
+                // A view of its own for each account: nothing one shows
+                // carries over to another's.
+                case .account(let slot): AccountLibraryView(model: model, slot: slot).id(slot)
                 case .settings: SettingsView(model: model)
                 }
             }
@@ -30,8 +30,7 @@ struct RootView: View {
         .sheet(isPresented: Binding(get: { model.presentedFriends != nil }, set: { if !$0 { model.closeFriends() } })) {
             // The last friends shown, while the sheet goes away.
             if let friends = model.presentedFriends ?? shownFriends {
-                FriendsModal(state: friends, avatars: friendsAvatars,
-                             chat: friends.store.id == LibrarySection.steam.rawValue ? model.steam.chat : nil,
+                FriendsModal(state: friends, avatars: friendsAvatars, chat: model.chat(of: friends.account),
                              dismiss: { model.closeFriends() },
                              retry: model.retryPresentedFriends, signIn: model.signInPresentedFriends)
                     .frame(width: 520, height: 550)
@@ -54,7 +53,7 @@ struct RootView: View {
             SupportSheet(model: model.support) { model.support.isPresented = false }
         }
         .environment(model.estimates)
-        .environment(model.steam.libraryArtwork)
+        .environment(model)
         // A store belongs to the library it opened from.
         .onChange(of: model.selection) { model.presentedStore = nil }
         .onChange(of: model.presentedFriends?.account, initial: true) { _, account in
@@ -67,6 +66,25 @@ struct RootView: View {
                 // storefronts may ask with the same sheet.
                 model.promptSheet(for: prompt).id(prompt).interactiveDismissDisabled()
             }
+        }
+    }
+}
+
+/// The library of the account of `slot`, or its sign-in.
+private struct AccountLibraryView: View {
+    let model: AppModel
+    let slot: AccountSlot
+
+    var body: some View {
+        switch slot.section {
+        case .steam:
+            if let account = model.steam[slot] { SteamView(model: account) }
+        case .epic:
+            if let account = model.epic[slot] { EpicView(model: account) }
+        case .gog:
+            if let account = model.gog[slot] { GogView(model: account) }
+        case .home, .settings:
+            EmptyView()
         }
     }
 }

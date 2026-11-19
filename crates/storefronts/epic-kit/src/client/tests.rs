@@ -1989,7 +1989,6 @@ async fn launch_rejects_missing_mismatched_and_escaping_receipts_before_network(
         ("namespace", "another-space"),
         ("catalog_item_id", "another-catalog"),
         ("platform", "Windows"),
-        ("account_id", "account-b"),
         ("directory", "/another/directory"),
         ("launch_executable", "../outside"),
     ] {
@@ -2016,6 +2015,36 @@ async fn launch_rejects_missing_mismatched_and_escaping_receipts_before_network(
         );
     }
     assert!(mock.requests().is_empty());
+}
+
+#[tokio::test]
+async fn launch_starts_an_installation_another_account_of_the_storefront_installed() {
+    let temporary = tempfile::tempdir().unwrap();
+    write_launch_receipt(&Installation {
+        account_id: "account-b".into(),
+        ..launch_installation(temporary.path())
+    });
+    let mock = Mock::new(launch_replies(false));
+    let plan = mock
+        .client(false)
+        .launch_plan(
+            "space",
+            "base",
+            "game",
+            Platform::Mac,
+            temporary.path(),
+            "en",
+        )
+        .await
+        .unwrap();
+    // The game is one installation for the accounts that own it: it starts
+    // as the account that launches it, once Epic said it owns the game.
+    assert!(mock.requests()[0].contains("/library/api/public/items"));
+    assert!(
+        plan.target
+            .arguments
+            .contains(&"-epicuserid=account-a".to_owned())
+    );
 }
 
 #[tokio::test]

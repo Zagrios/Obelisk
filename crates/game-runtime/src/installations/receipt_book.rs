@@ -135,6 +135,12 @@ impl<S: Storefront> ReceiptBook<S> {
         self.installed.shown.iter().find(|kept| kept.id() == id)
     }
 
+    /// The receipt `id` names, shown or whose disk is not connected.
+    pub(super) fn kept(&self, id: &str) -> Option<&Receipt<S>> {
+        let Shelf { shown, offline, .. } = &self.installed;
+        shown.iter().chain(offline).find(|kept| kept.id() == id)
+    }
+
     /// The shown receipt `transfer` goes over.
     pub(super) fn landing(&self, transfer: &Transfer<S>) -> Option<&Receipt<S>> {
         self.installed
@@ -157,12 +163,24 @@ impl<S: Storefront> ReceiptBook<S> {
     /// whose disk is not connected, and the shown incomplete record of that
     /// id; an incomplete record whose disk is not connected stays.
     pub(super) fn installed(&mut self, receipt: Receipt<S>) {
-        let id = receipt.id();
-        self.installed.remove(&id);
-        self.installed.shown.push(receipt);
-        self.save_installed();
+        self.installed_all([receipt]);
+    }
+
+    /// As `installed` for each of `receipts`, in their order, with one write
+    /// of each file: the installations the account takes from a neighbour.
+    pub(super) fn installed_all(&mut self, receipts: impl IntoIterator<Item = Receipt<S>>) {
         let records = self.incomplete.shown.len();
-        self.incomplete.shown.retain(|kept| kept.id() != id);
+        let mut taken = false;
+        for receipt in receipts {
+            let id = receipt.id();
+            self.installed.remove(&id);
+            self.installed.shown.push(receipt);
+            self.incomplete.shown.retain(|kept| kept.id() != id);
+            taken = true;
+        }
+        if taken {
+            self.save_installed();
+        }
         if self.incomplete.shown.len() != records {
             self.save_incomplete();
         }

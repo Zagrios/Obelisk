@@ -25,27 +25,14 @@ struct SteamView: View {
             storePage: model.storePage,
             storeSearch: model.storeSearch,
             scrollMemory: libraryScroll,
-            heroArtwork: Self.heroArtwork,
-            heroLogo: Self.heroLogo,
-            artwork: Self.cover
+            heroArtwork: model.heroArtwork,
+            heroLogo: model.heroLogo,
+            artwork: model.cover
         ) {
             accountMenu
         } gamePage: { game, context in
             SteamGameDetailView(model: model, game: game, context: context)
         }
-    }
-
-    /// A game's wide artwork, as its library's hero and its page show it.
-    static func heroArtwork(_ game: SteamGame) -> SteamArtwork {
-        SteamArtwork(appId: game.appId, portrait: false, iconHash: game.iconHash)
-    }
-
-    static func heroLogo(_ game: SteamGame) -> SteamHeroLogo {
-        SteamHeroLogo(appId: game.appId, title: game.name)
-    }
-
-    static func cover(_ game: SteamGame) -> SteamArtwork {
-        SteamArtwork(appId: game.appId, iconHash: game.iconHash)
     }
 
     @ViewBuilder private var accountMenu: some View {
@@ -55,8 +42,22 @@ struct SteamView: View {
         SteamFriendsMenuButton(model: model)
         Divider()
         Button(L10n.string("ui.library.refresh"), systemImage: "arrow.clockwise", action: model.refresh)
-        Divider()
-        Button(L10n.string("ui.account.sign_out"), systemImage: "rectangle.portrait.and.arrow.right", action: model.signOut)
+    }
+}
+
+extension SteamModel {
+    /// A game's wide artwork, as its library's hero and its page show it.
+    /// Steam's artwork reads what the game's own account loaded of it.
+    func heroArtwork(_ game: SteamGame) -> SteamArtwork {
+        SteamArtwork(appId: game.appId, portrait: false, iconHash: game.iconHash, library: libraryArtwork)
+    }
+
+    func heroLogo(_ game: SteamGame) -> SteamHeroLogo {
+        SteamHeroLogo(appId: game.appId, title: game.name, library: libraryArtwork)
+    }
+
+    func cover(_ game: SteamGame) -> SteamArtwork {
+        SteamArtwork(appId: game.appId, iconHash: game.iconHash, library: libraryArtwork)
     }
 }
 

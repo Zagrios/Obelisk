@@ -169,6 +169,8 @@ final class SteamInvitationsTests: XCTestCase {
         let model = friendsTestModel(connect: { _ in session }, installations: SteamModel.installations(backend),
                                      gameSessions: SteamGameSessions())
         model.notifier = notifier
+        // The app routes the notices' answers to the account they are for.
+        notifier.answer = { [weak model] in model?.answerNotice($0, $1) }
         await model.start()
         try await eventually { model.friends?.connection == .connected && !model.library.games.isEmpty }
         return (model, session, backend, notifier)

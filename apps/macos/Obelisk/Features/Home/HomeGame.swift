@@ -5,10 +5,16 @@ import SwiftUI
 /// show, and what its buttons do.
 @MainActor
 struct HomeGame: Identifiable {
-    /// The game within its storefront's library.
+    /// The game within its account's library.
     struct ID: Hashable, Sendable {
-        let section: LibrarySection
+        let slot: AccountSlot
         let game: String
+
+        /// Its storefront's section.
+        var section: LibrarySection { slot.section }
+
+        /// The game on its storefront, whichever of its accounts lists it.
+        var onStorefront: ID { ID(slot: AccountSlot(section), game: game) }
     }
 
     /// A storefront game's wide artwork and what names the game over it.
@@ -46,9 +52,9 @@ struct HomeLibrary {
 
 extension HomeGame {
     /// `game` of `library`, named, dated and timed as the library knows it.
-    init<Store, Game>(_ game: Game, of library: AccountLibrary<Store, Game>, in section: LibrarySection,
+    init<Store, Game>(_ game: Game, of library: AccountLibrary<Store, Game>, in slot: AccountSlot,
                       action: GameAction, cover: @escaping () -> AnyView, hero: Hero, open: @escaping () -> Void) {
-        self.init(id: ID(section: section, game: "\(game.id)"), title: game.title,
+        self.init(id: ID(slot: slot, game: "\(game.id)"), title: game.title,
                   lastPlayed: library.lastPlayed(of: game), playtime: library.playtime(of: game),
                   action: action, cover: cover, hero: hero, open: open)
     }
@@ -73,41 +79,38 @@ extension HomeLibrary {
 extension LibraryStorefront {
     /// The account's library as Home shows it, in the storefront's own artwork.
     func homeLibrary<Cover: View, Artwork: View, Logo: View>(
-        in section: LibrarySection,
         cover: @escaping (Game) -> Cover,
         heroArtwork: @escaping (Game) -> Artwork,
         heroLogo: @escaping (Game) -> Logo
     ) -> HomeLibrary {
         let actions = GameActions(installations, in: .library)
         return HomeLibrary(library) { game in
-            homeGame(game, in: section, actions: actions, cover: cover, heroArtwork: heroArtwork, heroLogo: heroLogo)
+            homeGame(game, actions: actions, cover: cover, heroArtwork: heroArtwork, heroLogo: heroLogo)
         }
     }
 
     /// The account's games whose title matches `query`, by name.
     func homeResults<Cover: View, Artwork: View, Logo: View>(
         matching query: String,
-        in section: LibrarySection,
         cover: @escaping (Game) -> Cover,
         heroArtwork: @escaping (Game) -> Artwork,
         heroLogo: @escaping (Game) -> Logo
     ) -> [HomeGame] {
         let actions = GameActions(installations, in: .library)
         return library.games(by: .name, matching: query).map { game in
-            homeGame(game, in: section, actions: actions, cover: cover, heroArtwork: heroArtwork, heroLogo: heroLogo)
+            homeGame(game, actions: actions, cover: cover, heroArtwork: heroArtwork, heroLogo: heroLogo)
         }
     }
 
     private func homeGame<Cover: View, Artwork: View, Logo: View>(
         _ game: Game,
-        in section: LibrarySection,
         actions: GameActions<Store>,
         cover: @escaping (Game) -> Cover,
         heroArtwork: @escaping (Game) -> Artwork,
         heroLogo: @escaping (Game) -> Logo
     ) -> HomeGame {
         HomeGame(
-            game, of: library, in: section,
+            game, of: library, in: slot,
             action: actions(librarySelection(game)),
             cover: { AnyView(cover(game)) },
             hero: HomeGame.Hero(artwork: { AnyView(heroArtwork(game)) }, logo: { AnyView(heroLogo(game)) }),
@@ -145,7 +148,28 @@ struct HomeShelves {
 
     /// Merges each library's games, each in its last played order.
     private static func lastPlayedFirst(_ games: [[HomeGame]]) -> [HomeGame] {
-        LibraryOrder.merge(games, title: \.title, rank: { $0.lastPlayed?.timeIntervalSince1970 })
+        LibraryOrder.merge(games, title: \.title, rank: { $0.lastPlayed?.timeIntervalSince1970 }).oncePerStorefront
+    }
+}
+
+extension [HomeGame] {
+    /// Each game once: one that several accounts of a storefront own is
+    /// installed once for all of them, and shows for the account that played
+    /// it last, where the first of them stood.
+    var oncePerStorefront: [HomeGame] {
+        var places: [HomeGame.ID: Int] = [:]
+        var games: [HomeGame] = []
+        for game in self {
+            guard let place = places[game.id.onStorefront] else {
+                places[game.id.onStorefront] = games.count
+                games.append(game)
+                continue
+            }
+            if let played = game.lastPlayed, games[place].lastPlayed.map({ $0 < played }) ?? true {
+                games[place] = game
+            }
+        }
+        return games
     }
 }
 

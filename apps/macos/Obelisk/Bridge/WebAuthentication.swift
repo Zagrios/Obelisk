@@ -30,19 +30,37 @@ enum WebSignInStore: Sendable {
 }
 
 extension WebSignInStore {
-    /// Where its sign-in page keeps its cookies. GOG's site cannot be signed
-    /// in from the app's token: its sign-in keeps them for its store pages,
-    /// until the account signs out. Epic's sign-in keeps nothing.
-    @MainActor var dataStore: WKWebsiteDataStore { site ?? .nonPersistent() }
+    /// Where the sign-in page of `slot`'s account keeps its cookies. GOG's
+    /// site cannot be signed in from the app's token: its sign-in keeps them
+    /// for its store pages, until the account signs out, each slot apart so
+    /// another account signs in on a page that remembers none. Epic's
+    /// sign-in keeps nothing.
+    @MainActor func dataStore(of slot: AccountSlot) -> WKWebsiteDataStore { site(of: slot) ?? .nonPersistent() }
 
-    @MainActor func forgetSite() {
-        site?.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) {}
+    @MainActor func forgetSite(of slot: AccountSlot, then done: @escaping @MainActor @Sendable () -> Void = {}) {
+        guard let site = site(of: slot) else { return done() }
+        site.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast,
+                        completionHandler: done)
     }
 
-    @MainActor private var site: WKWebsiteDataStore? {
+    /// Empties the site of a slot that went, then removes it: the original
+    /// slot's stays, as its storefront always has a slot.
+    @MainActor func removeSite(of slot: AccountSlot) {
+        guard let identifier = siteIdentifier(of: slot) else { return }
+        // Refused while a page still shows it, which leaves it empty.
+        forgetSite(of: slot) { WKWebsiteDataStore.remove(forIdentifier: identifier) { _ in } }
+    }
+
+    /// The site a slot the player added keeps for itself; none for the
+    /// original slot, whose site is the storefront's own, nor for Epic.
+    private func siteIdentifier(of slot: AccountSlot) -> UUID? {
+        self == .gog ? UUID(uuidString: slot.name) : nil
+    }
+
+    @MainActor private func site(of slot: AccountSlot) -> WKWebsiteDataStore? {
         switch self {
         case .epic: nil
-        case .gog: Self.gogSite
+        case .gog: siteIdentifier(of: slot).map { WKWebsiteDataStore(forIdentifier: $0) } ?? Self.gogSite
         }
     }
 
@@ -106,15 +124,19 @@ struct WebSignIn: Sendable {
 @MainActor
 final class WebAuthentication: NSObject, WKNavigationDelegate, WKUIDelegate, NSWindowDelegate {
     private let flow: WebSignIn
+    /// Where the sign-in page keeps its cookies.
+    private let dataStore: WKWebsiteDataStore
     private var continuation: CheckedContinuation<String, Error>?
     private var windows: [LoginWindow] = []
 
-    init(_ flow: WebSignIn) {
+    /// A sign-in of the account of `slot`.
+    init(_ flow: WebSignIn, slot: AccountSlot? = nil) {
         self.flow = flow
+        dataStore = slot.map(flow.store.dataStore(of:)) ?? .nonPersistent()
     }
 
-    static func authorize(_ flow: WebSignIn) async throws -> String {
-        let attempt = WebAuthentication(flow)
+    static func authorize(_ flow: WebSignIn, slot: AccountSlot) async throws -> String {
+        let attempt = WebAuthentication(flow, slot: slot)
         return try await attempt.authorize { webView in
             webView.load(URLRequest(url: flow.loginURL()))
         }
@@ -135,7 +157,7 @@ final class WebAuthentication: NSObject, WKNavigationDelegate, WKUIDelegate, NSW
 
     private func start(load: @MainActor (WKWebView) -> Void) {
         let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = flow.store.dataStore
+        configuration.websiteDataStore = dataStore
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
         // A popup's configuration keeps it.
         configuration.applicationNameForUserAgent = flow.userAgent

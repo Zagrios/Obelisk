@@ -1,27 +1,33 @@
 import SwiftUI
 
-/// The three storefronts' cards in one row, or, short of room, the first two
-/// side by side over the last, which takes their whole width.
-struct StorefrontRows<Card: View>: View {
+/// The storefronts' cards, or their accounts', three to a row, or, short of
+/// room, two to a row: a card left alone on its row then takes the whole
+/// width. The three storefronts show in one row, or two side by side over
+/// the last.
+struct StorefrontRows<Item: Identifiable, Card: View>: View {
+    let items: [Item]
     var inOneRow = false
     var spacing: CGFloat = 16
-    /// A storefront's card, told whether it spans a row of its own.
-    @ViewBuilder let card: (LibrarySection, _ spansRow: Bool) -> Card
+    /// An item's card, told whether it spans a row of its own.
+    @ViewBuilder let card: (Item, _ spansRow: Bool) -> Card
 
     var body: some View {
-        let stores = LibrarySection.storefronts
-        if inOneRow {
-            HStack(spacing: spacing) {
-                ForEach(stores) { card($0, false) }
-            }
-            .fixedSize(horizontal: false, vertical: true)
-        } else {
-            VStack(spacing: spacing) {
-                HStack(spacing: spacing) {
-                    ForEach(stores.dropLast()) { card($0, false) }
+        let perRow = inOneRow ? 3 : 2
+        let rows = stride(from: 0, to: items.count, by: perRow).map { Array(items[$0..<min($0 + perRow, items.count)]) }
+        VStack(spacing: spacing) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                if row.count == 1, !inOneRow {
+                    card(row[0], true).fixedSize(horizontal: false, vertical: true)
+                } else {
+                    HStack(spacing: spacing) {
+                        ForEach(row) { card($0, false) }
+                        // A short row keeps its cards as wide as the rows above it.
+                        ForEach(row.count..<perRow, id: \.self) { _ in
+                            Color.clear.frame(maxWidth: .infinity).frame(height: 1)
+                        }
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
                 }
-                .fixedSize(horizontal: false, vertical: true)
-                ForEach(stores.suffix(1)) { card($0, true).fixedSize(horizontal: false, vertical: true) }
             }
         }
     }

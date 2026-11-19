@@ -1,7 +1,9 @@
 //! The Reservation rule: what holds an account's installations now, and so
 //! what may start. The gate the state publishes and the download queue's
-//! turns both come from here, so a button and the queue never disagree.
-use super::{Inner, Job, Storefront};
+//! turns both come from here, so a button and the queue never disagree. The
+//! storefront's accounts share its installations: what one's actions hold,
+//! its claims, holds for the others too.
+use super::{Inner, Job, Queued, QueuedTransfer, Storefront};
 use crate::sessions;
 
 /// What may start now, of one kind of action.
@@ -38,8 +40,58 @@ pub struct Gate<G> {
     pub maintain: Opening<G>,
 }
 
-/// What holds an account's installations now: the account, its actions and
-/// its storefront's Game sessions.
+/// What one account's actions hold of its storefront's installations: its
+/// part of the Reservation, which its neighbours read too.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct Claims<G> {
+    /// Its Cloud maintenance runs.
+    pub(super) maintaining: bool,
+    /// The game of its launch still preparing.
+    pub(super) launching: Option<G>,
+    /// The game whose files it removes.
+    pub(super) uninstalling: Option<G>,
+    /// A Transfer or move of its own is under way.
+    pub(super) downloading: bool,
+    /// The game of that Transfer or move.
+    pub(super) transferring: Option<G>,
+    /// The game of each of its queued jobs, waiting or under way, in queue
+    /// order.
+    pub(super) queued: Vec<G>,
+    /// Its Transfers in the download queue, waiting or under way, which a
+    /// neighbour's page shows as queued and may stop: not a launch's own,
+    /// nor a move.
+    pub(super) transfers: Vec<QueuedTransfer<G>>,
+}
+
+impl<G: Clone + PartialEq> Claims<G> {
+    /// What `inner`'s actions hold now.
+    pub(super) fn of<S: Storefront<Game = G>>(inner: &Inner<S>) -> Self {
+        let state = &inner.state;
+        let downloading = inner.running.is_some();
+        Claims {
+            maintaining: state.maintenance.is_some(),
+            launching: state.launch_game.clone().filter(|_| state.launching),
+            uninstalling: state.uninstall_game.clone(),
+            downloading,
+            transferring: state.transfer_game.clone().filter(|_| downloading),
+            queued: inner
+                .queued
+                .iter()
+                .map(|queued| queued.transfer.game())
+                .collect(),
+            transfers: inner
+                .queued
+                .iter()
+                .filter(|queued| matches!(queued.job, Job::Transfer { .. }))
+                .map(Queued::shown)
+                .collect(),
+        }
+    }
+}
+
+/// What holds an account's installations now: the account, its storefront's
+/// Game sessions, and the actions of every account of the storefront, its
+/// own and its neighbours'.
 #[derive(Clone, Debug)]
 pub(super) struct Reservation<G> {
     signed_out: bool,
@@ -51,41 +103,48 @@ pub(super) struct Reservation<G> {
     recovering: bool,
     /// The game of the storefront's Game session, whichever account's.
     session: Option<G>,
-    /// The game of the account's launch still preparing.
+    /// The game of the launch still preparing.
     launching: Option<G>,
     /// The game whose files go.
     uninstalling: Option<G>,
-    /// A Transfer or move of the account is under way.
+    /// A Transfer or move is under way.
     downloading: bool,
     /// The game of that Transfer or move.
     transferring: Option<G>,
-    /// The game of each of the account's queued jobs, waiting or under way,
-    /// in queue order.
+    /// The game of each queued job, waiting or under way: the account's in
+    /// queue order, then its neighbours'.
     queued: Vec<G>,
+    /// Those of them a neighbour queued.
+    elsewhere: Vec<G>,
 }
 
 impl<G: Clone + PartialEq> Reservation<G> {
     /// What holds `inner`'s installations, beside the Game sessions
-    /// `sessions` shows.
+    /// `sessions` shows: what its actions claim, its `own`, and what its
+    /// `neighbours` claim.
     pub(super) fn of<S: Storefront<Game = G>>(
         inner: &Inner<S>,
         sessions: &sessions::State<S>,
+        own: &Claims<G>,
+        neighbours: &[Claims<G>],
     ) -> Self {
-        let state = &inner.state;
+        let all = || std::iter::once(own).chain(neighbours);
         Reservation {
             signed_out: inner.signed_out,
             diagnostic: inner.diagnostic,
-            maintaining: state.maintenance.is_some(),
+            maintaining: all().any(|claims| claims.maintaining),
             recovering: sessions.recovering,
             session: sessions.active.as_ref().map(|active| active.game.clone()),
-            launching: state.launch_game.clone().filter(|_| state.launching),
-            uninstalling: state.uninstall_game.clone(),
-            downloading: state.downloading,
-            transferring: state.transfer_game.clone().filter(|_| state.downloading),
-            queued: inner
-                .queued
+            launching: all().find_map(|claims| claims.launching.clone()),
+            uninstalling: all().find_map(|claims| claims.uninstalling.clone()),
+            downloading: all().any(|claims| claims.downloading),
+            transferring: all().find_map(|claims| claims.transferring.clone()),
+            queued: all()
+                .flat_map(|claims| claims.queued.iter().cloned())
+                .collect(),
+            elsewhere: neighbours
                 .iter()
-                .map(|queued| queued.transfer.game())
+                .flat_map(|claims| claims.queued.iter().cloned())
                 .collect(),
         }
     }
@@ -146,12 +205,17 @@ impl<G: Clone + PartialEq> Reservation<G> {
     }
 
     /// Where the games folder's moves may queue now: anywhere but the game
-    /// whose files go, unless the account signed out or a diagnostic runs.
-    /// Whatever else holds the storefront only delays their turn.
-    /// Closed, nothing of the account follows a new games folder either: no
-    /// move queues and no new installation still waiting goes there.
+    /// whose files go, unless the account signed out or a diagnostic runs,
+    /// and but the games a neighbour's job queues, which that neighbour
+    /// moves: an installation they share moves once. Whatever else holds the
+    /// storefront only delays their turn. Closed, nothing of the account
+    /// follows a new games folder either: no move queues and no new
+    /// installation still waiting goes there.
     pub(super) fn moves(&self) -> Opening<G> {
-        opening(self.signed_out || self.diagnostic, &self.uninstalling)
+        opening(
+            self.signed_out || self.diagnostic,
+            self.uninstalling.iter().chain(&self.elsewhere),
+        )
     }
 }
 

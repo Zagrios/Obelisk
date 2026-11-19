@@ -10,7 +10,8 @@ struct SteamArtwork: View {
     let appId: UInt32
     var portrait = true
     var iconHash = ""
-    @Environment(SteamLibraryArtwork.self) private var library: SteamLibraryArtwork?
+    /// Its account's artwork; without it, the images at Steam's plain names.
+    var library: SteamLibraryArtwork?
     @Environment(\.showsCoverLabels) private var showsLabels
 
     /// The image at `path` under the game's store assets.
@@ -94,7 +95,8 @@ struct SteamArtwork: View {
 struct SteamHeroLogo: View {
     let appId: UInt32
     let title: String
-    @Environment(SteamLibraryArtwork.self) private var library: SteamLibraryArtwork?
+    /// Its account's artwork; without it, the logo at Steam's plain name.
+    var library: SteamLibraryArtwork?
 
     var body: some View {
         let artwork = library?.games[appId]

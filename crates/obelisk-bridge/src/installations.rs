@@ -434,6 +434,15 @@ fn cancel<S: Named>(installations: &Installations<S>, game: &str) {
     }
 }
 
+fn lists<S: Named>(installations: &Installations<S>, games: &[String]) {
+    installations.lists(named::<S>(games));
+}
+
+/// The games Swift names `names`, without those the storefront has none for.
+fn named<S: Named>(names: &[String]) -> Vec<S::Game> {
+    names.iter().filter_map(|name| S::named(name)).collect()
+}
+
 fn maintain_cloud<S: Named>(
     installations: &Installations<S>,
     game: &str,
@@ -491,7 +500,7 @@ async fn indicators<S: Named>(
     installations: Installations<S>,
     games: Vec<String>,
 ) -> Result<Vec<GameCloudIndicator>, GameSessionError> {
-    let games: Vec<_> = games.iter().filter_map(|game| S::named(game)).collect();
+    let games = named::<S>(&games);
     let indicators = blocking(FAILED, move || installations.cloud_indicators(&games)).await?;
     Ok(indicators
         .into_iter()
@@ -674,6 +683,13 @@ impl AccountInstallations {
     /// every file is hashed again, whatever the last Transfer recorded.
     pub fn update(&self, installation: String) {
         each!(self, installations => installations.update(&installation))
+    }
+
+    /// The `games` the account's library lists now. Of those, the account
+    /// holds the installations its storefront's other signed-in accounts
+    /// hold: a game two of them own is installed once, for both.
+    pub fn lists(&self, games: Vec<String>) {
+        each!(self, installations => lists(installations, &games))
     }
 
     /// Asks the storefront which installations have a newer build, unless it

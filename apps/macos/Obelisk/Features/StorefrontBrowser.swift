@@ -27,6 +27,8 @@ struct StorefrontBrowser<Model: LibraryStorefront, HeroArtwork: View, HeroLogo: 
     @State private var source: GameOpeningSource?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.presentStore) private var presentStore
+    /// The app the account is one of; none where a library shows alone.
+    @Environment(AppModel.self) private var app: AppModel?
 
     init(
         model: Model,
@@ -96,7 +98,9 @@ struct StorefrontBrowser<Model: LibraryStorefront, HeroArtwork: View, HeroLogo: 
                 accountName: accountName,
                 avatarURL: avatarURL,
                 openStore: openStore,
-                back: back
+                back: back,
+                signOut: signOut,
+                addAccount: addAccount
             ) {
                 accountMenu
             }
@@ -113,6 +117,19 @@ struct StorefrontBrowser<Model: LibraryStorefront, HeroArtwork: View, HeroLogo: 
         return { presentStore(store) }
     }
 
+    /// The player's sign-out, which takes the account's slot away when its
+    /// storefront holds another.
+    private func signOut() {
+        if let app { app.signOut(model) } else { model.signOut() }
+    }
+
+    /// Adds another account of the storefront, where the app holds them.
+    private var addAccount: (() -> Void)? {
+        guard let app else { return nil }
+        let section = section
+        return { app.addAccount(to: section) }
+    }
+
     private func open(_ game: Model.Game, from source: GameOpeningSource) {
         self.source = source
         withAnimation(ObeliskStyle.pageAnimation(reduceMotion: reduceMotion)) { model.open(game) }
@@ -124,7 +141,8 @@ struct StorefrontBrowser<Model: LibraryStorefront, HeroArtwork: View, HeroLogo: 
 }
 
 /// The browser's bar. It reads the scroll state and the unread messages in its
-/// own body, so they redraw the bar alone.
+/// own body, so they redraw the bar alone. Every storefront's account menu
+/// ends the same way: signing out, then adding another account.
 private struct StorefrontBrowserBar<Model: LibraryStorefront, AccountMenu: View>: View {
     @Bindable var model: Model
     let bar: StorefrontBarState
@@ -134,6 +152,8 @@ private struct StorefrontBrowserBar<Model: LibraryStorefront, AccountMenu: View>
     let avatarURL: URL?
     let openStore: (() -> Void)?
     let back: () -> Void
+    let signOut: () -> Void
+    let addAccount: (() -> Void)?
     @ViewBuilder let accountMenu: AccountMenu
 
     var body: some View {
@@ -149,6 +169,14 @@ private struct StorefrontBrowserBar<Model: LibraryStorefront, AccountMenu: View>
             LibraryAccountPill(storeTitle: storeTitle, accountName: accountName, avatarURL: avatarURL,
                                unreadCount: model.unreadCount) {
                 accountMenu
+                Divider()
+                Button(L10n.string("ui.account.sign_out"), systemImage: "rectangle.portrait.and.arrow.right",
+                       action: signOut)
+                    .accessibilityIdentifier("storefront-sign-out")
+                if let addAccount {
+                    Button(L10n.string("ui.account.add_another"), systemImage: "person.badge.plus", action: addAccount)
+                        .accessibilityIdentifier("storefront-add-account")
+                }
             }
             if let openStore {
                 StorefrontGlassButton(systemName: "storefront", label: L10n.string("ui.store.openStore", storeTitle),

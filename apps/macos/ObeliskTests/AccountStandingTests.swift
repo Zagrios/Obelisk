@@ -10,7 +10,7 @@ import XCTest
 @MainActor
 final class AccountStandingTests: XCTestCase {
     private func standings(_ app: AppModel) -> [AccountStanding] {
-        LibrarySection.storefronts.map(app.standing(of:))
+        app.accounts.map { app.standing(of: $0.slot) }
     }
 
     private func twoGames() -> StorefrontsFixture.Setup {
@@ -108,7 +108,7 @@ final class AccountStandingTests: XCTestCase {
         XCTAssertEqual(fixture.app.standing(of: .gog), .signedOut(connecting: true))
         XCTAssertEqual(fixture.app.standing(of: .steam), .signedOut(connecting: false))
         XCTAssertEqual(fixture.app.homeContent, .signIn)
-        XCTAssertEqual(LibrarySection.storefronts.map { fixture.app.standing(of: $0).isBusy }, [false, true, true])
+        XCTAssertEqual(fixture.app.accounts.map { fixture.app.standing(of: $0.slot).isBusy }, [false, true, true])
         fixture.epic.cancelSignIn()
         fixture.gog.cancelSignIn()
         XCTAssertEqual(fixture.app.standing(of: .epic), .signedOut(connecting: false))
@@ -122,7 +122,7 @@ final class AccountStandingTests: XCTestCase {
         XCTAssertFalse(AccountStanding.signedIn(account: nil, avatarURL: nil, games: 0, installed: 0).isBusy)
     }
 
-    func testOnlyAStorefrontSectionHasAnAccount() {
+    func testOnlyAStorefrontSectionHasAccounts() {
         let fixture = StorefrontsFixture()
         defer { fixture.finish() }
         let app = fixture.app
@@ -131,10 +131,12 @@ final class AccountStandingTests: XCTestCase {
         XCTAssertTrue(app.account(.steam) === fixture.steam)
         XCTAssertTrue(app.account(.epic) === fixture.epic)
         XCTAssertTrue(app.account(.gog) === fixture.gog)
-        XCTAssertNil(app.account(.home))
-        XCTAssertNil(app.account(.settings))
-        XCTAssertEqual(app.standing(of: .home), .signedOut(connecting: false))
-        XCTAssertEqual(app.standing(of: .settings), .signedOut(connecting: false))
+        XCTAssertNil(app.accounts(of: .home))
+        XCTAssertNil(app.accounts(of: .settings))
+        XCTAssertNil(app.account(AccountSlot(.home)))
+        XCTAssertEqual(app.standing(of: AccountSlot(.home)), .signedOut(connecting: false))
+        XCTAssertEqual(app.standing(of: AccountSlot(section: .steam, name: "gone")), .signedOut(connecting: false),
+                       "A slot that went stands signed out")
     }
 
     // MARK: Signed in
@@ -160,7 +162,7 @@ final class AccountStandingTests: XCTestCase {
             account: "Name of gog-account", avatarURL: GogGames.expectedAvatar, games: 2, installed: 1))
         XCTAssertEqual(fixture.app.homeContent, .libraries)
         for account in fixture.app.accounts {
-            XCTAssertEqual(account.standing, fixture.app.standing(of: account.section), "\(account.section)")
+            XCTAssertEqual(account.standing, fixture.app.standing(of: account.slot), "\(account.section)")
         }
     }
 
@@ -201,7 +203,7 @@ final class AccountStandingTests: XCTestCase {
         await fixture.signIn()
 
         for section in LibrarySection.storefronts {
-            guard case let .signedIn(_, _, games, installed) = fixture.app.standing(of: section) else {
+            guard case let .signedIn(_, _, games, installed) = fixture.app.standing(of: AccountSlot(section)) else {
                 XCTFail("\(section) is signed in")
                 continue
             }

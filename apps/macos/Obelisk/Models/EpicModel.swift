@@ -27,7 +27,9 @@ extension EpicGames: WebStorefront {
         return url.url!
     }
     static let webSignIn = WebSignIn.epic
-    static func keychain() -> any CredentialStore<WebAccountCredentials> { EpicKeychain() }
+    static func keychain(of slot: AccountSlot) -> any CredentialStore<WebAccountCredentials> {
+        EpicKeychain(slot: slot)
+    }
 
     static func games(_ listed: WebAccountGames) -> [EpicGame] {
         if case let .epic(games) = listed { games } else { [] }

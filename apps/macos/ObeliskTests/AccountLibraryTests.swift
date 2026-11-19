@@ -253,6 +253,25 @@ final class AccountLibraryTests: XCTestCase {
         XCTAssertFalse(dropped.dropCache())
     }
 
+    func testTheInstallationsAreToldTheGamesTheLibraryLists() throws {
+        let root = try temporaryDirectory()
+        let fake = FakeInstallations<SteamGames>()
+        let library = steamLibrary(root: root, installations: fake)
+        let told = {
+            fake.calls.compactMap { call -> [UInt32]? in
+                if case let .lists(games) = call { games } else { nil }
+            }
+        }
+        XCTAssertEqual(told(), [[]])
+
+        library.showCache(of: 42) { _ in [CachedLibraryGame(game: self.steamGame(1, "Older"), values: [:])] }
+        library.connect(42)
+        library.show([steamGame(1, "Older"), steamGame(2, "Newer")])
+        library.show([steamGame(1, "Older"), steamGame(2, "Newer")])
+        XCTAssertEqual(told(), [[], [1], [1, 2]],
+                       "A game another account of the storefront installed shows installed once the library lists it")
+    }
+
     func testForgetClearsGamesFactsSearchAndFilterButKeepsTheSort() throws {
         let root = try temporaryDirectory()
         let portal = steamGame(620, "Portal 2", minutes: 5)

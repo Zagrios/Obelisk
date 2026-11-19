@@ -92,6 +92,32 @@ final class HomeShelvesTests: XCTestCase {
         XCTAssertEqual(shelves.installed.last?.title, "Celeste")
     }
 
+    func testAGameTwoAccountsOfAStorefrontOwnShowsOnceForTheOneThatPlayedItLast() throws {
+        let second = AccountSlot.added(to: .steam)
+        let shelves = HomeShelves([
+            try library([game("Portal 2", played: 100, installed: true, verified: true),
+                         game("Hades", played: 50, installed: true)]),
+            try library([game("Portal 2", played: 300, installed: true, verified: true)], in: second),
+            try library([game("Portal 2", played: 400, installed: true)], in: .epic),
+        ])
+        XCTAssertEqual(shelves.hero?.id.slot, .epic, "Another storefront's copy is another game")
+        XCTAssertEqual(shelves.recent.map(\.title), ["Portal 2", "Hades"])
+        XCTAssertEqual(shelves.recent.map(\.id.slot), [second, .steam])
+        XCTAssertEqual(shelves.installed.map(\.id.slot), [.epic, second, .steam], "It is installed once")
+        XCTAssertEqual(shelves.verified.map(\.id.slot), [second])
+    }
+
+    func testAGameFoundInTwoAccountsOfAStorefrontShowsOnceWhereTheFirstStood() throws {
+        let second = AccountSlot.added(to: .steam)
+        let first = try library([game("Portal 2", played: 100), game("Hades", played: 50)])
+        let other = try library([game("Portal 2", played: 300)], in: second)
+        let never = try library([game("Portal 2")], in: AccountSlot.added(to: .steam))
+
+        let found = (first.recent + never.covers + other.recent).oncePerStorefront
+        XCTAssertEqual(found.map(\.title), ["Portal 2", "Hades"])
+        XCTAssertEqual(found.first?.id.slot, second, "The account that played it last")
+    }
+
     func testHomeShowsStorageWarnings() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: "ObeliskHomeNotices-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -127,11 +153,11 @@ final class HomeShelvesTests: XCTestCase {
         let baseHeight = try await documentHeight()
         XCTAssertGreaterThan(baseHeight, 0)
 
-        model.steam.storageWarning = "Fixture storage warning"
+        model.steam.first.storageWarning = "Fixture storage warning"
         let warningHeight = try await documentHeight()
         XCTAssertGreaterThan(warningHeight, baseHeight)
 
-        model.steam.storageWarning = nil
+        model.steam.first.storageWarning = nil
         let clearedWarningHeight = try await documentHeight()
         XCTAssertEqual(clearedWarningHeight, baseHeight, accuracy: 0.5)
     }
@@ -151,8 +177,10 @@ final class HomeShelvesTests: XCTestCase {
         Entry(title: title, played: played, minutes: minutes, installed: installed, verified: verified)
     }
 
-    /// The account library of `entries`, as Home shows it under `section`.
-    private func library(_ entries: [Entry], in section: LibrarySection = .steam) throws -> HomeLibrary {
+    /// The account library of `entries`, as Home shows it for the account of
+    /// `slot`. A game is its place among them: two libraries name the same
+    /// game at the same place.
+    private func library(_ entries: [Entry], in slot: AccountSlot = .steam) throws -> HomeLibrary {
         let root = FileManager.default.temporaryDirectory.appending(path: "ObeliskHomeShelves-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
@@ -175,7 +203,7 @@ final class HomeShelvesTests: XCTestCase {
         library.show(games)
         let verified = Set(zip(games, entries).filter { $1.verified }.map { game, _ in game.appId })
         return HomeLibrary(library, verified: verified) { game in
-            HomeGame(game, of: library, in: section,
+            HomeGame(game, of: library, in: slot,
                      action: GameAction(kind: .download(.install), title: L10n.string("model.game.download"),
                                         isAvailable: true, launches: false),
                      cover: { AnyView(EmptyView()) },

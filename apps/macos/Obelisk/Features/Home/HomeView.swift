@@ -19,37 +19,37 @@ struct HomeView: View {
     @State private var shelfMemory = ShelfScrollMemory()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// A storefront's game whose page Home opened.
+    /// An account's game whose page Home opened.
     private enum OpenGame {
-        case steam(SteamGame), epic(EpicGame), gog(GogGame)
+        case steam(SteamModel, SteamGame), epic(EpicModel, EpicGame), gog(GogModel, GogGame)
 
         var title: String {
             switch self {
-            case let .steam(game): game.name
-            case let .epic(game): game.title
-            case let .gog(game): game.title
+            case let .steam(_, game): game.name
+            case let .epic(_, game): game.title
+            case let .gog(_, game): game.title
             }
         }
 
-        var section: LibrarySection {
+        var slot: AccountSlot {
             switch self {
-            case .steam: .steam
-            case .epic: .epic
-            case .gog: .gog
+            case let .steam(account, _): account.slot
+            case let .epic(account, _): account.slot
+            case let .gog(account, _): account.slot
             }
         }
     }
 
-    /// The game Home opened, while its storefront still shows its page.
+    /// The game Home opened, while its account still shows its page.
     private var openGame: OpenGame? {
         guard let id = model.homeGame else { return nil }
         func opened<Game: Identifiable>(_ game: Game?) -> Game? {
             game.flatMap { "\($0.id)" == id.game ? $0 : nil }
         }
         switch id.section {
-        case .steam: return opened(model.steam.selectedGame).map(OpenGame.steam)
-        case .epic: return opened(model.epic.selectedGame).map(OpenGame.epic)
-        case .gog: return opened(model.gog.selectedGame).map(OpenGame.gog)
+        case .steam: return model.steam[id.slot].flatMap { account in opened(account.selectedGame).map { .steam(account, $0) } }
+        case .epic: return model.epic[id.slot].flatMap { account in opened(account.selectedGame).map { .epic(account, $0) } }
+        case .gog: return model.gog[id.slot].flatMap { account in opened(account.selectedGame).map { .gog(account, $0) } }
         default: return nil
         }
     }
@@ -71,9 +71,14 @@ struct HomeView: View {
         .errorAlert(L10n.string("ui.store.gog"), message: errorMessage(of: .gog))
     }
 
-    /// What a storefront's account failed with, which its alert dismisses.
+    /// What an account of a storefront failed with, which its alert
+    /// dismisses: the first that failed, then the next.
     private func errorMessage(of section: LibrarySection) -> Binding<String?> {
-        Binding(get: { model.account(section)?.errorMessage }, set: { model.account(section)?.errorMessage = $0 })
+        Binding(get: { failed(in: section)?.errorMessage }, set: { failed(in: section)?.errorMessage = $0 })
+    }
+
+    private func failed(in section: LibrarySection) -> (any StorefrontAccount)? {
+        model.accounts(of: section)?.accounts.first { $0.errorMessage != nil }
     }
 
     private var libraries: some View {
@@ -92,8 +97,8 @@ struct HomeView: View {
         }
         // An overlay rather than a safe area bar, as a library's.
         .overlay(alignment: .top) {
-            HomeBar(model: model, bar: bar, game: openGame.map { ($0.title, $0.section) }, back: back,
-                    openLibrary: model.show)
+            HomeBar(model: model, bar: bar, game: openGame.map { ($0.title, $0.slot) }, back: back,
+                    openLibrary: { model.show(.account($0)) })
         }
         .environment(\.storefrontBar, bar)
         .environment(\.gameTransition, GameTransition(namespace: namespace, source: source, card: card))
@@ -102,18 +107,18 @@ struct HomeView: View {
 
     @ViewBuilder private func gamePage(_ game: OpenGame) -> some View {
         switch game {
-        case let .steam(game):
-            SteamGameDetailView(model: model.steam, game: game, context: GamePageContext(
-                heroArtwork: SteamView.heroArtwork(game), cover: SteamView.cover(game)
+        case let .steam(account, game):
+            SteamGameDetailView(model: account, game: game, context: GamePageContext(
+                heroArtwork: account.heroArtwork(game), cover: account.cover(game)
             ))
             .id(game.id)
-        case let .epic(game):
-            EpicGameDetailView(model: model.epic, game: game, context: GamePageContext(
+        case let .epic(account, game):
+            EpicGameDetailView(model: account, game: game, context: GamePageContext(
                 heroArtwork: EpicView.heroArtwork(game), cover: EpicView.cover(game)
             ))
             .id(game.id)
-        case let .gog(game):
-            GogGameDetailView(model: model.gog, game: game, context: GamePageContext(
+        case let .gog(account, game):
+            GogGameDetailView(model: account, game: game, context: GamePageContext(
                 heroArtwork: GogView.heroArtwork(game), cover: GogView.cover(game)
             ))
             .id(game.id)
@@ -140,10 +145,10 @@ struct HomeView: View {
 private struct HomeBar: View {
     @Bindable var model: AppModel
     let bar: StorefrontBarState
-    /// The title and storefront of the game whose page shows.
-    let game: (title: String, section: LibrarySection)?
+    /// The title and account of the game whose page shows.
+    let game: (title: String, slot: AccountSlot)?
     let back: () -> Void
-    let openLibrary: (LibrarySection) -> Void
+    let openLibrary: (AccountSlot) -> Void
 
     var body: some View {
         LibraryGlassBar(
@@ -156,16 +161,17 @@ private struct HomeBar: View {
             }
         ) {
             if let game {
-                storeButton(game.section)
+                storeButton(game.slot)
             }
         }
     }
 
-    /// The game's storefront, opening its library.
-    private func storeButton(_ section: LibrarySection) -> some View {
-        let name = section.storeTitle
+    /// The game's storefront, opening its account's library.
+    private func storeButton(_ slot: AccountSlot) -> some View {
+        let section = slot.section
+        let name = model.storeTitle(of: slot)
         let label = L10n.string("ui.library.store_accessibility", name)
-        return Button { openLibrary(section) } label: {
+        return Button { openLibrary(slot) } label: {
             HStack(spacing: 8) {
                 if let logo = section.logoAssetName {
                     Image(logo)
@@ -228,52 +234,51 @@ private struct HomePage: View {
         _position = State(initialValue: offset > 0 ? ScrollPosition(y: offset) : ScrollPosition())
     }
 
-    /// Every library as Home shows it, in Home's order.
-    private struct Libraries {
-        let steam: HomeLibrary
-        let epic: HomeLibrary
-        let gog: HomeLibrary
-
-        var all: [HomeLibrary] { [steam, epic, gog] }
-
-        /// The library of a storefront's section; Home and Settings have none.
-        subscript(section: LibrarySection) -> HomeLibrary? {
-            switch section {
-            case .steam: steam
-            case .epic: epic
-            case .gog: gog
-            case .home, .settings: nil
-            }
-        }
+    /// An account's library as Home shows it.
+    private struct AccountHome: Identifiable {
+        let slot: AccountSlot
+        let library: HomeLibrary
+        var id: AccountSlot { slot }
     }
 
-    private var homeLibraries: Libraries {
-        Libraries(
-            steam: model.steam.homeLibrary(in: .steam, cover: SteamView.cover, heroArtwork: SteamView.heroArtwork,
-                                           heroLogo: SteamView.heroLogo),
-            epic: model.epic.homeLibrary(in: .epic, cover: EpicView.cover, heroArtwork: EpicView.heroArtwork,
-                                         heroLogo: EpicView.heroLogo),
-            gog: model.gog.homeLibrary(in: .gog, cover: GogView.cover, heroArtwork: GogView.heroArtwork,
-                                       heroLogo: GogView.heroLogo)
-        )
+    /// Every account's library, in Home's order: the sidebar's.
+    private var homeLibraries: [AccountHome] {
+        let steam = model.steam.accounts.map { account in
+            AccountHome(slot: account.slot, library: account.homeLibrary(
+                cover: account.cover, heroArtwork: account.heroArtwork, heroLogo: account.heroLogo))
+        }
+        let epic = model.epic.accounts.map { account in
+            AccountHome(slot: account.slot, library: account.homeLibrary(
+                cover: EpicView.cover, heroArtwork: EpicView.heroArtwork, heroLogo: EpicView.heroLogo))
+        }
+        let gog = model.gog.accounts.map { account in
+            AccountHome(slot: account.slot, library: account.homeLibrary(
+                cover: GogView.cover, heroArtwork: GogView.heroArtwork, heroLogo: GogView.heroLogo))
+        }
+        return steam + epic + gog
     }
 
     /// What every library finds for `query`, by name.
     private func homeResults(matching query: String) -> [HomeGame] {
-        LibraryOrder.merge([
-            model.steam.homeResults(matching: query, in: .steam, cover: SteamView.cover,
-                                    heroArtwork: SteamView.heroArtwork, heroLogo: SteamView.heroLogo),
-            model.epic.homeResults(matching: query, in: .epic, cover: EpicView.cover,
-                                   heroArtwork: EpicView.heroArtwork, heroLogo: EpicView.heroLogo),
-            model.gog.homeResults(matching: query, in: .gog, cover: GogView.cover,
-                                  heroArtwork: GogView.heroArtwork, heroLogo: GogView.heroLogo),
-        ], title: \.title, rank: { _ in nil })
+        let steam = model.steam.accounts.map { account in
+            account.homeResults(matching: query, cover: account.cover, heroArtwork: account.heroArtwork,
+                                heroLogo: account.heroLogo)
+        }
+        let epic = model.epic.accounts.map { account in
+            account.homeResults(matching: query, cover: EpicView.cover, heroArtwork: EpicView.heroArtwork,
+                                heroLogo: EpicView.heroLogo)
+        }
+        let gog = model.gog.accounts.map { account in
+            account.homeResults(matching: query, cover: GogView.cover, heroArtwork: GogView.heroArtwork,
+                                heroLogo: GogView.heroLogo)
+        }
+        return LibraryOrder.merge(steam + epic + gog, title: \.title, rank: { _ in nil }).oncePerStorefront
     }
 
     var body: some View {
         let query = model.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         let libraries = query.isEmpty ? homeLibraries : nil
-        let shelves = libraries.map { HomeShelves($0.all) }
+        let shelves = libraries.map { HomeShelves($0.map(\.library)) }
         let heroGame = shelves?.hero
         let backdropOffset = heroGame == nil ? 0 : ObeliskStyle.libraryHeroHeight
         return StorefrontScrollView {
@@ -328,9 +333,7 @@ private struct HomePage: View {
     @ViewBuilder private var notices: some View {
         if hasNotices {
             VStack(alignment: .leading, spacing: 22) {
-                ForEach(LibrarySection.storefronts) { section in
-                    if let account = model.account(section) { notice(account) }
-                }
+                ForEach(model.accounts, id: \.slot) { notice($0) }
             }
             .padding(.horizontal, ObeliskStyle.contentPadding)
         }
@@ -345,7 +348,7 @@ private struct HomePage: View {
         return LibraryHero(
             title: game.title,
             details: [
-                section.logoAssetName.map { LibraryHeroDetail(logo: $0, text: section.storeTitle) },
+                section.logoAssetName.map { LibraryHeroDetail(logo: $0, text: model.storeTitle(of: game.id.slot)) },
                 game.lastPlayed.map { LibraryHeroDetail(symbol: "calendar", text: GameFormatting.lastPlayed($0)) },
                 game.playtime.map { LibraryHeroDetail(symbol: "clock", text: GameFormatting.playtime($0)) },
             ].compactMap { $0 },
@@ -364,7 +367,7 @@ private struct HomePage: View {
             title: game.title,
             accessibilityLabel: L10n.string("ui.library.game_accessibility", game.title,
                                             GameFormatting.lastPlayed(game.lastPlayed)),
-            help: [game.title, game.id.section.storeName, game.playtime.map(GameFormatting.playtime)]
+            help: [game.title, model.storeTitle(of: game.id.slot), game.playtime.map(GameFormatting.playtime)]
                 .compactMap { $0 }
                 .joined(separator: " · "),
             store: game.id.section,
@@ -376,19 +379,19 @@ private struct HomePage: View {
         }
     }
 
-    private func libraries(_ libraries: Libraries) -> some View {
+    private func libraries(_ libraries: [AccountHome]) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(L10n.string("ui.library.your_libraries"))
                 .font(.system(size: 22, weight: .bold))
                 .frame(height: 36)
                 .accessibilityAddTraits(.isHeader)
-            StorefrontRows(inOneRow: tilesInOneRow) { section, _ in
+            StorefrontRows(items: libraries, inOneRow: tilesInOneRow) { account, _ in
                 LibraryTile(
-                    section: section,
-                    title: section.storeTitle,
-                    status: model.standing(of: section),
-                    covers: libraries[section]?.covers.map { $0.cover() } ?? [],
-                    open: { model.selection = section }
+                    slot: account.slot,
+                    title: account.slot.section.storeTitle,
+                    status: model.standing(of: account.slot),
+                    covers: account.library.covers.map { $0.cover() },
+                    open: { model.selection = .account(account.slot) }
                 )
             }
             .onGeometryChange(for: Bool.self, of: { Self.tilesInOneRow(width: $0.size.width) }) { tilesInOneRow = $0 }
@@ -397,11 +400,15 @@ private struct HomePage: View {
     }
 
     /// The stores whose search Home offers for a game no library holds: those
-    /// of the storefronts signed in.
+    /// of the storefronts signed in, each as its first account signed in.
     private var stores: [StoreSearch] {
-        let steam = StoreSearch(section: model.steam.section, page: model.steam.storeSearch)
-        let epic = StoreSearch(section: model.epic.section, page: model.epic.storeSearch)
-        return [model.steam.isConnected ? steam : nil, model.epic.isConnected ? epic : nil].compactMap { $0 }
+        let steam = model.steam.accounts.first(where: \.isConnected).map {
+            StoreSearch(section: .steam, page: $0.storeSearch)
+        }
+        let epic = model.epic.accounts.first(where: \.isConnected).map {
+            StoreSearch(section: .epic, page: $0.storeSearch)
+        }
+        return [steam, epic].compactMap { $0 }
     }
 
     /// A signed-in library is still fetching its first games, so a search
@@ -443,10 +450,12 @@ private struct HomeSignIn: View {
     var body: some View {
         SignInPage(section: .home, title: L10n.string("ui.home.welcome_title", AppIdentity.name),
                    subtitle: L10n.string("ui.home.welcome_subtitle")) {
-            StorefrontRows { section, spansRow in
-                StorefrontSignInCard(section: section, isConnecting: model.standing(of: section).isBusy,
+            // Signed in nowhere, each storefront's first slot takes its sign-in.
+            StorefrontRows(items: LibrarySection.storefronts.compactMap { model.accounts(of: $0)?.accounts.first?.slot }) {
+                slot, spansRow in
+                StorefrontSignInCard(section: slot.section, isConnecting: model.standing(of: slot).isBusy,
                                      spansRow: spansRow) {
-                    model.selection = section
+                    model.selection = .account(slot)
                 }
             }
             .frame(maxWidth: 640)

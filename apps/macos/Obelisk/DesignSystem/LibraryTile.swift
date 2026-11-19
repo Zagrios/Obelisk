@@ -4,7 +4,8 @@ import SwiftUI
 /// many games it holds, beside a fan of its last played covers that spreads
 /// under the pointer. It opens the library.
 struct LibraryTile: View {
-    let section: LibrarySection
+    /// The account's slot, which names the tile among every account's.
+    let slot: AccountSlot
     let title: String
     let status: AccountStanding
     /// The library's last played covers, the last played on top.
@@ -15,6 +16,7 @@ struct LibraryTile: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private static var coverWidth: CGFloat { 58 }
+    private var section: LibrarySection { slot.section }
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: 22, style: .continuous)
@@ -56,7 +58,7 @@ struct LibraryTile: View {
         .obeliskButtonStyle(.plain)
         .accessibilityLabel(L10n.string("ui.library.store_accessibility", title))
         .accessibilityValue(summary)
-        .accessibilityIdentifier("home-library-\(section.rawValue)")
+        .accessibilityIdentifier("home-library-\(slot.id)")
         .shadow(color: .black.opacity(hovered ? (colorScheme == .dark ? 0.35 : 0.14) : 0), radius: 16, y: 8)
         .scaleEffect(hovered && !reduceMotion ? 1.015 : 1)
         .animation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.75), value: hovered)

@@ -4,8 +4,10 @@ import Foundation
 struct GogKeychain: CredentialStore {
     private let store: KeychainStore<StoredGogCredentials>
 
-    init(service: String = AppIdentity.keychainService + ".gog") {
-        store = KeychainStore(service: service, account: "gog-session", label: L10n.string("model.brand.gog"))
+    /// The item of `slot`'s account.
+    init(slot: AccountSlot = AccountSlot(.gog), service: String = AppIdentity.keychainService + ".gog") {
+        store = KeychainStore(service: service, account: "gog-session" + slot.suffix,
+                              label: L10n.string("model.brand.gog"))
     }
 
     func load() async throws -> WebAccountCredentials? {

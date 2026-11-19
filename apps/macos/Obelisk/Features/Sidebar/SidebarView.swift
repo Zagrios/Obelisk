@@ -6,10 +6,10 @@ struct SidebarView: View {
 
     var body: some View {
         List(selection: selection(where: { $0 != .settings })) {
-            row(.home)
+            row(.home, title: LibrarySection.home.title)
 
             Section {
-                ForEach(LibrarySection.storefronts) { row($0) }
+                ForEach(model.accounts, id: \.slot) { row($0.tab, title: model.title(of: $0)) }
             } header: {
                 Text(L10n.string("ui.library.title"))
                     .font(.system(size: 13, weight: .semibold))
@@ -30,7 +30,7 @@ struct SidebarView: View {
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
                 List(selection: selection(where: { $0 == .settings })) {
-                    row(.settings)
+                    row(.settings, title: LibrarySection.settings.title)
                 }
                 .listStyle(.sidebar)
                 .environment(\.sidebarRowSize, .large)
@@ -42,34 +42,36 @@ struct SidebarView: View {
     }
 
     /// One list's share of the app's single selection.
-    private func selection(where owns: @escaping (LibrarySection) -> Bool) -> Binding<LibrarySection?> {
+    private func selection(where owns: @escaping (LibraryTab) -> Bool) -> Binding<LibraryTab?> {
         Binding(
             get: { owns(model.selection) ? model.selection : nil },
-            set: { if let section = $0 { show(section) } }
+            set: { if let tab = $0 { show(tab) } }
         )
     }
 
-    /// Shows the section at its first page. Picking the tab already shown
+    /// Shows the tab at its first page. Picking the tab already shown
     /// leaves its game page with the page's own motion.
-    private func show(_ section: LibrarySection) {
-        let animation = section == model.selection ? ObeliskStyle.pageAnimation(reduceMotion: reduceMotion) : nil
-        withAnimation(animation) { model.show(section) }
+    private func show(_ tab: LibraryTab) {
+        let animation = tab == model.selection ? ObeliskStyle.pageAnimation(reduceMotion: reduceMotion) : nil
+        withAnimation(animation) { model.show(tab) }
     }
 
-    private func row(_ section: LibrarySection) -> some View {
+    private func row(_ tab: LibraryTab, title: String) -> some View {
         Label {
-            Text(section.title)
+            Text(title)
+                .lineLimit(1)
+                .help(title)
         } icon: {
-            sidebarIcon(section)
+            sidebarIcon(tab.section)
         }
-        .listItemTint(section == .settings ? .monochrome : .fixed(ObeliskStyle.accent))
+        .listItemTint(tab == .settings ? .monochrome : .fixed(ObeliskStyle.accent))
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         // The list does not tell a click on the row already selected. A click
         // on another row comes through both.
-        .simultaneousGesture(TapGesture().onEnded { show(section) })
+        .simultaneousGesture(TapGesture().onEnded { show(tab) })
         .pointerCursor()
-        .tag(section)
+        .tag(tab)
     }
 
     @ViewBuilder

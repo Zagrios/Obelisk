@@ -16,7 +16,9 @@ extension GogGames: WebStorefront {
         return URL(string: "https://login.gog.com/auth?client_id=46755278331571209&response_type=code&redirect_uri=\(back)")!
     }()
     static let webSignIn = WebSignIn.gog
-    static func keychain() -> any CredentialStore<WebAccountCredentials> { GogKeychain() }
+    static func keychain(of slot: AccountSlot) -> any CredentialStore<WebAccountCredentials> {
+        GogKeychain(slot: slot)
+    }
 
     static func games(_ listed: WebAccountGames) -> [GogGame] {
         if case let .gog(games) = listed { games } else { [] }

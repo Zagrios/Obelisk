@@ -7,7 +7,9 @@
 //! here and wait in the process's download queue. So is the account's one
 //! Cloud question, whichever sync asks it. Its update watch says when the
 //! storefront is asked for newer builds, what it then knows of them, and
-//! which Obelisk installs on its own.
+//! which Obelisk installs on its own. The storefront's other accounts signed
+//! in at once are its neighbours: they share its installations.
+mod neighbours;
 mod receipt;
 mod receipt_book;
 mod reservation;
@@ -21,6 +23,7 @@ use crate::{
     runtimes::{self, Runtime},
     sessions::{self, Admission, Canceller, Failure, Sessions},
 };
+use neighbours::Neighbours;
 use obelisk_core::{
     Platform,
     build_choice::MAC_REFUSED,
@@ -30,7 +33,7 @@ use obelisk_core::{
 };
 pub use receipt::{Offer, Receipt, Transfer};
 use receipt_book::ReceiptBook;
-use reservation::Reservation;
+use reservation::{Claims, Reservation};
 pub use reservation::{Gate, Opening};
 use serde::{Serialize, de::DeserializeOwned};
 use std::{
@@ -273,6 +276,16 @@ struct Queued<S: Storefront> {
     job: Job,
 }
 
+impl<S: Storefront> Queued<S> {
+    /// Its game, as a game's page shows it queued.
+    fn shown(&self) -> QueuedTransfer<S::Game> {
+        QueuedTransfer {
+            game: self.transfer.game(),
+            build: self.transfer.build(),
+        }
+    }
+}
+
 /// What a queued Transfer does once its turn comes.
 #[derive(PartialEq)]
 enum Job {
@@ -335,6 +348,12 @@ struct Inner<S: Storefront> {
     queued: Vec<Queued<S>>,
     /// The queue id of the account's Transfer under way.
     running: Option<u64>,
+    /// The games the account's library lists: it takes the receipt of the
+    /// installations its neighbours hold of them.
+    listed: Vec<S::Game>,
+    /// What the change under way did to installations its neighbours may
+    /// hold too, which `Shared::update` tells them once it has unlocked.
+    told: Vec<Told<S>>,
 }
 
 struct Shared<S: Storefront> {
@@ -343,14 +362,18 @@ struct Shared<S: Storefront> {
     content: Arc<dyn Content<S>>,
     sessions: Arc<Sessions<S>>,
     account: S::Account,
+    /// The storefront's accounts signed in at once, and the account's seat
+    /// among them.
+    neighbours: Arc<Neighbours<S>>,
+    seat: u64,
     /// Where new installations go and every installation moves, inside
     /// Obelisk's library directory unless the player chose another.
     folder: Arc<GamesFolder>,
     /// Obelisk's library directory and the user's home: never removed.
     protected: Vec<PathBuf>,
     queueing: Queueing<S>,
-    /// Publishes the gate again whenever the Game sessions change, and
-    /// queues automatic updates whenever the state lets one start.
+    /// The tasks that follow the Game sessions, the state, the storefront
+    /// session's connections and the neighbours' claims.
     watchers: Mutex<Vec<tokio::task::JoinHandle<()>>>,
 }
 
@@ -437,6 +460,7 @@ impl<S: Storefront> Drop for Shared<S> {
         for watcher in self.watchers.lock().unwrap().drain(..) {
             watcher.abort();
         }
+        self.neighbours.leave(self.seat);
     }
 }
 
@@ -454,14 +478,23 @@ fn runtime() -> &'static tokio::runtime::Runtime {
 }
 
 impl<S: Storefront> Shared<S> {
+    /// Applies `change`, publishes the state it leaves, and tells the
+    /// neighbours what it did to the installations they may hold too. One
+    /// change runs at a time among the storefront's accounts, so what a
+    /// change reads of its neighbours' claims still holds when it posts its
+    /// own.
     fn update<T>(&self, change: impl FnOnce(&mut Inner<S>) -> T) -> T {
+        let turn = self.neighbours.turn();
         let mut inner = self.inner.lock().unwrap();
         let before = inner.state.clone();
         let result = change(&mut inner);
         Self::show_book(&mut inner);
         inner.state.downloading = inner.running.is_some();
         let sessions = self.sessions.state();
-        inner.state.gate = Reservation::of(&inner, &sessions).gate();
+        let own = Claims::of(&inner);
+        let neighbours = self.neighbours.claims(&self.account);
+        inner.state.gate = Reservation::of(&inner, &sessions, &own, &neighbours).gate();
+        self.neighbours.claim(self.seat, own);
         inner.state.cloud_sync = cloud_sync(&inner, &sessions, &self.account);
         if inner.state.receipts != before.receipts {
             let Inner { updates, book, .. } = &mut *inner;
@@ -470,18 +503,17 @@ impl<S: Storefront> Shared<S> {
         if inner.state.updates != inner.updates.known() {
             inner.state.updates = inner.updates.known().to_vec();
         }
-        // A game whose move waits still launches until its turn.
+        // A game whose move waits still launches until its turn. A
+        // neighbour's Transfer of a game shows as queued here too, under way
+        // or not: its progress is the neighbour's to show.
+        let waiting = inner.queued.iter().filter(|waiting| {
+            Some(waiting.id) != inner.running && matches!(waiting.job, Job::Transfer { .. })
+        });
+        let theirs = neighbours.iter().flat_map(|claims| &claims.transfers);
         let mut queued: Vec<QueuedTransfer<S::Game>> = Vec::new();
-        for waiting in &inner.queued {
-            let game = waiting.transfer.game();
-            if Some(waiting.id) != inner.running
-                && matches!(waiting.job, Job::Transfer { .. })
-                && !queued.iter().any(|queued| queued.game == game)
-            {
-                queued.push(QueuedTransfer {
-                    game,
-                    build: waiting.transfer.build(),
-                });
+        for transfer in waiting.map(Queued::shown).chain(theirs.cloned()) {
+            if !queued.iter().any(|queued| queued.game == transfer.game) {
+                queued.push(transfer);
             }
         }
         inner.state.queued = queued;
@@ -491,7 +523,23 @@ impl<S: Storefront> Shared<S> {
             inner.state.revision += 1;
             self.published.send_replace(inner.state.clone());
         }
+        let told = std::mem::take(&mut inner.told);
+        // A neighbour's change runs as any other: no lock is held.
+        drop(inner);
+        drop(turn);
+        self.tell(&told);
         result
+    }
+
+    /// Tells the neighbours what the account did to installations they may
+    /// hold too.
+    fn tell(&self, told: &[Told<S>]) {
+        if told.is_empty() {
+            return;
+        }
+        for neighbour in self.neighbours.of(&self.account) {
+            neighbour.update(|inner| told.iter().for_each(|told| inner.take(told)));
+        }
     }
 
     fn warn(inner: &mut Inner<S>, key: &str) {
@@ -556,7 +604,12 @@ impl<S: Storefront> Shared<S> {
     /// What holds the installations now, which every action and the
     /// download queue's turns ask.
     fn reservation(&self, inner: &Inner<S>) -> Reservation<S::Game> {
-        Reservation::of(inner, &self.sessions.state())
+        Reservation::of(
+            inner,
+            &self.sessions.state(),
+            &Claims::of(inner),
+            &self.neighbours.claims(&self.account),
+        )
     }
 
     /// What may start now, which each action asks before it starts.
@@ -591,6 +644,13 @@ impl<S: Storefront> Shared<S> {
         inner.state.transfer_game = Some(transfer.game());
         inner.state.transfer = Some(TransferProgress::new(transfer.progress_name()));
         inner.book.unverified(transfer);
+        if let Some(receipt) = inner.book.landing(transfer).cloned() {
+            let automatic = inner
+                .queued
+                .iter()
+                .any(|queued| queued.id == id && queued.job.automatic().is_some());
+            inner.told.push(Told::Started { receipt, automatic });
+        }
     }
 
     /// What the queue shows of `transfer`.
@@ -918,6 +978,7 @@ impl<S: Storefront> Shared<S> {
                 inner.book.installed(receipt.clone());
                 inner.updates.installed(&receipt.id());
                 inner.state.last_download = None;
+                inner.told.push(Told::Installed(receipt.clone()));
             }
             match last {
                 Some(progress) => inner.state.transfer = Some(progress),
@@ -1084,9 +1145,9 @@ impl<S: Storefront> Inner<S> {
             .filter(|last| &last.game() == game)
     }
 
-    /// Forgets the Transfers over the installation `receipt` names, once its
-    /// files went.
-    fn forget_transfers(&mut self, receipt: &Receipt<S>) {
+    /// Forgets the Transfer that stopped over the installation `receipt`
+    /// names: nothing of it is left to resume.
+    fn forget_stopped(&mut self, receipt: &Receipt<S>) {
         if self
             .state
             .last_download
@@ -1095,6 +1156,12 @@ impl<S: Storefront> Inner<S> {
         {
             self.state.last_download = None;
         }
+    }
+
+    /// Forgets the Transfers over the installation `receipt` names, once its
+    /// files went.
+    fn forget_transfers(&mut self, receipt: &Receipt<S>) {
+        self.forget_stopped(receipt);
         if self.state.transfer_game.as_ref() == Some(&receipt.game()) {
             self.state.transfer = None;
             self.state.transfer_game = None;
@@ -1107,6 +1174,105 @@ impl<S: Storefront> Inner<S> {
         let running = self.running.and(self.state.transfer_game.clone());
         self.book.refresh(running.as_ref());
     }
+
+    /// Takes what a neighbour tells of an installation, with the Receipt
+    /// book's own changes. It is the account's too when its receipt names
+    /// the same folder: one in another folder is another installation. An
+    /// account without a receipt takes one of an installation that is there,
+    /// when its library lists the game. A signed-out account takes nothing.
+    fn take(&mut self, told: &Told<S>) {
+        if self.signed_out {
+            return;
+        }
+        // Whether the account's receipt of `theirs` names its folder, and
+        // asks for verification; none when it has no receipt of it.
+        let held = |book: &ReceiptBook<S>, theirs: &Receipt<S>| {
+            book.kept(&theirs.id())
+                .map(|mine| (mine.directory == theirs.directory, mine.needs_verification))
+        };
+        match told {
+            Told::Started { receipt, automatic } => {
+                if matches!(held(&self.book, receipt), Some((true, _))) {
+                    self.book.unverified(&receipt.transfer());
+                    if *automatic {
+                        // The storefront's one try until the next check.
+                        self.updates.started(&Job::Transfer {
+                            automatic: Some(receipt.id()),
+                        });
+                    }
+                }
+            }
+            Told::Installed(receipt) => {
+                let taken = match held(&self.book, receipt) {
+                    Some((shared, _)) => shared,
+                    None => self.listed.contains(&receipt.game()),
+                };
+                if taken {
+                    self.book.installed(receipt.clone());
+                    self.updates.installed(&receipt.id());
+                    self.forget_stopped(receipt);
+                }
+            }
+            Told::Moved { from, receipt } => {
+                let follows = self
+                    .book
+                    .kept(&receipt.id())
+                    .is_some_and(|mine| mine.directory == *from);
+                if follows {
+                    self.book.moved(receipt);
+                }
+            }
+            Told::Held(theirs) => {
+                let mut taken = Vec::new();
+                for receipt in theirs {
+                    match held(&self.book, receipt) {
+                        // Neither account saw the other's Transfers: one
+                        // that has not succeeded on either side asks both
+                        // for verification.
+                        Some((true, false)) if receipt.needs_verification => {
+                            self.book.unverified(&receipt.transfer());
+                        }
+                        Some(_) => {}
+                        None if self.listed.contains(&receipt.game())
+                            && Path::new(&receipt.directory).is_dir() =>
+                        {
+                            self.forget_stopped(receipt);
+                            taken.push(receipt.clone());
+                        }
+                        None => {}
+                    }
+                }
+                self.book.installed_all(taken);
+            }
+        }
+    }
+
+    /// A neighbour removed the installation `receipt` names, which the
+    /// account held too.
+    fn removed(&mut self, receipt: &Receipt<S>) {
+        if self.book.forget(&receipt.id()).is_err() {
+            Shared::warn(self, S::RECEIPTS_NOT_SAVED);
+        }
+        self.forget_transfers(receipt);
+    }
+}
+
+/// What an account tells its neighbours of installations they may hold too,
+/// where it changes them; an uninstall reaches them through `Shared::remove`.
+enum Told<S: Storefront> {
+    /// Its Transfer started over the installation, which asks for
+    /// verification until a Transfer succeeds. `automatic` when Obelisk
+    /// started it on its own, to install a newer build.
+    Started {
+        receipt: Receipt<S>,
+        automatic: bool,
+    },
+    /// Its Transfer succeeded: the installation is as the receipt says.
+    Installed(Receipt<S>),
+    /// It moved the installation from the folder `from` to the receipt's.
+    Moved { from: String, receipt: Receipt<S> },
+    /// It holds these installations, as two accounts meet.
+    Held(Vec<Receipt<S>>),
 }
 
 /// One account's installations of one storefront. A clone is the same
@@ -1176,18 +1342,25 @@ impl<S: Storefront> Installations<S> {
             updates: UpdateWatch::default(),
             queued: Vec::new(),
             running: None,
+            listed: Vec::new(),
+            told: Vec::new(),
         };
         Shared::<S>::show_book(&mut inner);
         // The watcher follows the sessions from the state this gate shows.
         let seen = sessions.state();
-        inner.state.gate = Reservation::of(&inner, &seen).gate();
+        let neighbours: Arc<Neighbours<S>> = sessions.commons();
+        let own = Claims::of(&inner);
+        inner.state.gate =
+            Reservation::of(&inner, &seen, &own, &neighbours.claims(&account)).gate();
         inner.state.cloud_sync = cloud_sync(&inner, &seen, &account);
         let (published, _) = watch::channel(inner.state.clone());
-        let shared = Arc::new(Shared {
+        let shared = Arc::new_cyclic(|installations| Shared {
             inner: Mutex::new(inner),
             published,
             content,
             sessions: sessions.clone(),
+            seat: neighbours.join(&account, installations.clone(), own),
+            neighbours,
             account,
             protected: vec![library, home],
             folder,
@@ -1241,12 +1414,38 @@ impl<S: Storefront> Installations<S> {
                 shared.check_updates(Asked::Reconnected);
             }
         });
-        shared
-            .watchers
-            .lock()
-            .unwrap()
-            .extend([sessions_watcher, updater, reconnections]);
+        // What a neighbour's actions hold, or no longer hold, shows in the
+        // gate at once.
+        let weak = Arc::downgrade(&shared);
+        let mut claims = shared.neighbours.changes();
+        let neighbours_watcher = runtime().spawn(async move {
+            while claims.changed().await.is_ok() {
+                let Some(shared) = weak.upgrade() else { return };
+                shared.update(|_| {});
+            }
+        });
+        shared.watchers.lock().unwrap().extend([
+            sessions_watcher,
+            updater,
+            reconnections,
+            neighbours_watcher,
+        ]);
+        shared.meet();
         Self { shared }
+    }
+
+    /// The games the account's library lists now. The account holds the
+    /// installations of them its neighbours hold, from here on: a game two
+    /// accounts of the storefront own is installed once, for both.
+    pub fn lists(&self, games: Vec<S::Game>) {
+        let changed = self.shared.update(|inner| {
+            let changed = inner.listed != games;
+            inner.listed = games;
+            changed
+        });
+        if changed {
+            self.shared.catch_up();
+        }
     }
 
     pub fn state(&self) -> State<S> {
@@ -1363,8 +1562,9 @@ impl<S: Storefront> Installations<S> {
 
     /// Takes `game`'s Transfer out of the queue, waiting or under way, or
     /// stops its launch still preparing with the Transfer that launch runs.
-    /// Another game's operation goes on, and a running game keeps its Game
-    /// session.
+    /// A neighbour's Transfer of the game, which shows as queued here, goes
+    /// too. Another game's operation goes on, and a running game keeps its
+    /// Game session.
     pub fn cancel(&self, game: &S::Game) {
         let (queued, launch) = self.shared.update(|inner| {
             let launch = inner.state.launching && inner.state.launch_game.as_ref() == Some(game);
@@ -1386,6 +1586,9 @@ impl<S: Storefront> Installations<S> {
         }
         if let Some(launch) = launch {
             launch.cancel();
+        }
+        for neighbour in self.shared.neighbours.of(&self.shared.account) {
+            neighbour.withdraw(game);
         }
     }
 
@@ -1792,15 +1995,20 @@ impl<S: Storefront> Installations<S> {
 
 impl<S: Storefront> Shared<S> {
     /// Removes the installation, then forgets its receipt; `Ok(false)` when
-    /// sign-out came first.
+    /// sign-out came first. The neighbours that hold the installation lose
+    /// it with the account: each one's Cloud archive takes its saves before
+    /// the files go, and each records the removal for its Cloud sync.
     async fn remove(self: &Arc<Self>, receipt: &Receipt<S>) -> Result<bool, Failure> {
         let signed_out = || self.inner.lock().unwrap().signed_out;
         if signed_out() {
             return Ok(false);
         }
-        let cloud = self.content.cloud();
-        if let Some(cloud) = &cloud {
-            cloud.archive(receipt).await?;
+        let sharing = self.sharing(receipt);
+        let holders: Vec<&Arc<Self>> = std::iter::once(self).chain(&sharing).collect();
+        for holder in &holders {
+            if let Some(cloud) = holder.content.cloud() {
+                cloud.archive(receipt).await?;
+            }
         }
         if signed_out() {
             return Ok(false);
@@ -1821,20 +2029,17 @@ impl<S: Storefront> Shared<S> {
         })
         .await
         .unwrap_or_else(|_| Err(Failure::Failed("model.game.installationBusy".into())));
-        if let Err(error) = removal {
-            // Receipt persistence can fail after the folder was removed. The
-            // Cloud fence must still record that removal.
-            if let Some(cloud) = &cloud
-                && !Path::new(&receipt.directory).exists()
-            {
-                cloud.removed(receipt).await?;
+        // The files went, even if the receipts could not be saved after it:
+        // every neighbour that holds the installation now loses it, one that
+        // took its receipt meanwhile too, and each Cloud fence records the
+        // removal, which is never a Cloud delete.
+        if !Path::new(&receipt.directory).exists() {
+            for neighbour in self.sharing(receipt) {
+                neighbour.update(|inner| inner.removed(receipt));
             }
-            return Err(error);
+            Self::record_removal(&holders, receipt).await?;
         }
-        // Removal is never a Cloud delete.
-        if let Some(cloud) = &cloud {
-            cloud.removed(receipt).await?;
-        }
+        removal?;
         // As Steam deletes a Proton prefix, the prefix goes with its game,
         // after the Cloud archive took its saves.
         let (content, receipt) = (self.content.clone(), receipt.clone());
@@ -1843,6 +2048,82 @@ impl<S: Storefront> Shared<S> {
             self.update(|inner| Self::warn(inner, "model.installations.prefixNotRemoved"));
         }
         Ok(!signed_out())
+    }
+
+    /// Records the removal of the installation `receipt` named for the Cloud
+    /// sync of each of its `holders`: every one, whatever another's answers.
+    async fn record_removal(holders: &[&Arc<Self>], receipt: &Receipt<S>) -> Result<(), Failure> {
+        let mut recorded = Ok(());
+        for holder in holders {
+            if let Some(cloud) = holder.content.cloud() {
+                recorded = recorded.and(cloud.removed(receipt).await);
+            }
+        }
+        recorded
+    }
+
+    /// The neighbours that hold the installation `receipt` names, signed in.
+    fn sharing(&self, receipt: &Receipt<S>) -> Vec<Arc<Self>> {
+        let id = receipt.id();
+        let mut neighbours = self.neighbours.of(&self.account);
+        neighbours.retain(|neighbour| {
+            let inner = neighbour.inner.lock().unwrap();
+            !inner.signed_out
+                && inner
+                    .book
+                    .receipt(&id)
+                    .is_some_and(|theirs| theirs.directory == receipt.directory)
+        });
+        neighbours
+    }
+
+    /// The installations the account holds, as it tells them to a neighbour
+    /// it meets.
+    fn held(&self) -> Told<S> {
+        Told::Held(self.inner.lock().unwrap().book.shown().to_vec())
+    }
+
+    /// Takes the installations the neighbours hold, as the account's library
+    /// lists other games, and returns the neighbours.
+    fn catch_up(&self) -> Vec<Arc<Self>> {
+        let neighbours = self.neighbours.of(&self.account);
+        for neighbour in &neighbours {
+            let theirs = neighbour.held();
+            self.update(|inner| inner.take(&theirs));
+        }
+        neighbours
+    }
+
+    /// The account's installations and its neighbours' meet: each takes what
+    /// the other holds, as they start and as a disk comes or leaves.
+    fn meet(&self) {
+        let neighbours = self.catch_up();
+        if neighbours.is_empty() {
+            return;
+        }
+        let mine = self.held();
+        for neighbour in &neighbours {
+            neighbour.update(|inner| inner.take(&mine));
+        }
+    }
+
+    /// Takes the account's Transfers of `game` out of the queue, waiting or
+    /// under way: a neighbour's page, which shows them as queued, stops them.
+    fn withdraw(&self, game: &S::Game) {
+        let queued: Vec<u64> = {
+            let inner = self.inner.lock().unwrap();
+            inner
+                .queued
+                .iter()
+                .filter(|queued| {
+                    matches!(queued.job, Job::Transfer { .. }) && queued.transfer.game() == *game
+                })
+                .map(|queued| queued.id)
+                .collect()
+        };
+        for id in queued {
+            self.queueing.queue.remove(id);
+        }
     }
 }
 
@@ -1923,9 +2204,11 @@ impl<S: Storefront> Resident for Shared<S> {
     }
 
     /// Shows the installations whose disk is connected, the receipts whose
-    /// folder moved into the games folder naming it, and saves them.
+    /// folder moved into the games folder naming it, and saves them. The
+    /// neighbours never met over the installations of a disk that was away.
     fn refresh(&self) {
         self.update(Inner::refresh_receipts);
+        self.meet();
     }
 }
 
@@ -1962,7 +2245,13 @@ impl<S: Storefront> Shared<S> {
                     (inner.state.transfer, inner.state.transfer_game) = parked;
                 }
                 match outcome {
-                    Ok(Some(moved)) => inner.book.moved(&moved),
+                    Ok(Some(moved)) => {
+                        inner.book.moved(&moved);
+                        inner.told.push(Told::Moved {
+                            from: receipt.directory.clone(),
+                            receipt: moved,
+                        });
+                    }
                     Ok(None) => {}
                     Err(reason) => {
                         if !inner.signed_out {

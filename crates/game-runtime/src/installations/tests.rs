@@ -628,14 +628,23 @@ impl Fixture {
     }
     /// As `reload`, its storefront doing what `fake` scripts.
     fn reload_through(&self, file: PathBuf, fake: Arc<Fake>) -> Installations<Steam> {
+        self.open(42, file, fake)
+    }
+    /// The installations of `account` from `file`, in the fixture's games
+    /// folder, queue and Game sessions, its storefront doing what `fake`
+    /// scripts.
+    fn open(&self, account: u64, file: PathBuf, fake: Arc<Fake>) -> Installations<Steam> {
         Installations::new(
             Arc::new(Content(fake)),
             self.sessions.clone(),
-            42,
+            account,
             file,
             self.root.join("home"),
             self.folder.clone(),
-            queueing(&self.queue),
+            Queueing {
+                account: account.to_string(),
+                ..queueing(&self.queue)
+            },
         )
     }
     fn saved(&self) -> Vec<Receipt<Steam>> {
@@ -679,6 +688,16 @@ fn receipt(directory: &Path, platform: Platform) -> Receipt<Steam> {
         platform,
         total_bytes: 100,
         needs_verification: false,
+    }
+}
+
+/// The gate while nothing holds the installations.
+fn open_gate() -> Gate<u32> {
+    Gate {
+        modify: Opening::Open { except: vec![] },
+        uninstall: Opening::Open { except: vec![] },
+        launch: Opening::Open { except: vec![] },
+        maintain: Opening::Open { except: vec![] },
     }
 }
 
@@ -997,6 +1016,16 @@ async fn a_transfer_over_an_installed_game_records_no_incomplete_installation() 
     fixture.fake.release();
     idle(&fixture.installations).await;
     assert!(fixture.installations.state().incomplete.is_empty());
+}
+
+/// Starts a Transfer over Portal 2's installed Mac build, and stops it.
+async fn stopped_update(fixture: &Fixture) {
+    fixture.fake.hold();
+    fixture.installations.update("620-macos");
+    eventually(|| fixture.fake.calls().len() == 1).await;
+    fixture.installations.cancel(&620);
+    idle(&fixture.installations).await;
+    fixture.fake.release();
 }
 
 #[tokio::test]
@@ -1943,12 +1972,7 @@ async fn a_storefront_without_cloud_saves_uninstalls_without_an_archive_and_sync
 #[tokio::test]
 async fn the_gate_shows_what_may_start_and_follows_every_game_session() {
     let fixture = Fixture::new(true).await;
-    let open = Gate {
-        modify: Opening::Open { except: vec![] },
-        uninstall: Opening::Open { except: vec![] },
-        launch: Opening::Open { except: vec![] },
-        maintain: Opening::Open { except: vec![] },
-    };
+    let open = open_gate();
     assert_eq!(fixture.installations.state().gate, open);
 
     // A Game session holds its own game's files and every Cloud operation.
@@ -2711,6 +2735,10 @@ async fn a_move_still_waiting_goes_to_the_folder_chosen_last() {
 // MARK: The receipts an account keeps
 
 mod receipt_book;
+
+// MARK: The accounts of a storefront signed in at once
+
+mod neighbours;
 
 /// The games whose Transfer waits in the download queue.
 fn queued(state: &State<Steam>) -> Vec<u32> {

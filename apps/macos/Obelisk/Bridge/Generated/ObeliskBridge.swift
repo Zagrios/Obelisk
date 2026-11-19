@@ -731,6 +731,13 @@ public protocol AccountInstallationsProtocol: AnyObject, Sendable {
     func launchSettings(installation: String) async throws  -> LaunchSettings?
     
     /**
+     * The `games` the account's library lists now. Of those, the account
+     * holds the installations its storefront's other signed-in accounts
+     * hold: a game two of them own is installed once, for both.
+     */
+    func lists(games: [String]) 
+    
+    /**
      * Syncs the game's Cloud saves: those of `installation`, or, when
      * `None`, those the uninstalled game's saved context names.
      */
@@ -1023,6 +1030,20 @@ open func launchSettings(installation: String)async throws  -> LaunchSettings?  
             liftFunc: FfiConverterOptionTypeLaunchSettings.lift,
             errorHandler: FfiConverterTypeGameSessionError_lift
         )
+}
+    
+    /**
+     * The `games` the account's library lists now. Of those, the account
+     * holds the installations its storefront's other signed-in accounts
+     * hold: a game two of them own is installed once, for both.
+     */
+open func lists(games: [String])  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_obelisk_bridge_fn_method_accountinstallations_lists(
+            self.uniffiCloneHandle(),
+        FfiConverterSequenceString.lower(games),uniffiCallStatus
+    )
+}
 }
     
     /**
@@ -15603,6 +15624,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_method_accountinstallations_launch_settings() != 38896) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_method_accountinstallations_lists() != 39864) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_method_accountinstallations_maintain_cloud() != 65363) {

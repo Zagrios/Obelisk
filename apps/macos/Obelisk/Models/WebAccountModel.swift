@@ -86,7 +86,8 @@ protocol WebStorefront: InstallationStorefront, SendableMetatype where GameID ==
     /// The storefront's store, opened in Obelisk.
     static var storeURL: URL { get }
     @MainActor static var sessions: GameSessions<Self> { get }
-    static func keychain() -> any CredentialStore<WebAccountCredentials>
+    /// The Keychain item of `slot`'s account.
+    static func keychain(of slot: AccountSlot) -> any CredentialStore<WebAccountCredentials>
 
     /// The storefront's games among those a session listed.
     static func games(_ listed: WebAccountGames) -> [Game]
@@ -144,10 +145,12 @@ final class WebAccountModel<Store: WebStorefront> {
     typealias MakeInstallations = @MainActor (WebSession, String, String,
                                               any StorefrontSessionsProtocol, URL) -> any InstallationsBackend<Store>
 
+    let slot: AccountSlot
+    @ObservationIgnored var isSignedInElsewhere: @MainActor (String) -> Bool = { _ in false }
     private(set) var accountName: String?
     private(set) var avatarURL: URL?
     /// The connected account.
-    private var accountID: String?
+    private(set) var accountID: String?
 
     let gameSessions: GameSessions<Store>
     let cloud: CloudModel<Store>
@@ -207,8 +210,9 @@ final class WebAccountModel<Store: WebStorefront> {
 
     init(
         directory: URL = AppIdentity.libraryDirectory,
-        keychain: any CredentialStore<WebAccountCredentials> = Store.keychain(),
-        authorize: @escaping @MainActor () async throws -> String = { try await WebAuthentication.authorize(Store.webSignIn) },
+        slot: AccountSlot = AccountSlot(Store.storefront.section),
+        keychain: (any CredentialStore<WebAccountCredentials>)? = nil,
+        authorize: (@MainActor () async throws -> String)? = nil,
         signIn: (@Sendable (String) async throws -> WebSession)? = nil,
         restore: (@Sendable (WebAccountCredentials) async throws -> WebSession)? = nil,
         language: String = Locale.preferredLanguages.first ?? "en-US",
@@ -218,9 +222,10 @@ final class WebAccountModel<Store: WebStorefront> {
         onlineStatus: OnlineStatusChoice? = nil
     ) {
         self.directory = directory
-        rememberedSession = RememberedSession(keychain: keychain, accountID: \.accountId,
+        self.slot = slot
+        rememberedSession = RememberedSession(keychain: keychain ?? Store.keychain(of: slot), accountID: \.accountId,
                                               notSaved: Store.sessionNotSaved)
-        self.authorize = authorize
+        self.authorize = authorize ?? { try await WebAuthentication.authorize(Store.webSignIn, slot: slot) }
         createSession = signIn ?? { [libraryCache] in
             try await WebAccountSession.signIn(storefront: Store.storefront, authorizationCode: $0, library: libraryCache)
         }
@@ -248,8 +253,8 @@ final class WebAccountModel<Store: WebStorefront> {
         presence = Store.Presence()
         self.onlineStatus = Store.Presence.showsStatus
             ? onlineStatus ?? OnlineStatusChoice(storeID: Store.storeID) : nil
-        self.onlineStatus?.follow(presence.setStatus)
-        self.onlineStatus?.follow(gameSessions.setStatus)
+        self.onlineStatus?.follow(presence) { $0.setStatus($1) }
+        self.onlineStatus?.follow(gameSessions) { $0.setStatus($1) }
         installations.selection = { [weak self] in self?.installationSelection }
     }
 
@@ -262,6 +267,8 @@ final class WebAccountModel<Store: WebStorefront> {
 
     /// No authentication or sign-out runs, and no account is connected.
     private var isIdle: Bool { !isConnected && !isRestoring && !isConnecting && !isSigningOut }
+
+    var isVacant: Bool { isIdle && rememberedSession.holdsSavedSession == false }
 
     var gameSessionMessage: String? {
         gameSessions.message(for: selectedGame?.id, of: accountID, otherGameRunning: Store.otherGameRunning)
@@ -342,7 +349,7 @@ final class WebAccountModel<Store: WebStorefront> {
         var url = page
         if let session, let address = try? await session.webSignInUrl(redirectUrl: page.absoluteString),
            let signedIn = URL(string: address) { url = signedIn }
-        return WebPageStart(url: url, dataStore: Store.webSignIn.store.dataStore)
+        return WebPageStart(url: url, dataStore: Store.webSignIn.store.dataStore(of: slot))
     }
 
     /// Account revocation: forgets the Library cache, the launches and the
@@ -350,7 +357,7 @@ final class WebAccountModel<Store: WebStorefront> {
     /// revokes the session once the Keychain removal ends.
     func signOut() {
         guard !isSigningOut else { return }
-        Store.webSignIn.store.forgetSite()
+        Store.webSignIn.store.forgetSite(of: slot)
         library.forget()
         generation += 1
         let current = generation
@@ -390,6 +397,12 @@ final class WebAccountModel<Store: WebStorefront> {
         }
     }
 
+    /// The sign-out before it ended everything it ran: only the site its
+    /// slot kept is left to remove.
+    func retire() {
+        Store.webSignIn.store.removeSite(of: slot)
+    }
+
     /// Whether the running task still answers for the latest sign-in, cancellation or sign-out.
     private func isCurrent(_ current: Int) -> Bool { current == generation && !Task.isCancelled }
 
@@ -414,6 +427,11 @@ final class WebAccountModel<Store: WebStorefront> {
         }
         guard isCurrent(current), let credentials else { return }
         let account = credentials.accountId
+        guard !isSignedInElsewhere(account) else {
+            // Another slot holds the account: this one's copy goes.
+            await rememberedSession.forget().value
+            return
+        }
         library.showCache(of: account) { cache in
             Store.cachedLibrary(in: cache, account: account).map { entry in
                 CachedLibraryGame(game: entry.game, playtime: entry.playtimeSeconds.map(played(seconds:)),
@@ -448,6 +466,14 @@ final class WebAccountModel<Store: WebStorefront> {
                 return
             }
             let account = credentials.accountId
+            guard !isSignedInElsewhere(account) else {
+                // The session just made goes; the other slot's stays.
+                await disconnectAbandonedSession(connected)
+                guard isCurrent(current) else { return }
+                library.dropCache()
+                errorMessage = L10n.string("model.account.alreadySignedIn")
+                return
+            }
             library.connect(account)
             accountID = account
             session = connected

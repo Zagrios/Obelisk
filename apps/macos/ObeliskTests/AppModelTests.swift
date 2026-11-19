@@ -63,14 +63,14 @@ final class AppModelTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         let model = AppModel(directory: root, defaults: defaults)
         XCTAssertTrue(model.updatesGamesAutomatically)
-        XCTAssertTrue(model.steam.installations.updatesAutomatically)
+        XCTAssertTrue(model.steam.first.installations.updatesAutomatically)
 
         model.updatesGamesAutomatically = false
-        XCTAssertFalse(model.steam.installations.updatesAutomatically)
-        XCTAssertFalse(model.epic.installations.updatesAutomatically)
-        XCTAssertFalse(model.gog.installations.updatesAutomatically)
+        XCTAssertFalse(model.steam.first.installations.updatesAutomatically)
+        XCTAssertFalse(model.epic.first.installations.updatesAutomatically)
+        XCTAssertFalse(model.gog.first.installations.updatesAutomatically)
         let restarted = AppModel(directory: root, defaults: defaults)
         XCTAssertFalse(restarted.updatesGamesAutomatically)
-        XCTAssertFalse(restarted.gog.installations.updatesAutomatically)
+        XCTAssertFalse(restarted.gog.first.installations.updatesAutomatically)
     }
 }

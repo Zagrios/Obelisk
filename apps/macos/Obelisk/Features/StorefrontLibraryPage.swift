@@ -7,7 +7,6 @@ import SwiftUI
     associatedtype Store: InstallationStorefront
     associatedtype Game: LibraryGame where Game.ID == Store.GameID
     var installations: GameInstallations<Store> { get }
-    var accountName: String? { get }
     var avatarURL: URL? { get }
     var isRestoring: Bool { get }
     var isConnecting: Bool { get }

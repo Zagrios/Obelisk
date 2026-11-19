@@ -791,9 +791,9 @@ final class SteamPresentationTests: XCTestCase {
         fixture.model.syncCloud()
         fixture.backend.publish { $0.cloudSync = .maintenance(620, question: .conflict(1)) }
 
-        try await eventually { app.presentedPrompt == AccountPrompt(section: .steam, kind: .cloud) }
+        try await eventually { app.presentedPrompt == AccountPrompt(slot: .steam, kind: .cloud) }
         app.selection = .home
-        XCTAssertEqual(app.presentedPrompt, AccountPrompt(section: .steam, kind: .cloud),
+        XCTAssertEqual(app.presentedPrompt, AccountPrompt(slot: .steam, kind: .cloud),
                        "The question does not wait for the Steam tab")
         fixture.model.cloud.respond(.cancel)
         try await eventually { fixture.backend.actions.last == .answer(620, decision: 1, .cancel) }
@@ -813,7 +813,7 @@ final class SteamPresentationTests: XCTestCase {
         fixture.preparing()
         fixture.sync(.launch(620, question: .failed(17, error: "backend.steam.cloud.unsupported", launchAnyway: true)))
 
-        try await eventually { app.presentedPrompt == AccountPrompt(section: .steam, kind: .cloud) }
+        try await eventually { app.presentedPrompt == AccountPrompt(slot: .steam, kind: .cloud) }
         XCTAssertTrue(fixture.model.cloud.failurePresented)
         fixture.model.cloud.respond(.launchAnyway)
         try await eventually { fixture.backend.actions.last == .answer(620, decision: 17, .launchAnyway) }

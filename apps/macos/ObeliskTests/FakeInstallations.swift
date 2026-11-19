@@ -14,6 +14,7 @@ final class FakeInstallations<Store: InstallationStorefront>: InstallationsBacke
         case cancel(Store.GameID)
         case checkUpdates
         case automaticUpdates(Bool)
+        case lists([Store.GameID])
         case launch(InstallationReceipt<Store.GameID>)
         case join(InstallationReceipt<Store.GameID>, SteamGameInvite)
         case uninstall(InstallationReceipt<Store.GameID>)
@@ -74,6 +75,7 @@ final class FakeInstallations<Store: InstallationStorefront>: InstallationsBacke
     func cancel(_ game: Store.GameID) { record(.cancel(game)) }
     func checkUpdates() { record(.checkUpdates) }
     func setAutomaticUpdates(_ enabled: Bool) { record(.automaticUpdates(enabled)) }
+    func lists(_ games: [Store.GameID]) { record(.lists(games)) }
     func launch(_ receipt: InstallationReceipt<Store.GameID>) { record(.launch(receipt)) }
     func join(_ receipt: InstallationReceipt<Store.GameID>, invite: SteamGameInvite) {
         record(.join(receipt, invite))
@@ -101,7 +103,7 @@ final class FakeInstallations<Store: InstallationStorefront>: InstallationsBacke
     var actions: [Call] {
         calls.filter {
             switch $0 {
-            case .diagnostic, .checkUpdates, .automaticUpdates: false
+            case .diagnostic, .checkUpdates, .automaticUpdates, .lists: false
             default: true
             }
         }
