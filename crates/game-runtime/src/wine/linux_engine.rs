@@ -101,6 +101,7 @@ static FACTS: Facts = Facts {
             "WINEDEBUG",
             "WINEDLLOVERRIDES",
             "VTEST_SOCKET_NAME",
+            "GALLIUM_DRIVER",
             "NPT_DEBUG",
             "LD_PRELOAD",
         ],
@@ -211,6 +212,14 @@ impl Adapter for LinuxEngine {
         // Without it, macOS turns Game Mode on while the game is full screen.
         if !config.settings.game_mode {
             arguments.extend(["--game-mode".to_owned(), "off".to_owned()]);
+        }
+        // A 32-bit game has no Direct3D on this engine: what it draws reaches
+        // the GPU through OpenGL, directly or through Wine's wined3d.
+        if config.settings.graphics == Graphics::Dxmt
+            && crate::pe::Program::open(&program).is_some_and(|program| !program.is_x86_64())
+        {
+            arguments.push("--opengl".to_owned());
+            arguments.push("virgl".to_owned());
         }
         for (path, folder) in &guest.binds {
             arguments.push("--bind".to_owned());
