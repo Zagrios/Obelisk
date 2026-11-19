@@ -728,7 +728,7 @@ private struct AppearancePicker: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(spacing: 20) {
+        BalancedRows(spacing: 20, rowSpacing: 16) {
             ForEach(AppAppearance.allCases) { option($0) }
         }
         .accessibilityElement(children: .contain)
@@ -760,7 +760,7 @@ private struct AppearancePicker: View {
                     .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
                     .foregroundStyle(isSelected ? .primary : .secondary)
             }
-            // The choices share the card's width.
+            // The choices share their row's width.
             .frame(maxWidth: .infinity)
             .contentShape(.rect)
         }
@@ -783,8 +783,8 @@ private struct LanguagePicker: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        // From the top: a name on two lines, as "Português (Brasil)", keeps its flag level with the others.
-        HStack(alignment: .top, spacing: 20) {
+        // Nine flags in one row are wider than the card in a small window.
+        BalancedRows(spacing: 20, rowSpacing: 16) {
             ForEach(AppLanguage.choices) { option($0) }
         }
         .accessibilityElement(children: .contain)
@@ -814,7 +814,7 @@ private struct LanguagePicker: View {
                     .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
                     .foregroundStyle(isSelected ? .primary : .secondary)
             }
-            // The choices share the card's width, as the appearances do.
+            // The choices share their row's width, as the appearances do.
             .frame(maxWidth: .infinity)
             .contentShape(.rect)
         }
@@ -824,6 +824,63 @@ private struct LanguagePicker: View {
         .accessibilityLabel(title)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityIdentifier("settings-language-\(language.id)")
+    }
+}
+
+/// Its views in as few rows as the width allows, the rows as even as can be:
+/// nine views that fit seven to a row make rows of five and four, not seven
+/// and two. Every column is as wide, a shorter row is centered, and views
+/// hang from the top of their row, so a name on two lines, as "Português
+/// (Brasil)", keeps its flag level with the others.
+private struct BalancedRows: Layout {
+    var spacing: CGFloat
+    var rowSpacing: CGFloat
+
+    private struct Rows {
+        var columns: Int
+        var columnWidth: CGFloat
+        var heights: [CGFloat]
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let available = proposal.width.flatMap { $0.isFinite ? $0 : nil }
+        let rows = rows(width: available, subviews: subviews)
+        let width = CGFloat(rows.columns) * rows.columnWidth + CGFloat(max(rows.columns - 1, 0)) * spacing
+        let height = rows.heights.reduce(0, +) + CGFloat(max(rows.heights.count - 1, 0)) * rowSpacing
+        return CGSize(width: available ?? width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let rows = rows(width: bounds.width, subviews: subviews)
+        var top = bounds.minY
+        for (row, height) in rows.heights.enumerated() {
+            let views = subviews[(row * rows.columns)..<min((row + 1) * rows.columns, subviews.count)]
+            let width = CGFloat(views.count) * rows.columnWidth + CGFloat(views.count - 1) * spacing
+            var leading = bounds.minX + (bounds.width - width) / 2
+            for view in views {
+                view.place(at: CGPoint(x: leading, y: top), proposal: ProposedViewSize(width: rows.columnWidth, height: height))
+                leading += rows.columnWidth + spacing
+            }
+            top += height + rowSpacing
+        }
+    }
+
+    /// How many columns, how wide, and each row's height, for this width
+    /// (none: every view in one row, each column at its minimum).
+    private func rows(width: CGFloat?, subviews: Subviews) -> Rows {
+        guard !subviews.isEmpty else { return Rows(columns: 0, columnWidth: 0, heights: []) }
+        // A column is at least as wide as the widest view can shrink to.
+        let minimum = subviews.map { $0.sizeThatFits(ProposedViewSize(width: 0, height: nil)).width }.max() ?? 0
+        let fitting = width.map { max(1, Int(($0 + spacing) / (minimum + spacing))) } ?? subviews.count
+        let rowCount = (subviews.count + fitting - 1) / fitting
+        let columns = (subviews.count + rowCount - 1) / rowCount
+        let columnWidth = width.map { max(minimum, ($0 - CGFloat(columns - 1) * spacing) / CGFloat(columns)) } ?? minimum
+        let heights = stride(from: 0, to: subviews.count, by: columns).map { start in
+            subviews[start..<min(start + columns, subviews.count)]
+                .map { $0.sizeThatFits(ProposedViewSize(width: columnWidth, height: nil)).height }
+                .max() ?? 0
+        }
+        return Rows(columns: columns, columnWidth: columnWidth, heights: heights)
     }
 }
 
