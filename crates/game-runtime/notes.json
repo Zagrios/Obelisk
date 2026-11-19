@@ -54,6 +54,46 @@
         "en": "Farlight 84 can't run on a Mac with Obelisk: its NetEase Yidun anti-cheat refuses Wine and Linux, and the game has suspended accounts that tried (a one-day ban was reported in 2025). Please don't launch it.",
         "fr": "Farlight 84 ne peut pas tourner sur Mac avec Obelisk : son anti-triche NetEase Yidun refuse Wine et Linux, et le jeu a déjà suspendu des comptes qui ont essayé (un bannissement d'un jour a été signalé en 2025). Mieux vaut ne pas le lancer."
       }
+    },
+    {
+      "name": "PUBG: BATTLEGROUNDS",
+      "steam": 578080,
+      "text": {
+        "en": "PUBG: BATTLEGROUNDS can't run on a Mac with Obelisk: KRAFTON doesn't allow its BattlEye anti-cheat on Wine or Linux.",
+        "fr": "PUBG: BATTLEGROUNDS ne peut pas tourner sur Mac avec Obelisk : KRAFTON n'autorise pas son anti-triche BattlEye sur Wine ni sous Linux."
+      }
+    },
+    {
+      "name": "Tom Clancy's Rainbow Six Siege X",
+      "steam": 359550,
+      "text": {
+        "en": "Rainbow Six Siege can't run on a Mac with Obelisk: Ubisoft doesn't allow its BattlEye anti-cheat on Wine or Linux.",
+        "fr": "Rainbow Six Siege ne peut pas tourner sur Mac avec Obelisk : Ubisoft n'autorise pas son anti-triche BattlEye sur Wine ni sous Linux."
+      }
+    },
+    {
+      "name": "skate.",
+      "steam": 3354750,
+      "text": {
+        "en": "skate. can't run on a Mac with Obelisk: its EA Javelin Anticheat is a Windows kernel driver, and Electronic Arts doesn't allow Wine or Linux.",
+        "fr": "skate. ne peut pas tourner sur Mac avec Obelisk : son anti-triche EA Javelin Anticheat est un pilote noyau Windows, et Electronic Arts n'autorise ni Wine ni Linux."
+      }
+    },
+    {
+      "name": "F1 25",
+      "steam": 3059520,
+      "text": {
+        "en": "F1 25 can't run on a Mac with Obelisk: its EA Javelin Anticheat is a Windows kernel driver, and Electronic Arts doesn't allow Wine or Linux.",
+        "fr": "F1 25 ne peut pas tourner sur Mac avec Obelisk : son anti-triche EA Javelin Anticheat est un pilote noyau Windows, et Electronic Arts n'autorise ni Wine ni Linux."
+      }
+    },
+    {
+      "name": "ROB RUN",
+      "steam": 4262460,
+      "text": {
+        "en": "ROB RUN can't be played on a Mac with Obelisk yet: its studio hasn't turned Easy Anti-Cheat on for Wine and Linux, so the anti-cheat finds no module to load. Only the studio can do it.",
+        "fr": "ROB RUN n'est pas encore jouable sur Mac avec Obelisk : son studio n'a pas activé Easy Anti-Cheat pour Wine et Linux, l'anti-triche ne trouve donc aucun module à charger. Seul le studio peut le faire."
+      }
     }
   ]
 }
