@@ -50751,19 +50751,19 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Standalone Windows games"
+            "value": "Games added by hand"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Jeux Windows autonomes"
+            "value": "Jeux ajoutés à la main"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Giochi Windows indipendenti"
+            "value": "Giochi aggiunti a mano"
           }
         }
       }
@@ -50912,19 +50912,19 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Add standalone Windows or Linux executables, itch.io downloads, or emulated games to launch them directly from Obelisk."
+            "value": "Add standalone Windows or Linux executables, Mac apps, itch.io downloads, or emulated games to launch them directly from Obelisk."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ajoutez des exécutables Windows ou Linux autonomes, des téléchargements itch.io ou des jeux émulés pour les lancer directement depuis Obelisk."
+            "value": "Ajoutez des exécutables Windows ou Linux autonomes, des applications Mac, des téléchargements itch.io ou des jeux émulés pour les lancer directement depuis Obelisk."
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Aggiungi eseguibili Windows o Linux indipendenti, download di itch.io o giochi emulati per avviarli direttamente da Obelisk."
+            "value": "Aggiungi eseguibili Windows o Linux indipendenti, app per Mac, download di itch.io o giochi emulati per avviarli direttamente da Obelisk."
           }
         }
       }
@@ -51004,19 +51004,19 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Executable"
+            "value": "Program or App"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Exécutable"
+            "value": "Programme ou application"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Eseguibile"
+            "value": "Programma o app"
           }
         }
       }
@@ -51050,19 +51050,19 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Select Executable"
+            "value": "Select Program or App"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sélectionner un exécutable"
+            "value": "Sélectionner un programme ou une application"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Seleziona eseguibile"
+            "value": "Seleziona programma o app"
           }
         }
       }
@@ -51073,19 +51073,19 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Executable not found at path"
+            "value": "Program or app not found at path"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Exécutable introuvable sur le chemin"
+            "value": "Programme ou application introuvable sur le chemin"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Eseguibile non trovato nel percorso"
+            "value": "Programma o app non trovati nel percorso"
           }
         }
       }
@@ -51803,6 +51803,29 @@
         }
       }
     },
+    "ui.custom.remove_confirm_message_app_running": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This will remove the game from Obelisk. Its files on disk will not be deleted. Its app stays open, so nothing unsaved is lost; Obelisk only stops tracking it."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cela supprimera le jeu d’Obelisk. Ses fichiers sur le disque ne seront pas supprimés. Son application reste ouverte, rien de non enregistré n’est donc perdu ; Obelisk cesse seulement de la suivre."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Questo rimuoverà il gioco da Obelisk. I relativi file sul disco non verranno eliminati. La sua app resta aperta, quindi non si perde nulla di non salvato; Obelisk smette solo di seguirla."
+          }
+        }
+      }
+    },
     "ui.custom.remove_confirm_action": {
       "extractionState": "manual",
       "localizations": {
@@ -52328,6 +52351,642 @@
           "stringUnit": {
             "state": "translated",
             "value": "Applica ritaglio"
+          }
+        }
+      }
+    },
+    "ui.custom.app_document": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zu öffnende Datei"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "File to Open"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archivo para abrir"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fichier à ouvrir"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "File da aprire"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開くファイル"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arquivo para abrir"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要打开的文件"
+          }
+        }
+      }
+    },
+    "ui.custom.app_document_none": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nur die App"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only the app"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Solo la aplicación"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L’application seule"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Solo l'app"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アプリのみ"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Só o aplicativo"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅打开应用"
+          }
+        }
+      }
+    },
+    "ui.custom.app_document_description": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Optional. Die App öffnet diese Datei wie mit „Öffnen mit“ im Finder, etwa ein Spiel für einen Emulator."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Optional. The app opens this file, as Finder’s Open With does: a game for an emulator, for example."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opcional. La aplicación abre este archivo como lo hace «Abrir con» del Finder: por ejemplo, un juego para un emulador."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Facultatif. L’application ouvre ce fichier comme le fait « Ouvrir avec » du Finder : un jeu pour un émulateur, par exemple."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Facoltativo. L'app apre questo file come fa «Apri con» del Finder: per esempio un gioco per un emulatore."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "省略可。Finderの「このアプリケーションで開く」と同じように、アプリがこのファイルを開きます。たとえばエミュレータ用のゲームです。"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opcional. O aplicativo abre este arquivo como o “Abrir com” do Finder: um jogo para um emulador, por exemplo."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可选。应用会像访达的“打开方式”一样打开此文件，例如模拟器的游戏。"
+          }
+        }
+      }
+    },
+    "ui.custom.document_choose": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Datei auswählen …"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose File…"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elegir archivo…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choisir un fichier…"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scegli file…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルを選択…"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escolher arquivo…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择文件…"
+          }
+        }
+      }
+    },
+    "ui.custom.document_clear": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entfernen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quitar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retirer"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rimuovi"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "削除"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remover"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除"
+          }
+        }
+      }
+    },
+    "ui.custom.document_missing": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Datei unter diesem Pfad nicht gefunden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "File not found at path"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se encontró el archivo en la ruta"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fichier introuvable sur le chemin"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "File non trovato nel percorso"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このパスにファイルが見つかりません"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arquivo não encontrado no caminho"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在此路径找不到文件"
+          }
+        }
+      }
+    },
+    "ui.custom.app_invalid": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dies ist keine App, die macOS öffnen kann."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This is not an app macOS can open."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esto no es una aplicación que macOS pueda abrir."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce n’est pas une application que macOS peut ouvrir."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Questa non è un'app che macOS può aprire."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "これはmacOSで開けるアプリではありません。"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Isto não é um aplicativo que o macOS consiga abrir."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这不是 macOS 可以打开的应用。"
+          }
+        }
+      }
+    },
+    "ui.custom.app_not_native": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obelisk öffnet nur Apps, die nativ auf Apple Silicon laufen, und diese tut es nicht."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obelisk opens only apps that run natively on Apple silicon, and this one does not."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obelisk solo abre aplicaciones que funcionan de forma nativa en Apple Silicon, y esta no lo hace."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obelisk n’ouvre que les applications qui fonctionnent nativement sur Apple silicon, et celle-ci ne le fait pas."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obelisk apre solo le app che girano in modo nativo su Apple silicon, e questa no."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ObeliskはAppleシリコンでネイティブに動作するアプリのみを開きます。このアプリはネイティブに動作しません。"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Obelisk abre apenas aplicativos que rodam nativamente em Apple Silicon, e este não roda."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obelisk 只打开可在 Apple 芯片上原生运行的应用，而此应用不能。"
+          }
+        }
+      }
+    },
+    "ui.custom.app_blocked": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS hat diese App möglicherweise blockiert. Öffnen Sie sie einmal im Finder oder erlauben Sie sie unter „Systemeinstellungen“ → „Datenschutz & Sicherheit“ und versuchen Sie es dann erneut."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS may have blocked this app. Open it once from Finder, or allow it in System Settings → Privacy & Security, then try again."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Es posible que macOS haya bloqueado esta aplicación. Ábrela una vez desde el Finder o permítela en Ajustes del Sistema → Privacidad y seguridad y vuelve a intentarlo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS a peut-être bloqué cette application. Ouvrez-la une fois depuis le Finder, ou autorisez-la dans Réglages Système → Confidentialité et sécurité, puis réessayez."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS potrebbe aver bloccato quest'app. Aprila una volta dal Finder, oppure consentila in Impostazioni di Sistema → Privacy e sicurezza, poi riprova."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOSがこのアプリをブロックした可能性があります。Finderから一度開くか、「システム設定」→「プライバシーとセキュリティ」で許可してから、もう一度お試しください。"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O macOS pode ter bloqueado este aplicativo. Abra-o uma vez pelo Finder ou permita-o em Ajustes do Sistema → Privacidade e Segurança e tente novamente."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS 可能阻止了此应用。请先从访达打开一次，或在“系统设置”→“隐私与安全性”中允许它，然后重试。"
+          }
+        }
+      }
+    },
+    "ui.custom.app_runs_natively": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS öffnet sie wie bei einem Doppelklick: Sie braucht keine Wine-Einstellungen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS opens it as a double-click would: it needs no Wine settings."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS la abre como lo haría un doble clic: no necesita ajustes de Wine."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS l’ouvre comme le ferait un double-clic : elle n’a besoin d’aucun réglage Wine."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS la apre come farebbe un doppio clic: non ha bisogno di impostazioni Wine."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ダブルクリックと同じようにmacOSが開くため、Wineの設定は不要です。"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O macOS o abre como um clique duplo faria: ele não precisa de ajustes do Wine."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS 会像双击一样打开它，无需 Wine 设置。"
+          }
+        }
+      }
+    },
+    "ui.custom.engine_native": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Native App"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Native App"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aplicación nativa"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Application native"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App nativa"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ネイティブアプリ"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aplicativo nativo"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "原生应用"
+          }
+        }
+      }
+    },
+    "ui.custom.launch_arguments_app_description": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Werden der App beim Öffnen übergeben. Eine bereits geöffnete App ignoriert sie."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Passed to the app as it opens. An app that is already open ignores them."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se pasan a la aplicación al abrirse. Una aplicación que ya está abierta los ignora."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transmis à l’application à son ouverture. Une application déjà ouverte les ignore."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Passati all'app quando si apre. Un'app già aperta li ignora."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アプリを開くときに渡されます。すでに開いているアプリでは無視されます。"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Passadas ao aplicativo quando ele abre. Um aplicativo que já está aberto as ignora."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在应用打开时传给它。已打开的应用会忽略它们。"
           }
         }
       }

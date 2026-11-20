@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Custom games section: manages and launches non-store / standalone Windows executables.
+/// Custom games section: manages and launches the games added by hand.
 struct CustomGamesView: View {
     @Bindable var model: CustomGamesModel
     @State private var bar = StorefrontBarState()
@@ -177,18 +177,11 @@ struct CustomGamesView: View {
             CustomGameCoverView(game: game)
         }
         .contextMenu {
-            Button {
-                if model.isRunning(game) {
-                    model.stop(game)
-                } else {
-                    model.launch(game)
-                }
-            } label: {
-                Label(
-                    model.isRunning(game) ? L10n.string("model.game.quit") : L10n.string("ui.game.play"),
-                    systemImage: model.isRunning(game) ? "stop.fill" : "play.fill"
-                )
+            let action = model.menuAction(for: game)
+            Button(action: action.perform) {
+                Label(action.title, systemImage: menuSymbol(action.kind))
             }
+            .disabled(!action.isAvailable)
             Divider()
             Button {
                 model.settingsGame = game
@@ -211,6 +204,14 @@ struct CustomGamesView: View {
             } label: {
                 Label(L10n.string("ui.custom.remove_game"), systemImage: "trash")
             }
+        }
+    }
+
+    private func menuSymbol(_ kind: GameAction.Kind) -> String {
+        switch kind {
+        case .launch: "play.fill"
+        case .running: "stop.fill"
+        default: "hourglass"
         }
     }
 }
@@ -256,7 +257,9 @@ private struct CustomGamePresentations: ViewModifier {
                     model.gamePendingRemoval = nil
                 }
             } message: {
-                Text(L10n.string("ui.custom.remove_confirm_message"))
+                if let game = model.gamePendingRemoval {
+                    Text(model.removalMessage(for: game))
+                }
             }
     }
 }
