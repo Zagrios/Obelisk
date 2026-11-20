@@ -41,6 +41,8 @@ final class CustomGamesModel {
     var gamePendingRemoval: CustomGame?
     var isDownloadingEngine = false
     var engineDownloadError: String?
+    /// Why the last launch failed, shown to the player.
+    var launchFailure: String?
 
     var installedEngineVersion: String? {
         installedVoileRelease(locations: locations)
@@ -250,7 +252,18 @@ final class CustomGamesModel {
             runningProcesses[game.id] = CustomGameRunningState(pid: pid, startedAt: .now, isStopping: false)
             customLog.info("Launched custom game \(game.title) with PID \(pid)")
         } catch {
-            customLog.error("Failed to launch custom game \(game.title): \(error.localizedDescription)")
+            launchFailure = Self.launchFailureMessage(error)
+            customLog.error("Failed to launch custom game \(game.title): \(String(describing: error))")
+        }
+    }
+
+    /// What the player reads when Wine or the Linux engine could not start
+    /// the program.
+    static func launchFailureMessage(_ error: Error) -> String {
+        switch error as? CustomLaunchError {
+        case .WineUnavailable: L10n.string("backend.runtime.wineUnavailable")
+        case .NotExecutable: L10n.string("ui.custom.launch_not_found")
+        default: L10n.string("ui.custom.launch_start_failed")
         }
     }
 

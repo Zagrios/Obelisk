@@ -31,6 +31,7 @@ struct CustomGamesView: View {
         .sheet(item: $model.settingsGame) { game in
             CustomLaunchSettingsSheet(model: model, game: game)
         }
+        .errorAlert(L10n.string("ui.custom.launch_failed"), message: $model.launchFailure)
         .confirmationDialog(
             model.gamePendingRemoval.map { L10n.string("ui.custom.remove_confirm_title", $0.title) } ?? "",
             isPresented: Binding(

@@ -185,4 +185,13 @@ final class CustomGamesModelTests: XCTestCase {
         XCTAssertEqual(model.games.first?.playtimeSeconds, 600)
         XCTAssertNotNil(model.games.first?.lastPlayed)
     }
+
+    func testProgramLaunchFailureReadsAsText() {
+        XCTAssertEqual(CustomGamesModel.launchFailureMessage(CustomLaunchError.NotExecutable),
+                       L10n.string("ui.custom.launch_not_found"))
+        XCTAssertEqual(CustomGamesModel.launchFailureMessage(CustomLaunchError.WineUnavailable),
+                       L10n.string("backend.runtime.wineUnavailable"))
+        XCTAssertEqual(CustomGamesModel.launchFailureMessage(CustomLaunchError.Failed(message: "spawn")),
+                       L10n.string("ui.custom.launch_start_failed"))
+    }
 }
