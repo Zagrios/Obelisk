@@ -72,6 +72,8 @@ struct HomeView: View {
         .errorAlert(L10n.string("ui.store.steam"), message: errorMessage(of: .steam))
         .errorAlert(L10n.string("ui.store.epic"), message: errorMessage(of: .epic))
         .errorAlert(L10n.string("ui.store.gog"), message: errorMessage(of: .gog))
+        // Home plays and opens games added by hand too.
+        .customGamePresentations(model.custom)
     }
 
     /// What a storefront's account failed with, which its alert dismisses.

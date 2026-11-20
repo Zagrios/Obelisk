@@ -22,36 +22,7 @@ struct CustomGamesView: View {
                                             removal: .opacity.combined(with: .scale(scale: reduceMotion ? 1 : 0.94))))
             }
         }
-        .sheet(isPresented: $model.isAddingGame) {
-            AddCustomGameSheet(model: model, editingGame: nil)
-        }
-        .sheet(item: $model.editingGame) { game in
-            AddCustomGameSheet(model: model, editingGame: game)
-        }
-        .sheet(item: $model.settingsGame) { game in
-            CustomLaunchSettingsSheet(model: model, game: game)
-        }
-        .errorAlert(L10n.string("ui.custom.launch_failed"), message: $model.launchFailure)
-        .confirmationDialog(
-            model.gamePendingRemoval.map { L10n.string("ui.custom.remove_confirm_title", $0.title) } ?? "",
-            isPresented: Binding(
-                get: { model.gamePendingRemoval != nil },
-                set: { if !$0 { model.gamePendingRemoval = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            if let game = model.gamePendingRemoval {
-                Button(L10n.string("ui.custom.remove_confirm_action"), role: .destructive) {
-                    model.removeGame(game)
-                    model.gamePendingRemoval = nil
-                }
-            }
-            Button(L10n.string("ui.common.cancel"), role: .cancel) {
-                model.gamePendingRemoval = nil
-            }
-        } message: {
-            Text(L10n.string("ui.custom.remove_confirm_message"))
-        }
+        .customGamePresentations(model)
     }
 
     @ViewBuilder
@@ -241,5 +212,51 @@ struct CustomGamesView: View {
                 Label(L10n.string("ui.custom.remove_game"), systemImage: "trash")
             }
         }
+    }
+}
+
+extension View {
+    /// What a game added by hand's page and cards present, wherever its page
+    /// shows: the Custom section or Home.
+    func customGamePresentations(_ model: CustomGamesModel) -> some View {
+        modifier(CustomGamePresentations(model: model))
+    }
+}
+
+private struct CustomGamePresentations: ViewModifier {
+    @Bindable var model: CustomGamesModel
+
+    func body(content: Content) -> some View {
+        content
+            .sheet(isPresented: $model.isAddingGame) {
+                AddCustomGameSheet(model: model, editingGame: nil)
+            }
+            .sheet(item: $model.editingGame) { game in
+                AddCustomGameSheet(model: model, editingGame: game)
+            }
+            .sheet(item: $model.settingsGame) { game in
+                CustomLaunchSettingsSheet(model: model, game: game)
+            }
+            .errorAlert(L10n.string("ui.custom.launch_failed"), message: $model.launchFailure)
+            .confirmationDialog(
+                model.gamePendingRemoval.map { L10n.string("ui.custom.remove_confirm_title", $0.title) } ?? "",
+                isPresented: Binding(
+                    get: { model.gamePendingRemoval != nil },
+                    set: { if !$0 { model.gamePendingRemoval = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                if let game = model.gamePendingRemoval {
+                    Button(L10n.string("ui.custom.remove_confirm_action"), role: .destructive) {
+                        model.removeGame(game)
+                        model.gamePendingRemoval = nil
+                    }
+                }
+                Button(L10n.string("ui.common.cancel"), role: .cancel) {
+                    model.gamePendingRemoval = nil
+                }
+            } message: {
+                Text(L10n.string("ui.custom.remove_confirm_message"))
+            }
     }
 }
