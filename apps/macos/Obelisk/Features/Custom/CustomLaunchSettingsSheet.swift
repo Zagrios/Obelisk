@@ -284,7 +284,7 @@ struct CustomLaunchSettingsSheet: View {
         updated.performanceHud = performanceHud
         updated.renderPercent = renderPercent
 
-        model.updateGame(updated)
+        model.saveEdits(updated)
         dismiss()
     }
 }

@@ -168,4 +168,21 @@ final class CustomGamesModelTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: copiedPath!))
         XCTAssertTrue(copiedPath!.hasSuffix("cover.png"))
     }
+
+    func testAnEditKeepsThePlaytimeRecordedSinceItsSheetOpened() {
+        let model = CustomGamesModel(directory: tempDirectory)
+        let opened = model.addGame(title: "Example Game", executablePath: "/Games/Game.exe")
+        var played = opened
+        played.playtimeSeconds = 600
+        played.lastPlayed = .now
+        model.updateGame(played)
+
+        var edited = opened
+        edited.title = "Example Game: Renamed"
+        model.saveEdits(edited)
+
+        XCTAssertEqual(model.games.first?.title, "Example Game: Renamed")
+        XCTAssertEqual(model.games.first?.playtimeSeconds, 600)
+        XCTAssertNotNil(model.games.first?.lastPlayed)
+    }
 }

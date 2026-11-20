@@ -545,7 +545,7 @@ struct AddCustomGameSheet: View {
             game.rayTracing = rayTracing
             game.performanceHud = performanceHud
             game.renderPercent = renderPercent
-            model.updateGame(game)
+            model.saveEdits(game)
         } else {
             _ = model.addGame(
                 title: trimmedTitle,

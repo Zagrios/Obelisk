@@ -156,6 +156,16 @@ final class CustomGamesModel {
         }
     }
 
+    /// Saves a sheet's copy of the game. The game may have played while the
+    /// sheet was open: the playtime and last played it recorded meanwhile stay.
+    func saveEdits(_ edited: CustomGame) {
+        guard let current = games.first(where: { $0.id == edited.id }) else { return }
+        var game = edited
+        game.playtimeSeconds = current.playtimeSeconds
+        game.lastPlayed = current.lastPlayed
+        updateGame(game)
+    }
+
     func removeGame(_ game: CustomGame) {
         if isRunning(game) {
             forceQuit(game)
