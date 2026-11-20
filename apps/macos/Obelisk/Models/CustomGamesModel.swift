@@ -64,7 +64,9 @@ final class CustomGamesModel {
         }
     }
 
-    @ObservationIgnored private(set) var runningProcesses: [String: CustomGameRunningState] = [:]
+    /// Observed, so Play turns into Quit as soon as a launch or a quit
+    /// changes it.
+    private(set) var runningProcesses: [String: CustomGameRunningState] = [:]
     @ObservationIgnored let directory: URL
     @ObservationIgnored let locations: ObeliskLocations
     @ObservationIgnored private var monitorTask: Task<Void, Never>?
