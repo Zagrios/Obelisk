@@ -234,6 +234,12 @@ impl Adapter for LinuxEngine {
             arguments.push("--render-percent".to_owned());
             arguments.push(config.settings.render_percent.to_string());
         }
+        if config.settings.metalfx_spatial {
+            arguments.extend(["--metalfx-spatial".to_owned(), "on".to_owned()]);
+        }
+        if config.settings.metalfx_framegen {
+            arguments.extend(["--metalfx-framegen".to_owned(), "on".to_owned()]);
+        }
         // Without it, macOS turns Game Mode on while the game is full screen.
         if !config.settings.game_mode {
             arguments.extend(["--game-mode".to_owned(), "off".to_owned()]);

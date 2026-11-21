@@ -116,6 +116,8 @@ fn every_kind_of_choices() -> [Choices; 5] {
             graphics: Some(Graphics::D3DMetal),
             ray_tracing: Some(true),
             render_percent: Some(100),
+            metalfx_spatial: false,
+            metalfx_framegen: false,
             performance_hud: false,
             game_mode: Some(true),
         },
@@ -345,6 +347,29 @@ fn only_the_linux_engine_keeps_game_mode_off_and_only_off_is_kept_where_the_prof
     let view = chosen(OTHER, on);
     assert!(view.settings.game_mode);
     assert_eq!(view.choices.game_mode, None);
+}
+
+#[test]
+fn only_the_linux_engine_offers_metalfx_spatial_and_framegen() {
+    assert!(offer(Engine::Linux).metalfx);
+    assert!(!offer(Engine::Rosetta).metalfx);
+
+    let on = |engine| Choices {
+        engine: Some(engine),
+        metalfx_spatial: true,
+        metalfx_framegen: true,
+        ..Choices::default()
+    };
+
+    let linux = chosen(OTHER, on(Engine::Linux));
+    assert!(linux.settings.metalfx_spatial);
+    assert!(linux.settings.metalfx_framegen);
+    assert_eq!(linux.choices, on(Engine::Linux));
+
+    let rosetta = chosen(OTHER, on(Engine::Rosetta));
+    assert!(!rosetta.settings.metalfx_spatial);
+    assert!(!rosetta.settings.metalfx_framegen);
+    assert_eq!(rosetta.choices, Choices::default());
 }
 
 #[test]

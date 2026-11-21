@@ -218,6 +218,53 @@ fn game_mode_kept_off_reaches_the_launcher() {
     assert_eq!(options(&off, "--game-mode"), ["off"]);
 }
 
+#[test]
+fn metalfx_options_reach_the_launcher_and_window_server() {
+    let (_directory, root) = installation();
+    let install = root.join("install");
+    fs::create_dir_all(&install).unwrap();
+    fs::write(install.join("Game.exe"), pe()).unwrap();
+    let mut config = linux_config(&root);
+    config.settings.metalfx_spatial = true;
+    config.settings.metalfx_framegen = true;
+
+    let target = wine::target::<Plain>(
+        &config,
+        &game(&install),
+        &launch_target(&install.join("Game.exe"), &[]),
+        HashMap::new(),
+    )
+    .unwrap();
+    assert_eq!(options(&target, "--metalfx-spatial"), ["on"]);
+    assert_eq!(options(&target, "--metalfx-framegen"), ["on"]);
+
+    let (engine, _) = run_launcher(
+        &root,
+        &[
+            "--render-percent",
+            "50",
+            "--metalfx-spatial",
+            "on",
+            "--metalfx-framegen",
+            "on",
+        ],
+        &[],
+    );
+    let recorded = fs::read_to_string(root.join("wsd.txt")).unwrap();
+    let lines: Vec<&str> = recorded.lines().collect();
+    assert_eq!(
+        lines[2..],
+        [
+            "--render-percent",
+            "50",
+            "--metalfx-spatial",
+            "--metalfx-framegen"
+        ]
+    );
+    assert!(!engine.contains("--metalfx-spatial"), "{engine}");
+    assert!(!engine.contains("--metalfx-framegen"), "{engine}");
+}
+
 /// A Steam game whose program is `Game/start_protected_game.exe`, in a
 /// runtime that carries steam-hostpid.so when `host_pid`.
 fn steam_target(root: &Path, host_pid: bool) -> (wine::Config, Target) {

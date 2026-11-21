@@ -1385,6 +1385,8 @@ fn a_configuration_reaches_its_game_session_whole() {
             dll_overrides: BTreeMap::from([("xaudio2_7".to_owned(), "n,b".to_owned())]),
             performance_hud: true,
             render_percent: 50,
+            metalfx_spatial: true,
+            metalfx_framegen: true,
             game_mode: false,
             locale: Some("it_IT".into()),
         },
@@ -1393,9 +1395,23 @@ fn a_configuration_reaches_its_game_session_whole() {
     let again: Config = serde_json::from_slice(&serde_json::to_vec(&config).unwrap()).unwrap();
 
     assert_eq!(again, config);
-    // A handoff that predates the locale, the render resolution or Game Mode
+    // A handoff that predates the locale, the render resolution, MetalFX or Game Mode
     // still opens, without one.
     for (field, expected) in [
+        (
+            "metalfx_spatial",
+            Settings {
+                metalfx_spatial: false,
+                ..config.settings.clone()
+            },
+        ),
+        (
+            "metalfx_framegen",
+            Settings {
+                metalfx_framegen: false,
+                ..config.settings.clone()
+            },
+        ),
         (
             "locale",
             Settings {

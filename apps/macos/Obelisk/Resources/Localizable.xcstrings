@@ -46744,6 +46744,218 @@
         }
       }
     },
+    "ui.launch_settings.metalfx_framegen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MetalFX-Frame-Generierung"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MetalFX Frame Generation"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Generación de fotogramas MetalFX"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Génération d’images MetalFX"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Generazione fotogrammi MetalFX"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MetalFX フレーム生成"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geração de quadros MetalFX"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MetalFX 帧生成"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.metalfx_framegen_detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fügt interpolierte Zwischenbilder für flüssigere Darstellung ein. Erhöht die Latenz leicht."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inserts interpolated frames for smoother motion. Adds a small amount of input latency."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inserta fotogramas interpolados para un movimiento más fluido. Añade algo de latencia."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Insère des images interpolées pour plus de fluidité. Ajoute une légère latence."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inserisce fotogrammi interpolati per movimenti più fluidi. Aggiunge una lieve latenza."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "補間フレームを挿入して滑らかに表示します。入力遅延が少し増えます。"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Insere quadros interpolados para movimentos mais fluidos. Adiciona pequena latência."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "插入插值帧以获得更流畅的画面，会略微增加输入延迟。"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.metalfx_spatial": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MetalFX Spatial"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MetalFX Spatial"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MetalFX Spatial"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MetalFX Spatial"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MetalFX Spatial"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MetalFX Spatial"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MetalFX Spatial"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MetalFX 空间缩放"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.metalfx_spatial_detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Skaliert niedrigere Auflösungen mit MetalFX schärfer auf die native Displaygröße hoch."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sharper MetalFX upscaling when rendering below native display resolution."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reescalado más nítido con MetalFX al renderizar por debajo de la resolución nativa."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mise à l’échelle MetalFX plus nette lorsque le rendu est inférieur à la définition native."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upscaling MetalFX più nitido quando il rendering è inferiore alla risoluzione nativa."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ネイティブ解像度未満で描画するときに MetalFX で鮮明にアップスケールします。"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upscaling MetalFX mais nítido ao renderizar abaixo da resolução nativa da tela."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在低于原生屏幕分辨率渲染时，使用 MetalFX 提供更清晰的图像缩放。"
+          }
+        }
+      }
+    },
     "ui.launch_settings.render_percent": {
       "extractionState": "manual",
       "localizations": {

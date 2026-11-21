@@ -14,6 +14,8 @@
 #   --graphics dxmt|d3dmetal  what renders the game's Direct3D (default dxmt)
 #   --render-percent N        the share of the screen's pixels per axis that the game sees (default 100, all of them;
 #                             wsd keeps it from 1 to 100): macOS scales the picture up to the screen
+#   --metalfx-spatial on|off  whether wsd upscales lowered frames with MetalFX Spatial (default off)
+#   --metalfx-framegen on|off whether wsd inserts interpolated frames with MetalFX Frame Generation (default off)
 #   --game-mode on|off        whether macOS turns Game Mode on while the game is full screen (default on)
 #   --bind GUEST=HOST[:ro]    a folder the guest also sees, at GUEST, whose parent exists in the root
 #   --env NAME=VALUE          a variable of the guest
@@ -25,12 +27,14 @@ set -u
 unset DYLD_INSERT_LIBRARIES
 runtime=$1 home=$2 install=$3 cwd=$4
 shift 4
-graphics=dxmt render_percent= game_mode=on binds= guest_env=()
+graphics=dxmt render_percent= metalfx_spatial=off metalfx_framegen=off game_mode=on binds= guest_env=()
 while [ $# -gt 0 ] && [ "$1" != "--" ]; do
     [ $# -ge 2 ] || exit 2
     case $1 in
     --graphics) graphics=$2 ;;
     --render-percent) render_percent=$2 ;;
+    --metalfx-spatial) metalfx_spatial=$2 ;;
+    --metalfx-framegen) metalfx_framegen=$2 ;;
     --game-mode) game_mode=$2 ;;
     --bind) binds="$binds;$2" ;;
     --env) guest_env+=(--env "$2") ;;
@@ -164,7 +168,11 @@ else
     render=$(render_server "$runtime/graphics/libexec/virgl_render_server" dxmt) || exit 1
 fi
 
-"$app/Contents/MacOS/wsd" --dir "$sockets" ${render_percent:+--render-percent "$render_percent"} &
+wsd_args=(--dir "$sockets")
+[ -n "$render_percent" ] && wsd_args+=(--render-percent "$render_percent")
+[ "$metalfx_spatial" = on ] && wsd_args+=(--metalfx-spatial)
+[ "$metalfx_framegen" = on ] && wsd_args+=(--metalfx-framegen)
+"$app/Contents/MacOS/wsd" "${wsd_args[@]}" &
 helpers+=($!)
 if [ "$graphics" = d3dmetal ]; then
     # D3DMetal is an Intel library: the Intel render server runs it under Rosetta. d3dmetal-native loads the

@@ -62,6 +62,14 @@ pub struct Settings {
     /// The share of the screen's pixels the game renders at; always one `engine` offers.
     #[serde(default = "full_render_percent")]
     pub render_percent: u32,
+    /// MetalFX Spatial upscales the game when rendered below display pixels;
+    /// true only on an engine that offers it.
+    #[serde(default)]
+    pub metalfx_spatial: bool,
+    /// MetalFX Frame Generation inserts interpolated frames on macOS 26+;
+    /// true only on an engine that offers it.
+    #[serde(default)]
+    pub metalfx_framegen: bool,
     /// macOS may turn its Game Mode on for the game; false only on an engine
     /// that can keep it off.
     #[serde(default = "game_mode")]
@@ -224,6 +232,12 @@ pub struct Choices {
     /// A plain integer, so an older build still reads the file.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub render_percent: Option<u32>,
+    /// MetalFX Spatial upscales the game when rendered below display pixels.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub metalfx_spatial: bool,
+    /// MetalFX Frame Generation inserts interpolated frames on macOS 26+.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub metalfx_framegen: bool,
     /// Metal's Performance HUD shows over the game, whatever renders it.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub performance_hud: bool,
@@ -255,6 +269,8 @@ pub struct EngineOffer {
     /// The lowest render resolution it offers, up to all of the pixels; None
     /// when it offers none.
     pub lowest_render_percent: Option<u32>,
+    /// Whether its window server offers MetalFX Spatial and Frame Generation.
+    pub metalfx: bool,
     /// Whether it can keep macOS's Game Mode off a game.
     pub game_mode: bool,
 }
@@ -285,6 +301,7 @@ pub const ENGINES: [EngineOffer; 2] = [
             },
         ],
         lowest_render_percent: None,
+        metalfx: false,
         game_mode: false,
     },
     EngineOffer {
@@ -302,6 +319,7 @@ pub const ENGINES: [EngineOffer; 2] = [
         ],
         // wsd keeps the desktop at 640x480 pixels or more: on a Retina MacBook, below about 25 gives the same one.
         lowest_render_percent: Some(1),
+        metalfx: true,
         game_mode: true,
     },
 ];
@@ -359,6 +377,8 @@ impl Choices {
                 .render_percent
                 .filter(|percent| offered.offers_render_percent(*percent))
                 .unwrap_or(FULL_RENDER_PERCENT),
+            metalfx_spatial: offered.metalfx && self.metalfx_spatial,
+            metalfx_framegen: offered.metalfx && self.metalfx_framegen,
             game_mode: self
                 .game_mode
                 .filter(|_| offered.game_mode)
@@ -386,6 +406,8 @@ impl Choices {
                 .then_some(applied.options.ray_tracing),
             render_percent: (applied.render_percent != FULL_RENDER_PERCENT)
                 .then_some(applied.render_percent),
+            metalfx_spatial: applied.metalfx_spatial,
+            metalfx_framegen: applied.metalfx_framegen,
             performance_hud: self.performance_hud,
             game_mode: (applied.game_mode != default_game_mode(profile, applied.engine))
                 .then_some(applied.game_mode),

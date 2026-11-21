@@ -213,6 +213,14 @@ struct LaunchSettingsSheet: View {
                                 ObeliskCardDivider()
                                 renderPercentRow(settings, lowest: lowest)
                             }
+                            if model.engineOffer?.metalfx == true {
+                                ObeliskCardDivider()
+                                metalfxSpatialRow(settings)
+                                if #available(macOS 26.0, *) {
+                                    ObeliskCardDivider()
+                                    metalfxFrameGenRow(settings)
+                                }
+                            }
                             ObeliskCardDivider()
                             performanceHudRow(settings)
                         }
@@ -359,6 +367,38 @@ struct LaunchSettingsSheet: View {
             Text(L10n.string("ui.launch_settings.render_percent_detail"))
         } control: {
             RenderPercentSlider(model: model, percent: model.renderPercent ?? settings.renderPercent, lowest: lowest)
+        }
+    }
+
+    private func metalfxSpatialRow(_ settings: LaunchSettings) -> some View {
+        ObeliskRow(title: L10n.string("ui.launch_settings.metalfx_spatial")) {
+            SymbolTile(name: "wand.and.sparkles", colors: TileColors.blue)
+        } detail: {
+            Text(L10n.string("ui.launch_settings.metalfx_spatial_detail"))
+        } accessory: {
+            Toggle(L10n.string("ui.launch_settings.metalfx_spatial"),
+                   isOn: Binding(get: { settings.metalfxSpatial },
+                                 set: { enabled in model.choose { $0.metalfxSpatial = enabled } }))
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .pointerCursor()
+                .accessibilityIdentifier("launch-settings-metalfx-spatial")
+        }
+    }
+
+    private func metalfxFrameGenRow(_ settings: LaunchSettings) -> some View {
+        ObeliskRow(title: L10n.string("ui.launch_settings.metalfx_framegen")) {
+            SymbolTile(name: "bolt.horizontal.fill", colors: TileColors.gold)
+        } detail: {
+            Text(L10n.string("ui.launch_settings.metalfx_framegen_detail"))
+        } accessory: {
+            Toggle(L10n.string("ui.launch_settings.metalfx_framegen"),
+                   isOn: Binding(get: { settings.metalfxFramegen },
+                                 set: { enabled in model.choose { $0.metalfxFramegen = enabled } }))
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .pointerCursor()
+                .accessibilityIdentifier("launch-settings-metalfx-framegen")
         }
     }
 
