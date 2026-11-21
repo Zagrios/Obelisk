@@ -201,6 +201,12 @@ impl Config {
         if self.settings.render_percent != crate::launch_settings::FULL_RENDER_PERCENT {
             header.push_str(&format!(" render_percent={}", self.settings.render_percent));
         }
+        if self.settings.metalfx_spatial {
+            header.push_str(" metalfx_spatial=on");
+        }
+        if self.settings.metalfx_framegen {
+            header.push_str(" metalfx_framegen=on");
+        }
         if !self.settings.game_mode {
             header.push_str(" game_mode=off");
         }

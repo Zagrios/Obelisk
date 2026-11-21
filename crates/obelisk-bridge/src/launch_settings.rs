@@ -18,6 +18,10 @@ pub struct LaunchSettings {
     pub ray_tracing: bool,
     /// The share of the screen's pixels the game renders at, in whole percent.
     pub render_percent: u32,
+    /// MetalFX Spatial upscales lowered frames on the Linux engine.
+    pub metalfx_spatial: bool,
+    /// MetalFX Frame Generation inserts interpolated frames on macOS 26+.
+    pub metalfx_framegen: bool,
     /// Metal's Performance HUD shows over the game, whatever renders it.
     pub performance_hud: bool,
     /// macOS may turn its Game Mode on for the game.
@@ -45,6 +49,10 @@ pub struct LaunchChoices {
     pub ray_tracing: Option<bool>,
     #[uniffi(default = None)]
     pub render_percent: Option<u32>,
+    #[uniffi(default = false)]
+    pub metalfx_spatial: bool,
+    #[uniffi(default = false)]
+    pub metalfx_framegen: bool,
     #[uniffi(default = false)]
     pub performance_hud: bool,
     #[uniffi(default = None)]
@@ -90,6 +98,8 @@ pub struct LaunchEngineOffer {
     /// The lowest render resolution it offers, up to 100; None when it offers
     /// none.
     pub lowest_render_percent: Option<u32>,
+    /// Whether its window server offers MetalFX Spatial and Frame Generation.
+    pub metalfx: bool,
     /// Whether it can keep macOS's Game Mode off a game.
     pub game_mode: bool,
 }
@@ -108,6 +118,8 @@ impl From<View> for LaunchSettings {
             graphics: view.settings.graphics.into(),
             ray_tracing: view.settings.options.ray_tracing,
             render_percent: view.settings.render_percent,
+            metalfx_spatial: view.settings.metalfx_spatial,
+            metalfx_framegen: view.settings.metalfx_framegen,
             performance_hud: view.settings.performance_hud,
             game_mode: view.settings.game_mode,
             choices: view.choices.into(),
@@ -131,6 +143,7 @@ fn engine_offer(offer: &EngineOffer, default: Graphics) -> LaunchEngineOffer {
         default_graphics: default.into(),
         graphics: offer.graphics.iter().map(graphics_offer).collect(),
         lowest_render_percent: offer.lowest_render_percent,
+        metalfx: offer.metalfx,
         game_mode: offer.game_mode,
     }
 }
@@ -156,6 +169,8 @@ impl From<Choices> for LaunchChoices {
             graphics: choices.graphics.map(Into::into),
             ray_tracing: choices.ray_tracing,
             render_percent: choices.render_percent,
+            metalfx_spatial: choices.metalfx_spatial,
+            metalfx_framegen: choices.metalfx_framegen,
             performance_hud: choices.performance_hud,
             game_mode: choices.game_mode,
         }
@@ -170,6 +185,8 @@ impl From<LaunchChoices> for launch_settings::Choices {
             graphics: choices.graphics.map(Into::into),
             ray_tracing: choices.ray_tracing,
             render_percent: choices.render_percent,
+            metalfx_spatial: choices.metalfx_spatial,
+            metalfx_framegen: choices.metalfx_framegen,
             performance_hud: choices.performance_hud,
             game_mode: choices.game_mode,
         }
@@ -284,16 +301,26 @@ mod tests {
         let linux = choose(LaunchChoices {
             engine: Some(LaunchEngine::Linux),
             render_percent: Some(50),
+            metalfx_spatial: true,
+            metalfx_framegen: true,
             ..LaunchChoices::default()
         });
         let rosetta = choose(LaunchChoices {
             render_percent: Some(50),
+            metalfx_spatial: true,
+            metalfx_framegen: true,
             ..LaunchChoices::default()
         });
 
         assert_eq!(linux.render_percent, 50);
         assert_eq!(linux.choices.render_percent, Some(50));
+        assert!(linux.metalfx_spatial);
+        assert!(linux.metalfx_framegen);
+        assert!(linux.choices.metalfx_spatial);
+        assert!(linux.choices.metalfx_framegen);
         assert_eq!(rosetta.render_percent, 100);
+        assert!(!rosetta.metalfx_spatial);
+        assert!(!rosetta.metalfx_framegen);
         assert_eq!(rosetta.choices, LaunchChoices::default());
     }
 }
