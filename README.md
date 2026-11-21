@@ -39,7 +39,7 @@
 - [Getting started](#getting-started)
 - [Features](#features)
 - [Store support](#store-support)
-- [Custom executables (Windows & Linux)](#custom-executables-windows--linux)
+- [Custom games (Windows, Linux & Mac)](#custom-games-windows-linux--mac)
 - [Windows games](#windows-games)
 - [Performance](#performance)
 - [How games run](#how-games-run)
@@ -142,21 +142,22 @@ Gamepads work in Windows games, which see them as Xbox controllers. Mac games us
 
 Some controllers, such as the Steam Controller, get full support once Obelisk is allowed in **System Settings → Privacy & Security → Input Monitoring**.
 
-### Custom executables (Windows & Linux)
+### Custom games (Windows, Linux & Mac)
 
-Add standalone Windows or Linux games, emulators, fan games, DRM-free releases, itch.io downloads, or native Linux binaries (such as BeamNG Linux builds) directly into Obelisk:
+Add standalone Windows, Linux or Mac games, emulators, fan games, DRM-free releases, itch.io downloads, or native Linux binaries (such as BeamNG Linux builds) directly into Obelisk:
 
 - **Manual executable management:** Browse for any Windows `.exe` or native Linux executable / script (`x86_64` ELF, shell scripts) to add and launch directly from your library.
+- **Mac apps:** Add a native Mac app (`.app`), such as a game's Mac port, optionally with a file for it to open, such as an emulator's game. macOS opens it as a double-click or Finder's **Open With** would, with its launch arguments, and it needs no Wine. The app must run natively on Apple silicon.
 - **Automatic engine & graphics detection:** Automatically detects Linux ELF binaries to launch with the Voile Linux engine (`voile-lkd` via FEX), or Windows binaries with CrossOver Wine / GPTK 4 and auto-configured DXMT or D3DMetal.
 - **Custom artwork & interactive crop:** Assign custom cover and banner artwork with a built-in cropping modal (`2:3 Cover` and `1:1 Square` presets, free mouse scroll wheel and pinch zoom, and 90° rotation).
 - **Runtime & graphics configuration:** Choose between CrossOver Wine / Apple GPTK 4 and the Voile Linux engine, select D3DMetal or DXMT, and configure Ray Tracing, Metal HUD, and render scaling.
-- **Process tracking:** Playtime accumulation and clean process management directly from the library card.
+- **Process tracking:** Playtime accumulation and clean process management directly from the library card. A Mac app plays until every process it started has quit, such as the game its launcher starts.
 
 ## Store support
 
 |                           | Steam | Epic Games | GOG | Custom |
 | ------------------------- | :---: | :--------: | :-: | :----: |
-| Mac games                 |  ✅   |     ✅     | ✅  |   ❌   |
+| Mac games                 |  ✅   |     ✅     | ✅  |   ✅   |
 | Windows games             |  ✅   |     ✅     | ✅  |   ✅   |
 | Linux executables         |  ❌   |     ❌     | ❌  |   ✅   |
 | Automatic updates         |  ✅   |     ✅     | ✅  |   ❌   |
@@ -230,7 +231,7 @@ Obelisk has no account of its own and does not track what you do in it. It talks
 
 ## Known limitations
 
-- Adding custom Windows and Linux games (`.exe` or ELF binaries) is supported via the **Custom** section. Adding standalone Mac applications by hand is planned for a future release.
+- Adding custom Windows and Linux games (`.exe` or ELF binaries) and Mac apps (`.app`) is supported via the **Custom** section.
 - Games install in Obelisk's library folder, shown in **Settings → Storage**. Another location cannot be chosen yet.
 - Steam: Workshop content and beta branches are not available yet.
 - GOG: Cloud saves, friends and GOG Galaxy's online features are not available yet. Games only offered in GOG's older download format cannot be installed yet.

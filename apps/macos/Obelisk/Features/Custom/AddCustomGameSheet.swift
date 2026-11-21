@@ -10,6 +10,7 @@ struct AddCustomGameSheet: View {
     @State private var title: String
     @State private var executablePath: String
     @State private var launchArguments: String
+    @State private var documentPath: String
     @State private var customCoverPath: String?
     @State private var customBannerPath: String?
     @State private var winePrefixPath: String
@@ -31,6 +32,7 @@ struct AddCustomGameSheet: View {
         _title = State(initialValue: editingGame?.title ?? "")
         _executablePath = State(initialValue: editingGame?.executablePath ?? "")
         _launchArguments = State(initialValue: editingGame?.launchArguments ?? "")
+        _documentPath = State(initialValue: editingGame?.documentPath ?? "")
         _customCoverPath = State(initialValue: editingGame?.customCoverPath)
         _customBannerPath = State(initialValue: editingGame?.customBannerPath)
         _winePrefixPath = State(initialValue: editingGame?.winePrefixPath ?? "")
@@ -44,7 +46,23 @@ struct AddCustomGameSheet: View {
 
     private var isValid: Bool {
         !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        !executablePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !executablePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        appProblem == nil
+    }
+
+    private var trimmedExecutablePath: String {
+        executablePath.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Whether macOS opens the game as an app, which needs no Wine settings.
+    private var isApp: Bool {
+        CustomGame.isApp(path: trimmedExecutablePath)
+    }
+
+    /// Why the chosen app cannot be added, once it exists.
+    private var appProblem: String? {
+        guard isApp, FileManager.default.fileExists(atPath: trimmedExecutablePath) else { return nil }
+        return CustomGame.appProblem(at: trimmedExecutablePath)
     }
 
     var body: some View {
@@ -66,7 +84,11 @@ struct AddCustomGameSheet: View {
                     gameInfoSection
                     artworkSection
                     launchOptionsSection
-                    compatibilitySection
+                    if isApp {
+                        appSection
+                    } else {
+                        compatibilitySection
+                    }
                 }
                 .padding(.horizontal, 24)
                 .padding(.bottom, 24)
@@ -127,10 +149,61 @@ struct AddCustomGameSheet: View {
                             .foregroundStyle(.orange)
                             .padding(.top, 2)
                     }
+
+                    if let appProblem {
+                        Label(L10n.string(appProblem), systemImage: "exclamationmark.triangle.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.orange)
+                            .padding(.top, 2)
+                    }
                 }
                 .padding(14)
+
+                if isApp {
+                    ObeliskCardDivider()
+                    documentRow
+                }
             }
         }
+    }
+
+    /// The file the app opens, such as an emulator's game.
+    private var documentRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            SheetFieldLabel(text: L10n.string("ui.custom.app_document"))
+            HStack(spacing: 10) {
+                TextField(L10n.string("ui.custom.app_document_none"), text: $documentPath)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 11, design: .monospaced))
+                    .accessibilityIdentifier("custom-game-document-input")
+
+                GlassCapsuleButton(
+                    title: L10n.string("ui.custom.document_choose"),
+                    identifier: "custom-game-browse-document",
+                    action: pickDocument
+                )
+
+                if !documentPath.isEmpty {
+                    GlassCapsuleButton(
+                        title: L10n.string("ui.custom.document_clear"),
+                        identifier: "custom-game-clear-document",
+                        action: { documentPath = "" }
+                    )
+                }
+            }
+
+            if !documentPath.isEmpty && !FileManager.default.fileExists(atPath: documentPath) {
+                Label(L10n.string("ui.custom.document_missing"), systemImage: "exclamationmark.triangle.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.orange)
+                    .padding(.top, 2)
+            }
+
+            Text(L10n.string("ui.custom.app_document_description"))
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+        }
+        .padding(14)
     }
 
     private var artworkSection: some View {
@@ -267,11 +340,26 @@ struct AddCustomGameSheet: View {
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 12))
                         .accessibilityIdentifier("custom-game-args-input")
-                    Text(L10n.string("ui.custom.launch_arguments_description"))
+                    Text(L10n.string(isApp ? "ui.custom.launch_arguments_app_description" : "ui.custom.launch_arguments_description"))
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                 }
                 .padding(14)
+            }
+        }
+    }
+
+    /// What an app has in place of the Wine settings.
+    private var appSection: some View {
+        SheetSection(title: L10n.string("ui.custom.compatibility_section")) {
+            ObeliskCard {
+                ObeliskRow(title: L10n.string("ui.custom.engine_native")) {
+                    SymbolTile(name: "app.badge.checkmark", colors: TileColors.violet)
+                } detail: {
+                    Text(L10n.string("ui.custom.app_runs_natively"))
+                } accessory: {
+                    EmptyView()
+                }
             }
         }
     }
@@ -449,7 +537,7 @@ struct AddCustomGameSheet: View {
         panel.allowsOtherFileTypes = true
         panel.prompt = L10n.string("ui.custom.executable_select_prompt")
 
-        var types: [UTType] = [UTType.unixExecutable, UTType.executable]
+        var types: [UTType] = [UTType.unixExecutable, UTType.executable, UTType.applicationBundle]
         if let exeType = UTType(filenameExtension: "exe") { types.append(exeType) }
         if let binType = UTType(filenameExtension: "bin") { types.append(binType) }
         if let shType = UTType(filenameExtension: "sh") { types.append(shType) }
@@ -459,6 +547,13 @@ struct AddCustomGameSheet: View {
 
         if panel.runModal() == .OK, let url = panel.url {
             executablePath = url.path
+            if CustomGame.isApp(path: url.path) {
+                // An app names itself; it needs no engine or graphics backend.
+                if title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    title = CustomGame.appTitle(at: url.path)
+                }
+                return
+            }
             if title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 // Infer game name from executable without extension
                 title = url.deletingPathExtension().lastPathComponent
@@ -470,6 +565,24 @@ struct AddCustomGameSheet: View {
             } else {
                 engine = recommendedEngineBackend(executablePath: url.path)
                 graphics = recommendedGraphicsBackend(executablePath: url.path)
+            }
+        }
+    }
+
+    /// Offers any file: an app may open more than the kinds it declares, and
+    /// the open panel ignores `allowsOtherFileTypes`.
+    private func pickDocument() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+
+        if panel.runModal() == .OK, let url = panel.url {
+            documentPath = url.path
+            // The game is the file, not the emulator that opens it.
+            let current = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            if current.isEmpty || current == CustomGame.appTitle(at: trimmedExecutablePath) {
+                title = url.deletingPathExtension().lastPathComponent
             }
         }
     }
@@ -531,11 +644,15 @@ struct AddCustomGameSheet: View {
         let trimmedExe = executablePath.trimmingCharacters(in: .whitespacesAndNewlines)
         let prefix = winePrefixPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : winePrefixPath
         let runner = runnerPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : runnerPath
+        // Only an app opens a file: a program that was an app forgets it.
+        let trimmedDocument = documentPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        let document = isApp && !trimmedDocument.isEmpty ? trimmedDocument : nil
 
         if var game = editingGame {
             game.title = trimmedTitle
             game.executablePath = trimmedExe
             game.launchArguments = launchArguments.trimmingCharacters(in: .whitespacesAndNewlines)
+            game.documentPath = document
             game.customCoverPath = customCoverPath
             game.customBannerPath = customBannerPath
             game.winePrefixPath = prefix
@@ -545,12 +662,13 @@ struct AddCustomGameSheet: View {
             game.rayTracing = rayTracing
             game.performanceHud = performanceHud
             game.renderPercent = renderPercent
-            model.updateGame(game)
+            model.saveEdits(game)
         } else {
             _ = model.addGame(
                 title: trimmedTitle,
                 executablePath: trimmedExe,
                 launchArguments: launchArguments.trimmingCharacters(in: .whitespacesAndNewlines),
+                documentPath: document,
                 customCoverPath: customCoverPath,
                 customBannerPath: customBannerPath,
                 winePrefixPath: prefix,

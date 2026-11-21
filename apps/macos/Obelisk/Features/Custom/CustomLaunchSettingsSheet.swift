@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Sheet to configure launch settings and compatibility layer for a custom Windows game.
+/// Sheet to configure how a game added by hand launches, and the compatibility layer of a Windows one.
 struct CustomLaunchSettingsSheet: View {
     @Bindable var model: CustomGamesModel
     let game: CustomGame
@@ -49,9 +49,12 @@ struct CustomLaunchSettingsSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     argumentsCard
-                    engineCard
-                    graphicsCard
-                    prefixCard
+                    // An app has only its arguments: macOS opens it.
+                    if !game.isApp {
+                        engineCard
+                        graphicsCard
+                        prefixCard
+                    }
                 }
                 .padding(.horizontal, 24)
                 .padding(.bottom, 24)
@@ -74,7 +77,7 @@ struct CustomLaunchSettingsSheet: View {
                     TextField(L10n.string("ui.custom.launch_arguments_placeholder"), text: $launchArguments)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 12))
-                    Text(L10n.string("ui.custom.launch_arguments_description"))
+                    Text(L10n.string(game.isApp ? "ui.custom.launch_arguments_app_description" : "ui.custom.launch_arguments_description"))
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                 }
@@ -284,7 +287,7 @@ struct CustomLaunchSettingsSheet: View {
         updated.performanceHud = performanceHud
         updated.renderPercent = renderPercent
 
-        model.updateGame(updated)
+        model.saveEdits(updated)
         dismiss()
     }
 }

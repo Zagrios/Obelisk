@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Detail page for a standalone/custom Windows game.
+/// Detail page for a game added by hand.
 struct CustomGameDetailView: View {
     @Bindable var model: CustomGamesModel
     let game: CustomGame
@@ -97,7 +97,9 @@ struct CustomGameDetailView: View {
                                 Label(L10n.string("ui.custom.show_in_finder"), systemImage: "folder")
                             }
 
-                            if let prefix = currentGame.winePrefixPath, FileManager.default.fileExists(atPath: prefix) {
+                            // An app has no Wine prefix.
+                            if !currentGame.isApp, let prefix = currentGame.winePrefixPath,
+                               FileManager.default.fileExists(atPath: prefix) {
                                 Button {
                                     NSWorkspace.shared.selectFile(prefix, inFileViewerRootedAtPath: "")
                                 } label: {
@@ -182,15 +184,19 @@ struct CustomGameDetailView: View {
                 text: GameFormatting.lastPlayed(currentGame.lastPlayed)
             )
 
-            metricItem(
-                symbol: "cpu",
-                text: currentGame.engine == .rosetta ? L10n.string("ui.custom.engine_rosetta") : L10n.string("ui.custom.engine_linux")
-            )
+            if currentGame.isApp {
+                metricItem(symbol: "app.badge.checkmark", text: L10n.string("ui.custom.engine_native"))
+            } else {
+                metricItem(
+                    symbol: "cpu",
+                    text: currentGame.engine == .rosetta ? L10n.string("ui.custom.engine_rosetta") : L10n.string("ui.custom.engine_linux")
+                )
 
-            metricItem(
-                symbol: "display",
-                text: currentGame.graphics == .d3dMetal ? L10n.string("ui.custom.graphics_d3dmetal") : L10n.string("ui.custom.graphics_dxmt")
-            )
+                metricItem(
+                    symbol: "display",
+                    text: currentGame.graphics == .d3dMetal ? L10n.string("ui.custom.graphics_d3dmetal") : L10n.string("ui.custom.graphics_dxmt")
+                )
+            }
         }
         .padding(.top, 4)
     }
@@ -226,6 +232,32 @@ struct CustomGameDetailView: View {
                     }
                 }
 
+                if currentGame.isApp, let document = currentGame.documentPath, !document.isEmpty {
+                    ObeliskCardDivider()
+
+                    ObeliskRow(title: L10n.string("ui.custom.app_document")) {
+                        SymbolTile(name: "doc.fill", colors: TileColors.blue)
+                    } detail: {
+                        Text(verbatim: document)
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                        if !FileManager.default.fileExists(atPath: document) {
+                            Label(L10n.string("ui.custom.document_missing"), systemImage: "exclamationmark.triangle.fill")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.orange)
+                        }
+                    } accessory: {
+                        GlassCapsuleButton(
+                            title: L10n.string("ui.custom.show_in_finder"),
+                            systemImage: "folder",
+                            identifier: "custom-document-finder"
+                        ) {
+                            NSWorkspace.shared.selectFile(document, inFileViewerRootedAtPath: "")
+                        }
+                    }
+                }
+
                 ObeliskCardDivider()
 
                 ObeliskRow(title: L10n.string("ui.custom.launch_arguments")) {
@@ -239,7 +271,7 @@ struct CustomGameDetailView: View {
                 }
             }
 
-            ObeliskCard {
+            wineCard {
                 ObeliskRow(title: L10n.string("ui.custom.wine_prefix")) {
                     SymbolTile(name: "folder.badge.gearshape", colors: TileColors.blue)
                 } detail: {
@@ -282,6 +314,14 @@ struct CustomGameDetailView: View {
                     }
                 }
             }
+        }
+    }
+
+    /// A program's Wine prefix and settings. An app has neither: macOS opens it.
+    @ViewBuilder
+    private func wineCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        if !currentGame.isApp {
+            ObeliskCard(content: content)
         }
     }
 

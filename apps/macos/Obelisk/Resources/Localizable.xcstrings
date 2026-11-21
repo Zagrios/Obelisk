@@ -50725,10 +50725,22 @@
     "model.section.custom.title": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eigene Spiele"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Custom Games"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Juegos personalizados"
           }
         },
         "fr": {
@@ -50742,28 +50754,76 @@
             "state": "translated",
             "value": "Giochi personalizzati"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カスタムゲーム"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jogos personalizados"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自定义游戏"
+          }
         }
       }
     },
     "model.section.custom.subtitle": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Von Hand hinzugefügte Spiele"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Standalone Windows games"
+            "value": "Games added by hand"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Juegos añadidos a mano"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Jeux Windows autonomes"
+            "value": "Jeux ajoutés à la main"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Giochi Windows indipendenti"
+            "value": "Giochi aggiunti a mano"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手動で追加したゲーム"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jogos adicionados manualmente"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手动添加的游戏"
           }
         }
       }
@@ -50771,10 +50831,22 @@
     "ui.store.custom": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Benutzerdefiniert"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Custom"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Personalizado"
           }
         },
         "fr": {
@@ -50788,16 +50860,46 @@
             "state": "translated",
             "value": "Personalizzato"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カスタム"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Personalizado"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自定义"
+          }
         }
       }
     },
     "ui.custom.add_game": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Spiel hinzufügen"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Add Game"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Añadir juego"
           }
         },
         "fr": {
@@ -50811,16 +50913,46 @@
             "state": "translated",
             "value": "Aggiungi gioco"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ゲームを追加"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adicionar jogo"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加游戏"
+          }
         }
       }
     },
     "ui.custom.add_title": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eigenes Spiel hinzufügen"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Add Custom Game"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Añadir juego personalizado"
           }
         },
         "fr": {
@@ -50834,16 +50966,46 @@
             "state": "translated",
             "value": "Aggiungi gioco personalizzato"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カスタムゲームを追加"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adicionar jogo personalizado"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加自定义游戏"
+          }
         }
       }
     },
     "ui.custom.edit_title": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eigenes Spiel bearbeiten"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Edit Custom Game"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Editar juego personalizado"
           }
         },
         "fr": {
@@ -50857,16 +51019,46 @@
             "state": "translated",
             "value": "Modifica gioco personalizzato"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カスタムゲームを編集"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Editar jogo personalizado"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑自定义游戏"
+          }
         }
       }
     },
     "ui.custom.launch_settings_title": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eigene Starteinstellungen"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Custom Launch Settings"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajustes de inicio personalizados"
           }
         },
         "fr": {
@@ -50880,16 +51072,46 @@
             "state": "translated",
             "value": "Impostazioni di avvio personalizzate"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カスタム起動設定"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configurações de inicialização personalizadas"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自定义启动设置"
+          }
         }
       }
     },
     "ui.custom.empty_title": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine eigenen Spiele"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "No Custom Games"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No hay juegos personalizados"
           }
         },
         "fr": {
@@ -50903,28 +51125,76 @@
             "state": "translated",
             "value": "Nessun gioco personalizzato"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カスタムゲームはありません"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nenhum jogo personalizado"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有自定义游戏"
+          }
         }
       }
     },
     "ui.custom.empty_description": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fügen Sie eigenständige Windows- oder Linux-Programme, Mac-Apps, Downloads von itch.io oder emulierte Spiele hinzu, um sie direkt aus Obelisk zu starten."
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Add standalone Windows or Linux executables, itch.io downloads, or emulated games to launch them directly from Obelisk."
+            "value": "Add standalone Windows or Linux executables, Mac apps, itch.io downloads, or emulated games to launch them directly from Obelisk."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Añade ejecutables independientes de Windows o Linux, aplicaciones de Mac, descargas de itch.io o juegos emulados para iniciarlos directamente desde Obelisk."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ajoutez des exécutables Windows ou Linux autonomes, des téléchargements itch.io ou des jeux émulés pour les lancer directement depuis Obelisk."
+            "value": "Ajoutez des exécutables Windows ou Linux autonomes, des applications Mac, des téléchargements itch.io ou des jeux émulés pour les lancer directement depuis Obelisk."
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Aggiungi eseguibili Windows o Linux indipendenti, download di itch.io o giochi emulati per avviarli direttamente da Obelisk."
+            "value": "Aggiungi eseguibili Windows o Linux indipendenti, app per Mac, download di itch.io o giochi emulati per avviarli direttamente da Obelisk."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "単体のWindowsまたはLinuxの実行ファイル、Macアプリ、itch.ioからのダウンロード、エミュレートするゲームを追加すると、Obeliskから直接起動できます。"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adicione executáveis independentes de Windows ou Linux, aplicativos para Mac, downloads do itch.io ou jogos emulados para iniciá-los diretamente pelo Obelisk."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加独立的 Windows 或 Linux 可执行文件、Mac 应用、itch.io 下载内容或模拟游戏，即可直接从 Obelisk 启动。"
           }
         }
       }
@@ -50932,10 +51202,22 @@
     "ui.custom.game_information": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Spielinformationen"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Game Information"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Información del juego"
           }
         },
         "fr": {
@@ -50949,16 +51231,46 @@
             "state": "translated",
             "value": "Informazioni sul gioco"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ゲーム情報"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Informações do jogo"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "游戏信息"
+          }
         }
       }
     },
     "ui.custom.title_label": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Spieltitel"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Game Title"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Título del juego"
           }
         },
         "fr": {
@@ -50972,16 +51284,46 @@
             "state": "translated",
             "value": "Titolo del gioco"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ゲームのタイトル"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Título do jogo"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "游戏名称"
+          }
         }
       }
     },
     "ui.custom.title_placeholder": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Spieltitel eingeben"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Enter game title"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Introduce el título del juego"
           }
         },
         "fr": {
@@ -50993,7 +51335,25 @@
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Inserisci il titre du jeu"
+            "value": "Inserisci il titolo del gioco"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ゲームのタイトルを入力"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Digite o título do jogo"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入游戏名称"
           }
         }
       }
@@ -51001,22 +51361,52 @@
     "ui.custom.executable_path": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Programm oder App"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Executable"
+            "value": "Program or App"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Programa o aplicación"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Exécutable"
+            "value": "Programme ou application"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Eseguibile"
+            "value": "Programma o app"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プログラムまたはアプリ"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Programa ou aplicativo"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "程序或应用"
           }
         }
       }
@@ -51024,10 +51414,22 @@
     "ui.custom.executable_browse": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Durchsuchen …"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Browse…"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Explorar…"
           }
         },
         "fr": {
@@ -51041,28 +51443,76 @@
             "state": "translated",
             "value": "Sfoglia…"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "参照…"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Procurar…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "浏览…"
+          }
         }
       }
     },
     "ui.custom.executable_select_prompt": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Programm oder App auswählen"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Select Executable"
+            "value": "Select Program or App"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seleccionar programa o aplicación"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sélectionner un exécutable"
+            "value": "Sélectionner un programme ou une application"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Seleziona eseguibile"
+            "value": "Seleziona programma o app"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プログラムまたはアプリを選択"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Selecionar programa ou aplicativo"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择程序或应用"
           }
         }
       }
@@ -51070,22 +51520,52 @@
     "ui.custom.executable_missing": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Programm oder App unter diesem Pfad nicht gefunden"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Executable not found at path"
+            "value": "Program or app not found at path"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se encontró el programa o la aplicación en la ruta"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Exécutable introuvable sur le chemin"
+            "value": "Programme ou application introuvable sur le chemin"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Eseguibile non trovato nel percorso"
+            "value": "Programma o app non trovati nel percorso"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このパスにプログラムまたはアプリが見つかりません"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Programa ou aplicativo não encontrado no caminho"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在此路径找不到程序或应用"
           }
         }
       }
@@ -51093,10 +51573,22 @@
     "ui.custom.launch_arguments": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Startoptionen"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Launch Arguments"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Parámetros de inicio"
           }
         },
         "fr": {
@@ -51110,16 +51602,46 @@
             "state": "translated",
             "value": "Argomenti di avvio"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "起動オプション"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opções de inicialização"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "启动选项"
+          }
         }
       }
     },
     "ui.custom.launch_arguments_placeholder": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Optionale Befehlszeilenargumente"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Optional command-line arguments"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Argumentos de línea de comandos opcionales"
           }
         },
         "fr": {
@@ -51133,16 +51655,46 @@
             "state": "translated",
             "value": "Argomenti della riga di comando facoltativi"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任意のコマンドライン引数"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Argumentos de linha de comando opcionais"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可选的命令行参数"
+          }
         }
       }
     },
     "ui.custom.launch_arguments_description": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Werden dem Programm beim Start direkt übergeben."
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Passed directly to the executable on startup."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se pasan directamente al ejecutable al iniciarse."
           }
         },
         "fr": {
@@ -51156,16 +51708,46 @@
             "state": "translated",
             "value": "Passati direttamente all’eseguibile all’avvio."
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "起動時に実行ファイルへ直接渡されます。"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Passadas diretamente ao executável na inicialização."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "启动时直接传给可执行文件。"
+          }
         }
       }
     },
     "ui.custom.artwork_section": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bilder"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Artwork"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ilustraciones"
           }
         },
         "fr": {
@@ -51179,16 +51761,46 @@
             "state": "translated",
             "value": "Grafica"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アートワーク"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arte"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "插图"
+          }
         }
       }
     },
     "ui.custom.cover_image": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cover"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Cover Art"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Portada"
           }
         },
         "fr": {
@@ -51202,16 +51814,46 @@
             "state": "translated",
             "value": "Copertina"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カバーアート"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Capa"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "封面"
+          }
         }
       }
     },
     "ui.custom.cover_choose": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cover auswählen …"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Choose Cover…"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elegir portada…"
           }
         },
         "fr": {
@@ -51225,16 +51867,46 @@
             "state": "translated",
             "value": "Scegli copertina…"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カバーを選択…"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escolher capa…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择封面…"
+          }
         }
       }
     },
     "ui.custom.banner_image": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Titelbanner"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Hero Banner"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Banner principal"
           }
         },
         "fr": {
@@ -51248,16 +51920,46 @@
             "state": "translated",
             "value": "Banner hero"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ヒーローバナー"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Banner principal"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "主横幅"
+          }
         }
       }
     },
     "ui.custom.banner_choose": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Banner auswählen …"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Choose Banner…"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elegir banner…"
           }
         },
         "fr": {
@@ -51271,16 +51973,46 @@
             "state": "translated",
             "value": "Scegli banner…"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バナーを選択…"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escolher banner…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择横幅…"
+          }
         }
       }
     },
     "ui.custom.remove_artwork": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entfernen"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Remove"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quitar"
           }
         },
         "fr": {
@@ -51294,16 +52026,46 @@
             "state": "translated",
             "value": "Rimuovi"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "削除"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remover"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除"
+          }
         }
       }
     },
     "ui.custom.compatibility_section": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kompatibilität und Laufzeit"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Compatibility & Runtime"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compatibilidad y entorno de ejecución"
           }
         },
         "fr": {
@@ -51317,16 +52079,46 @@
             "state": "translated",
             "value": "Compatibilità e runtime"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "互換性とランタイム"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compatibilidade e ambiente de execução"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "兼容性与运行环境"
+          }
         }
       }
     },
     "ui.custom.engine": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ausführungs-Engine"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Execution Engine"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Motor de ejecución"
           }
         },
         "fr": {
@@ -51340,16 +52132,46 @@
             "state": "translated",
             "value": "Motore di esecuzione"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "実行エンジン"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Motor de execução"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "执行引擎"
+          }
         }
       }
     },
     "ui.custom.engine_rosetta": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CrossOver Wine (Standard • GPTK 4)"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "CrossOver Wine (Default • GPTK 4)"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CrossOver Wine (predeterminado • GPTK 4)"
           }
         },
         "fr": {
@@ -51363,28 +52185,23 @@
             "state": "translated",
             "value": "CrossOver Wine (Predefinito • GPTK 4)"
           }
-        }
-      }
-    },
-    "ui.custom.engine_wine": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
+        },
+        "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Wine (Standard translation)"
+            "value": "CrossOver Wine（デフォルト • GPTK 4）"
           }
         },
-        "fr": {
+        "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Wine (traduction standard)"
+            "value": "CrossOver Wine (padrão • GPTK 4)"
           }
         },
-        "it": {
+        "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Wine (traduzione standard)"
+            "value": "CrossOver Wine（默认 • GPTK 4）"
           }
         }
       }
@@ -51392,10 +52209,22 @@
     "ui.custom.graphics": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grafik-Backend"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Graphics Backend"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Backend gráfico"
           }
         },
         "fr": {
@@ -51409,13 +52238,43 @@
             "state": "translated",
             "value": "Backend grafico"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "グラフィックスバックエンド"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Backend gráfico"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "图形后端"
+          }
         }
       }
     },
     "ui.custom.graphics_d3dmetal": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple D3DMetal (GPTK 4 • DirectX 12/11)"
+          }
+        },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple D3DMetal (GPTK 4 • DirectX 12/11)"
+          }
+        },
+        "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Apple D3DMetal (GPTK 4 • DirectX 12/11)"
@@ -51432,28 +52291,23 @@
             "state": "translated",
             "value": "Apple D3DMetal (GPTK 4 • DirectX 12/11)"
           }
-        }
-      }
-    },
-    "ui.custom.graphics_dxvk": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
+        },
+        "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "DXVK (DirectX 9/10/11 over Vulkan)"
+            "value": "Apple D3DMetal（GPTK 4 • DirectX 12/11）"
           }
         },
-        "fr": {
+        "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "DXVK (DirectX 9/10/11 via Vulkan)"
+            "value": "Apple D3DMetal (GPTK 4 • DirectX 12/11)"
           }
         },
-        "it": {
+        "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "DXVK (DirectX 9/10/11 su Vulkan)"
+            "value": "Apple D3DMetal（GPTK 4 • DirectX 12/11）"
           }
         }
       }
@@ -51461,10 +52315,22 @@
     "ui.custom.wine_prefix": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wine-Präfix"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Wine Prefix"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prefijo de Wine"
           }
         },
         "fr": {
@@ -51478,16 +52344,46 @@
             "state": "translated",
             "value": "Prefisso Wine"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wineプレフィックス"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prefixo do Wine"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wine 前缀"
+          }
         }
       }
     },
     "ui.custom.wine_prefix_default": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Standard (von Obelisk verwaltet)"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Default (Managed by Obelisk)"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Predeterminado (gestionado por Obelisk)"
           }
         },
         "fr": {
@@ -51501,16 +52397,46 @@
             "state": "translated",
             "value": "Predefinito (gestito da Obelisk)"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デフォルト（Obeliskが管理）"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Padrão (gerenciado pelo Obelisk)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "默认（由 Obelisk 管理）"
+          }
         }
       }
     },
     "ui.custom.wine_prefix_browse": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ordner auswählen …"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Choose Folder…"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elegir carpeta…"
           }
         },
         "fr": {
@@ -51524,16 +52450,46 @@
             "state": "translated",
             "value": "Scegli cartella…"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォルダーを選択…"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escolher pasta…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择文件夹…"
+          }
         }
       }
     },
     "ui.custom.custom_runner": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eigener Runner"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Custom Runner"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ejecutor personalizado"
           }
         },
         "fr": {
@@ -51547,16 +52503,46 @@
             "state": "translated",
             "value": "Runner personalizzato"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カスタムランナー"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Executor personalizado"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自定义运行器"
+          }
         }
       }
     },
     "ui.custom.custom_runner_placeholder": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pfad zur Binärdatei eines eigenen Wine- / Proton-Runners"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Path to custom Wine / Proton runner binary"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ruta al binario de un ejecutor de Wine / Proton personalizado"
           }
         },
         "fr": {
@@ -51570,16 +52556,46 @@
             "state": "translated",
             "value": "Percorso del binario Wine / Proton personalizzato"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カスタムWine / Protonランナーのバイナリへのパス"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Caminho para o binário de um executor Wine / Proton personalizado"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自定义 Wine / Proton 运行器二进制文件的路径"
+          }
         }
       }
     },
     "ui.custom.custom_runner_browse": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Runner auswählen …"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Choose Runner…"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elegir ejecutor…"
           }
         },
         "fr": {
@@ -51593,16 +52609,46 @@
             "state": "translated",
             "value": "Scegli runner…"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ランナーを選択…"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escolher executor…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择运行器…"
+          }
         }
       }
     },
     "ui.custom.ray_tracing": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Raytracing"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Ray Tracing"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trazado de rayos"
           }
         },
         "fr": {
@@ -51616,16 +52662,46 @@
             "state": "translated",
             "value": "Ray tracing"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レイトレーシング"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ray tracing"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "光线追踪"
+          }
         }
       }
     },
     "ui.custom.performance_hud": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Metal-Leistungs-HUD"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Metal Performance HUD"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HUD de rendimiento de Metal"
           }
         },
         "fr": {
@@ -51639,16 +52715,46 @@
             "state": "translated",
             "value": "HUD prestazioni Metal"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Metalパフォーマンス HUD"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HUD de desempenho do Metal"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Metal 性能 HUD"
+          }
         }
       }
     },
     "ui.custom.render_resolution": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Renderauflösung: %lld %%"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Render Resolution: %lld%%"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resolución de renderizado: %lld %%"
           }
         },
         "fr": {
@@ -51662,16 +52768,46 @@
             "state": "translated",
             "value": "Risoluzione di rendering: %lld%%"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レンダリング解像度：%lld%%"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resolução de renderização: %lld%%"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "渲染分辨率：%lld%%"
+          }
         }
       }
     },
     "ui.custom.show_in_finder": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Im Finder anzeigen"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Show in Finder"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mostrar en el Finder"
           }
         },
         "fr": {
@@ -51685,16 +52821,46 @@
             "state": "translated",
             "value": "Mostra nel Finder"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finderに表示"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mostrar no Finder"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在访达中显示"
+          }
         }
       }
     },
     "ui.custom.show_prefix_in_finder": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Präfix im Finder anzeigen"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Show Prefix in Finder"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mostrar el prefijo en el Finder"
           }
         },
         "fr": {
@@ -51708,16 +52874,46 @@
             "state": "translated",
             "value": "Mostra prefisso nel Finder"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プレフィックスをFinderに表示"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mostrar prefixo no Finder"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在访达中显示前缀"
+          }
         }
       }
     },
     "ui.custom.edit_game": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Spiel bearbeiten"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Edit Game"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Editar juego"
           }
         },
         "fr": {
@@ -51731,16 +52927,46 @@
             "state": "translated",
             "value": "Modifica gioco"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ゲームを編集"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Editar jogo"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑游戏"
+          }
         }
       }
     },
     "ui.custom.remove_game": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aus der Bibliothek entfernen …"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Remove from Library…"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quitar de la biblioteca…"
           }
         },
         "fr": {
@@ -51754,16 +52980,46 @@
             "state": "translated",
             "value": "Rimuovi dalla libreria…"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ライブラリから削除…"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remover da biblioteca…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从库中移除…"
+          }
         }
       }
     },
     "ui.custom.remove_confirm_title": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "„%@“ entfernen?"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Remove “%@”?"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Quitar «%@»?"
           }
         },
         "fr": {
@@ -51777,16 +53033,46 @@
             "state": "translated",
             "value": "Rimuovere “%@”?"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」を削除しますか？"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remover “%@”?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除“%@”？"
+          }
         }
       }
     },
     "ui.custom.remove_confirm_message": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Spiel wird aus Obelisk entfernt. Seine Dateien auf dem Datenträger werden nicht gelöscht."
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "This will remove the game from Obelisk. Its files on disk will not be deleted."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El juego se quitará de Obelisk. Sus archivos en el disco no se eliminarán."
           }
         },
         "fr": {
@@ -51800,16 +53086,99 @@
             "state": "translated",
             "value": "Questo rimuoverà il gioco da Obelisk. I relativi file sul disco non verranno eliminati."
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ゲームはObeliskから削除されます。ディスク上のファイルは削除されません。"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O jogo será removido do Obelisk. Os arquivos dele no disco não serão excluídos."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此游戏将从 Obelisk 中移除。其在磁盘上的文件不会被删除。"
+          }
+        }
+      }
+    },
+    "ui.custom.remove_confirm_message_app_running": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Spiel wird aus Obelisk entfernt. Seine Dateien auf dem Datenträger werden nicht gelöscht. Seine App bleibt geöffnet, damit nichts Ungesichertes verloren geht; Obelisk verfolgt sie nur nicht mehr."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This will remove the game from Obelisk. Its files on disk will not be deleted. Its app stays open, so nothing unsaved is lost; Obelisk only stops tracking it."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El juego se quitará de Obelisk. Sus archivos en el disco no se eliminarán. Su aplicación sigue abierta, así que no se pierde nada sin guardar; Obelisk solo deja de seguirla."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cela supprimera le jeu d’Obelisk. Ses fichiers sur le disque ne seront pas supprimés. Son application reste ouverte, rien de non enregistré n’est donc perdu ; Obelisk cesse seulement de la suivre."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Questo rimuoverà il gioco da Obelisk. I relativi file sul disco non verranno eliminati. La sua app resta aperta, quindi non si perde nulla di non salvato; Obelisk smette solo di seguirla."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ゲームはObeliskから削除されます。ディスク上のファイルは削除されません。アプリは開いたままなので、保存していない内容は失われません。Obeliskが追跡しなくなるだけです。"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O jogo será removido do Obelisk. Os arquivos dele no disco não serão excluídos. O aplicativo dele continua aberto, então nada que não foi salvo se perde; o Obelisk apenas deixa de acompanhá-lo."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此游戏将从 Obelisk 中移除。其在磁盘上的文件不会被删除。它的应用会保持打开，因此不会丢失未保存的内容；Obelisk 只是不再跟踪它。"
+          }
         }
       }
     },
     "ui.custom.remove_confirm_action": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entfernen"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Remove"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quitar"
           }
         },
         "fr": {
@@ -51823,16 +53192,46 @@
             "state": "translated",
             "value": "Rimuovi"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "削除"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remover"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除"
+          }
         }
       }
     },
     "ui.custom.save": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sichern"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Save"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Guardar"
           }
         },
         "fr": {
@@ -51846,16 +53245,46 @@
             "state": "translated",
             "value": "Salva"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Salvar"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存"
+          }
         }
       }
     },
     "ui.common.more": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weitere Aktionen"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "More Actions"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Más acciones"
           }
         },
         "fr": {
@@ -51869,16 +53298,46 @@
             "state": "translated",
             "value": "Altre azioni"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "その他の操作"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mais ações"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更多操作"
+          }
         }
       }
     },
     "ui.custom.engine_linux": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Linux-Engine (voile-lkd)"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Linux Engine (voile-lkd)"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Motor de Linux (voile-lkd)"
           }
         },
         "fr": {
@@ -51892,13 +53351,43 @@
             "state": "translated",
             "value": "Motore Linux (voile-lkd)"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Linuxエンジン（voile-lkd）"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Motor Linux (voile-lkd)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Linux 引擎（voile-lkd）"
+          }
         }
       }
     },
     "ui.custom.graphics_dxmt": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DXMT (Metal DirectX 11/10)"
+          }
+        },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DXMT (Metal DirectX 11/10)"
+          }
+        },
+        "es": {
           "stringUnit": {
             "state": "translated",
             "value": "DXMT (Metal DirectX 11/10)"
@@ -51915,16 +53404,46 @@
             "state": "translated",
             "value": "DXMT (Metal DirectX 11/10)"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DXMT（Metal DirectX 11/10）"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DXMT (Metal DirectX 11/10)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DXMT（Metal DirectX 11/10）"
+          }
         }
       }
     },
     "ui.custom.download_engine": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wine- / GPTK-4-Engine laden"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Download Wine / GPTK 4 Engine"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descargar el motor Wine / GPTK 4"
           }
         },
         "fr": {
@@ -51938,16 +53457,46 @@
             "state": "translated",
             "value": "Scarica il motore Wine / GPTK 4"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wine / GPTK 4エンジンをダウンロード"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Baixar o motor Wine / GPTK 4"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下载 Wine / GPTK 4 引擎"
+          }
         }
       }
     },
     "ui.custom.downloading_engine": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wine und GPTK 4 werden geladen …"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Downloading Wine & GPTK 4..."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descargando Wine y GPTK 4…"
           }
         },
         "fr": {
@@ -51961,16 +53510,46 @@
             "state": "translated",
             "value": "Download di Wine e GPTK 4 in corso..."
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "WineとGPTK 4をダウンロード中…"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Baixando o Wine e o GPTK 4…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在下载 Wine 和 GPTK 4…"
+          }
         }
       }
     },
     "ui.custom.engine_installed": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CrossOver Wine (GPTK 4) • Installiert (%@)"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "CrossOver Wine (GPTK 4) • Installed (%@)"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CrossOver Wine (GPTK 4) • Instalado (%@)"
           }
         },
         "fr": {
@@ -51984,16 +53563,46 @@
             "state": "translated",
             "value": "CrossOver Wine (GPTK 4) • Installato (%@)"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CrossOver Wine（GPTK 4）• インストール済み（%@）"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CrossOver Wine (GPTK 4) • Instalado (%@)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CrossOver Wine（GPTK 4）• 已安装（%@）"
+          }
         }
       }
     },
     "ui.custom.engine_not_installed": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Standard-Wine-Engine nicht installiert"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Default Wine Engine Not Installed"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Motor de Wine predeterminado no instalado"
           }
         },
         "fr": {
@@ -52007,16 +53616,46 @@
             "state": "translated",
             "value": "Motore Wine predefinito non installato"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デフォルトのWineエンジンがインストールされていません"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Motor Wine padrão não instalado"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未安装默认 Wine 引擎"
+          }
         }
       }
     },
     "ui.custom.crop_artwork": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zuschneiden …"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Crop..."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recortar…"
           }
         },
         "fr": {
@@ -52030,16 +53669,46 @@
             "state": "translated",
             "value": "Ritaglia..."
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "切り取り…"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recortar…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "裁剪…"
+          }
         }
       }
     },
     "ui.custom.crop_title": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bild zuschneiden"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Crop Artwork"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recortar ilustración"
           }
         },
         "fr": {
@@ -52053,16 +53722,46 @@
             "state": "translated",
             "value": "Ritaglia grafica"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アートワークを切り取る"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recortar arte"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "裁剪插图"
+          }
         }
       }
     },
     "ui.custom.crop_cover": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cover zuschneiden"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Crop Cover Art"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recortar portada"
           }
         },
         "fr": {
@@ -52076,16 +53775,46 @@
             "state": "translated",
             "value": "Ritaglia copertina"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カバーアートを切り取る"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recortar capa"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "裁剪封面"
+          }
         }
       }
     },
     "ui.custom.crop_banner": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Banner zuschneiden"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Crop Banner Art"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recortar banner"
           }
         },
         "fr": {
@@ -52099,16 +53828,46 @@
             "state": "translated",
             "value": "Ritaglia banner"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バナーを切り取る"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recortar banner"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "裁剪横幅"
+          }
         }
       }
     },
     "ui.custom.crop_aspect_2_3": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2:3 Cover"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "2:3 Cover"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2:3 Portada"
           }
         },
         "fr": {
@@ -52122,16 +53881,46 @@
             "state": "translated",
             "value": "2:3 Copertina"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2:3 カバー"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2:3 Capa"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2:3 封面"
+          }
         }
       }
     },
     "ui.custom.crop_aspect_1_1": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1:1 Quadrat"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "1:1 Square"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1:1 Cuadrado"
           }
         },
         "fr": {
@@ -52145,13 +53934,43 @@
             "state": "translated",
             "value": "1:1 Quadrato"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1:1 正方形"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1:1 Quadrado"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1:1 正方形"
+          }
         }
       }
     },
     "ui.custom.crop_aspect_16_9": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "16:9 Banner"
+          }
+        },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "16:9 Banner"
+          }
+        },
+        "es": {
           "stringUnit": {
             "state": "translated",
             "value": "16:9 Banner"
@@ -52168,16 +53987,46 @@
             "state": "translated",
             "value": "16:9 Banner"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "16:9 バナー"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "16:9 Banner"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "16:9 横幅"
+          }
         }
       }
     },
     "ui.custom.crop_aspect_21_9": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "21:9 Ultrabreit"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "21:9 Ultrawide"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "21:9 Ultrapanorámico"
           }
         },
         "fr": {
@@ -52191,13 +54040,43 @@
             "state": "translated",
             "value": "21:9 Ultrawide"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "21:9 ウルトラワイド"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "21:9 Ultrawide"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "21:9 超宽"
+          }
         }
       }
     },
     "ui.custom.crop_zoom": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zoom"
+          }
+        },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zoom"
+          }
+        },
+        "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Zoom"
@@ -52214,16 +54093,46 @@
             "state": "translated",
             "value": "Zoom"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ズーム"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zoom"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "缩放"
+          }
         }
       }
     },
     "ui.custom.crop_zoom_in": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vergrößern"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Zoom In"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ampliar"
           }
         },
         "fr": {
@@ -52237,16 +54146,46 @@
             "state": "translated",
             "value": "Ingrandisci"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拡大"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ampliar"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "放大"
+          }
         }
       }
     },
     "ui.custom.crop_zoom_out": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verkleinern"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Zoom Out"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reducir"
           }
         },
         "fr": {
@@ -52260,16 +54199,46 @@
             "state": "translated",
             "value": "Rimpicciolisci"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "縮小"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reduzir"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "缩小"
+          }
         }
       }
     },
     "ui.custom.crop_rotate": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Drehen"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Rotate"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Girar"
           }
         },
         "fr": {
@@ -52283,16 +54252,46 @@
             "state": "translated",
             "value": "Ruota"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回転"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Girar"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "旋转"
+          }
         }
       }
     },
     "ui.custom.crop_reset": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zurücksetzen"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Reset"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restablecer"
           }
         },
         "fr": {
@@ -52306,16 +54305,46 @@
             "state": "translated",
             "value": "Reimposta"
           }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リセット"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Redefinir"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重置"
+          }
         }
       }
     },
     "ui.custom.crop_apply": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zuschnitt anwenden"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Apply Crop"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aplicar recorte"
           }
         },
         "fr": {
@@ -52328,6 +54357,819 @@
           "stringUnit": {
             "state": "translated",
             "value": "Applica ritaglio"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "切り取りを適用"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aplicar recorte"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用裁剪"
+          }
+        }
+      }
+    },
+    "ui.custom.app_document": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zu öffnende Datei"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "File to Open"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archivo para abrir"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fichier à ouvrir"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "File da aprire"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開くファイル"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arquivo para abrir"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要打开的文件"
+          }
+        }
+      }
+    },
+    "ui.custom.app_document_none": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nur die App"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only the app"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Solo la aplicación"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L’application seule"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Solo l'app"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アプリのみ"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Só o aplicativo"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅打开应用"
+          }
+        }
+      }
+    },
+    "ui.custom.app_document_description": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Optional. Die App öffnet diese Datei wie mit „Öffnen mit“ im Finder, etwa ein Spiel für einen Emulator."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Optional. The app opens this file, as Finder’s Open With does: a game for an emulator, for example."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opcional. La aplicación abre este archivo como lo hace «Abrir con» del Finder: por ejemplo, un juego para un emulador."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Facultatif. L’application ouvre ce fichier comme le fait « Ouvrir avec » du Finder : un jeu pour un émulateur, par exemple."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Facoltativo. L'app apre questo file come fa «Apri con» del Finder: per esempio un gioco per un emulatore."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "省略可。Finderの「このアプリケーションで開く」と同じように、アプリがこのファイルを開きます。たとえばエミュレータ用のゲームです。"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opcional. O aplicativo abre este arquivo como o “Abrir com” do Finder: um jogo para um emulador, por exemplo."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可选。应用会像访达的“打开方式”一样打开此文件，例如模拟器的游戏。"
+          }
+        }
+      }
+    },
+    "ui.custom.document_choose": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Datei auswählen …"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose File…"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elegir archivo…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choisir un fichier…"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scegli file…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルを選択…"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escolher arquivo…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择文件…"
+          }
+        }
+      }
+    },
+    "ui.custom.document_clear": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entfernen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quitar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retirer"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rimuovi"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "削除"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remover"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除"
+          }
+        }
+      }
+    },
+    "ui.custom.document_missing": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Datei unter diesem Pfad nicht gefunden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "File not found at path"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se encontró el archivo en la ruta"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fichier introuvable sur le chemin"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "File non trovato nel percorso"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このパスにファイルが見つかりません"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arquivo não encontrado no caminho"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在此路径找不到文件"
+          }
+        }
+      }
+    },
+    "ui.custom.app_invalid": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dies ist keine App, die macOS öffnen kann."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This is not an app macOS can open."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esto no es una aplicación que macOS pueda abrir."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce n’est pas une application que macOS peut ouvrir."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Questa non è un'app che macOS può aprire."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "これはmacOSで開けるアプリではありません。"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Isto não é um aplicativo que o macOS consiga abrir."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这不是 macOS 可以打开的应用。"
+          }
+        }
+      }
+    },
+    "ui.custom.app_not_native": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obelisk öffnet nur Apps, die nativ auf Apple Silicon laufen, und diese tut es nicht."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obelisk opens only apps that run natively on Apple silicon, and this one does not."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obelisk solo abre aplicaciones que funcionan de forma nativa en Apple Silicon, y esta no lo hace."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obelisk n’ouvre que les applications qui fonctionnent nativement sur Apple silicon, et celle-ci ne le fait pas."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obelisk apre solo le app che girano in modo nativo su Apple silicon, e questa no."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ObeliskはAppleシリコンでネイティブに動作するアプリのみを開きます。このアプリはネイティブに動作しません。"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Obelisk abre apenas aplicativos que rodam nativamente em Apple Silicon, e este não roda."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obelisk 只打开可在 Apple 芯片上原生运行的应用，而此应用不能。"
+          }
+        }
+      }
+    },
+    "ui.custom.app_blocked": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS hat diese App möglicherweise blockiert. Öffnen Sie sie einmal im Finder oder erlauben Sie sie unter „Systemeinstellungen“ → „Datenschutz & Sicherheit“ und versuchen Sie es dann erneut."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS may have blocked this app. Open it once from Finder, or allow it in System Settings → Privacy & Security, then try again."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Es posible que macOS haya bloqueado esta aplicación. Ábrela una vez desde el Finder o permítela en Ajustes del Sistema → Privacidad y seguridad y vuelve a intentarlo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS a peut-être bloqué cette application. Ouvrez-la une fois depuis le Finder, ou autorisez-la dans Réglages Système → Confidentialité et sécurité, puis réessayez."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS potrebbe aver bloccato quest'app. Aprila una volta dal Finder, oppure consentila in Impostazioni di Sistema → Privacy e sicurezza, poi riprova."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOSがこのアプリをブロックした可能性があります。Finderから一度開くか、「システム設定」→「プライバシーとセキュリティ」で許可してから、もう一度お試しください。"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O macOS pode ter bloqueado este aplicativo. Abra-o uma vez pelo Finder ou permita-o em Ajustes do Sistema → Privacidade e Segurança e tente novamente."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS 可能阻止了此应用。请先从访达打开一次，或在“系统设置”→“隐私与安全性”中允许它，然后重试。"
+          }
+        }
+      }
+    },
+    "ui.custom.app_runs_natively": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS öffnet sie wie bei einem Doppelklick: Sie braucht keine Wine-Einstellungen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS opens it as a double-click would: it needs no Wine settings."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS la abre como lo haría un doble clic: no necesita ajustes de Wine."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS l’ouvre comme le ferait un double-clic : elle n’a besoin d’aucun réglage Wine."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS la apre come farebbe un doppio clic: non ha bisogno di impostazioni Wine."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ダブルクリックと同じようにmacOSが開くため、Wineの設定は不要です。"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O macOS o abre como um clique duplo faria: ele não precisa de ajustes do Wine."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS 会像双击一样打开它，无需 Wine 设置。"
+          }
+        }
+      }
+    },
+    "ui.custom.engine_native": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Native App"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Native App"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aplicación nativa"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Application native"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App nativa"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ネイティブアプリ"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aplicativo nativo"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "原生应用"
+          }
+        }
+      }
+    },
+    "ui.custom.launch_arguments_app_description": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Werden der App beim Öffnen übergeben. Eine bereits geöffnete App ignoriert sie."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Passed to the app as it opens. An app that is already open ignores them."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se pasan a la aplicación al abrirse. Una aplicación que ya está abierta los ignora."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transmis à l’application à son ouverture. Une application déjà ouverte les ignore."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Passati all'app quando si apre. Un'app già aperta li ignora."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アプリを開くときに渡されます。すでに開いているアプリでは無視されます。"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Passadas ao aplicativo quando ele abre. Um aplicativo que já está aberto as ignora."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在应用打开时传给它。已打开的应用会忽略它们。"
+          }
+        }
+      }
+    },
+    "ui.custom.launch_failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Spiel konnte nicht gestartet werden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not start the game"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo iniciar el juego"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de lancer le jeu"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossibile avviare il gioco"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ゲームを開始できませんでした"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não foi possível iniciar o jogo"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法启动游戏"
+          }
+        }
+      }
+    },
+    "ui.custom.launch_not_found": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Programm des Spiels oder sein eigener Runner ist nicht mehr dort, wo es war. Wählen Sie es erneut aus."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The game’s program, or its custom runner, is no longer where it was. Choose it again."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El programa del juego, o su ejecutor personalizado, ya no está donde estaba. Vuelve a elegirlo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le programme du jeu, ou son exécuteur personnalisé, n’est plus là où il était. Choisissez-le à nouveau."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Il programma del gioco, o il suo runner personalizzato, non è più dove si trovava. Sceglilo di nuovo."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ゲームのプログラム、またはカスタムランナーが元の場所にありません。もう一度選択してください。"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O programa do jogo, ou o executor personalizado dele, não está mais onde estava. Escolha-o novamente."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "游戏的程序或其自定义运行器已不在原来的位置。请重新选择。"
+          }
+        }
+      }
+    },
+    "ui.custom.launch_start_failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obelisk konnte das Spiel nicht starten. Versuchen Sie es erneut."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obelisk could not start the game. Try again."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obelisk no pudo iniciar el juego. Inténtalo de nuevo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obelisk n’a pas pu lancer le jeu. Réessayez."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obelisk non è riuscito ad avviare il gioco. Riprova."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obeliskでゲームを開始できませんでした。もう一度お試しください。"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Obelisk não conseguiu iniciar o jogo. Tente novamente."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obelisk 无法启动游戏。请重试。"
           }
         }
       }
