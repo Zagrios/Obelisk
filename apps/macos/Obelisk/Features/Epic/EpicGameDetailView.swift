@@ -13,12 +13,13 @@ struct EpicGameDetailView: View {
             game: game,
             context: context,
             size: (installations.selectedReceipt?.totalBytes ?? model.selectedBuildBytes)
-                .map(GameFormatting.bytes)
+                .map(GameFormatting.bytes),
+            headline: GameHeadline(facts: game.developer.isEmpty ? [] : [game.developer])
         ) {
             GameOperationStatus(installations: installations, game: game.libraryID)
-            GameAboutSection(
+            GameOverview(
                 summary: game.description,
-                facts: game.developer.isEmpty ? [] : [.init(label: L10n.string("ui.game.developer"), value: game.developer)]
+                facts: [GameFact("ui.game.developer", [game.developer])].compactMap(\.self)
             )
         }
     }

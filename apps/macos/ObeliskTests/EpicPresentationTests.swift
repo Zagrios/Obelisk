@@ -128,7 +128,9 @@ final class EpicPresentationTests: XCTestCase {
         // The rendered bitmap above still checks that the mounted view updates.
         if accessibilityElement(in: fixture.host, label: L10n.string("ui.game.metric.playtime")) != nil {
             XCTAssertNotNil(accessibilityElement(in: fixture.host, label: GameFormatting.playtime(.seconds(5400))))
+            // The space a download needs is its button's value, not a metric.
             XCTAssertNotNil(accessibilityElement(in: fixture.host, label: GameFormatting.bytes(2_000_000_000)))
+            XCTAssertNil(accessibilityElement(in: fixture.host, label: L10n.string("ui.game.metric.space_required")))
             XCTAssertNil(accessibilityElement(in: fixture.host, label: L10n.string("ui.game.metric.last_played")))
             XCTAssertNil(accessibilityElement(in: fixture.host, label: L10n.string("ui.game.news")))
         }

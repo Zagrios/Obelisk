@@ -203,16 +203,17 @@ final class SteamPresentationTests: XCTestCase {
     }
 
     @MainActor
-    func testGamePageShowsWhatItsStorePageTells() async throws {
+    func testGamePageShowsWhatItsStorePageAndWikipediaTell() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let details = FixtureResponses<DetailsRequest, SteamGameDetails>()
         let storePages = FixtureResponses<DetailsRequest, SteamStorePage?>()
+        let articles = FixtureResponses<DetailsRequest, GameArticle?>()
         let session = FixtureSteamSession(games: fixtureGames, details: details)
         let model = SteamModel(directory: root, keychain: FixtureCredentialStore(), connect: { _ in session },
                                news: { _ in [] },
                                storePage: { try await storePages.request(DetailsRequest(appId: $0, language: $1)) },
-                               article: { _, _ in nil },
+                               article: { try await articles.request(DetailsRequest(appId: $0, language: $1)) },
                                localeIdentifier: "fr-FR", gameSessions: SteamGameSessions())
         await model.start()
 
@@ -240,17 +241,29 @@ final class SteamPresentationTests: XCTestCase {
         try await eventually { model.details?.appId == 620 && !model.isLoadingNews }
         try await Task.sleep(for: .milliseconds(50))
         let withoutStorePage = try renderedImage()
-        XCTAssertNil(accessibilityFrame(in: host, label: L10n.string("ui.game.about")))
+        XCTAssertNil(accessibilityFrame(in: host, label: L10n.string("ui.game.the_game")))
+        XCTAssertNil(accessibilityFrame(in: host, label: L10n.string("ui.game.how_it_was_made")))
 
         await storePages.release(DetailsRequest(appId: 620, language: "french"), value: fixtureStorePage(620))
         try await eventually { model.storePage?.summary == "620-summary" }
         try await eventually { (try? renderedImage()).map { $0 != withoutStorePage } ?? false }
+        let withStorePage = try renderedImage()
+
+        // Wikipedia's words take the store's place, and the history follows.
+        await articles.release(DetailsRequest(appId: 620, language: "fr-FR"), value: fixtureArticle(620))
+        try await eventually { model.article?.summary == "620-article" }
+        try await eventually { (try? renderedImage()).map { $0 != withStorePage } ?? false }
 
         // SwiftUI text can be absent from an offscreen host's accessibility tree.
         // The rendered bitmap above still checks that the page shows it.
         if accessibilityFrame(in: host, label: L10n.string("ui.game.metric.playtime")) != nil {
-            XCTAssertNotNil(accessibilityFrame(in: host, label: L10n.string("ui.game.about")))
-            XCTAssertNotNil(accessibilityFrame(in: host, label: "620-summary"))
+            XCTAssertNotNil(accessibilityFrame(in: host, label: L10n.string("ui.game.the_game")))
+            XCTAssertNotNil(accessibilityFrame(in: host, label: "620-article"))
+            XCTAssertNil(accessibilityFrame(in: host, label: "620-summary"))
+            XCTAssertNotNil(accessibilityFrame(in: host, label: L10n.string("ui.game.how_it_was_made")))
+            XCTAssertNotNil(accessibilityFrame(in: host, label: "620-history"))
+            XCTAssertNotNil(accessibilityFrame(in: host, label: L10n.string("ui.game.from_wikipedia")))
+            XCTAssertNotNil(accessibilityFrame(in: host, label: "Co-op"))
             XCTAssertNotNil(accessibilityFrame(in: host, label: "18 avr. 2011"))
             XCTAssertNotNil(accessibilityFrame(in: host, label: L10n.string("ui.game.rating_value", Int64(95))))
         }

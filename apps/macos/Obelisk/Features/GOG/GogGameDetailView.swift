@@ -13,18 +13,19 @@ struct GogGameDetailView: View {
             game: game,
             context: context,
             size: (installations.selectedReceipt?.totalBytes ?? model.selectedBuildBytes)
-                .map(GameFormatting.bytes)
+                .map(GameFormatting.bytes),
+            headline: headline
         ) {
             GameOperationStatus(installations: installations, game: game.productId)
-            GameAboutSection(summary: game.summary, facts: facts)
+            GameOverview(summary: game.summary, facts: facts)
         }
     }
 
     /// What gamesdb tells of the game, in the player's language where it can.
-    private var facts: [GameAboutSection.Fact] {
-        var facts: [GameAboutSection.Fact] = []
+    private var facts: [GameFact] {
+        var facts: [GameFact] = []
         func add(_ key: String, _ values: [String]) {
-            if let fact = GameAboutSection.Fact(key, values) { facts.append(fact) }
+            if let fact = GameFact(key, values) { facts.append(fact) }
         }
         add("ui.game.developer", game.developers)
         add("ui.game.publisher", game.publishers)
@@ -40,6 +41,20 @@ struct GogGameDetailView: View {
         }
         add("ui.game.languages", languages)
         return facts
+    }
+
+    /// What gamesdb tells at a glance: the critics' rating, the developer,
+    /// the genres and the year.
+    private var headline: GameHeadline {
+        let genres = game.genres.prefix(2).joined(separator: ", ")
+        // gamesdb dates a release at midnight UTC.
+        let year = game.releaseDate
+            .flatMap { Calendar(identifier: .gregorian).dateComponents(in: .gmt, from: Date(timeIntervalSince1970: TimeInterval($0))).year }
+            .map(String.init)
+        return GameHeadline(
+            score: game.rating.map(Int.init),
+            facts: [game.developers.first, genres.isEmpty ? nil : genres, year].compactMap(\.self)
+        )
     }
 
     /// The game's languages, named in the player's language, once each.

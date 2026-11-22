@@ -12,6 +12,9 @@ struct CachedArtwork<Content: View, Placeholder: View, Failure: View>: View {
     /// Shown once every URL failed.
     @ViewBuilder var failure: () -> Failure
     @State private var loaded: (requests: [ArtworkCache.Request], image: NSImage?)?
+    /// Told the color of the image once it shows, as a game's page tints
+    /// itself with its artwork's.
+    @Environment(\.artworkTint) private var reportTint
 
     init(
         urls: [URL],
@@ -48,7 +51,11 @@ struct CachedArtwork<Content: View, Placeholder: View, Failure: View>: View {
             for request in requests {
                 let image = await ArtworkCache.shared.image(for: request)
                 guard !Task.isCancelled else { return }
-                if let image { return loaded = (requests, image) }
+                if let image {
+                    loaded = (requests, image)
+                    if let reportTint, let color = ArtworkCache.shared.averageColor(of: image) { reportTint(color) }
+                    return
+                }
             }
             loaded = (requests, nil)
         }
@@ -68,6 +75,12 @@ extension CachedArtwork where Failure == Placeholder {
     }
 }
 
+extension EnvironmentValues {
+    /// Told the average color of the artwork a view loads, as a game's page
+    /// takes its tint from its hero's.
+    @Entry var artworkTint: (@MainActor (NSColor) -> Void)? = nil
+}
+
 /// Shares decoded public artwork across storefronts, keyed by URL and pixel size.
 @MainActor
 final class ArtworkCache {
@@ -80,6 +93,7 @@ final class ArtworkCache {
 
     static let shared = ArtworkCache()
     private let images = NSCache<NSString, NSImage>()
+    private let averageColors = NSCache<NSImage, NSColor>()
     private var pending: [Request: Task<NSImage?, Never>] = [:]
     private let load: @Sendable (Request) async -> CGImage?
 
@@ -87,6 +101,23 @@ final class ArtworkCache {
         self.load = load
         images.totalCostLimit = 128 * 1024 * 1024
         images.countLimit = 256
+    }
+
+    /// The image's average color, its pixels drawn into one: a page's tint
+    /// rather than a picture. Kept with the image, so each is read once.
+    func averageColor(of image: NSImage) -> NSColor? {
+        if let color = averageColors.object(forKey: image) { return color }
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
+              let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4, space: space,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+              let pixel = context.data?.assumingMemoryBound(to: UInt8.self) else { return nil }
+        context.interpolationQuality = .medium
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        let color = NSColor(srgbRed: CGFloat(pixel[0]) / 255, green: CGFloat(pixel[1]) / 255,
+                            blue: CGFloat(pixel[2]) / 255, alpha: 1)
+        averageColors.setObject(color, forKey: image)
+        return color
     }
 
     func cachedImage(for request: Request) -> NSImage? {

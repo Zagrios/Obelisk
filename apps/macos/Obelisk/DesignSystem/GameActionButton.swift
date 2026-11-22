@@ -7,6 +7,12 @@ struct GameActionButton: View {
     let action: GameAction
     /// Names the game a Force Quit asks about.
     let gameName: String
+    /// A line under the title while the button waits to be pressed, such as
+    /// the space a download needs.
+    var subtitle: String? = nil
+    /// Lets more of the glass show through its color, as on a game's page,
+    /// over the page's artwork.
+    var translucent = false
     /// The Force Quit its player is asked to confirm.
     @State private var asking: GameAction?
 
@@ -59,7 +65,7 @@ struct GameActionButton: View {
         switch mode {
         case .step: action.title
         case .transferring: transfer?.progressSummary ?? L10n.string("ui.transfer.preparing_accessibility")
-        case .idle: ""
+        case .idle: subtitle ?? ""
         }
     }
 
@@ -74,14 +80,29 @@ struct GameActionButton: View {
                     case .transferring:
                         Text(transfer?.buttonTitle ?? L10n.string("ui.transfer.preparing_short"))
                     case .idle:
-                        Label(action.title, systemImage: symbol)
+                        if let subtitle {
+                            HStack(spacing: 9) {
+                                Image(systemName: symbol)
+                                VStack(alignment: .leading, spacing: 0) {
+                                    Text(action.title)
+                                    Text(subtitle)
+                                        .font(.system(size: 10.5, weight: .semibold))
+                                        .textCase(nil)
+                                        .opacity(0.8)
+                                        // Read as the button's value instead.
+                                        .accessibilityHidden(true)
+                                }
+                            }
+                        } else {
+                            Label(action.title, systemImage: symbol)
+                        }
                     }
                 }
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
                 .frame(width: 150)
             }
-            .buttonStyle(GameActionButtonStyle(colors: colors, isBusy: mode != .idle))
+            .buttonStyle(GameActionButtonStyle(colors: colors, isBusy: mode != .idle, translucent: translucent))
             .overlay(alignment: .bottom) {
                 if showsProgress(transfer) {
                     GameButtonProgress(fraction: mode == .step ? action.stepFraction() : transfer?.progressFraction)
@@ -119,15 +140,17 @@ private struct GameActionButtonStyle: ButtonStyle {
     let colors: [Color]
     /// A button showing progress keeps its color while it cannot be pressed.
     let isBusy: Bool
+    let translucent: Bool
 
     func makeBody(configuration: Configuration) -> some View {
-        Appearance(configuration: configuration, colors: colors, isBusy: isBusy)
+        Appearance(configuration: configuration, colors: colors, isBusy: isBusy, translucent: translucent)
     }
 
     private struct Appearance: View {
         let configuration: Configuration
         let colors: [Color]
         let isBusy: Bool
+        let translucent: Bool
         @Environment(\.isEnabled) private var isEnabled
         @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
         @State private var isHovered = false
@@ -147,7 +170,7 @@ private struct GameActionButtonStyle: ButtonStyle {
                     Capsule()
                         .fill(LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing))
                         .saturation(isDimmed ? 0.35 : 1)
-                        .opacity(isDimmed ? 0.5 : reduceTransparency ? 1 : 0.85)
+                        .opacity(isDimmed ? 0.5 : reduceTransparency ? 1 : translucent ? 0.45 : 0.85)
                         .brightness(configuration.isPressed ? -0.08 : isHovered && isEnabled ? 0.06 : 0)
                 }
             Group {

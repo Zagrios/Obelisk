@@ -64,7 +64,8 @@ struct StorefrontBrowser<Model: LibraryStorefront, HeroArtwork: View, HeroLogo: 
     var body: some View {
         ZStack {
             if let game = model.selectedGame {
-                gamePage(game, GamePageContext(heroArtwork: heroArtwork(game), cover: artwork(game)))
+                gamePage(game, GamePageContext(heroArtwork: heroArtwork(game), cover: artwork(game),
+                                               heroLogo: AnyView(heroLogo(game))))
                     .id(game.id)
                     // Above the library it replaces, which falls back beneath it.
                     .zIndex(1)
@@ -233,6 +234,8 @@ enum GameOpeningSource {
 struct GamePageContext<HeroArtwork: View, Cover: View> {
     let heroArtwork: HeroArtwork
     let cover: Cover
+    /// The game's logo over its artwork, as its library's hero shows it.
+    var heroLogo = AnyView(EmptyView())
 }
 
 /// How a library and a game's page hand the game's cover to each other.
