@@ -49,6 +49,10 @@ final class SteamModel {
     /// What the game's Steam store page tells of it, in the player's
     /// language; nil until it loads, and when Steam has no page for it.
     private(set) var storePage: SteamStorePage?
+    /// What Wikipedia tells of the game: what it is, in the player's language
+    /// where it can, and how it was made; nil until it loads, and when
+    /// Wikidata links no article to it.
+    private(set) var article: GameArticle?
     private(set) var isLoadingDetails = false
     private(set) var isLoadingNews = false
     private(set) var detailsError: String?
@@ -73,6 +77,9 @@ final class SteamModel {
     @ObservationIgnored private let connectSession: @Sendable (SteamCredentials, OnlineStatus) async throws -> any SteamSessionProtocol
     @ObservationIgnored private let loadNews: @Sendable (UInt32) async throws -> [SteamNews]
     @ObservationIgnored private let loadStorePage: @Sendable (UInt32, String) async throws -> SteamStorePage?
+    @ObservationIgnored private let loadArticle: @Sendable (UInt32, String) async throws -> GameArticle?
+    /// The player's language, as Wikipedia's articles are asked for in it.
+    @ObservationIgnored private let articleLanguage: String
     @ObservationIgnored private let loadWebCookies: @Sendable (any SteamSessionProtocol) async throws -> [SteamWebCookie]
     /// The account's web sign-in, kept a while: its access token lasts a day.
     @ObservationIgnored private var webSignIn: (steamId: UInt64, date: Date, cookies: [HTTPCookie])?
@@ -139,6 +146,9 @@ final class SteamModel {
         storePage: @escaping @Sendable (UInt32, String) async throws -> SteamStorePage? = {
             try await steamStorePage(appId: $0, language: $1)
         },
+        article: @escaping @Sendable (UInt32, String) async throws -> GameArticle? = {
+            try await steamGameArticle(appId: $0, language: $1)
+        },
         webCookies: @escaping @Sendable (any SteamSessionProtocol) async throws -> [SteamWebCookie] = {
             try await $0.webCookies()
         },
@@ -169,6 +179,8 @@ final class SteamModel {
         }
         self.loadNews = news
         self.loadStorePage = storePage
+        self.loadArticle = article
+        self.articleLanguage = localeIdentifier
         self.loadWebCookies = webCookies
         self.beginLogin = beginLogin
         self.language = steamLanguage(locale: localeIdentifier)
@@ -890,6 +902,7 @@ final class SteamModel {
         details = nil
         news = []
         storePage = nil
+        article = nil
         challenge = nil
         errorMessage = nil
         storageWarning = nil
@@ -921,6 +934,7 @@ final class SteamModel {
         details = nil
         news = []
         storePage = nil
+        article = nil
         detailsError = nil
         newsError = nil
         isLoadingNews = true
@@ -942,13 +956,19 @@ final class SteamModel {
                 isLoadingNews = false
             }
         }
-        // The page shows no About section rather than an error: the store
-        // page adds to the game's page, which works without it.
+        // Neither the store page nor Wikipedia shows an error: each adds to
+        // the game's page, which works without them.
         let language = language
         Task {
             let page = try? await loadStorePage(game.appId, language)
             guard current == generation && request == detailGeneration else { return }
             storePage = page
+        }
+        let articleLanguage = articleLanguage
+        Task {
+            let article = try? await loadArticle(game.appId, articleLanguage)
+            guard current == generation && request == detailGeneration else { return }
+            self.article = article
         }
     }
 
@@ -1018,6 +1038,7 @@ final class SteamModel {
         details = nil
         news = []
         storePage = nil
+        article = nil
     }
 
     /// Cookies that sign Steam's sites in as the connected account, as the

@@ -37,7 +37,8 @@ struct SteamGameDetailView: View {
 
             GameOperationStatus(installations: installations, game: game.appId)
 
-            GameAboutSection(summary: model.storePage?.summary ?? "", facts: aboutFacts)
+            GameAboutSection(summary: model.article?.summary ?? model.storePage?.summary ?? "", facts: aboutFacts,
+                             summarySource: model.article.flatMap { URL(string: $0.summaryUrl) })
 
             newsSection
         }

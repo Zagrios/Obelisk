@@ -38559,6 +38559,59 @@
         }
       }
     },
+    "ui.game.from_wikipedia": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aus Wikipedia · CC BY-SA 4.0"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "From Wikipedia · CC BY-SA 4.0"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "De Wikipedia · CC BY-SA 4.0"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Source : Wikipédia · CC BY-SA 4.0"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Da Wikipedia · CC BY-SA 4.0"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "出典: Wikipedia · CC BY-SA 4.0"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Da Wikipédia · CC BY-SA 4.0"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自维基百科 · CC BY-SA 4.0"
+          }
+        }
+      }
+    },
     "ui.game.publisher": {
       "extractionState": "manual",
       "localizations": {

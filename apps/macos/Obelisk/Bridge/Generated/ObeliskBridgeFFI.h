@@ -1087,6 +1087,11 @@ RustBuffer uniffi_obelisk_bridge_fn_func_diagnostic_files(RustBuffer locations, 
 RustBuffer uniffi_obelisk_bridge_fn_func_without_metal_hud_frames(RustBuffer text, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_FUNC_STEAM_GAME_ARTICLE
+#define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_FUNC_STEAM_GAME_ARTICLE
+uint64_t uniffi_obelisk_bridge_fn_func_steam_game_article(uint32_t app_id, RustBuffer language
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_FUNC_EPIC_AUTHORIZATION_CODE
 #define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_FUNC_EPIC_AUTHORIZATION_CODE
 RustBuffer uniffi_obelisk_bridge_fn_func_epic_authorization_code(RustBuffer input, RustCallStatus *_Nonnull out_status
@@ -1438,6 +1443,12 @@ uint16_t uniffi_obelisk_bridge_checksum_func_diagnostic_files(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_FUNC_WITHOUT_METAL_HUD_FRAMES
 #define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_FUNC_WITHOUT_METAL_HUD_FRAMES
 uint16_t uniffi_obelisk_bridge_checksum_func_without_metal_hud_frames(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_FUNC_STEAM_GAME_ARTICLE
+#define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_FUNC_STEAM_GAME_ARTICLE
+uint16_t uniffi_obelisk_bridge_checksum_func_steam_game_article(void
     
 );
 #endif

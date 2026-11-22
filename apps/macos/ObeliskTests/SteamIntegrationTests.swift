@@ -189,7 +189,7 @@ final class SteamIntegrationTests: XCTestCase {
             directory: FileManager.default.temporaryDirectory.appending(path: "ObeliskCachedLibrary-\(UUID().uuidString)"),
             keychain: CachedSteamCredentials(),
             connect: { _ in session },
-            news: { _ in [] }, storePage: { _, _ in nil },
+            news: { _ in [] }, storePage: { _, _ in nil }, article: { _, _ in nil },
             beginLogin: offlineLogin
         )
     }

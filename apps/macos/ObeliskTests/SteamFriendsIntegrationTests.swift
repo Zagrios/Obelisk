@@ -314,7 +314,7 @@ func friendsTestModel(
         directory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString),
         keychain: FriendsTestCredentials(accountID: accountID),
         connect: connect ?? { _ in session! },
-        news: { _ in [] }, storePage: { _, _ in nil },
+        news: { _ in [] }, storePage: { _, _ in nil }, article: { _, _ in nil },
         webCookies: webCookies,
         beginLogin: offlineLogin,
         gameSessions: gameSessions,

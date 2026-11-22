@@ -15,7 +15,7 @@ final class SteamPresentationTests: XCTestCase {
         let details = FixtureResponses<DetailsRequest, SteamGameDetails>()
         let session = FixtureSteamSession(games: fixtureGames, details: details)
         let model = SteamModel(directory: root, keychain: FixtureCredentialStore(), connect: { _ in session },
-                               news: { _ in [] }, storePage: { _, _ in nil }, localeIdentifier: "fr-FR", gameSessions: SteamGameSessions(),
+                               news: { _ in [] }, storePage: { _, _ in nil }, article: { _, _ in nil }, localeIdentifier: "fr-FR", gameSessions: SteamGameSessions(),
                                installations: SteamModel.installations(FakeInstallations(receipts: receipts)))
         await model.start()
 
@@ -63,7 +63,7 @@ final class SteamPresentationTests: XCTestCase {
         sessions.fake.show(running)
         try await eventually { sessions.active?.running == true }
         let model = SteamModel(directory: root, keychain: FixtureCredentialStore(), connect: { _ in session },
-                               news: { _ in [] }, storePage: { _, _ in nil }, localeIdentifier: "fr-FR", gameSessions: sessions)
+                               news: { _ in [] }, storePage: { _, _ in nil }, article: { _, _ in nil }, localeIdentifier: "fr-FR", gameSessions: sessions)
         await model.start()
         model.open(fixtureGames[0])
         XCTAssertNil(model.details)
@@ -100,6 +100,7 @@ final class SteamPresentationTests: XCTestCase {
         let details = FixtureResponses<DetailsRequest, SteamGameDetails>()
         let news = FixtureResponses<UInt32, [SteamNews]>()
         let storePages = FixtureResponses<DetailsRequest, SteamStorePage?>()
+        let articles = FixtureResponses<DetailsRequest, GameArticle?>()
         let fixture = FixtureSteamSession(games: fixtureGames, details: details)
         let model = SteamModel(
             directory: root,
@@ -107,6 +108,7 @@ final class SteamPresentationTests: XCTestCase {
             connect: { _ in fixture },
             news: { try await news.request($0) },
             storePage: { try await storePages.request(DetailsRequest(appId: $0, language: $1)) },
+            article: { try await articles.request(DetailsRequest(appId: $0, language: $1)) },
             localeIdentifier: "fr-FR"
         )
 
@@ -123,28 +125,35 @@ final class SteamPresentationTests: XCTestCase {
         try await eventually { await news.wasRequested(620) }
         // The store page is asked for in the player's language.
         try await eventually { await storePages.wasRequested(DetailsRequest(appId: 620, language: "french")) }
+        // Wikipedia is asked in the player's language as Obelisk names it.
+        try await eventually { await articles.wasRequested(DetailsRequest(appId: 620, language: "fr-FR")) }
 
         model.open(fixtureGames[1])
         XCTAssertNil(model.storePage)
+        XCTAssertNil(model.article)
         try await eventually { await details.wasRequested(DetailsRequest(appId: 570, language: "french")) }
         try await eventually { await news.wasRequested(570) }
         await details.release(DetailsRequest(appId: 570, language: "french"), value: fixtureDetails(570))
         await news.release(570, value: fixtureNews(570))
         await storePages.release(DetailsRequest(appId: 570, language: "french"), value: fixtureStorePage(570))
+        await articles.release(DetailsRequest(appId: 570, language: "fr-FR"), value: fixtureArticle(570))
         try await eventually {
             model.details?.appId == 570 && model.news.first?.id == "570-news" && model.storePage?.summary == "570-summary"
+                && model.article?.summary == "570-article"
         }
 
         // The first game finishes later. Its results must not replace the open game.
         await details.release(DetailsRequest(appId: 620, language: "french"), value: fixtureDetails(620))
         await news.release(620, value: fixtureNews(620))
         await storePages.release(DetailsRequest(appId: 620, language: "french"), value: fixtureStorePage(620))
+        await articles.release(DetailsRequest(appId: 620, language: "fr-FR"), value: fixtureArticle(620))
         await Task.yield()
         await Task.yield()
         XCTAssertEqual(model.selectedGame?.appId, 570)
         XCTAssertEqual(model.details?.appId, 570)
         XCTAssertEqual(model.news.first?.id, "570-news")
         XCTAssertEqual(model.storePage?.summary, "570-summary")
+        XCTAssertEqual(model.article?.summary, "570-article")
         XCTAssertFalse(model.isLoadingDetails)
         XCTAssertFalse(model.isLoadingNews)
 
@@ -153,6 +162,7 @@ final class SteamPresentationTests: XCTestCase {
         XCTAssertNil(model.details)
         XCTAssertTrue(model.news.isEmpty)
         XCTAssertNil(model.storePage)
+        XCTAssertNil(model.article)
         XCTAssertEqual(model.library.games.count, 3)
     }
 
@@ -165,7 +175,7 @@ final class SteamPresentationTests: XCTestCase {
         let session = FixtureSteamSession(games: fixtureGames, details: details,
                                           platforms: { try await platforms.request($0.sorted()) })
         let model = SteamModel(directory: root, keychain: FixtureCredentialStore(), connect: { _ in session },
-                               news: { _ in [] }, storePage: { _, _ in nil }, localeIdentifier: "fr-FR", gameSessions: SteamGameSessions())
+                               news: { _ in [] }, storePage: { _, _ in nil }, article: { _, _ in nil }, localeIdentifier: "fr-FR", gameSessions: SteamGameSessions())
 
         await model.start()
         let appIDs = fixtureGames.map(\.appId).sorted()
@@ -202,6 +212,7 @@ final class SteamPresentationTests: XCTestCase {
         let model = SteamModel(directory: root, keychain: FixtureCredentialStore(), connect: { _ in session },
                                news: { _ in [] },
                                storePage: { try await storePages.request(DetailsRequest(appId: $0, language: $1)) },
+                               article: { _, _ in nil },
                                localeIdentifier: "fr-FR", gameSessions: SteamGameSessions())
         await model.start()
 
@@ -262,7 +273,7 @@ final class SteamPresentationTests: XCTestCase {
             SteamGame(appId: UInt32(10_000 + index), name: "Test game \(index)", iconHash: "", lastPlayed: 0, playtimeMinutes: 0)
         }
         let session = FixtureSteamSession(games: library, details: details)
-        let model = SteamModel(directory: root, keychain: FixtureCredentialStore(), connect: { _ in session }, news: { try await news.request($0) }, storePage: { _, _ in nil }, localeIdentifier: "fr-FR")
+        let model = SteamModel(directory: root, keychain: FixtureCredentialStore(), connect: { _ in session }, news: { try await news.request($0) }, storePage: { _, _ in nil }, article: { _, _ in nil }, localeIdentifier: "fr-FR")
         await model.start()
 
         let host = NSHostingView(rootView: SteamView(model: model).frame(width: size.width, height: size.height))
@@ -379,7 +390,7 @@ final class SteamPresentationTests: XCTestCase {
             }
         }
         let fixture = FixtureSteamSession(games: fixtureGames, details: details)
-        let model = SteamModel(directory: root, keychain: FixtureCredentialStore(), connect: { _ in fixture }, news: { try await news.request($0) }, storePage: { _, _ in nil }, localeIdentifier: "zh-TW", installations: SteamModel.installations(backend))
+        let model = SteamModel(directory: root, keychain: FixtureCredentialStore(), connect: { _ in fixture }, news: { try await news.request($0) }, storePage: { _, _ in nil }, article: { _, _ in nil }, localeIdentifier: "zh-TW", installations: SteamModel.installations(backend))
         await model.start()
         XCTAssertEqual(model.language, "tchinese")
         model.open(fixtureGames[0])
@@ -443,7 +454,7 @@ final class SteamPresentationTests: XCTestCase {
         let details = FixtureResponses<DetailsRequest, SteamGameDetails>()
         let backend = FakeInstallations<SteamGames>()
         let fixture = FixtureSteamSession(games: fixtureGames, details: details)
-        let model = SteamModel(directory: root, keychain: FixtureCredentialStore(), connect: { _ in fixture }, news: { _ in [] }, storePage: { _, _ in nil }, localeIdentifier: "fr-FR", installations: SteamModel.installations(backend))
+        let model = SteamModel(directory: root, keychain: FixtureCredentialStore(), connect: { _ in fixture }, news: { _ in [] }, storePage: { _, _ in nil }, article: { _, _ in nil }, localeIdentifier: "fr-FR", installations: SteamModel.installations(backend))
         await model.start()
 
         libraryAction(fixtureGames[0], of: model).perform()
@@ -460,7 +471,7 @@ final class SteamPresentationTests: XCTestCase {
         let history = LaunchHistory(cache: LibraryCache(directory: root.path))
         let details = FixtureResponses<DetailsRequest, SteamGameDetails>()
         let fixture = FixtureSteamSession(games: fixtureGames, details: details)
-        let model = SteamModel(directory: root, keychain: FixtureCredentialStore(), connect: { _ in fixture }, news: { _ in [] }, storePage: { _, _ in nil },
+        let model = SteamModel(directory: root, keychain: FixtureCredentialStore(), connect: { _ in fixture }, news: { _ in [] }, storePage: { _, _ in nil }, article: { _, _ in nil },
                                localeIdentifier: "fr-FR", gameSessions: SteamGameSessions(FakeSessions(), history: history))
         await model.start()
 
@@ -483,7 +494,7 @@ final class SteamPresentationTests: XCTestCase {
             ids.map { SteamGamePlatforms(appId: $0, platforms: ["windows"], artwork: freshArtwork) }
         }
         let model = SteamModel(directory: root, keychain: FixtureCredentialStore(), connect: { _ in try await connection.wait() },
-                               news: { _ in [] }, storePage: { _, _ in nil }, localeIdentifier: "fr-FR", libraryCache: cache)
+                               news: { _ in [] }, storePage: { _, _ in nil }, article: { _, _ in nil }, localeIdentifier: "fr-FR", libraryCache: cache)
         let start = Task { await model.start() }
 
         try await eventually { model.showsLibrary }
@@ -509,7 +520,7 @@ final class SteamPresentationTests: XCTestCase {
         let cache = try LibraryCache.holding(steam: [42: [CachedSteamGame(game: fixtureGames[0], platforms: nil)]], in: root)
         let model = SteamModel(directory: root, keychain: FixtureCredentialStore(),
                                connect: { _ in throw SteamError.Failure(reason: "backend.steam.cm.directoryUnavailable") },
-                               news: { _ in [] }, storePage: { _, _ in nil },
+                               news: { _ in [] }, storePage: { _, _ in nil }, article: { _, _ in nil },
                                beginLogin: { _ in throw SteamError.Failure(reason: "Fixture: sign-in is offline in tests") },
                                localeIdentifier: "fr-FR", libraryCache: cache)
         await model.start()
@@ -994,7 +1005,7 @@ final class SteamPresentationTests: XCTestCase {
         let login = FixtureLogin(qrUrl: "https://s.team/q/fixture",
                                  credentials: SteamCredentials(accountName: "Test account", steamId: 42, refreshToken: "fixture-only-never-sent"))
         let model = SteamModel(directory: root, keychain: FixtureCredentialStore(value: nil),
-                               connect: { _ in session }, news: { _ in [] }, storePage: { _, _ in nil },
+                               connect: { _ in session }, news: { _ in [] }, storePage: { _, _ in nil }, article: { _, _ in nil },
                                beginLogin: { start in await starts.record(start); return login },
                                localeIdentifier: "fr-FR")
 
@@ -1017,7 +1028,7 @@ final class SteamPresentationTests: XCTestCase {
         let login = FixtureLogin(qrUrl: "https://s.team/q/fixture", failsPolling: true)
         let model = SteamModel(directory: root, keychain: FixtureCredentialStore(value: nil),
                                connect: { _ in throw SteamError.Failure(reason: "Fixture: nothing to restore") },
-                               news: { _ in [] }, storePage: { _, _ in nil },
+                               news: { _ in [] }, storePage: { _, _ in nil }, article: { _, _ in nil },
                                beginLogin: { start in await starts.record(start); return login },
                                localeIdentifier: "fr-FR")
 
@@ -1046,7 +1057,7 @@ final class SteamPresentationTests: XCTestCase {
                                  credentials: SteamCredentials(accountName: "Test account", steamId: 42, refreshToken: "fixture-only-never-sent"),
                                  guardRequired: true)
         let model = SteamModel(directory: root, keychain: FixtureCredentialStore(value: nil),
-                               connect: { _ in session }, news: { _ in [] }, storePage: { _, _ in nil },
+                               connect: { _ in session }, news: { _ in [] }, storePage: { _, _ in nil }, article: { _, _ in nil },
                                beginLogin: { start in await starts.record(start); return login },
                                localeIdentifier: "fr-FR")
 
@@ -1071,7 +1082,7 @@ final class SteamPresentationTests: XCTestCase {
         let session = FixtureSteamSession(games: fixtureGames, details: details)
         let starts = FixtureLoginStarts()
         let model = SteamModel(directory: root, keychain: FixtureCredentialStore(value: nil),
-                               connect: { _ in session }, news: { _ in [] }, storePage: { _, _ in nil },
+                               connect: { _ in session }, news: { _ in [] }, storePage: { _, _ in nil }, article: { _, _ in nil },
                                beginLogin: { start in
                                    await starts.record(start)
                                    if case .credentials = start { throw SteamError.Failure(reason: "Fixture: rejected") }
@@ -1119,7 +1130,7 @@ final class SteamPresentationTests: XCTestCase {
             }
         }
         let gameSessions = sessions ?? SteamGameSessions()
-        let model = SteamModel(directory: root, keychain: FixtureCredentialStore(), connect: { _ in session }, news: { _ in [] }, storePage: { _, _ in nil }, beginLogin: { _ in throw SteamError.Failure(reason: "Fixture: sign-in is offline in tests") }, localeIdentifier: "fr-FR", gameSessions: gameSessions, installations: SteamModel.installations(backend))
+        let model = SteamModel(directory: root, keychain: FixtureCredentialStore(), connect: { _ in session }, news: { _ in [] }, storePage: { _, _ in nil }, article: { _, _ in nil }, beginLogin: { _ in throw SteamError.Failure(reason: "Fixture: sign-in is offline in tests") }, localeIdentifier: "fr-FR", gameSessions: gameSessions, installations: SteamModel.installations(backend))
         await model.start()
         model.open(fixtureGames[0])
         return LaunchFixture(root: root, model: model, preferences: preferences, suite: suite, backend: backend,
@@ -1136,7 +1147,7 @@ final class SteamPresentationTests: XCTestCase {
         let details = FixtureResponses<DetailsRequest, SteamGameDetails>()
         let news = FixtureResponses<UInt32, [SteamNews]>()
         let fixture = FixtureSteamSession(games: fixtureGames, details: details)
-        let model = SteamModel(directory: root, keychain: FixtureCredentialStore(), connect: { _ in fixture }, news: { try await news.request($0) }, storePage: { _, _ in nil }, localeIdentifier: "fr-FR")
+        let model = SteamModel(directory: root, keychain: FixtureCredentialStore(), connect: { _ in fixture }, news: { try await news.request($0) }, storePage: { _, _ in nil }, article: { _, _ in nil }, localeIdentifier: "fr-FR")
         await model.start()
         let output = URL(fileURLWithPath: destination, isDirectory: true)
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
@@ -1392,6 +1403,12 @@ private let fixtureGames = [
 
 private func fixtureDetails(_ appId: UInt32) -> SteamGameDetails {
     SteamGameDetails(appId: appId, name: fixtureGames.first { $0.appId == appId }?.name ?? "Game", platform: .mac, windowsBytes: 12_300_000_000, macosBytes: 11_900_000_000)
+}
+
+private func fixtureArticle(_ appId: UInt32) -> GameArticle {
+    GameArticle(summary: "\(appId)-article", summaryLanguage: "fr", summaryUrl: "https://fr.wikipedia.org/wiki/Portal_2",
+                history: [GameHistorySection(heading: nil, paragraphs: ["\(appId)-history"])],
+                historyUrl: "https://en.wikipedia.org/wiki/Portal_2")
 }
 
 private func fixtureStorePage(_ appId: UInt32) -> SteamStorePage {

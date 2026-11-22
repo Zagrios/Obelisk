@@ -25,6 +25,9 @@ struct GameAboutSection: View {
 
     let summary: String
     let facts: [Fact]
+    /// The article the summary comes from, which its license asks the page
+    /// to credit, as Wikipedia's.
+    var summarySource: URL? = nil
 
     var body: some View {
         if !summary.isEmpty || !facts.isEmpty {
@@ -37,6 +40,12 @@ struct GameAboutSection: View {
                             .lineSpacing(3)
                             .fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
+                    }
+                    if !summary.isEmpty, let summarySource {
+                        Link(L10n.string("ui.game.from_wikipedia"), destination: summarySource)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .pointerCursor()
                     }
                     if !facts.isEmpty {
                         Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 24, verticalSpacing: 10) {

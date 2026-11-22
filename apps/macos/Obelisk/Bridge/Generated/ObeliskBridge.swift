@@ -5835,6 +5835,83 @@ public func FfiConverterTypeEpicGame_lower(_ value: EpicGame) -> RustBuffer {
 
 
 /**
+ * What a game is, in the player's language where Wikipedia has it, and how
+ * it was made, in English. Wikipedia's text, under CC BY-SA 4.0: the page
+ * credits it and links each article.
+ */
+public struct GameArticle: Equatable, Hashable {
+    public var summary: String
+    /**
+     * Such as `it` or `en`.
+     */
+    public var summaryLanguage: String
+    public var summaryUrl: String
+    public var history: [GameHistorySection]
+    public var historyUrl: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(summary: String, 
+        /**
+         * Such as `it` or `en`.
+         */summaryLanguage: String, summaryUrl: String, history: [GameHistorySection], historyUrl: String?) {
+        self.summary = summary
+        self.summaryLanguage = summaryLanguage
+        self.summaryUrl = summaryUrl
+        self.history = history
+        self.historyUrl = historyUrl
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension GameArticle: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGameArticle: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GameArticle {
+        return
+            try GameArticle(
+                summary: FfiConverterString.read(from: &buf), 
+                summaryLanguage: FfiConverterString.read(from: &buf), 
+                summaryUrl: FfiConverterString.read(from: &buf), 
+                history: FfiConverterSequenceTypeGameHistorySection.read(from: &buf), 
+                historyUrl: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GameArticle, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.summary, into: &buf)
+        FfiConverterString.write(value.summaryLanguage, into: &buf)
+        FfiConverterString.write(value.summaryUrl, into: &buf)
+        FfiConverterSequenceTypeGameHistorySection.write(value.history, into: &buf)
+        FfiConverterOptionString.write(value.historyUrl, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGameArticle_lift(_ buf: RustBuffer) throws -> GameArticle {
+    return try FfiConverterTypeGameArticle.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGameArticle_lower(_ value: GameArticle) -> RustBuffer {
+    return FfiConverterTypeGameArticle.lower(value)
+}
+
+
+/**
  * A game's Cloud indicator.
  */
 public struct GameCloudIndicator: Equatable, Hashable {
@@ -5888,6 +5965,60 @@ public func FfiConverterTypeGameCloudIndicator_lift(_ buf: RustBuffer) throws ->
 #endif
 public func FfiConverterTypeGameCloudIndicator_lower(_ value: GameCloudIndicator) -> RustBuffer {
     return FfiConverterTypeGameCloudIndicator.lower(value)
+}
+
+
+public struct GameHistorySection: Equatable, Hashable {
+    public var heading: String?
+    public var paragraphs: [String]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(heading: String?, paragraphs: [String]) {
+        self.heading = heading
+        self.paragraphs = paragraphs
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension GameHistorySection: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGameHistorySection: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GameHistorySection {
+        return
+            try GameHistorySection(
+                heading: FfiConverterOptionString.read(from: &buf), 
+                paragraphs: FfiConverterSequenceString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GameHistorySection, into buf: inout [UInt8]) {
+        FfiConverterOptionString.write(value.heading, into: &buf)
+        FfiConverterSequenceString.write(value.paragraphs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGameHistorySection_lift(_ buf: RustBuffer) throws -> GameHistorySection {
+    return try FfiConverterTypeGameHistorySection.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGameHistorySection_lower(_ value: GameHistorySection) -> RustBuffer {
+    return FfiConverterTypeGameHistorySection.lower(value)
 }
 
 
@@ -11149,6 +11280,81 @@ public func FfiConverterTypeGameAccount_lower(_ value: GameAccount) -> RustBuffe
 
 
 
+public 
+enum GameArticleError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+
+    
+    
+    case Failure(reason: String
+    )
+
+    
+
+    
+
+    
+    public var errorDescription: String? {
+        String(reflecting: self)
+    }
+    
+}
+
+#if compiler(>=6)
+extension GameArticleError: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGameArticleError: FfiConverterRustBuffer {
+    typealias SwiftType = GameArticleError
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GameArticleError {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        
+
+        
+        case 1: return .Failure(
+            reason: try FfiConverterString.read(from: &buf)
+            )
+
+         default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: GameArticleError, into buf: inout [UInt8]) {
+        switch value {
+
+        
+
+        
+        
+        case let .Failure(reason):
+            writeInt(&buf, Int32(1))
+            FfiConverterString.write(reason, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGameArticleError_lift(_ buf: RustBuffer) throws -> GameArticleError {
+    return try FfiConverterTypeGameArticleError.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGameArticleError_lower(_ value: GameArticleError) -> RustBuffer {
+    return FfiConverterTypeGameArticleError.lower(value)
+}
+
+
 /**
  * The game and account a launch is admitted for.
  */
@@ -14018,6 +14224,30 @@ fileprivate struct FfiConverterOptionTypeEpicFriendsSnapshot: FfiConverterRustBu
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeGameArticle: FfiConverterRustBuffer {
+    typealias SwiftType = GameArticle?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeGameArticle.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeGameArticle.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeGamePlayed: FfiConverterRustBuffer {
     typealias SwiftType = GamePlayed?
 
@@ -14819,6 +15049,31 @@ fileprivate struct FfiConverterSequenceTypeGameCloudIndicator: FfiConverterRustB
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeGameHistorySection: FfiConverterRustBuffer {
+    typealias SwiftType = [GameHistorySection]
+
+    public static func write(_ value: [GameHistorySection], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeGameHistorySection.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [GameHistorySection] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [GameHistorySection]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeGameHistorySection.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeGameLaunch: FfiConverterRustBuffer {
     typealias SwiftType = [GameLaunch]
 
@@ -15566,6 +15821,25 @@ public func withoutMetalHudFrames(text: String) -> String  {
     )
 })
 }
+/**
+ * The Wikipedia article of the Steam game `app_id`, its summary in
+ * `language`, a language tag such as `it` or `pt-BR`; none when Wikidata
+ * links no article to the game.
+ */
+public func steamGameArticle(appId: UInt32, language: String)async throws  -> GameArticle?  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_obelisk_bridge_fn_func_steam_game_article(FfiConverterUInt32.lower(appId),FfiConverterString.lower(language)
+                )
+            },
+            pollFunc: ffi_obelisk_bridge_rust_future_poll_rust_buffer,
+            completeFunc: ffi_obelisk_bridge_rust_future_complete_rust_buffer,
+            freeFunc: ffi_obelisk_bridge_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterOptionTypeGameArticle.lift,
+            errorHandler: FfiConverterTypeGameArticleError_lift
+        )
+}
 public func epicAuthorizationCode(input: String)throws  -> String  {
     return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeWebAccountError_lift) {
         uniffiCallStatus in
@@ -15775,6 +16049,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_func_without_metal_hud_frames() != 20665) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_func_steam_game_article() != 19842) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_func_epic_authorization_code() != 24876) {
