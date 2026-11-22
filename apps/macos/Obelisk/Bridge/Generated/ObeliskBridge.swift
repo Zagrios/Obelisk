@@ -9576,6 +9576,60 @@ public func FfiConverterTypeSteamReceivedInvites_lower(_ value: SteamReceivedInv
 }
 
 
+public struct SteamScreenshot: Equatable, Hashable {
+    public var thumbnail: String
+    public var full: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(thumbnail: String, full: String) {
+        self.thumbnail = thumbnail
+        self.full = full
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SteamScreenshot: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSteamScreenshot: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SteamScreenshot {
+        return
+            try SteamScreenshot(
+                thumbnail: FfiConverterString.read(from: &buf), 
+                full: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SteamScreenshot, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.thumbnail, into: &buf)
+        FfiConverterString.write(value.full, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSteamScreenshot_lift(_ buf: RustBuffer) throws -> SteamScreenshot {
+    return try FfiConverterTypeSteamScreenshot.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSteamScreenshot_lower(_ value: SteamScreenshot) -> RustBuffer {
+    return FfiConverterTypeSteamScreenshot.lower(value)
+}
+
+
 public struct SteamSentMessage: Equatable, Hashable {
     public var timestamp: UInt32
     public var ordinal: UInt32
@@ -9641,6 +9695,173 @@ public func FfiConverterTypeSteamSentMessage_lift(_ buf: RustBuffer) throws -> S
 #endif
 public func FfiConverterTypeSteamSentMessage_lower(_ value: SteamSentMessage) -> RustBuffer {
     return FfiConverterTypeSteamSentMessage.lower(value)
+}
+
+
+/**
+ * What a game's Steam store page tells of it, for its page's About section.
+ */
+public struct SteamStorePage: Equatable, Hashable {
+    public var summary: String
+    public var developers: [String]
+    public var publishers: [String]
+    /**
+     * As the store writes it, in the page's language.
+     */
+    public var releaseDate: String?
+    public var genres: [String]
+    /**
+     * Metacritic's score, out of 100.
+     */
+    public var metacritic: UInt32?
+    /**
+     * How the game plays, as the store names it, such as "Online Co-op".
+     */
+    public var features: [String]
+    public var screenshots: [SteamScreenshot]
+    public var trailers: [SteamTrailer]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(summary: String, developers: [String], publishers: [String], 
+        /**
+         * As the store writes it, in the page's language.
+         */releaseDate: String?, genres: [String], 
+        /**
+         * Metacritic's score, out of 100.
+         */metacritic: UInt32?, 
+        /**
+         * How the game plays, as the store names it, such as "Online Co-op".
+         */features: [String], screenshots: [SteamScreenshot], trailers: [SteamTrailer]) {
+        self.summary = summary
+        self.developers = developers
+        self.publishers = publishers
+        self.releaseDate = releaseDate
+        self.genres = genres
+        self.metacritic = metacritic
+        self.features = features
+        self.screenshots = screenshots
+        self.trailers = trailers
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SteamStorePage: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSteamStorePage: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SteamStorePage {
+        return
+            try SteamStorePage(
+                summary: FfiConverterString.read(from: &buf), 
+                developers: FfiConverterSequenceString.read(from: &buf), 
+                publishers: FfiConverterSequenceString.read(from: &buf), 
+                releaseDate: FfiConverterOptionString.read(from: &buf), 
+                genres: FfiConverterSequenceString.read(from: &buf), 
+                metacritic: FfiConverterOptionUInt32.read(from: &buf), 
+                features: FfiConverterSequenceString.read(from: &buf), 
+                screenshots: FfiConverterSequenceTypeSteamScreenshot.read(from: &buf), 
+                trailers: FfiConverterSequenceTypeSteamTrailer.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SteamStorePage, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.summary, into: &buf)
+        FfiConverterSequenceString.write(value.developers, into: &buf)
+        FfiConverterSequenceString.write(value.publishers, into: &buf)
+        FfiConverterOptionString.write(value.releaseDate, into: &buf)
+        FfiConverterSequenceString.write(value.genres, into: &buf)
+        FfiConverterOptionUInt32.write(value.metacritic, into: &buf)
+        FfiConverterSequenceString.write(value.features, into: &buf)
+        FfiConverterSequenceTypeSteamScreenshot.write(value.screenshots, into: &buf)
+        FfiConverterSequenceTypeSteamTrailer.write(value.trailers, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSteamStorePage_lift(_ buf: RustBuffer) throws -> SteamStorePage {
+    return try FfiConverterTypeSteamStorePage.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSteamStorePage_lower(_ value: SteamStorePage) -> RustBuffer {
+    return FfiConverterTypeSteamStorePage.lower(value)
+}
+
+
+public struct SteamTrailer: Equatable, Hashable {
+    public var name: String
+    public var thumbnail: String
+    /**
+     * An HLS playlist.
+     */
+    public var stream: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(name: String, thumbnail: String, 
+        /**
+         * An HLS playlist.
+         */stream: String) {
+        self.name = name
+        self.thumbnail = thumbnail
+        self.stream = stream
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SteamTrailer: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSteamTrailer: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SteamTrailer {
+        return
+            try SteamTrailer(
+                name: FfiConverterString.read(from: &buf), 
+                thumbnail: FfiConverterString.read(from: &buf), 
+                stream: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SteamTrailer, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.thumbnail, into: &buf)
+        FfiConverterString.write(value.stream, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSteamTrailer_lift(_ buf: RustBuffer) throws -> SteamTrailer {
+    return try FfiConverterTypeSteamTrailer.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSteamTrailer_lower(_ value: SteamTrailer) -> RustBuffer {
+    return FfiConverterTypeSteamTrailer.lower(value)
 }
 
 
@@ -14157,6 +14378,30 @@ fileprivate struct FfiConverterOptionTypeSteamOverlayRequest: FfiConverterRustBu
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeSteamStorePage: FfiConverterRustBuffer {
+    typealias SwiftType = SteamStorePage?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeSteamStorePage.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeSteamStorePage.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeVoileUpdateOffer: FfiConverterRustBuffer {
     typealias SwiftType = VoileUpdateOffer?
 
@@ -14974,6 +15219,56 @@ fileprivate struct FfiConverterSequenceTypeSteamReceivedInvite: FfiConverterRust
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeSteamScreenshot: FfiConverterRustBuffer {
+    typealias SwiftType = [SteamScreenshot]
+
+    public static func write(_ value: [SteamScreenshot], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSteamScreenshot.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SteamScreenshot] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SteamScreenshot]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSteamScreenshot.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeSteamTrailer: FfiConverterRustBuffer {
+    typealias SwiftType = [SteamTrailer]
+
+    public static func write(_ value: [SteamTrailer], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSteamTrailer.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SteamTrailer] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SteamTrailer]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSteamTrailer.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeSteamWebCookie: FfiConverterRustBuffer {
     typealias SwiftType = [SteamWebCookie]
 
@@ -15431,6 +15726,24 @@ public func steamNews(appId: UInt32)async throws  -> [SteamNews]  {
         )
 }
 /**
+ * The store page of `app_id` in `language`, a Steam language code; none when
+ * Steam has none for the player, as for a game no longer sold.
+ */
+public func steamStorePage(appId: UInt32, language: String)async throws  -> SteamStorePage?  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_obelisk_bridge_fn_func_steam_store_page(FfiConverterUInt32.lower(appId),FfiConverterString.lower(language)
+                )
+            },
+            pollFunc: ffi_obelisk_bridge_rust_future_poll_rust_buffer,
+            completeFunc: ffi_obelisk_bridge_rust_future_complete_rust_buffer,
+            freeFunc: ffi_obelisk_bridge_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterOptionTypeSteamStorePage.lift,
+            errorHandler: FfiConverterTypeSteamError_lift
+        )
+}
+/**
  * The invitation a friends chat message carries, read as Steam's chat reads
  * its `[lobbyinvite]` and `[gameinvite]` tags; none for Remote Play.
  */
@@ -15504,6 +15817,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_func_steam_news() != 39231) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_func_steam_store_page() != 42590) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_func_steam_chat_invite() != 53466) {

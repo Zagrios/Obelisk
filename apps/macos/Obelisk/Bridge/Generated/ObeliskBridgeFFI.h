@@ -1159,6 +1159,11 @@ RustBuffer uniffi_obelisk_bridge_fn_func_steam_language(RustBuffer locale, RustC
 uint64_t uniffi_obelisk_bridge_fn_func_steam_news(uint32_t app_id
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_FUNC_STEAM_STORE_PAGE
+#define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_FUNC_STEAM_STORE_PAGE
+uint64_t uniffi_obelisk_bridge_fn_func_steam_store_page(uint32_t app_id, RustBuffer language
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_FUNC_STEAM_CHAT_INVITE
 #define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_FUNC_STEAM_CHAT_INVITE
 RustBuffer uniffi_obelisk_bridge_fn_func_steam_chat_invite(RustBuffer bbcode, RustCallStatus *_Nonnull out_status
@@ -1517,6 +1522,12 @@ uint16_t uniffi_obelisk_bridge_checksum_func_steam_language(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_FUNC_STEAM_NEWS
 #define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_FUNC_STEAM_NEWS
 uint16_t uniffi_obelisk_bridge_checksum_func_steam_news(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_FUNC_STEAM_STORE_PAGE
+#define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_FUNC_STEAM_STORE_PAGE
+uint16_t uniffi_obelisk_bridge_checksum_func_steam_store_page(void
     
 );
 #endif

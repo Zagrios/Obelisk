@@ -37,8 +37,24 @@ struct SteamGameDetailView: View {
 
             GameOperationStatus(installations: installations, game: game.appId)
 
+            GameAboutSection(summary: model.storePage?.summary ?? "", facts: aboutFacts)
+
             newsSection
         }
+    }
+
+    /// What the game's store page tells of it, in the player's language.
+    private var aboutFacts: [GameAboutSection.Fact] {
+        guard let page = model.storePage else { return [] }
+        return [
+            GameAboutSection.Fact("ui.game.developer", page.developers),
+            GameAboutSection.Fact("ui.game.publisher", page.publishers),
+            GameAboutSection.Fact("ui.game.release_date", page.releaseDate.map { [$0] } ?? []),
+            GameAboutSection.Fact("ui.game.genres", page.genres),
+            page.metacritic.flatMap {
+                GameAboutSection.Fact("ui.game.rating", [L10n.string("ui.game.rating_value", Int64($0))])
+            },
+        ].compactMap(\.self)
     }
 
     // This view is only shown for `model.selectedGame`, so the receipts agree.

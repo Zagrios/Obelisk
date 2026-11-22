@@ -24,9 +24,7 @@ struct GogGameDetailView: View {
     private var facts: [GameAboutSection.Fact] {
         var facts: [GameAboutSection.Fact] = []
         func add(_ key: String, _ values: [String]) {
-            let values = values.filter { !$0.isEmpty }
-            guard !values.isEmpty else { return }
-            facts.append(.init(label: L10n.string(key), value: values.formatted(.list(type: .and).locale(L10n.locale))))
+            if let fact = GameAboutSection.Fact(key, values) { facts.append(fact) }
         }
         add("ui.game.developer", game.developers)
         add("ui.game.publisher", game.publishers)

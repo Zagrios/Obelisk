@@ -8,6 +8,19 @@ struct GameAboutSection: View {
         let label: String
         let value: String
         var id: String { label }
+
+        init(label: String, value: String) {
+            self.label = label
+            self.value = value
+        }
+
+        /// The fact `key` names, listing `values` in the player's language;
+        /// nil when none is left once empty ones go.
+        init?(_ key: String, _ values: [String]) {
+            let values = values.filter { !$0.isEmpty }
+            guard !values.isEmpty else { return nil }
+            self.init(label: L10n.string(key), value: values.formatted(.list(type: .and).locale(L10n.locale)))
+        }
     }
 
     let summary: String

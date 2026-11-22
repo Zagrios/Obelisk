@@ -585,6 +585,74 @@ pub async fn steam_news(app_id: u32) -> Result<Vec<SteamNews>, SteamError> {
         .collect())
 }
 
+/// What a game's Steam store page tells of it, for its page's About section.
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct SteamStorePage {
+    pub summary: String,
+    pub developers: Vec<String>,
+    pub publishers: Vec<String>,
+    /// As the store writes it, in the page's language.
+    pub release_date: Option<String>,
+    pub genres: Vec<String>,
+    /// Metacritic's score, out of 100.
+    pub metacritic: Option<u32>,
+    /// How the game plays, as the store names it, such as "Online Co-op".
+    pub features: Vec<String>,
+    pub screenshots: Vec<SteamScreenshot>,
+    pub trailers: Vec<SteamTrailer>,
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct SteamScreenshot {
+    pub thumbnail: String,
+    pub full: String,
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct SteamTrailer {
+    pub name: String,
+    pub thumbnail: String,
+    /// An HLS playlist.
+    pub stream: String,
+}
+
+/// The store page of `app_id` in `language`, a Steam language code; none when
+/// Steam has none for the player, as for a game no longer sold.
+#[uniffi::export(async_runtime = "tokio")]
+pub async fn steam_store_page(
+    app_id: u32,
+    language: String,
+) -> Result<Option<SteamStorePage>, SteamError> {
+    Ok(steam_kit::store::page(app_id, &language)
+        .await?
+        .map(|page| SteamStorePage {
+            summary: page.summary,
+            developers: page.developers,
+            publishers: page.publishers,
+            release_date: page.release_date,
+            genres: page.genres,
+            metacritic: page.metacritic,
+            features: page.features,
+            screenshots: page
+                .screenshots
+                .into_iter()
+                .map(|shot| SteamScreenshot {
+                    thumbnail: shot.thumbnail,
+                    full: shot.full,
+                })
+                .collect(),
+            trailers: page
+                .trailers
+                .into_iter()
+                .map(|trailer| SteamTrailer {
+                    name: trailer.name,
+                    thumbnail: trailer.thumbnail,
+                    stream: trailer.stream,
+                })
+                .collect(),
+        }))
+}
+
 // A login cookie signs Steam's sites in: deliberately no Debug.
 #[derive(Clone, uniffi::Record)]
 pub struct SteamWebCookie {

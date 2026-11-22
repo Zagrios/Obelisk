@@ -18,3 +18,4 @@ mod message;
 pub mod news;
 pub mod own_game;
 mod proto;
+pub mod store;

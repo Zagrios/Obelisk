@@ -523,7 +523,7 @@ func offlineSteam(
     connect: (@Sendable (SteamCredentials) async throws -> any SteamSessionProtocol)? = nil
 ) -> SteamModel {
     SteamModel(
-        directory: directory, slot: slot, keychain: keychain, connect: connect, news: { _ in [] },
+        directory: directory, slot: slot, keychain: keychain, connect: connect, news: { _ in [] }, storePage: { _, _ in nil },
         webCookies: { _ in [] },
         beginLogin: { _ in throw SteamError.Failure(reason: "Fixture: sign-in is offline in tests") },
         gameSessions: gameSessions, installations: SteamModel.installations(FakeInstallations()),

@@ -74,7 +74,7 @@ final class StorefrontLibraryFilterTests: XCTestCase {
     private func steamModel(root: URL, games: [SteamGame],
                             records: FilterRecordRequests = FilterRecordRequests()) -> SteamModel {
         let session = FilterSteamSession(games: games, platforms: { _ in [] }, records: records)
-        return SteamModel(directory: root, keychain: FilterSteamCredentials(), connect: { _ in session }, news: { _ in [] },
+        return SteamModel(directory: root, keychain: FilterSteamCredentials(), connect: { _ in session }, news: { _ in [] }, storePage: { _, _ in nil },
                           beginLogin: { _ in throw FilterFixtureFailure.unexpectedOperation },
                           gameSessions: SteamGameSessions(),
                           installations: SteamModel.installations(FakeInstallations()))
