@@ -156,6 +156,53 @@ fn a_d3dmetal_game_asks_the_launcher_for_the_d3dmetal_render_server() {
     assert_eq!(options(&target, "--graphics"), ["d3dmetal"]);
 }
 
+/// The launcher's arguments for a game of `machine` rendered by `graphics`.
+fn arguments_for(machine: u16, graphics: wine::Graphics) -> Vec<String> {
+    let (_directory, root) = installation();
+    let install = root.join("install");
+    fs::create_dir_all(&install).unwrap();
+    let program = crate::pe::tests::Fixture {
+        machine,
+        ..Default::default()
+    };
+    fs::write(install.join("Game.exe"), program.bytes()).unwrap();
+    let config = linux_config(&root);
+    let config = wine::Config {
+        settings: Settings {
+            graphics,
+            ..config.settings.clone()
+        },
+        ..config
+    };
+    wine::target::<Plain>(
+        &config,
+        &game(&install),
+        &launch_target(&install.join("Game.exe"), &[]),
+        HashMap::new(),
+    )
+    .unwrap()
+    .arguments
+}
+
+#[test]
+fn only_a_32_bit_game_on_dxmt_asks_the_launcher_for_opengl() {
+    let asks = |arguments: Vec<String>| {
+        arguments
+            .windows(2)
+            .any(|pair| pair[0] == "--opengl" && pair[1] == "virgl")
+    };
+    assert!(asks(arguments_for(
+        crate::pe::tests::I386,
+        wine::Graphics::Dxmt
+    )));
+    let x86_64 = crate::pe::tests::Fixture::default().machine;
+    assert!(!asks(arguments_for(x86_64, wine::Graphics::Dxmt)));
+    assert!(!asks(arguments_for(
+        crate::pe::tests::I386,
+        wine::Graphics::D3DMetal
+    )));
+}
+
 #[test]
 fn a_render_resolution_below_all_pixels_follows_the_graphics_pair_to_the_launcher() {
     let (_directory, root) = installation();
@@ -331,8 +378,16 @@ fn recording_runtime(root: &Path) -> PathBuf {
         r#"printf '%s\n' "$@" > "$OBELISK_TEST_ROOT/wsd.txt"
 exec /usr/bin/nc -lU "$2/wsd.sock""#,
     );
-    let server = r#"printf '%s\n' "$NPT_BACKEND $NPT_D3D12_LIBRARY_PATH" "$RENDER_SERVER_EXEC_PATH" "residency set ${DMN_RESIDENCY_SET-default}" > "$OBELISK_TEST_ROOT/server.txt"
+    let server = r#"printf '%s\n' "$NPT_BACKEND $NPT_D3D12_LIBRARY_PATH" "$RENDER_SERVER_EXEC_PATH" "residency set ${DMN_RESIDENCY_SET-default}" "$1" > "$OBELISK_TEST_ROOT/server.txt"
 exec /usr/bin/nc -lU "$4""#;
+    let server = format!(
+        r#"if [ "$1" = --help ]; then
+    [ -n "$OBELISK_TEST_NO_CGL" ] || echo '[--use-cgl] [--no-virgl]'
+    exit 1
+fi
+{server}"#
+    );
+    let server = server.as_str();
     script("graphics/bin/virgl_test_server", server);
     script("graphics/x86_64/bin/virgl_test_server", server);
     script(
@@ -598,6 +653,35 @@ fn the_guest_speaks_the_locale_its_launch_settings_carry_and_no_other() {
             .iter()
             .any(|name| name == "LC_ALL")
     );
+}
+
+#[test]
+fn the_launcher_turns_on_virgl_only_for_a_game_that_asks_on_a_server_that_can() {
+    let opengl = ["--graphics", "dxmt", "--opengl", "virgl"];
+    let driver = "GALLIUM_DRIVER=virpipe";
+
+    let (_directory, root) = installation();
+    let (engine, server) = run_launcher(&root, &opengl, &[]);
+    assert_eq!(server.lines().last().unwrap(), "--use-cgl");
+    assert!(engine.lines().any(|line| line == driver), "{engine}");
+
+    // A game that does not ask keeps the server as it was.
+    let (_directory, root) = installation();
+    let (engine, server) = run_launcher(&root, &["--graphics", "dxmt"], &[]);
+    assert_eq!(server.lines().last().unwrap(), "--no-virgl");
+    assert!(!engine.lines().any(|line| line == driver), "{engine}");
+
+    // Nor does a runtime whose server has no OpenGL stop the game.
+    let (_directory, root) = installation();
+    let (engine, server) = run_launcher(&root, &opengl, &[("OBELISK_TEST_NO_CGL", "1")]);
+    assert_eq!(server.lines().last().unwrap(), "--no-virgl");
+    assert!(!engine.lines().any(|line| line == driver), "{engine}");
+
+    // D3DMetal's server is the Intel one, which has no CGL.
+    let (_directory, root) = installation();
+    let (_engine, server) =
+        run_launcher(&root, &["--graphics", "d3dmetal", "--opengl", "virgl"], &[]);
+    assert_eq!(server.lines().last().unwrap(), "--no-virgl");
 }
 
 #[test]
