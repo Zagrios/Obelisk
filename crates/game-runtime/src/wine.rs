@@ -209,6 +209,9 @@ impl Config {
         if self.settings.emulate_modes {
             header.push_str(" emulate_modes=on");
         }
+        if self.settings.scroll_percent != crate::launch_settings::NORMAL_SCROLL_PERCENT {
+            header.push_str(&format!(" scroll_percent={}", self.settings.scroll_percent));
+        }
         if !self.settings.game_mode {
             header.push_str(" game_mode=off");
         }
@@ -820,6 +823,17 @@ fn typed(arguments: &[String]) -> String {
         })
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+/// How far Wine scrolls a mouse wheel's notch, in whole percent, on either
+/// engine.
+const SCROLL_PERCENT: &str = "WINE_OBELISK_SCROLL_PERCENT";
+
+/// `SCROLL_PERCENT` for a scroll speed other than Wine's own.
+fn scroll_percent(config: &Config) -> Option<(String, String)> {
+    let percent = config.settings.scroll_percent;
+    (percent != crate::launch_settings::NORMAL_SCROLL_PERCENT)
+        .then(|| (SCROLL_PERCENT.to_owned(), percent.to_string()))
 }
 
 #[cfg(test)]

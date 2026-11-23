@@ -83,6 +83,9 @@ pub struct Settings {
     /// a full-screen game at one of them to the screen.
     #[serde(default)]
     pub emulate_modes: bool,
+    /// How far a mouse wheel's notch scrolls, in whole percent of Wine's own.
+    #[serde(default = "normal_scroll_percent")]
+    pub scroll_percent: u16,
     /// macOS may turn its Game Mode on for the game; false only on an engine
     /// that can keep it off.
     #[serde(default = "game_mode")]
@@ -156,6 +159,17 @@ impl Settings {
 
 /// All of the screen's pixels, which a game renders at without a choice.
 pub const FULL_RENDER_PERCENT: u32 = 100;
+
+/// How far a notch scrolls without a choice, as in Wine itself.
+pub const NORMAL_SCROLL_PERCENT: u16 = 100;
+
+/// The scroll speeds a player may choose, in whole percent.
+const SCROLL_PERCENTS: std::ops::RangeInclusive<u16> = 25..=400;
+
+/// The serde default of `Settings::scroll_percent`.
+fn normal_scroll_percent() -> u16 {
+    NORMAL_SCROLL_PERCENT
+}
 
 /// The serde default of `Settings::render_percent`, which a handoff that
 /// predates it lacks: a derived default would be 0.
@@ -311,6 +325,10 @@ pub struct Choices {
     /// Wine lists the common display modes a screen lacks.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub emulate_modes: bool,
+    /// How far a mouse wheel's notch scrolls, in whole percent; a plain
+    /// integer, so an older build still reads the file.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scroll_percent: Option<u16>,
     /// Metal's Performance HUD shows over the game, whatever renders it.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub performance_hud: bool,
@@ -462,6 +480,10 @@ impl Choices {
             metalfx_spatial: false,
             low_latency: false,
             emulate_modes: self.emulate_modes && offered.emulate_modes,
+            scroll_percent: self
+                .scroll_percent
+                .filter(|percent| SCROLL_PERCENTS.contains(percent))
+                .unwrap_or(NORMAL_SCROLL_PERCENT),
             executable: profile.executable.map(str::to_owned),
             bootstrapper: profile.bootstrapper.clone(),
             profile_arguments: profile.arguments.to_vec(),
@@ -509,6 +531,8 @@ impl Choices {
             metalfx_spatial: applied.metalfx_spatial,
             low_latency: applied.low_latency,
             emulate_modes: applied.emulate_modes,
+            scroll_percent: (applied.scroll_percent != NORMAL_SCROLL_PERCENT)
+                .then_some(applied.scroll_percent),
             performance_hud: self.performance_hud,
             game_mode: (applied.game_mode != default_game_mode(profile, applied.engine))
                 .then_some(applied.game_mode),

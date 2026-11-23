@@ -79,6 +79,7 @@ static FACTS: Facts = Facts {
             "D3DM_MAX_FPS",
             "DXMT_METALFX_SPATIAL_SWAPCHAIN",
             "WINE_OBELISK_EMULATE_MODES",
+            super::SCROLL_PERCENT,
             "CX_HIDE_BUILTIN_VERSION_RESOURCES",
             // The Game session adds these to the game's own.
             crate::input::SOCKET,
@@ -394,6 +395,9 @@ fn environment(config: &Config) -> HashMap<String, String> {
     // and scales a full-screen game at one of them.
     if config.settings.emulate_modes {
         environment.insert("WINE_OBELISK_EMULATE_MODES".into(), "1".into());
+    }
+    if let Some((name, value)) = super::scroll_percent(config) {
+        environment.insert(name, value);
     }
     // D3DMetal's own frame cap; DXMT's is in its options.
     if let Some(cap) = config.settings.frame_cap {

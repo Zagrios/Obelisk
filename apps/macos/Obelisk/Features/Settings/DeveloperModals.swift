@@ -125,6 +125,9 @@ struct DeveloperModal: Identifiable {
                     Variant("Emulated display modes") {
                         $0.launchSettings { DeveloperModals.launchSettings(LaunchChoices(emulateModes: true)) }
                     },
+                    Variant("Scroll speed") {
+                        $0.launchSettings { DeveloperModals.launchSettings(LaunchChoices(scrollPercent: 200)) }
+                    },
                     Variant("Frame cap") {
                         $0.launchSettings { DeveloperModals.launchSettings(LaunchChoices(frameCap: 60)) }
                     },
@@ -399,6 +402,7 @@ final class DeveloperModals {
                               metalfxSpatial: engine == .rosetta && graphics == .dxmt && choices.metalfxSpatial,
                               lowLatency: (engine == .linux || graphics == .dxmt) && choices.lowLatency,
                               emulateModes: offer.emulateModes && choices.emulateModes,
+                              scrollPercent: choices.scrollPercent ?? ScrollPercent.normal,
                               performanceHud: choices.performanceHud,
                               gameMode: !offer.gameMode || choices.gameMode ?? true,
                               frameCap: offer.frameCap ? choices.frameCap.map { $0 == FrameCap.display ? 120 : $0 } : nil,

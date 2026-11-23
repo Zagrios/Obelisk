@@ -899,6 +899,46 @@ fn emulated_display_modes_reach_wine_and_the_log() {
 }
 
 #[test]
+fn a_scroll_speed_reaches_wine_on_both_engines_and_the_log() {
+    let (_directory, root) = installation();
+    for config in [config(&root), linux_config(&root)] {
+        let engine = config.settings.engine;
+        assert!(
+            engine
+                .reserved()
+                .variables
+                .contains(&"WINE_OBELISK_SCROLL_PERCENT"),
+            "{engine:?}"
+        );
+        assert_eq!(scroll_percent(&config), None, "{engine:?}");
+        let faster = Config {
+            settings: Settings {
+                scroll_percent: 200,
+                ..config.settings.clone()
+            },
+            ..config
+        };
+        assert_eq!(
+            scroll_percent(&faster),
+            Some(("WINE_OBELISK_SCROLL_PERCENT".to_owned(), "200".to_owned())),
+            "{engine:?}"
+        );
+        assert!(
+            faster.log_header().contains(" scroll_percent=200"),
+            "{engine:?}"
+        );
+    }
+    let rosetta = Config {
+        settings: Settings {
+            scroll_percent: 200,
+            ..config(&root).settings
+        },
+        ..config(&root)
+    };
+    assert_eq!(environment(&rosetta)["WINE_OBELISK_SCROLL_PERCENT"], "200");
+}
+
+#[test]
 fn compatibility_mode_leaves_direct3d_to_wine_s_own_over_opengl() {
     let (_directory, root) = installation();
     let config = config(&root);
@@ -1531,6 +1571,7 @@ fn a_configuration_reaches_its_game_session_whole() {
             metalfx_spatial: true,
             low_latency: true,
             emulate_modes: true,
+            scroll_percent: 150,
             locale: Some("it_IT".into()),
         },
     };
@@ -1573,6 +1614,13 @@ fn a_configuration_reaches_its_game_session_whole() {
             "emulate_modes",
             Settings {
                 emulate_modes: false,
+                ..config.settings.clone()
+            },
+        ),
+        (
+            "scroll_percent",
+            Settings {
+                scroll_percent: 100,
                 ..config.settings.clone()
             },
         ),

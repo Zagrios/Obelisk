@@ -108,6 +108,7 @@ static FACTS: Facts = Facts {
             "NPT_DEBUG",
             "NPT_WSD_PACING",
             "NPT_MAX_FRAME_LATENCY",
+            super::SCROLL_PERCENT,
             "LD_PRELOAD",
         ],
         dlls: &[
@@ -412,6 +413,7 @@ fn guest_environment(config: &Config) -> Vec<(String, String)> {
         .map(|(name, value)| (name.to_owned(), value))
         .chain(frame_cap)
         .chain(low_latency)
+        .chain(super::scroll_percent(config))
         .chain(locale)
         .chain(config.settings.variables.clone())
         .collect()

@@ -214,6 +214,7 @@ struct LaunchSettingsSheet: View {
                             gameModeRow(settings)
                         }
                     }
+                    ObeliskCard { scrollPercentRow(settings) }
                     SheetSection(title: L10n.string("ui.launch_settings.cpu")) {
                         ObeliskCard { translatorRow }
                     }
@@ -400,6 +401,28 @@ struct LaunchSettingsSheet: View {
                 .labelsHidden()
                 .pointerCursor()
                 .accessibilityIdentifier("launch-settings-metalfx-spatial")
+        }
+    }
+
+    private func scrollPercentRow(_ settings: LaunchSettings) -> some View {
+        ObeliskRow(title: L10n.string("ui.launch_settings.scroll_percent")) {
+            SymbolTile(name: "computermouse", colors: TileColors.grey)
+        } detail: {
+            Text(L10n.string("ui.launch_settings.scroll_percent_detail"))
+        } accessory: {
+            GlassMenuPicker(title: L10n.string("ui.launch_settings.scroll_percent"),
+                            value: ScrollPercent.name(of: settings.scrollPercent),
+                            selection: Binding(get: { settings.scrollPercent },
+                                               set: { percent in
+                                                   model.choose {
+                                                       $0.scrollPercent = percent == ScrollPercent.normal ? nil : percent
+                                                   }
+                                               }),
+                            identifier: "launch-settings-scroll-percent") {
+                ForEach(ScrollPercent.steps, id: \.self) { percent in
+                    Text(ScrollPercent.name(of: percent)).tag(percent)
+                }
+            }
         }
     }
 
@@ -591,6 +614,17 @@ enum FrameCap {
         case display: L10n.string("ui.launch_settings.frame_cap.display")
         case let cap?: L10n.string("ui.launch_settings.frame_cap.fps", Int(cap))
         }
+    }
+}
+
+/// How far a mouse wheel's notch scrolls, in whole percent of Wine's own.
+enum ScrollPercent {
+    static let normal: UInt16 = 100
+    static let steps: [UInt16] = [50, 75, normal, 150, 200, 300]
+
+    static func name(of percent: UInt16) -> String {
+        percent == normal ? L10n.string("ui.launch_settings.scroll_percent.normal")
+            : DownloadFormatting.percent(Double(percent) / 100)
     }
 }
 

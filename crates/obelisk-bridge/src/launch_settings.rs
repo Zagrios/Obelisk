@@ -31,6 +31,9 @@ pub struct LaunchSettings {
     /// Wine lists the common display modes the screen lacks.
     #[uniffi(default = false)]
     pub emulate_modes: bool,
+    /// How far a mouse wheel's notch scrolls, in whole percent of Wine's own.
+    #[uniffi(default = 100)]
+    pub scroll_percent: u16,
     /// Metal's Performance HUD shows over the game, whatever renders it.
     pub performance_hud: bool,
     /// macOS may turn its Game Mode on for the game.
@@ -70,6 +73,8 @@ pub struct LaunchChoices {
     pub low_latency: bool,
     #[uniffi(default = false)]
     pub emulate_modes: bool,
+    #[uniffi(default = None)]
+    pub scroll_percent: Option<u16>,
     #[uniffi(default = false)]
     pub performance_hud: bool,
     #[uniffi(default = None)]
@@ -151,6 +156,7 @@ impl From<View> for LaunchSettings {
             metalfx_spatial: view.settings.metalfx_spatial,
             low_latency: view.settings.low_latency,
             emulate_modes: view.settings.emulate_modes,
+            scroll_percent: view.settings.scroll_percent,
             performance_hud: view.settings.performance_hud,
             game_mode: view.settings.game_mode,
             frame_cap: view.settings.frame_cap,
@@ -209,6 +215,7 @@ impl From<Choices> for LaunchChoices {
             metalfx_spatial: choices.metalfx_spatial,
             low_latency: choices.low_latency,
             emulate_modes: choices.emulate_modes,
+            scroll_percent: choices.scroll_percent,
             performance_hud: choices.performance_hud,
             game_mode: choices.game_mode,
             frame_cap: choices.frame_cap,
@@ -228,6 +235,7 @@ impl From<LaunchChoices> for launch_settings::Choices {
             metalfx_spatial: choices.metalfx_spatial,
             low_latency: choices.low_latency,
             emulate_modes: choices.emulate_modes,
+            scroll_percent: choices.scroll_percent,
             performance_hud: choices.performance_hud,
             game_mode: choices.game_mode,
             frame_cap: choices.frame_cap,
@@ -428,6 +436,29 @@ mod tests {
             .map(|offer| offer.emulate_modes)
             .collect();
         assert_eq!(offered, [true, false]);
+    }
+
+    #[test]
+    fn a_scroll_speed_crosses_both_ways() {
+        let library = tempfile::tempdir().unwrap();
+        let view = launch_settings::choose(
+            library.path(),
+            profile::Game::Steam { app_id: 42 },
+            std::path::Path::new("/nowhere"),
+            None,
+            None,
+            LaunchChoices {
+                scroll_percent: Some(200),
+                ..LaunchChoices::default()
+            }
+            .into(),
+        )
+        .unwrap();
+
+        let settings = LaunchSettings::from(view);
+
+        assert_eq!(settings.scroll_percent, 200);
+        assert_eq!(settings.choices.scroll_percent, Some(200));
     }
 
     #[test]

@@ -298,6 +298,15 @@ fn low_input_delay_reaches_neptune_s_swapchain_in_the_guest() {
     let (on, off) = (started(true), started(false));
 
     assert!(options(&on, "--env").contains(&"NPT_MAX_FRAME_LATENCY=1"));
+    config.settings.scroll_percent = 50;
+    let slower = wine::target::<Plain>(
+        &config,
+        &game(&install),
+        &launch_target(&install.join("Game.exe"), &[]),
+        HashMap::new(),
+    )
+    .unwrap();
+    assert!(options(&slower, "--env").contains(&"WINE_OBELISK_SCROLL_PERCENT=50"));
     assert!(
         !options(&off, "--env")
             .iter()

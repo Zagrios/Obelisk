@@ -471,6 +471,22 @@ private let UNIFFI_CALLBACK_UNEXPECTED_ERROR: Int32 = 2
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterUInt16: FfiConverterPrimitive {
+    typealias FfiType = UInt16
+    typealias SwiftType = UInt16
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UInt16 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterUInt32: FfiConverterPrimitive {
     typealias FfiType = UInt32
     typealias SwiftType = UInt32
@@ -7094,6 +7110,7 @@ public struct LaunchChoices: Equatable, Hashable {
     public var metalfxSpatial: Bool
     public var lowLatency: Bool
     public var emulateModes: Bool
+    public var scrollPercent: UInt16?
     public var performanceHud: Bool
     public var gameMode: Bool?
     /**
@@ -7106,7 +7123,7 @@ public struct LaunchChoices: Equatable, Hashable {
     public init(
         /**
          * What the player adds to the game's command line, as typed.
-         */arguments: String? = nil, engine: LaunchEngine? = nil, graphics: LaunchGraphics? = nil, rayTracing: Bool? = nil, compatibility: Bool? = nil, renderPercent: UInt32? = nil, metalfxSpatial: Bool = false, lowLatency: Bool = false, emulateModes: Bool = false, performanceHud: Bool = false, gameMode: Bool? = nil, 
+         */arguments: String? = nil, engine: LaunchEngine? = nil, graphics: LaunchGraphics? = nil, rayTracing: Bool? = nil, compatibility: Bool? = nil, renderPercent: UInt32? = nil, metalfxSpatial: Bool = false, lowLatency: Bool = false, emulateModes: Bool = false, scrollPercent: UInt16? = nil, performanceHud: Bool = false, gameMode: Bool? = nil, 
         /**
          * The most frames a second, 0 for the screen's refresh rate.
          */frameCap: UInt32? = nil) {
@@ -7119,6 +7136,7 @@ public struct LaunchChoices: Equatable, Hashable {
         self.metalfxSpatial = metalfxSpatial
         self.lowLatency = lowLatency
         self.emulateModes = emulateModes
+        self.scrollPercent = scrollPercent
         self.performanceHud = performanceHud
         self.gameMode = gameMode
         self.frameCap = frameCap
@@ -7149,6 +7167,7 @@ public struct FfiConverterTypeLaunchChoices: FfiConverterRustBuffer {
                 metalfxSpatial: FfiConverterBool.read(from: &buf), 
                 lowLatency: FfiConverterBool.read(from: &buf), 
                 emulateModes: FfiConverterBool.read(from: &buf), 
+                scrollPercent: FfiConverterOptionUInt16.read(from: &buf), 
                 performanceHud: FfiConverterBool.read(from: &buf), 
                 gameMode: FfiConverterOptionBool.read(from: &buf), 
                 frameCap: FfiConverterOptionUInt32.read(from: &buf)
@@ -7165,6 +7184,7 @@ public struct FfiConverterTypeLaunchChoices: FfiConverterRustBuffer {
         FfiConverterBool.write(value.metalfxSpatial, into: &buf)
         FfiConverterBool.write(value.lowLatency, into: &buf)
         FfiConverterBool.write(value.emulateModes, into: &buf)
+        FfiConverterOptionUInt16.write(value.scrollPercent, into: &buf)
         FfiConverterBool.write(value.performanceHud, into: &buf)
         FfiConverterOptionBool.write(value.gameMode, into: &buf)
         FfiConverterOptionUInt32.write(value.frameCap, into: &buf)
@@ -7400,6 +7420,10 @@ public struct LaunchSettings: Equatable, Hashable {
      */
     public var emulateModes: Bool
     /**
+     * How far a mouse wheel's notch scrolls, in whole percent of Wine's own.
+     */
+    public var scrollPercent: UInt16
+    /**
      * Metal's Performance HUD shows over the game, whatever renders it.
      */
     public var performanceHud: Bool
@@ -7449,6 +7473,9 @@ public struct LaunchSettings: Equatable, Hashable {
          * Wine lists the common display modes the screen lacks.
          */emulateModes: Bool = false, 
         /**
+         * How far a mouse wheel's notch scrolls, in whole percent of Wine's own.
+         */scrollPercent: UInt16 = UInt16(100), 
+        /**
          * Metal's Performance HUD shows over the game, whatever renders it.
          */performanceHud: Bool, 
         /**
@@ -7476,6 +7503,7 @@ public struct LaunchSettings: Equatable, Hashable {
         self.metalfxSpatial = metalfxSpatial
         self.lowLatency = lowLatency
         self.emulateModes = emulateModes
+        self.scrollPercent = scrollPercent
         self.performanceHud = performanceHud
         self.gameMode = gameMode
         self.frameCap = frameCap
@@ -7508,6 +7536,7 @@ public struct FfiConverterTypeLaunchSettings: FfiConverterRustBuffer {
                 metalfxSpatial: FfiConverterBool.read(from: &buf), 
                 lowLatency: FfiConverterBool.read(from: &buf), 
                 emulateModes: FfiConverterBool.read(from: &buf), 
+                scrollPercent: FfiConverterUInt16.read(from: &buf), 
                 performanceHud: FfiConverterBool.read(from: &buf), 
                 gameMode: FfiConverterBool.read(from: &buf), 
                 frameCap: FfiConverterOptionUInt32.read(from: &buf), 
@@ -7526,6 +7555,7 @@ public struct FfiConverterTypeLaunchSettings: FfiConverterRustBuffer {
         FfiConverterBool.write(value.metalfxSpatial, into: &buf)
         FfiConverterBool.write(value.lowLatency, into: &buf)
         FfiConverterBool.write(value.emulateModes, into: &buf)
+        FfiConverterUInt16.write(value.scrollPercent, into: &buf)
         FfiConverterBool.write(value.performanceHud, into: &buf)
         FfiConverterBool.write(value.gameMode, into: &buf)
         FfiConverterOptionUInt32.write(value.frameCap, into: &buf)
@@ -13629,6 +13659,30 @@ public func FfiConverterTypeWebAccountGames_lower(_ value: WebAccountGames) -> R
     return FfiConverterTypeWebAccountGames.lower(value)
 }
 
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionUInt16: FfiConverterRustBuffer {
+    typealias SwiftType = UInt16?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterUInt16.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterUInt16.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
 
 #if swift(>=5.8)
 @_documentation(visibility: private)

@@ -124,6 +124,7 @@ fn every_kind_of_choices() -> [Choices; 5] {
             metalfx_spatial: false,
             low_latency: false,
             emulate_modes: false,
+            scroll_percent: Some(100),
         },
         Choices {
             arguments: Some("-dx11 \"+exec autoexec.cfg\"".into()),
@@ -926,6 +927,30 @@ fn only_rosetta_s_wine_emulates_display_modes_and_only_on_is_kept() {
 }
 
 #[test]
+fn a_scroll_speed_outside_the_steps_scrolls_as_wine_does_and_wine_s_own_is_not_kept() {
+    let directory = tempfile::tempdir().unwrap();
+    let library = directory.path();
+    let install = Path::new("/library/Games/game");
+    for (percent, applied, kept) in [
+        (Some(150), 150, Some(150)),
+        (Some(25), 25, Some(25)),
+        (Some(400), 400, Some(400)),
+        (Some(100), 100, None),
+        (Some(0), 100, None),
+        (Some(401), 100, None),
+        (None, 100, None),
+    ] {
+        let choices = Choices {
+            scroll_percent: percent,
+            ..Choices::default()
+        };
+        let view = choose(library, OTHER, install, None, None, choices).unwrap();
+        assert_eq!(view.settings.scroll_percent, applied, "{percent:?}");
+        assert_eq!(view.choices.scroll_percent, kept, "{percent:?}");
+    }
+}
+
+#[test]
 fn a_frame_cap_snaps_to_whole_refreshes_per_frame_at_or_below_it() {
     for (cap, rate, expected) in [
         (60, Some(120), Some(60)),
@@ -1033,6 +1058,7 @@ fn every_choice() -> Choices {
         metalfx_spatial: true,
         low_latency: true,
         emulate_modes: true,
+        scroll_percent: Some(150),
     }
 }
 
