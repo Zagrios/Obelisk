@@ -52,6 +52,12 @@ const DXMT_CONFIG: &str = "DXMT_CONFIG";
 
 /// The folder of the prefix where DXMT keeps the game's compiled shaders.
 const DXMT_SHADER_CACHE: &str = "obelisk-dxmt-cache";
+/// The game's application bundle, in its prefix.
+const GAME_BUNDLE: &str = "obelisk-game.app";
+/// The runtime's folder of Wine's loader and the ntdll.so it loads.
+const WINE_UNIX: &str = "lib/wine/x86_64-unix";
+/// Wine starts the game again from its bundle's loader, at this path.
+const GAME_BUNDLE_VARIABLE: &str = "WINE_OBELISK_GAME_BUNDLE";
 
 /// Wine for macOS, under Rosetta.
 pub(super) struct RosettaWine;
@@ -84,6 +90,7 @@ static FACTS: Facts = Facts {
             "WINE_OBELISK_EMULATE_MODES",
             super::SCROLL_PERCENT,
             "DXMT_SHADER_CACHE_PATH",
+            GAME_BUNDLE_VARIABLE,
             "CX_HIDE_BUILTIN_VERSION_RESOURCES",
             // The Game session adds these to the game's own.
             crate::input::SOCKET,
@@ -147,6 +154,19 @@ impl Adapter for RosettaWine {
         arguments.extend(launched.arguments.iter().cloned());
         let mut environment = environment;
         environment.extend(self::environment(config));
+        let name = match (
+            super::linux_engine::app_name(game.title),
+            Path::new(&launched.executable).file_stem(),
+        ) {
+            (name, Some(stem)) if name.is_empty() => stem.to_string_lossy().into_owned(),
+            (name, _) => name,
+        };
+        if let Some(bundle) = game_bundle(config, &name) {
+            environment.insert(
+                GAME_BUNDLE_VARIABLE.into(),
+                bundle.to_string_lossy().into_owned(),
+            );
+        }
         Ok(Target {
             executable: wine(config),
             arguments,
@@ -185,7 +205,12 @@ impl Adapter for RosettaWine {
             .args(["taskkill", "/T", "/IM"])
             .arg(program?.file_name()?)
             .env_clear()
-            .envs(environment);
+            // Taskkill is no part of the game's app.
+            .envs(
+                environment
+                    .iter()
+                    .filter(|(name, _)| *name != GAME_BUNDLE_VARIABLE),
+            );
         Some(command)
     }
 
@@ -237,6 +262,88 @@ impl Adapter for RosettaWine {
 
 fn wine(config: &Config) -> PathBuf {
     config.runtime.join("bin/wine")
+}
+
+/// The game's own application bundle in its prefix, named `name`, around a
+/// clone of Wine's loader beside a link to the runtime's ntdll.so: macOS takes
+/// the game's name, its category and whether Game Mode may come on from the
+/// bundle's Info.plist, and only from the one on disk. Each file is written
+/// again only once it differs, as after a runtime update, which the loader
+/// must follow. None without the loader or when the bundle cannot be made:
+/// the game then starts as before. No Frameworks or lib folder: D3DMetal
+/// would look for its libraries there.
+fn game_bundle(config: &Config, name: &str) -> Option<PathBuf> {
+    if !config.prefix.is_absolute() {
+        return None;
+    }
+    let unix = config.runtime.join(WINE_UNIX);
+    let loader = fs::read(unix.join("wine")).ok()?;
+    let bundle = config.prefix.join(GAME_BUNDLE);
+    let contents = bundle.join("Contents");
+    let macos = contents.join("MacOS");
+    fs::create_dir_all(&macos).ok()?;
+    let clone = macos.join("wine");
+    if fs::read(&clone).ok().as_ref() != Some(&loader) {
+        let _ = fs::remove_file(&clone);
+        // A clone on APFS, as `cp -c` makes.
+        fs::copy(unix.join("wine"), &clone).ok()?;
+    }
+    let ntdll = macos.join("ntdll.so");
+    let library = unix.join("ntdll.so");
+    if fs::read_link(&ntdll).ok().as_ref() != Some(&library) {
+        let _ = fs::remove_file(&ntdll);
+        std::os::unix::fs::symlink(&library, &ntdll).ok()?;
+    }
+    let id = config.prefix.file_name()?.to_string_lossy().into_owned();
+    let plist = info_plist(name, &id, config.settings.game_mode);
+    let info = contents.join("Info.plist");
+    if fs::read(&info).ok().as_deref() != Some(plist.as_bytes()) {
+        fs::write(&info, plist).ok()?;
+        // macOS reads a bundle's Info.plist again only once its folder is
+        // newer than what it read.
+        fs::File::open(&bundle)
+            .and_then(|folder| folder.set_modified(std::time::SystemTime::now()))
+            .ok()?;
+    }
+    Some(bundle)
+}
+
+/// The Info.plist of the bundle of a game named `name` in the prefix `id`,
+/// whose Game Mode macOS may turn on when `game_mode`: Wine's own loader's,
+/// in the games category.
+fn info_plist(name: &str, id: &str, game_mode: bool) -> String {
+    let id: String = id
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    let name = name
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;");
+    let game_mode = if game_mode { "<true/>" } else { "<false/>" };
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleAllowMixedLocalizations</key><true/>
+  <key>CFBundleDevelopmentRegion</key><string>English</string>
+  <key>CFBundleExecutable</key><string>wine</string>
+  <key>CFBundleIdentifier</key><string>com.zagrios.obelisk.rosetta.{id}</string>
+  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+  <key>CFBundleName</key><string>{name}</string>
+  <key>CFBundleDisplayName</key><string>{name}</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleSignature</key><string>????</string>
+  <key>LSApplicationCategoryType</key><string>public.app-category.games</string>
+  <key>LSSupportsGameMode</key>{game_mode}
+  <key>GCSupportsGameMode</key>{game_mode}
+  <key>LSUIElement</key><string>1</string>
+  <key>NSPrincipalClass</key><string>WineApplication</string>
+</dict>
+</plist>
+"#
+    )
 }
 
 /// Whether the runtime is in place.

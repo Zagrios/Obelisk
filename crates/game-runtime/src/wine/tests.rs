@@ -938,6 +938,81 @@ fn a_scroll_speed_reaches_wine_on_both_engines_and_the_log() {
     assert_eq!(environment(&rosetta)["WINE_OBELISK_SCROLL_PERCENT"], "200");
 }
 
+/// A runtime of `config` with Wine's loader and its ntdll.so, each holding
+/// `loader`.
+fn with_loader(config: &Config, loader: &str) {
+    let unix = config.runtime.join("lib/wine/x86_64-unix");
+    fs::create_dir_all(&unix).unwrap();
+    fs::write(unix.join("wine"), loader).unwrap();
+    fs::write(unix.join("ntdll.so"), "ntdll").unwrap();
+}
+
+#[test]
+fn rosetta_s_wine_starts_the_game_from_its_own_bundle_in_its_prefix() {
+    let (_directory, root) = installation();
+    let mut config = config(&root);
+    assert!(!environment(&config).contains_key("WINE_OBELISK_GAME_BUNDLE"));
+    with_loader(&config, "loader 1");
+
+    let environment_of = |config: &Config| environment(config)["WINE_OBELISK_GAME_BUNDLE"].clone();
+    let bundle = PathBuf::from(environment_of(&config));
+
+    assert_eq!(bundle, config.prefix.join("obelisk-game.app"));
+    let contents = bundle.join("Contents");
+    assert_eq!(
+        fs::read_to_string(contents.join("MacOS/wine")).unwrap(),
+        "loader 1"
+    );
+    assert_eq!(
+        fs::read_link(contents.join("MacOS/ntdll.so")).unwrap(),
+        config.runtime.join("lib/wine/x86_64-unix/ntdll.so")
+    );
+    let names: Vec<_> = fs::read_dir(&contents)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(names.len(), 2, "{names:?}");
+    let plist = fs::read_to_string(contents.join("Info.plist")).unwrap();
+    for line in [
+        "<key>CFBundleExecutable</key><string>wine</string>",
+        "<key>CFBundleIdentifier</key><string>com.zagrios.obelisk.rosetta.prefix</string>",
+        "<key>CFBundleName</key><string>Game</string>",
+        "<key>CFBundlePackageType</key><string>APPL</string>",
+        "<key>LSApplicationCategoryType</key><string>public.app-category.games</string>",
+        "<key>LSSupportsGameMode</key><true/>",
+        "<key>GCSupportsGameMode</key><true/>",
+        "<key>LSUIElement</key><string>1</string>",
+        "<key>NSPrincipalClass</key><string>WineApplication</string>",
+    ] {
+        assert!(plist.contains(line), "{line}\n{plist}");
+    }
+
+    // A new runtime's loader replaces the clone, and Game Mode kept off
+    // reaches the Info.plist.
+    with_loader(&config, "loader 2");
+    config.settings.game_mode = false;
+    environment_of(&config);
+    assert_eq!(
+        fs::read_to_string(contents.join("MacOS/wine")).unwrap(),
+        "loader 2"
+    );
+    let plist = fs::read_to_string(contents.join("Info.plist")).unwrap();
+    assert!(
+        plist.contains("<key>LSSupportsGameMode</key><false/>"),
+        "{plist}"
+    );
+    assert!(
+        plist.contains("<key>GCSupportsGameMode</key><false/>"),
+        "{plist}"
+    );
+    assert!(
+        Engine::Rosetta
+            .reserved()
+            .variables
+            .contains(&"WINE_OBELISK_GAME_BUNDLE")
+    );
+}
+
 #[test]
 fn compatibility_mode_leaves_direct3d_to_wine_s_own_over_opengl() {
     let (_directory, root) = installation();

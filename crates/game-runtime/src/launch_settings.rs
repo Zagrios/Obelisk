@@ -388,10 +388,10 @@ pub struct GraphicsOffer {
 }
 
 /// Every engine, the translator it has and the backends it renders with.
-/// Rosetta's Wine takes D3DMetal's and DXMT's options and no render resolution, and
-/// macOS never takes its games for games, and its Wine renders through
-/// OpenGL too; the Linux engine's render servers take no options yet, and its
-/// Wine has Neptune's Direct3D alone.
+/// Rosetta's Wine takes D3DMetal's and DXMT's options and no render
+/// resolution, and its Wine renders through OpenGL too; the Linux engine's
+/// render servers take low input delay alone, and its Wine has Neptune's
+/// Direct3D alone.
 pub const ENGINES: [EngineOffer; 2] = [
     EngineOffer {
         engine: Engine::Rosetta,
@@ -407,7 +407,7 @@ pub const ENGINES: [EngineOffer; 2] = [
             },
         ],
         lowest_render_percent: None,
-        game_mode: false,
+        game_mode: true,
         compatibility: true,
         frame_cap: true,
         emulate_modes: true,

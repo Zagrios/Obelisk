@@ -336,7 +336,7 @@ fn a_render_resolution_the_linux_engine_offers_applies_and_is_kept_but_all_pixel
 }
 
 #[test]
-fn only_the_linux_engine_keeps_game_mode_off_and_only_off_is_kept_where_the_profile_leaves_it_on() {
+fn each_engine_keeps_game_mode_off_and_only_off_is_kept_where_the_profile_leaves_it_on() {
     let off = |engine| Choices {
         engine: Some(engine),
         game_mode: Some(false),
@@ -348,8 +348,15 @@ fn only_the_linux_engine_keeps_game_mode_off_and_only_off_is_kept_where_the_prof
     assert_eq!(linux.choices, off(Engine::Linux));
 
     let rosetta = chosen(OTHER, off(Engine::Rosetta));
-    assert!(rosetta.settings.game_mode);
-    assert_eq!(rosetta.choices, Choices::default());
+    assert!(!rosetta.settings.game_mode);
+    // Rosetta is the engine without choices.
+    assert_eq!(
+        rosetta.choices,
+        Choices {
+            game_mode: Some(false),
+            ..Choices::default()
+        }
+    );
 
     let on = Choices {
         game_mode: Some(true),
@@ -379,7 +386,7 @@ fn a_profile_keeps_game_mode_off_until_its_player_turns_it_on_and_only_on_is_kep
     assert!(on.settings.game_mode);
     assert_eq!(on.choices, with(Some(true)));
 
-    // Rosetta's Wine cannot keep it off, whatever the profile says.
+    // Rosetta's Wine keeps it off too, from the game's own bundle.
     let rosetta = chosen(
         HELLDIVERS_2,
         Choices {
@@ -387,7 +394,7 @@ fn a_profile_keeps_game_mode_off_until_its_player_turns_it_on_and_only_on_is_kep
             ..Choices::default()
         },
     );
-    assert!(rosetta.settings.game_mode);
+    assert!(!rosetta.settings.game_mode);
     assert_eq!(rosetta.choices.game_mode, None);
 }
 

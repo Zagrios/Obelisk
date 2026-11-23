@@ -41,7 +41,7 @@ fn window_server(environment: &HashMap<String, String>, pid: u32) -> PathBuf {
 pub(crate) const APP_NAME: &str = "OBELISK_APP_NAME";
 /// A store title as an application name: without the trademark signs stores
 /// add ("Rocket League®"), which Mac apps leave out.
-fn app_name(title: &str) -> String {
+pub(super) fn app_name(title: &str) -> String {
     title
         .chars()
         .filter(|c| !matches!(c, '®' | '™' | '©'))

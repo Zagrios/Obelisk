@@ -138,6 +138,18 @@ fn the_profile_s_dxmt_options_follow_obelisk_s_own_so_that_its_value_of_a_key_wi
 }
 
 #[test]
+fn only_the_game_starts_from_its_bundle_and_wine_s_own_commands_do_not() {
+    let (_directory, root) = installation();
+    let config = crate::wine::tests::config(&root);
+    let unix = config.runtime.join(WINE_UNIX);
+    fs::create_dir_all(&unix).unwrap();
+    fs::write(unix.join("wine"), "loader").unwrap();
+
+    assert!(!environment(&config).contains_key(GAME_BUNDLE_VARIABLE));
+    assert!(!config.prefix.join(GAME_BUNDLE).exists());
+}
+
+#[test]
 fn dxmt_keeps_the_game_s_shaders_in_its_prefix() {
     let (_directory, root) = crate::wine::tests::installation();
     let config = crate::wine::tests::config(&root);

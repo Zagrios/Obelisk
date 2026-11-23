@@ -384,7 +384,7 @@ final class DeveloperModals {
             LaunchEngineOffer(engine: .rosetta, translator: .rosetta, defaultGraphics: .d3dMetal, graphics: [
                 LaunchGraphicsOffer(graphics: .d3dMetal, options: [.rayTracing]),
                 LaunchGraphicsOffer(graphics: .dxmt, options: [.metalFxSpatial, .lowLatency]),
-            ], lowestRenderPercent: nil, gameMode: false, compatibility: true, frameCap: true,
+            ], lowestRenderPercent: nil, gameMode: true, compatibility: true, frameCap: true,
                emulateModes: true),
             LaunchEngineOffer(engine: .linux, translator: .fex, defaultGraphics: .dxmt,
                               graphics: [LaunchGraphicsOffer(graphics: .dxmt, options: [.lowLatency])],
