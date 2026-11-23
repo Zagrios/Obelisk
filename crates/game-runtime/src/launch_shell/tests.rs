@@ -1004,6 +1004,7 @@ pub(crate) async fn a_windows_launch_readies_its_prefix_before_it_asks_for_a_cre
         L::GAME,
         Path::new(&receipt.directory),
         crate::native::player_locale().as_deref(),
+        crate::launch_settings::display_rate(),
     )
     .settings;
     assert_eq!(

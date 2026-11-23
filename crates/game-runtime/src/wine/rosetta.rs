@@ -76,6 +76,7 @@ static FACTS: Facts = Facts {
             "CX_ACTIVE_GRAPHICS_BACKEND",
             "D3DM_SUPPORT_DXR",
             "WINE_D3D_CONFIG",
+            "D3DM_MAX_FPS",
             "CX_HIDE_BUILTIN_VERSION_RESOURCES",
             // The Game session adds these to the game's own.
             crate::input::SOCKET,
@@ -383,6 +384,10 @@ fn environment(config: &Config) -> HashMap<String, String> {
         // Direct3D 12 offers DirectX Raytracing unless D3DMetal is told not to.
         environment.insert("D3DM_SUPPORT_DXR".into(), "0".into());
     }
+    // D3DMetal's own frame cap; DXMT's is in its options.
+    if let Some(cap) = config.settings.frame_cap {
+        environment.insert("D3DM_MAX_FPS".into(), cap.to_string());
+    }
     // The profile's variables come last, so that they may replace Obelisk's
     // own for their game.
     environment.extend(config.settings.variables.clone());
@@ -393,9 +398,15 @@ fn environment(config: &Config) -> HashMap<String, String> {
     environment
 }
 
-/// Obelisk's own options for DXMT, as `key=value`.
-fn dxmt_options(_config: &Config) -> Vec<String> {
-    Vec::new()
+/// Obelisk's own options for DXMT, as `key=value`. They apply behind
+/// D3DMetal too, to the 32-bit programs DXMT renders there.
+fn dxmt_options(config: &Config) -> Vec<String> {
+    let mut options = Vec::new();
+    // Metal paces each Present to the cap, with or without vsync.
+    if let Some(cap) = config.settings.frame_cap {
+        options.push(format!("d3d11.preferredMaxFrameRate={cap}"));
+    }
+    options
 }
 
 /// One `DXMT_CONFIG` of Obelisk's `own` options and the `profile`'s: DXMT

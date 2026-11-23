@@ -26,6 +26,10 @@ pub struct LaunchSettings {
     pub performance_hud: bool,
     /// macOS may turn its Game Mode on for the game.
     pub game_mode: bool,
+    /// The most frames a second the game shows, for the screen it starts on;
+    /// None when uncapped.
+    #[uniffi(default = None)]
+    pub frame_cap: Option<u32>,
     /// What the player changed from what Obelisk knows of the game.
     pub choices: LaunchChoices,
     /// The engine the game runs on without choices.
@@ -55,6 +59,9 @@ pub struct LaunchChoices {
     pub performance_hud: bool,
     #[uniffi(default = None)]
     pub game_mode: Option<bool>,
+    /// The most frames a second, 0 for the screen's refresh rate.
+    #[uniffi(default = None)]
+    pub frame_cap: Option<u32>,
 }
 
 /// What runs a Windows game's Wine.
@@ -101,6 +108,9 @@ pub struct LaunchEngineOffer {
     /// Whether Wine's own Direct3D can render a game there, through OpenGL.
     #[uniffi(default = false)]
     pub compatibility: bool,
+    /// Whether it can cap a game's frame rate.
+    #[uniffi(default = false)]
+    pub frame_cap: bool,
 }
 
 /// One backend's offer on one engine.
@@ -120,6 +130,7 @@ impl From<View> for LaunchSettings {
             render_percent: view.settings.render_percent,
             performance_hud: view.settings.performance_hud,
             game_mode: view.settings.game_mode,
+            frame_cap: view.settings.frame_cap,
             choices: view.choices.into(),
             default_engine: view.default_engine.into(),
             engines: ENGINES
@@ -143,6 +154,7 @@ fn engine_offer(offer: &EngineOffer, default: Graphics) -> LaunchEngineOffer {
         lowest_render_percent: offer.lowest_render_percent,
         game_mode: offer.game_mode,
         compatibility: offer.compatibility,
+        frame_cap: offer.frame_cap,
     }
 }
 
@@ -170,6 +182,7 @@ impl From<Choices> for LaunchChoices {
             render_percent: choices.render_percent,
             performance_hud: choices.performance_hud,
             game_mode: choices.game_mode,
+            frame_cap: choices.frame_cap,
         }
     }
 }
@@ -185,8 +198,16 @@ impl From<LaunchChoices> for launch_settings::Choices {
             render_percent: choices.render_percent,
             performance_hud: choices.performance_hud,
             game_mode: choices.game_mode,
+            frame_cap: choices.frame_cap,
         }
     }
+}
+
+/// Keeps the refresh rate of the Mac's main screen, in hertz, which the frame
+/// caps of the games launched from now on divide; 0 while it is unknown.
+#[uniffi::export]
+pub fn set_display_refresh_rate(hertz: u32) {
+    launch_settings::set_display_rate(hertz);
 }
 
 impl From<Engine> for LaunchEngine {
@@ -236,6 +257,7 @@ mod tests {
             std::path::Path::new("/nowhere"),
             profile::Game::Steam { app_id: 42 },
             std::path::Path::new("/nowhere"),
+            None,
             None,
         );
 
@@ -288,6 +310,7 @@ mod tests {
                 profile::Game::Steam { app_id: 42 },
                 std::path::Path::new("/nowhere"),
                 None,
+                None,
                 LaunchChoices {
                     engine,
                     compatibility: Some(true),
@@ -310,6 +333,30 @@ mod tests {
     }
 
     #[test]
+    fn a_frame_cap_crosses_as_chosen_and_as_the_game_runs() {
+        let library = tempfile::tempdir().unwrap();
+        let view = launch_settings::choose(
+            library.path(),
+            profile::Game::Steam { app_id: 42 },
+            std::path::Path::new("/nowhere"),
+            None,
+            Some(144),
+            LaunchChoices {
+                frame_cap: Some(60),
+                ..LaunchChoices::default()
+            }
+            .into(),
+        )
+        .unwrap();
+
+        let settings = LaunchSettings::from(view);
+
+        assert_eq!(settings.frame_cap, Some(48));
+        assert_eq!(settings.choices.frame_cap, Some(60));
+        assert!(settings.engines[0].frame_cap);
+    }
+
+    #[test]
     fn a_render_resolution_crosses_both_ways_and_only_the_linux_engine_keeps_it() {
         let library = tempfile::tempdir().unwrap();
         let choose = |choices: LaunchChoices| {
@@ -317,6 +364,7 @@ mod tests {
                 library.path(),
                 profile::Game::Steam { app_id: 42 },
                 std::path::Path::new("/nowhere"),
+                None,
                 None,
                 choices.into(),
             )

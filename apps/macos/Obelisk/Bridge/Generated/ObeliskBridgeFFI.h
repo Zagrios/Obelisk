@@ -1129,6 +1129,11 @@ RustBuffer uniffi_obelisk_bridge_fn_func_gog_login_url(RustCallStatus *_Nonnull 
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_FUNC_SET_DISPLAY_REFRESH_RATE
+#define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_FUNC_SET_DISPLAY_REFRESH_RATE
+void uniffi_obelisk_bridge_fn_func_set_display_refresh_rate(uint32_t hertz, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_FUNC_END_ORPHANED_WINDOWS_GAMES
 #define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_FUNC_END_ORPHANED_WINDOWS_GAMES
 uint32_t uniffi_obelisk_bridge_fn_func_end_orphaned_windows_games(RustBuffer locations, RustCallStatus *_Nonnull out_status
@@ -1481,6 +1486,12 @@ uint16_t uniffi_obelisk_bridge_checksum_func_gog_is_login_redirect(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_FUNC_GOG_LOGIN_URL
 #define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_FUNC_GOG_LOGIN_URL
 uint16_t uniffi_obelisk_bridge_checksum_func_gog_login_url(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_FUNC_SET_DISPLAY_REFRESH_RATE
+#define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_FUNC_SET_DISPLAY_REFRESH_RATE
+uint16_t uniffi_obelisk_bridge_checksum_func_set_display_refresh_rate(void
     
 );
 #endif

@@ -112,6 +112,9 @@ struct DeveloperModal: Identifiable {
                 symbol: "slider.horizontal.3",
                 variants: [
                     Variant("Loaded") { $0.launchSettings { DeveloperModals.launchSettings() } },
+                    Variant("Frame cap") {
+                        $0.launchSettings { DeveloperModals.launchSettings(LaunchChoices(frameCap: 60)) }
+                    },
                     Variant("Compatibility mode") {
                         $0.launchSettings { DeveloperModals.launchSettings(LaunchChoices(compatibility: true)) }
                     },
@@ -365,7 +368,7 @@ final class DeveloperModals {
             LaunchEngineOffer(engine: .rosetta, translator: .rosetta, defaultGraphics: .d3dMetal, graphics: [
                 LaunchGraphicsOffer(graphics: .d3dMetal, options: [.rayTracing]),
                 LaunchGraphicsOffer(graphics: .dxmt, options: []),
-            ], lowestRenderPercent: nil, gameMode: false, compatibility: true),
+            ], lowestRenderPercent: nil, gameMode: false, compatibility: true, frameCap: true),
             LaunchEngineOffer(engine: .linux, translator: .fex, defaultGraphics: .dxmt,
                               graphics: [LaunchGraphicsOffer(graphics: .dxmt, options: [])],
                               lowestRenderPercent: 1, gameMode: true),
@@ -380,6 +383,7 @@ final class DeveloperModals {
                               compatibility: offer.compatibility && choices.compatibility == true,
                               renderPercent: renderPercent, performanceHud: choices.performanceHud,
                               gameMode: !offer.gameMode || choices.gameMode ?? true,
+                              frameCap: offer.frameCap ? choices.frameCap.map { $0 == FrameCap.display ? 120 : $0 } : nil,
                               choices: choices, defaultEngine: .rosetta, engines: engines)
     }
 

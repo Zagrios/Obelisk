@@ -208,6 +208,9 @@ impl Config {
         if !self.settings.game_mode {
             header.push_str(" game_mode=off");
         }
+        if let Some(cap) = self.settings.frame_cap {
+            header.push_str(&format!(" frame_cap={cap}"));
+        }
         // Only a development runtime has no manifest.
         let voile = crate::voile::release_of(&self.runtime);
         header.push_str(&format!(

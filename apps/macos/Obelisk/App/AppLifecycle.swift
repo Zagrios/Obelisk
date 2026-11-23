@@ -29,6 +29,7 @@ final class AppLifecycle: NSObject, NSApplicationDelegate {
     private var windowClosing: NSObjectProtocol?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Self.tellDisplayRate()
         // An Obelisk that died took its games' sessions along, but Wine's
         // Windows processes froze on their own. None of them can belong to
         // this Obelisk yet.
@@ -52,6 +53,16 @@ final class AppLifecycle: NSObject, NSApplicationDelegate {
                 if others.isEmpty { NSApp.setActivationPolicy(.accessory) }
             }
         }
+    }
+
+    /// Frame caps divide the main screen's refresh rate, which changes with the screens.
+    func applicationDidChangeScreenParameters(_ notification: Notification) {
+        Self.tellDisplayRate()
+    }
+
+    private static func tellDisplayRate() {
+        let rate = NSScreen.screens.first?.maximumFramesPerSecond ?? 0
+        setDisplayRefreshRate(hertz: UInt32(clamping: rate))
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

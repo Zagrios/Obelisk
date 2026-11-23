@@ -7093,13 +7093,20 @@ public struct LaunchChoices: Equatable, Hashable {
     public var renderPercent: UInt32?
     public var performanceHud: Bool
     public var gameMode: Bool?
+    /**
+     * The most frames a second, 0 for the screen's refresh rate.
+     */
+    public var frameCap: UInt32?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
     public init(
         /**
          * What the player adds to the game's command line, as typed.
-         */arguments: String? = nil, engine: LaunchEngine? = nil, graphics: LaunchGraphics? = nil, rayTracing: Bool? = nil, compatibility: Bool? = nil, renderPercent: UInt32? = nil, performanceHud: Bool = false, gameMode: Bool? = nil) {
+         */arguments: String? = nil, engine: LaunchEngine? = nil, graphics: LaunchGraphics? = nil, rayTracing: Bool? = nil, compatibility: Bool? = nil, renderPercent: UInt32? = nil, performanceHud: Bool = false, gameMode: Bool? = nil, 
+        /**
+         * The most frames a second, 0 for the screen's refresh rate.
+         */frameCap: UInt32? = nil) {
         self.arguments = arguments
         self.engine = engine
         self.graphics = graphics
@@ -7108,6 +7115,7 @@ public struct LaunchChoices: Equatable, Hashable {
         self.renderPercent = renderPercent
         self.performanceHud = performanceHud
         self.gameMode = gameMode
+        self.frameCap = frameCap
     }
 
     
@@ -7133,7 +7141,8 @@ public struct FfiConverterTypeLaunchChoices: FfiConverterRustBuffer {
                 compatibility: FfiConverterOptionBool.read(from: &buf), 
                 renderPercent: FfiConverterOptionUInt32.read(from: &buf), 
                 performanceHud: FfiConverterBool.read(from: &buf), 
-                gameMode: FfiConverterOptionBool.read(from: &buf)
+                gameMode: FfiConverterOptionBool.read(from: &buf), 
+                frameCap: FfiConverterOptionUInt32.read(from: &buf)
         )
     }
 
@@ -7146,6 +7155,7 @@ public struct FfiConverterTypeLaunchChoices: FfiConverterRustBuffer {
         FfiConverterOptionUInt32.write(value.renderPercent, into: &buf)
         FfiConverterBool.write(value.performanceHud, into: &buf)
         FfiConverterOptionBool.write(value.gameMode, into: &buf)
+        FfiConverterOptionUInt32.write(value.frameCap, into: &buf)
     }
 }
 
@@ -7189,6 +7199,10 @@ public struct LaunchEngineOffer: Equatable, Hashable {
      * Whether Wine's own Direct3D can render a game there, through OpenGL.
      */
     public var compatibility: Bool
+    /**
+     * Whether it can cap a game's frame rate.
+     */
+    public var frameCap: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -7205,7 +7219,10 @@ public struct LaunchEngineOffer: Equatable, Hashable {
          */gameMode: Bool, 
         /**
          * Whether Wine's own Direct3D can render a game there, through OpenGL.
-         */compatibility: Bool = false) {
+         */compatibility: Bool = false, 
+        /**
+         * Whether it can cap a game's frame rate.
+         */frameCap: Bool = false) {
         self.engine = engine
         self.translator = translator
         self.defaultGraphics = defaultGraphics
@@ -7213,6 +7230,7 @@ public struct LaunchEngineOffer: Equatable, Hashable {
         self.lowestRenderPercent = lowestRenderPercent
         self.gameMode = gameMode
         self.compatibility = compatibility
+        self.frameCap = frameCap
     }
 
     
@@ -7237,7 +7255,8 @@ public struct FfiConverterTypeLaunchEngineOffer: FfiConverterRustBuffer {
                 graphics: FfiConverterSequenceTypeLaunchGraphicsOffer.read(from: &buf), 
                 lowestRenderPercent: FfiConverterOptionUInt32.read(from: &buf), 
                 gameMode: FfiConverterBool.read(from: &buf), 
-                compatibility: FfiConverterBool.read(from: &buf)
+                compatibility: FfiConverterBool.read(from: &buf), 
+                frameCap: FfiConverterBool.read(from: &buf)
         )
     }
 
@@ -7249,6 +7268,7 @@ public struct FfiConverterTypeLaunchEngineOffer: FfiConverterRustBuffer {
         FfiConverterOptionUInt32.write(value.lowestRenderPercent, into: &buf)
         FfiConverterBool.write(value.gameMode, into: &buf)
         FfiConverterBool.write(value.compatibility, into: &buf)
+        FfiConverterBool.write(value.frameCap, into: &buf)
     }
 }
 
@@ -7354,6 +7374,11 @@ public struct LaunchSettings: Equatable, Hashable {
      */
     public var gameMode: Bool
     /**
+     * The most frames a second the game shows, for the screen it starts on;
+     * None when uncapped.
+     */
+    public var frameCap: UInt32?
+    /**
      * What the player changed from what Obelisk knows of the game.
      */
     public var choices: LaunchChoices
@@ -7387,6 +7412,10 @@ public struct LaunchSettings: Equatable, Hashable {
          * macOS may turn its Game Mode on for the game.
          */gameMode: Bool, 
         /**
+         * The most frames a second the game shows, for the screen it starts on;
+         * None when uncapped.
+         */frameCap: UInt32? = nil, 
+        /**
          * What the player changed from what Obelisk knows of the game.
          */choices: LaunchChoices, 
         /**
@@ -7403,6 +7432,7 @@ public struct LaunchSettings: Equatable, Hashable {
         self.renderPercent = renderPercent
         self.performanceHud = performanceHud
         self.gameMode = gameMode
+        self.frameCap = frameCap
         self.choices = choices
         self.defaultEngine = defaultEngine
         self.engines = engines
@@ -7431,6 +7461,7 @@ public struct FfiConverterTypeLaunchSettings: FfiConverterRustBuffer {
                 renderPercent: FfiConverterUInt32.read(from: &buf), 
                 performanceHud: FfiConverterBool.read(from: &buf), 
                 gameMode: FfiConverterBool.read(from: &buf), 
+                frameCap: FfiConverterOptionUInt32.read(from: &buf), 
                 choices: FfiConverterTypeLaunchChoices.read(from: &buf), 
                 defaultEngine: FfiConverterTypeLaunchEngine.read(from: &buf), 
                 engines: FfiConverterSequenceTypeLaunchEngineOffer.read(from: &buf)
@@ -7445,6 +7476,7 @@ public struct FfiConverterTypeLaunchSettings: FfiConverterRustBuffer {
         FfiConverterUInt32.write(value.renderPercent, into: &buf)
         FfiConverterBool.write(value.performanceHud, into: &buf)
         FfiConverterBool.write(value.gameMode, into: &buf)
+        FfiConverterOptionUInt32.write(value.frameCap, into: &buf)
         FfiConverterTypeLaunchChoices.write(value.choices, into: &buf)
         FfiConverterTypeLaunchEngine.write(value.defaultEngine, into: &buf)
         FfiConverterSequenceTypeLaunchEngineOffer.write(value.engines, into: &buf)
@@ -15386,6 +15418,17 @@ public func gogLoginUrl() -> String  {
 })
 }
 /**
+ * Keeps the refresh rate of the Mac's main screen, in hertz, which the frame
+ * caps of the games launched from now on divide; 0 while it is unknown.
+ */
+public func setDisplayRefreshRate(hertz: UInt32)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_obelisk_bridge_fn_func_set_display_refresh_rate(
+        FfiConverterUInt32.lower(hertz),uniffiCallStatus
+    )
+}
+}
+/**
  * Ends the Windows game processes an Obelisk that died left frozen. Runs
  * once at startup, before any launch.
  */
@@ -15512,6 +15555,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_func_gog_login_url() != 21271) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_func_set_display_refresh_rate() != 4347) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_func_end_orphaned_windows_games() != 9000) {

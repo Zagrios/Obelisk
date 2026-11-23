@@ -37,7 +37,7 @@ pub(crate) fn windows_of(
     game: crate::profile::Game<'_>,
     install: &Path,
 ) -> Installation {
-    let launch_settings = crate::launch_settings::of(&locations.library, game, install, None);
+    let launch_settings = crate::launch_settings::of(&locations.library, game, install, None, None);
     Installation::new(locations, game, install, launch_settings).unwrap()
 }
 
@@ -456,7 +456,8 @@ fn a_missing_runtime_is_reported_before_any_prefix_is_created_on_either_engine()
             engine: Some(offer.engine),
             ..Default::default()
         };
-        crate::launch_settings::choose(&locations.library, OTHER, &install, None, choices).unwrap();
+        crate::launch_settings::choose(&locations.library, OTHER, &install, None, None, choices)
+            .unwrap();
         let windows = windows_of(&locations, OTHER, &install);
 
         assert!(matches!(
@@ -796,6 +797,33 @@ fn a_game_s_backend_comes_before_wine_s_own_dlls_with_dxmt_behind_d3dmetal() {
 }
 
 #[test]
+fn a_frame_cap_reaches_d3dmetal_and_dxmt_before_the_profile_s_dxmt_options() {
+    let (_directory, root) = installation();
+    let config = config(&root);
+    assert!(!environment(&config).contains_key("DXMT_CONFIG"));
+    let capped = Config {
+        settings: Settings {
+            frame_cap: Some(60),
+            variables: BTreeMap::from([(
+                "DXMT_CONFIG".to_owned(),
+                "d3d11.metalSpatialUpscaleFactor=1.5".to_owned(),
+            )]),
+            ..config.settings.clone()
+        },
+        ..config
+    };
+
+    let environment = environment(&capped);
+
+    assert_eq!(environment["D3DM_MAX_FPS"], "60");
+    assert_eq!(
+        environment["DXMT_CONFIG"],
+        "d3d11.preferredMaxFrameRate=60;d3d11.metalSpatialUpscaleFactor=1.5"
+    );
+    assert!(capped.log_header().contains(" frame_cap=60 "));
+}
+
+#[test]
 fn compatibility_mode_leaves_direct3d_to_wine_s_own_over_opengl() {
     let (_directory, root) = installation();
     let config = config(&root);
@@ -934,7 +962,8 @@ fn launch_settings_move_a_game_to_the_engine_and_backend_its_player_chose() {
         performance_hud: true,
         ..Default::default()
     };
-    crate::launch_settings::choose(&locations.library, OTHER, &install, None, choices).unwrap();
+    crate::launch_settings::choose(&locations.library, OTHER, &install, None, None, choices)
+        .unwrap();
 
     let windows = windows_of(&locations, OTHER, &install);
 
@@ -1364,7 +1393,7 @@ fn a_windows_installation_runs_in_the_prefix_named_after_its_folder_whatever_the
         );
     }
     let root = Path::new("/");
-    let launch_settings = crate::launch_settings::of(&locations.library, OTHER, root, None);
+    let launch_settings = crate::launch_settings::of(&locations.library, OTHER, root, None, None);
     assert!(
         Installation::new(&locations, OTHER, root, launch_settings).is_err(),
         "no folder names no prefix"
@@ -1423,6 +1452,7 @@ fn a_configuration_reaches_its_game_session_whole() {
             performance_hud: true,
             render_percent: 50,
             game_mode: false,
+            frame_cap: Some(60),
             locale: Some("it_IT".into()),
         },
     };
@@ -1437,6 +1467,13 @@ fn a_configuration_reaches_its_game_session_whole() {
             "compatibility",
             Settings {
                 compatibility: false,
+                ..config.settings.clone()
+            },
+        ),
+        (
+            "frame_cap",
+            Settings {
+                frame_cap: None,
                 ..config.settings.clone()
             },
         ),
@@ -1542,8 +1579,15 @@ fn uninstalling_removes_both_engines_prefixes_and_the_launch_settings() {
         engine: Some(Engine::Rosetta),
         ..Default::default()
     };
-    crate::launch_settings::choose(&locations.library, ELDEN_RING, &install, None, choices)
-        .unwrap();
+    crate::launch_settings::choose(
+        &locations.library,
+        ELDEN_RING,
+        &install,
+        None,
+        None,
+        choices,
+    )
+    .unwrap();
     let settings = locations
         .library
         .join("LaunchSettings/steam-1245620-windows.json");

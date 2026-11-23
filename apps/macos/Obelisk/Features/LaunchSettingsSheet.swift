@@ -228,6 +228,10 @@ struct LaunchSettingsSheet: View {
                                 ObeliskCardDivider()
                                 renderPercentRow(settings, lowest: lowest)
                             }
+                            if model.engineOffer?.frameCap == true, !settings.compatibility {
+                                ObeliskCardDivider()
+                                frameCapRow(settings)
+                            }
                             ObeliskCardDivider()
                             performanceHudRow(settings)
                         }
@@ -381,6 +385,33 @@ struct LaunchSettingsSheet: View {
         }
     }
 
+    private func frameCapRow(_ settings: LaunchSettings) -> some View {
+        ObeliskRow(title: L10n.string("ui.launch_settings.frame_cap")) {
+            SymbolTile(name: "speedometer", colors: TileColors.gold)
+        } detail: {
+            Text(Self.frameCapDetail(settings))
+        } accessory: {
+            GlassMenuPicker(title: L10n.string("ui.launch_settings.frame_cap"),
+                            value: FrameCap.name(of: settings.choices.frameCap),
+                            selection: Binding(get: { settings.choices.frameCap },
+                                               set: { cap in model.choose { $0.frameCap = cap } }),
+                            identifier: "launch-settings-frame-cap") {
+                ForEach(FrameCap.choices, id: \.self) { cap in
+                    Text(FrameCap.name(of: cap)).tag(cap)
+                }
+            }
+        }
+    }
+
+    /// What the limit is for, and the rate it comes to on the main display,
+    /// where a game starts, when that is not the one picked: 60 is 50 at 100 Hz.
+    private static func frameCapDetail(_ settings: LaunchSettings) -> String {
+        guard let fitted = settings.frameCap, fitted != settings.choices.frameCap else {
+            return L10n.string("ui.launch_settings.frame_cap_detail")
+        }
+        return L10n.string("ui.launch_settings.frame_cap_detail_fitted", Int(fitted))
+    }
+
     private func performanceHudRow(_ settings: LaunchSettings) -> some View {
         ObeliskRow(title: L10n.string("ui.launch_settings.performance_hud")) {
             SymbolTile(name: "gauge.with.needle.fill", colors: TileColors.violet)
@@ -482,6 +513,24 @@ enum GraphicsRenderer: Hashable {
 
     init(_ settings: LaunchSettings) {
         self = settings.compatibility ? .compatibility : .backend(settings.graphics)
+    }
+}
+
+/// The frame caps the player picks from, in frames a second: none, two
+/// fixed ones and the screen's refresh rate. Rust holds the game to the
+/// refresh rate over the fewest whole refreshes a frame that stay at or
+/// below the one picked.
+enum FrameCap {
+    /// The screen's refresh rate, as Rust spells it.
+    static let display: UInt32 = 0
+    static let choices: [UInt32?] = [nil, 30, 60, display]
+
+    static func name(of cap: UInt32?) -> String {
+        switch cap {
+        case nil: L10n.string("ui.launch_settings.frame_cap.off")
+        case display: L10n.string("ui.launch_settings.frame_cap.display")
+        case let cap?: L10n.string("ui.launch_settings.frame_cap.fps", Int(cap))
+        }
     }
 }
 

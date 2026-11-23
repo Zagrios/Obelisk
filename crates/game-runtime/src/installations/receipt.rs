@@ -83,6 +83,7 @@ impl<S: Storefront> Receipt<S> {
             S::profile_game(&self.product),
             Path::new(&self.directory),
             crate::native::player_locale().as_deref(),
+            crate::launch_settings::display_rate(),
         )
     }
 
@@ -98,6 +99,7 @@ impl<S: Storefront> Receipt<S> {
             S::profile_game(&self.product),
             Path::new(&self.directory),
             crate::native::player_locale().as_deref(),
+            crate::launch_settings::display_rate(),
             choices,
         )
     }
