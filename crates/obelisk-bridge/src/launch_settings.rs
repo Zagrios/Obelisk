@@ -16,6 +16,10 @@ pub struct LaunchSettings {
     pub graphics: LaunchGraphics,
     /// Direct3D 12 offers DirectX Raytracing, on D3DMetal.
     pub ray_tracing: bool,
+    /// Wine's own Direct3D renders the game through OpenGL instead of
+    /// `graphics`.
+    #[uniffi(default = false)]
+    pub compatibility: bool,
     /// The share of the screen's pixels the game renders at, in whole percent.
     pub render_percent: u32,
     /// Metal's Performance HUD shows over the game, whatever renders it.
@@ -43,6 +47,8 @@ pub struct LaunchChoices {
     pub graphics: Option<LaunchGraphics>,
     #[uniffi(default = None)]
     pub ray_tracing: Option<bool>,
+    #[uniffi(default = None)]
+    pub compatibility: Option<bool>,
     #[uniffi(default = None)]
     pub render_percent: Option<u32>,
     #[uniffi(default = false)]
@@ -92,6 +98,9 @@ pub struct LaunchEngineOffer {
     pub lowest_render_percent: Option<u32>,
     /// Whether it can keep macOS's Game Mode off a game.
     pub game_mode: bool,
+    /// Whether Wine's own Direct3D can render a game there, through OpenGL.
+    #[uniffi(default = false)]
+    pub compatibility: bool,
 }
 
 /// One backend's offer on one engine.
@@ -107,6 +116,7 @@ impl From<View> for LaunchSettings {
             engine: view.settings.engine.into(),
             graphics: view.settings.graphics.into(),
             ray_tracing: view.settings.options.ray_tracing,
+            compatibility: view.settings.compatibility,
             render_percent: view.settings.render_percent,
             performance_hud: view.settings.performance_hud,
             game_mode: view.settings.game_mode,
@@ -132,6 +142,7 @@ fn engine_offer(offer: &EngineOffer, default: Graphics) -> LaunchEngineOffer {
         graphics: offer.graphics.iter().map(graphics_offer).collect(),
         lowest_render_percent: offer.lowest_render_percent,
         game_mode: offer.game_mode,
+        compatibility: offer.compatibility,
     }
 }
 
@@ -155,6 +166,7 @@ impl From<Choices> for LaunchChoices {
             engine: choices.engine.map(Into::into),
             graphics: choices.graphics.map(Into::into),
             ray_tracing: choices.ray_tracing,
+            compatibility: choices.compatibility,
             render_percent: choices.render_percent,
             performance_hud: choices.performance_hud,
             game_mode: choices.game_mode,
@@ -169,6 +181,7 @@ impl From<LaunchChoices> for launch_settings::Choices {
             engine: choices.engine.map(Into::into),
             graphics: choices.graphics.map(Into::into),
             ray_tracing: choices.ray_tracing,
+            compatibility: choices.compatibility,
             render_percent: choices.render_percent,
             performance_hud: choices.performance_hud,
             game_mode: choices.game_mode,
@@ -264,6 +277,36 @@ mod tests {
             .map(|offer| offer.lowest_render_percent)
             .collect();
         assert_eq!(lowest, [None, Some(1)]);
+    }
+
+    #[test]
+    fn compatibility_mode_crosses_both_ways_on_rosetta_alone() {
+        let library = tempfile::tempdir().unwrap();
+        let choose = |engine| {
+            let view = launch_settings::choose(
+                library.path(),
+                profile::Game::Steam { app_id: 42 },
+                std::path::Path::new("/nowhere"),
+                None,
+                LaunchChoices {
+                    engine,
+                    compatibility: Some(true),
+                    ..LaunchChoices::default()
+                }
+                .into(),
+            )
+            .unwrap();
+            LaunchSettings::from(view)
+        };
+
+        let rosetta = choose(None);
+        assert!(rosetta.compatibility);
+        assert_eq!(rosetta.choices.compatibility, Some(true));
+        assert!(rosetta.engines[0].compatibility);
+        let linux = choose(Some(LaunchEngine::Linux));
+        assert!(!linux.compatibility);
+        assert_eq!(linux.choices.compatibility, None);
+        assert!(!linux.engines[1].compatibility);
     }
 
     #[test]

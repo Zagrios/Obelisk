@@ -7089,6 +7089,7 @@ public struct LaunchChoices: Equatable, Hashable {
     public var engine: LaunchEngine?
     public var graphics: LaunchGraphics?
     public var rayTracing: Bool?
+    public var compatibility: Bool?
     public var renderPercent: UInt32?
     public var performanceHud: Bool
     public var gameMode: Bool?
@@ -7098,11 +7099,12 @@ public struct LaunchChoices: Equatable, Hashable {
     public init(
         /**
          * What the player adds to the game's command line, as typed.
-         */arguments: String? = nil, engine: LaunchEngine? = nil, graphics: LaunchGraphics? = nil, rayTracing: Bool? = nil, renderPercent: UInt32? = nil, performanceHud: Bool = false, gameMode: Bool? = nil) {
+         */arguments: String? = nil, engine: LaunchEngine? = nil, graphics: LaunchGraphics? = nil, rayTracing: Bool? = nil, compatibility: Bool? = nil, renderPercent: UInt32? = nil, performanceHud: Bool = false, gameMode: Bool? = nil) {
         self.arguments = arguments
         self.engine = engine
         self.graphics = graphics
         self.rayTracing = rayTracing
+        self.compatibility = compatibility
         self.renderPercent = renderPercent
         self.performanceHud = performanceHud
         self.gameMode = gameMode
@@ -7128,6 +7130,7 @@ public struct FfiConverterTypeLaunchChoices: FfiConverterRustBuffer {
                 engine: FfiConverterOptionTypeLaunchEngine.read(from: &buf), 
                 graphics: FfiConverterOptionTypeLaunchGraphics.read(from: &buf), 
                 rayTracing: FfiConverterOptionBool.read(from: &buf), 
+                compatibility: FfiConverterOptionBool.read(from: &buf), 
                 renderPercent: FfiConverterOptionUInt32.read(from: &buf), 
                 performanceHud: FfiConverterBool.read(from: &buf), 
                 gameMode: FfiConverterOptionBool.read(from: &buf)
@@ -7139,6 +7142,7 @@ public struct FfiConverterTypeLaunchChoices: FfiConverterRustBuffer {
         FfiConverterOptionTypeLaunchEngine.write(value.engine, into: &buf)
         FfiConverterOptionTypeLaunchGraphics.write(value.graphics, into: &buf)
         FfiConverterOptionBool.write(value.rayTracing, into: &buf)
+        FfiConverterOptionBool.write(value.compatibility, into: &buf)
         FfiConverterOptionUInt32.write(value.renderPercent, into: &buf)
         FfiConverterBool.write(value.performanceHud, into: &buf)
         FfiConverterOptionBool.write(value.gameMode, into: &buf)
@@ -7181,6 +7185,10 @@ public struct LaunchEngineOffer: Equatable, Hashable {
      * Whether it can keep macOS's Game Mode off a game.
      */
     public var gameMode: Bool
+    /**
+     * Whether Wine's own Direct3D can render a game there, through OpenGL.
+     */
+    public var compatibility: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -7194,13 +7202,17 @@ public struct LaunchEngineOffer: Equatable, Hashable {
          */lowestRenderPercent: UInt32?, 
         /**
          * Whether it can keep macOS's Game Mode off a game.
-         */gameMode: Bool) {
+         */gameMode: Bool, 
+        /**
+         * Whether Wine's own Direct3D can render a game there, through OpenGL.
+         */compatibility: Bool = false) {
         self.engine = engine
         self.translator = translator
         self.defaultGraphics = defaultGraphics
         self.graphics = graphics
         self.lowestRenderPercent = lowestRenderPercent
         self.gameMode = gameMode
+        self.compatibility = compatibility
     }
 
     
@@ -7224,7 +7236,8 @@ public struct FfiConverterTypeLaunchEngineOffer: FfiConverterRustBuffer {
                 defaultGraphics: FfiConverterTypeLaunchGraphics.read(from: &buf), 
                 graphics: FfiConverterSequenceTypeLaunchGraphicsOffer.read(from: &buf), 
                 lowestRenderPercent: FfiConverterOptionUInt32.read(from: &buf), 
-                gameMode: FfiConverterBool.read(from: &buf)
+                gameMode: FfiConverterBool.read(from: &buf), 
+                compatibility: FfiConverterBool.read(from: &buf)
         )
     }
 
@@ -7235,6 +7248,7 @@ public struct FfiConverterTypeLaunchEngineOffer: FfiConverterRustBuffer {
         FfiConverterSequenceTypeLaunchGraphicsOffer.write(value.graphics, into: &buf)
         FfiConverterOptionUInt32.write(value.lowestRenderPercent, into: &buf)
         FfiConverterBool.write(value.gameMode, into: &buf)
+        FfiConverterBool.write(value.compatibility, into: &buf)
     }
 }
 
@@ -7323,6 +7337,11 @@ public struct LaunchSettings: Equatable, Hashable {
      */
     public var rayTracing: Bool
     /**
+     * Wine's own Direct3D renders the game through OpenGL instead of
+     * `graphics`.
+     */
+    public var compatibility: Bool
+    /**
      * The share of the screen's pixels the game renders at, in whole percent.
      */
     public var renderPercent: UInt32
@@ -7355,6 +7374,10 @@ public struct LaunchSettings: Equatable, Hashable {
          * Direct3D 12 offers DirectX Raytracing, on D3DMetal.
          */rayTracing: Bool, 
         /**
+         * Wine's own Direct3D renders the game through OpenGL instead of
+         * `graphics`.
+         */compatibility: Bool = false, 
+        /**
          * The share of the screen's pixels the game renders at, in whole percent.
          */renderPercent: UInt32, 
         /**
@@ -7376,6 +7399,7 @@ public struct LaunchSettings: Equatable, Hashable {
         self.engine = engine
         self.graphics = graphics
         self.rayTracing = rayTracing
+        self.compatibility = compatibility
         self.renderPercent = renderPercent
         self.performanceHud = performanceHud
         self.gameMode = gameMode
@@ -7403,6 +7427,7 @@ public struct FfiConverterTypeLaunchSettings: FfiConverterRustBuffer {
                 engine: FfiConverterTypeLaunchEngine.read(from: &buf), 
                 graphics: FfiConverterTypeLaunchGraphics.read(from: &buf), 
                 rayTracing: FfiConverterBool.read(from: &buf), 
+                compatibility: FfiConverterBool.read(from: &buf), 
                 renderPercent: FfiConverterUInt32.read(from: &buf), 
                 performanceHud: FfiConverterBool.read(from: &buf), 
                 gameMode: FfiConverterBool.read(from: &buf), 
@@ -7416,6 +7441,7 @@ public struct FfiConverterTypeLaunchSettings: FfiConverterRustBuffer {
         FfiConverterTypeLaunchEngine.write(value.engine, into: &buf)
         FfiConverterTypeLaunchGraphics.write(value.graphics, into: &buf)
         FfiConverterBool.write(value.rayTracing, into: &buf)
+        FfiConverterBool.write(value.compatibility, into: &buf)
         FfiConverterUInt32.write(value.renderPercent, into: &buf)
         FfiConverterBool.write(value.performanceHud, into: &buf)
         FfiConverterBool.write(value.gameMode, into: &buf)

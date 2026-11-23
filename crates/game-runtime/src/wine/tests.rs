@@ -796,6 +796,42 @@ fn a_game_s_backend_comes_before_wine_s_own_dlls_with_dxmt_behind_d3dmetal() {
 }
 
 #[test]
+fn compatibility_mode_leaves_direct3d_to_wine_s_own_over_opengl() {
+    let (_directory, root) = installation();
+    let config = config(&root);
+    backends_runtime(&config);
+    let compatibility = Config {
+        settings: Settings {
+            compatibility: true,
+            options: GraphicsOptions { ray_tracing: false },
+            ..config.settings.clone()
+        },
+        ..config
+    };
+
+    let environment = environment(&compatibility);
+
+    assert_eq!(environment["WINE_D3D_CONFIG"], "renderer=gl");
+    for name in [
+        "WINEDLLPATH_PREPEND",
+        "CX_ACTIVE_GRAPHICS_BACKEND",
+        "D3DM_SUPPORT_DXR",
+    ] {
+        assert!(!environment.contains_key(name), "{name}");
+    }
+    assert!(
+        Engine::Rosetta
+            .reserved()
+            .variables
+            .contains(&"WINE_D3D_CONFIG")
+    );
+    assert_eq!(
+        compatibility.log_header(),
+        "obelisk: engine=wine-macos graphics=wined3d voile=development\n"
+    );
+}
+
+#[test]
 fn a_runtime_with_d3dmetal_over_wine_s_dlls_searches_wine_s_folder_alone() {
     let (_directory, root) = installation();
     let config = config(&root);
@@ -1377,6 +1413,7 @@ fn a_configuration_reaches_its_game_session_whole() {
             engine: Engine::Linux,
             graphics: Graphics::Dxmt,
             options: GraphicsOptions::default(),
+            compatibility: true,
             executable: Some("Binaries/Game.exe".into()),
             bootstrapper: Some("Binaries/start_protected_game.exe".into()),
             profile_arguments: vec!["-windowed".into()],
@@ -1393,9 +1430,16 @@ fn a_configuration_reaches_its_game_session_whole() {
     let again: Config = serde_json::from_slice(&serde_json::to_vec(&config).unwrap()).unwrap();
 
     assert_eq!(again, config);
-    // A handoff that predates the locale, the render resolution or Game Mode
-    // still opens, without one.
+    // A handoff that predates the locale, the render resolution, Game Mode
+    // or a later setting still opens, without one.
     for (field, expected) in [
+        (
+            "compatibility",
+            Settings {
+                compatibility: false,
+                ..config.settings.clone()
+            },
+        ),
         (
             "locale",
             Settings {

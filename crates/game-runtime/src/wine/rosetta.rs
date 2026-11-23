@@ -75,6 +75,7 @@ static FACTS: Facts = Facts {
             "WINEDLLPATH_PREPEND",
             "CX_ACTIVE_GRAPHICS_BACKEND",
             "D3DM_SUPPORT_DXR",
+            "WINE_D3D_CONFIG",
             "CX_HIDE_BUILTIN_VERSION_RESOURCES",
             // The Game session adds these to the game's own.
             crate::input::SOCKET,
@@ -251,8 +252,12 @@ fn backends(config: &Config) -> Vec<PathBuf> {
 
 /// The folders Wine searches before its own for the game's DLLs: its
 /// backend's, then, behind D3DMetal, DXMT's for the 32-bit programs D3DMetal
-/// does not run.
+/// does not run. None in compatibility mode, where Wine's own Direct3D
+/// renders.
 fn graphics_folders(config: &Config) -> Vec<PathBuf> {
+    if config.settings.compatibility {
+        return Vec::new();
+    }
     match config.settings.graphics {
         Graphics::D3DMetal => backends(config),
         Graphics::Dxmt => dll_folders(config, &[DXMT_DLLS]),
@@ -272,6 +277,9 @@ fn dll_folders(config: &Config, folders: &[&str]) -> Vec<PathBuf> {
 /// it: Wine reports the hardware scheduling D3D12 expects from D3DMetal
 /// alone.
 fn active_graphics(config: &Config) -> Option<&'static str> {
+    if config.settings.compatibility {
+        return None;
+    }
     let carried = match config.settings.graphics {
         Graphics::D3DMetal => d3dmetal(config).is_some(),
         Graphics::Dxmt => config.runtime.join(DXMT_DLLS).is_dir(),
@@ -367,8 +375,12 @@ fn environment(config: &Config) -> HashMap<String, String> {
     if let Some(active) = active_graphics(config) {
         environment.insert("CX_ACTIVE_GRAPHICS_BACKEND".into(), active.into());
     }
-    // Direct3D 12 offers DirectX Raytracing unless D3DMetal is told not to.
-    if config.settings.graphics == Graphics::D3DMetal && !config.settings.options.ray_tracing {
+    if config.settings.compatibility {
+        // wined3d renders through OpenGL, as for Direct3D 9 games.
+        environment.insert("WINE_D3D_CONFIG".into(), "renderer=gl".into());
+    } else if config.settings.graphics == Graphics::D3DMetal && !config.settings.options.ray_tracing
+    {
+        // Direct3D 12 offers DirectX Raytracing unless D3DMetal is told not to.
         environment.insert("D3DM_SUPPORT_DXR".into(), "0".into());
     }
     // The profile's variables come last, so that they may replace Obelisk's

@@ -178,18 +178,22 @@ impl Config {
     /// reads the log, such as a bug report's reader. Of the arguments, only
     /// those its player adds: a storefront's may carry credentials.
     pub(crate) fn log_header(&self) -> String {
+        let graphics = match self.settings.compatibility {
+            true => "wined3d",
+            false => self.settings.graphics.name(),
+        };
         let mut header = format!(
-            "obelisk: engine={} graphics={}",
+            "obelisk: engine={} graphics={graphics}",
             self.adapter().facts().name,
-            self.settings.graphics.name()
         );
-        let ray_tracing = crate::launch_settings::offer(self.settings.engine)
-            .graphics(self.settings.graphics)
-            .is_some_and(|offer| {
-                offer
-                    .options
-                    .contains(&crate::launch_settings::GraphicsOption::RayTracing)
-            });
+        let ray_tracing = !self.settings.compatibility
+            && crate::launch_settings::offer(self.settings.engine)
+                .graphics(self.settings.graphics)
+                .is_some_and(|offer| {
+                    offer
+                        .options
+                        .contains(&crate::launch_settings::GraphicsOption::RayTracing)
+                });
         if ray_tracing {
             let state = if self.settings.options.ray_tracing {
                 "on"

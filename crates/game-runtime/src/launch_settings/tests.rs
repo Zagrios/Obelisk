@@ -115,6 +115,7 @@ fn every_kind_of_choices() -> [Choices; 5] {
             engine: Some(Engine::Rosetta),
             graphics: Some(Graphics::D3DMetal),
             ray_tracing: Some(true),
+            compatibility: Some(false),
             render_percent: Some(100),
             performance_hud: false,
             game_mode: Some(true),
@@ -779,6 +780,117 @@ fn the_engine_alone_is_the_launch_settings_engine() {
         );
         remove(&library, install).unwrap();
     }
+}
+
+#[test]
+fn only_rosetta_s_wine_renders_in_compatibility_mode_and_only_on_is_kept() {
+    assert!(offer(Engine::Rosetta).compatibility);
+    assert!(!offer(Engine::Linux).compatibility);
+    let with = |engine, compatibility| Choices {
+        engine: Some(engine),
+        compatibility,
+        ..Choices::default()
+    };
+
+    let rosetta = chosen(OTHER, with(Engine::Rosetta, Some(true)));
+    assert!(rosetta.settings.compatibility);
+    assert_eq!(rosetta.settings.graphics, Graphics::D3DMetal);
+    assert_eq!(rosetta.choices.compatibility, Some(true));
+
+    // The backend chosen beside it is kept for when it is turned off.
+    let dxmt = Choices {
+        graphics: Some(Graphics::Dxmt),
+        ..with(Engine::Rosetta, Some(true))
+    };
+    assert_eq!(
+        chosen(OTHER, dxmt.clone()).choices.graphics,
+        Some(Graphics::Dxmt)
+    );
+
+    let linux = chosen(OTHER, with(Engine::Linux, Some(true)));
+    assert!(!linux.settings.compatibility);
+    assert_eq!(linux.choices.compatibility, None);
+
+    let off = chosen(OTHER, with(Engine::Rosetta, Some(false)));
+    assert!(!off.settings.compatibility);
+    assert_eq!(off.choices, Choices::default());
+}
+
+/// `Choices` as Obelisk 0.6.4 (51755d4) reads a launch settings file.
+#[derive(Debug, Default, PartialEq, Deserialize)]
+#[serde(default)]
+struct ChoicesOf064 {
+    arguments: Option<String>,
+    engine: Option<Engine>,
+    graphics: Option<Graphics>,
+    ray_tracing: Option<bool>,
+    render_percent: Option<u32>,
+    performance_hud: bool,
+    game_mode: Option<bool>,
+}
+
+/// Choices that set every field, the newer ones too.
+fn every_choice() -> Choices {
+    Choices {
+        arguments: Some("-windowed".into()),
+        engine: Some(Engine::Rosetta),
+        graphics: Some(Graphics::Dxmt),
+        ray_tracing: Some(false),
+        compatibility: Some(true),
+        render_percent: Some(50),
+        performance_hud: true,
+        game_mode: Some(false),
+    }
+}
+
+#[test]
+fn a_file_with_the_newer_choices_still_opens_in_an_older_build_with_its_own_choices() {
+    let directory = tempfile::tempdir().unwrap();
+    let library = directory.path();
+    let choices = every_choice();
+    // Kept as chosen, not through `choose`, which drops what the engine does not offer.
+    save(library, Path::new("/games/game"), &choices).unwrap();
+    let file = fs::read(library.join("LaunchSettings/game.json")).unwrap();
+
+    let older: ChoicesOf064 = serde_json::from_slice(&file).unwrap();
+
+    assert_eq!(
+        older,
+        ChoicesOf064 {
+            arguments: choices.arguments.clone(),
+            engine: choices.engine,
+            graphics: choices.graphics,
+            ray_tracing: choices.ray_tracing,
+            render_percent: choices.render_percent,
+            performance_hud: choices.performance_hud,
+            game_mode: choices.game_mode,
+        }
+    );
+    assert_eq!(load(library, Path::new("/games/game")), choices);
+}
+
+#[test]
+fn a_file_of_an_older_build_opens_without_the_newer_choices() {
+    let directory = tempfile::tempdir().unwrap();
+    let library = directory.path();
+    write_choices_file(
+        library,
+        r#"{"arguments": "-windowed", "engine": "Linux", "graphics": "D3DMetal", "ray_tracing": false, "render_percent": 50, "performance_hud": true, "game_mode": false}"#,
+    );
+
+    assert_eq!(
+        load(library, Path::new("/games/game")),
+        Choices {
+            arguments: Some("-windowed".into()),
+            engine: Some(Engine::Linux),
+            graphics: Some(Graphics::D3DMetal),
+            ray_tracing: Some(false),
+            render_percent: Some(50),
+            performance_hud: true,
+            game_mode: Some(false),
+            ..Choices::default()
+        }
+    );
 }
 
 #[test]

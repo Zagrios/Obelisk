@@ -46638,6 +46638,112 @@
         }
       }
     },
+    "ui.launch_settings.graphics.compatibility": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenGL (Kompatibilität)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenGL (compatibility)"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenGL (compatibilidad)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenGL (compatibilité)"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenGL (compatibilità)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenGL（互換モード）"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenGL (compatibilidade)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenGL（兼容模式）"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.graphics.compatibility_detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Für DirectX-10- und -11-Spiele, die sonst nicht starten. Wine rendert sie über OpenGL, langsamer, und ohne DirectX 12."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "For DirectX 10 and 11 games that fail to start otherwise. Slower, through OpenGL, and without DirectX 12."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Para juegos DirectX 10 y 11 que no arrancan de otro modo. Wine los renderiza con OpenGL, más despacio y sin DirectX 12."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pour les jeux DirectX 10 et 11 qui ne démarrent pas autrement. Wine les affiche via OpenGL, plus lentement, et sans DirectX 12."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Per i giochi DirectX 10 e 11 che altrimenti non si avviano. Wine li renderizza con OpenGL, più lentamente e senza DirectX 12."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ほかの方法では起動しない DirectX 10/11 のゲーム向けです。Wine が OpenGL で描画するため遅くなり、DirectX 12 は使えません。"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Para jogos DirectX 10 e 11 que não abrem de outro jeito. O Wine os renderiza via OpenGL, mais devagar e sem DirectX 12."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "适用于无法以其他方式启动的 DirectX 10 和 11 游戏。Wine 通过 OpenGL 渲染，速度较慢，且不支持 DirectX 12。"
+          }
+        }
+      }
+    },
     "ui.launch_settings.ray_tracing": {
       "extractionState": "manual",
       "localizations": {

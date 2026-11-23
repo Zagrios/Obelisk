@@ -137,10 +137,25 @@ final class LaunchSettingsModel: Identifiable {
         settings.flatMap { settings in settings.engines.first { $0.engine == settings.engine } }
     }
 
-    /// What the chosen backend offers on the chosen engine.
+    /// What the chosen backend offers on the chosen engine; nothing in
+    /// compatibility mode, where Wine's own Direct3D renders.
     var graphicsOffer: LaunchGraphicsOffer? {
-        guard let settings else { return nil }
+        guard let settings, !settings.compatibility else { return nil }
         return engineOffer?.graphics.first { $0.graphics == settings.graphics }
+    }
+
+    /// Picks what renders the game: a backend, which ends compatibility
+    /// mode, or compatibility mode, which keeps the backend for later.
+    func choose(_ renderer: GraphicsRenderer) {
+        choose { choices in
+            switch renderer {
+            case .backend(let graphics):
+                choices.graphics = graphics
+                choices.compatibility = nil
+            case .compatibility:
+                choices.compatibility = true
+            }
+        }
     }
 }
 
@@ -316,20 +331,24 @@ struct LaunchSettingsSheet: View {
     @ViewBuilder
     private func graphicsRow(_ settings: LaunchSettings) -> some View {
         if let engine = model.engineOffer {
+            let renderer = GraphicsRenderer(settings)
             ObeliskRow(title: L10n.string("ui.launch_settings.backend")) {
                 SymbolTile(name: "square.3.layers.3d", colors: TileColors.green)
             } detail: {
-                Text(Self.detail(of: settings.graphics))
+                Text(Self.detail(of: renderer))
             } accessory: {
                 GlassMenuPicker(title: L10n.string("ui.launch_settings.backend"),
-                                value: marked(Self.name(of: settings.graphics),
-                                              isDefault: settings.graphics == engine.defaultGraphics),
-                                selection: Binding(get: { settings.graphics },
-                                                   set: { graphics in model.choose { $0.graphics = graphics } }),
+                                value: marked(Self.name(of: renderer),
+                                              isDefault: renderer == .backend(engine.defaultGraphics)),
+                                selection: Binding(get: { renderer }, set: { model.choose($0) }),
                                 identifier: "launch-settings-graphics") {
                     ForEach(engine.graphics, id: \.graphics) { offer in
                         Text(marked(Self.name(of: offer.graphics), isDefault: offer.graphics == engine.defaultGraphics))
-                            .tag(offer.graphics)
+                            .tag(GraphicsRenderer.backend(offer.graphics))
+                    }
+                    if engine.compatibility {
+                        Text(Self.name(of: GraphicsRenderer.compatibility))
+                            .tag(GraphicsRenderer.compatibility)
                     }
                 }
             }
@@ -437,6 +456,32 @@ struct LaunchSettingsSheet: View {
         case .d3dMetal: L10n.string("ui.launch_settings.graphics.d3dmetal_detail")
         case .dxmt: L10n.string("ui.launch_settings.graphics.dxmt_detail")
         }
+    }
+
+    static func name(of renderer: GraphicsRenderer) -> String {
+        switch renderer {
+        case .backend(let graphics): name(of: graphics)
+        case .compatibility: L10n.string("ui.launch_settings.graphics.compatibility")
+        }
+    }
+
+    static func detail(of renderer: GraphicsRenderer) -> String {
+        switch renderer {
+        case .backend(let graphics): detail(of: graphics)
+        case .compatibility: L10n.string("ui.launch_settings.graphics.compatibility_detail")
+        }
+    }
+}
+
+/// What renders a game's Direct3D, as the GPU menu offers it: a graphics
+/// backend, or Wine's own Direct3D through OpenGL, which Rust keeps apart
+/// from the backend.
+enum GraphicsRenderer: Hashable {
+    case backend(LaunchGraphics)
+    case compatibility
+
+    init(_ settings: LaunchSettings) {
+        self = settings.compatibility ? .compatibility : .backend(settings.graphics)
     }
 }
 

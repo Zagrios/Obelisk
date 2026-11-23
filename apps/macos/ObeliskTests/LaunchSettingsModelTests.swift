@@ -5,7 +5,8 @@ final class LaunchSettingsModelTests: XCTestCase {
     private static func settings(choices: LaunchChoices = LaunchChoices(),
                                  engine: LaunchEngine = .rosetta) -> LaunchSettings {
         LaunchSettings(
-            engine: engine, graphics: engine == .rosetta ? .d3dMetal : .dxmt, rayTracing: true,
+            engine: engine, graphics: engine == .rosetta ? choices.graphics ?? .d3dMetal : .dxmt, rayTracing: true,
+            compatibility: engine == .rosetta && choices.compatibility == true,
             renderPercent: engine == .linux ? choices.renderPercent ?? RenderPercent.native : RenderPercent.native,
             performanceHud: choices.performanceHud, gameMode: engine != .linux || choices.gameMode ?? true,
             choices: choices, defaultEngine: .rosetta,
@@ -16,7 +17,7 @@ final class LaunchSettingsModelTests: XCTestCase {
                         LaunchGraphicsOffer(graphics: .d3dMetal, options: [.rayTracing]),
                         LaunchGraphicsOffer(graphics: .dxmt, options: []),
                     ],
-                    lowestRenderPercent: nil, gameMode: false
+                    lowestRenderPercent: nil, gameMode: false, compatibility: true
                 ),
                 LaunchEngineOffer(
                     engine: .linux, translator: .fex, defaultGraphics: .dxmt,
@@ -52,6 +53,30 @@ final class LaunchSettingsModelTests: XCTestCase {
         XCTAssertEqual(model.engineOffer?.translator, .fex)
         XCTAssertEqual(model.graphicsOffer?.graphics, .dxmt)
         XCTAssertEqual(model.graphicsOffer?.options, [])
+    }
+
+    @MainActor
+    func testCompatibilityModeIsAThirdRendererAndABackendEndsIt() async throws {
+        var saved: [LaunchChoices] = []
+        let model = LaunchSettingsModel(
+            load: { Self.settings() },
+            save: { choices in
+                saved.append(choices)
+                return Self.settings(choices: choices, engine: choices.engine ?? .rosetta)
+            }
+        )
+        await model.appear()
+
+        model.choose(.compatibility)
+        try await waitUntil { model.settings?.compatibility == true }
+        XCTAssertEqual(saved.last, LaunchChoices(compatibility: true))
+        XCTAssertNil(model.graphicsOffer)
+        XCTAssertEqual(model.settings.map(GraphicsRenderer.init), .compatibility)
+
+        model.choose(.backend(.dxmt))
+        try await waitUntil { model.settings?.compatibility == false }
+        XCTAssertEqual(saved.last, LaunchChoices(graphics: .dxmt))
+        XCTAssertEqual(model.graphicsOffer?.graphics, .dxmt)
     }
 
     @MainActor

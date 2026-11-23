@@ -40,6 +40,10 @@ pub struct Settings {
     pub graphics: Graphics,
     /// What it asks of that backend.
     pub options: GraphicsOptions,
+    /// Wine's own Direct3D renders it instead, through OpenGL; only on an
+    /// engine that offers it.
+    #[serde(default)]
+    pub compatibility: bool,
     /// The program its profile starts instead of its publisher's, relative
     /// to the installation.
     pub executable: Option<String>,
@@ -221,6 +225,10 @@ pub struct Choices {
     pub graphics: Option<Graphics>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ray_tracing: Option<bool>,
+    /// Wine's own Direct3D over OpenGL instead of the backend. Apart from
+    /// `graphics`, so a file that keeps it still opens in an older build.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub compatibility: Option<bool>,
     /// A plain integer, so an older build still reads the file.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub render_percent: Option<u32>,
@@ -257,6 +265,9 @@ pub struct EngineOffer {
     pub lowest_render_percent: Option<u32>,
     /// Whether it can keep macOS's Game Mode off a game.
     pub game_mode: bool,
+    /// Whether Wine's own Direct3D can render a game instead of a backend,
+    /// through OpenGL.
+    pub compatibility: bool,
 }
 
 /// What one graphics backend offers on one engine.
@@ -268,8 +279,9 @@ pub struct GraphicsOffer {
 
 /// Every engine, the translator it has and the backends it renders with.
 /// Rosetta's Wine takes D3DMetal's options and no render resolution, and
-/// macOS never takes its games for games; the Linux engine's render servers
-/// take no options yet.
+/// macOS never takes its games for games, and its Wine renders through
+/// OpenGL too; the Linux engine's render servers take no options yet, and its
+/// Wine has Neptune's Direct3D alone.
 pub const ENGINES: [EngineOffer; 2] = [
     EngineOffer {
         engine: Engine::Rosetta,
@@ -286,6 +298,7 @@ pub const ENGINES: [EngineOffer; 2] = [
         ],
         lowest_render_percent: None,
         game_mode: false,
+        compatibility: true,
     },
     EngineOffer {
         engine: Engine::Linux,
@@ -303,6 +316,7 @@ pub const ENGINES: [EngineOffer; 2] = [
         // wsd keeps the desktop at 640x480 pixels or more: on a Retina MacBook, below about 25 gives the same one.
         lowest_render_percent: Some(1),
         game_mode: true,
+        compatibility: false,
     },
 ];
 
@@ -348,6 +362,7 @@ impl Choices {
             options: GraphicsOptions {
                 ray_tracing: self.ray_tracing.unwrap_or(options.ray_tracing),
             },
+            compatibility: self.compatibility == Some(true) && offered.compatibility,
             executable: profile.executable.map(str::to_owned),
             bootstrapper: profile.bootstrapper.clone(),
             profile_arguments: profile.arguments.to_vec(),
@@ -384,6 +399,7 @@ impl Choices {
             graphics: (applied.graphics != graphics).then_some(applied.graphics),
             ray_tracing: (applied.options.ray_tracing != options.ray_tracing)
                 .then_some(applied.options.ray_tracing),
+            compatibility: applied.compatibility.then_some(true),
             render_percent: (applied.render_percent != FULL_RENDER_PERCENT)
                 .then_some(applied.render_percent),
             performance_hud: self.performance_hud,

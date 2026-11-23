@@ -112,6 +112,9 @@ struct DeveloperModal: Identifiable {
                 symbol: "slider.horizontal.3",
                 variants: [
                     Variant("Loaded") { $0.launchSettings { DeveloperModals.launchSettings() } },
+                    Variant("Compatibility mode") {
+                        $0.launchSettings { DeveloperModals.launchSettings(LaunchChoices(compatibility: true)) }
+                    },
                     Variant("Loading") {
                         $0.launchSettings {
                             try await Task.sleep(for: .seconds(3600))
@@ -362,7 +365,7 @@ final class DeveloperModals {
             LaunchEngineOffer(engine: .rosetta, translator: .rosetta, defaultGraphics: .d3dMetal, graphics: [
                 LaunchGraphicsOffer(graphics: .d3dMetal, options: [.rayTracing]),
                 LaunchGraphicsOffer(graphics: .dxmt, options: []),
-            ], lowestRenderPercent: nil, gameMode: false),
+            ], lowestRenderPercent: nil, gameMode: false, compatibility: true),
             LaunchEngineOffer(engine: .linux, translator: .fex, defaultGraphics: .dxmt,
                               graphics: [LaunchGraphicsOffer(graphics: .dxmt, options: [])],
                               lowestRenderPercent: 1, gameMode: true),
@@ -374,6 +377,7 @@ final class DeveloperModals {
         let renderPercent = offer.lowestRenderPercent == nil
             ? RenderPercent.native : (choices.renderPercent ?? RenderPercent.native)
         return LaunchSettings(engine: engine, graphics: graphics, rayTracing: choices.rayTracing ?? false,
+                              compatibility: offer.compatibility && choices.compatibility == true,
                               renderPercent: renderPercent, performanceHud: choices.performanceHud,
                               gameMode: !offer.gameMode || choices.gameMode ?? true,
                               choices: choices, defaultEngine: .rosetta, engines: engines)
