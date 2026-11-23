@@ -186,14 +186,9 @@ impl Config {
             "obelisk: engine={} graphics={graphics}",
             self.adapter().facts().name,
         );
-        let ray_tracing = !self.settings.compatibility
-            && crate::launch_settings::offer(self.settings.engine)
-                .graphics(self.settings.graphics)
-                .is_some_and(|offer| {
-                    offer
-                        .options
-                        .contains(&crate::launch_settings::GraphicsOption::RayTracing)
-                });
+        let ray_tracing = self
+            .settings
+            .takes(crate::launch_settings::GraphicsOption::RayTracing);
         if ray_tracing {
             let state = if self.settings.options.ray_tracing {
                 "on"
@@ -204,6 +199,9 @@ impl Config {
         }
         if self.settings.render_percent != crate::launch_settings::FULL_RENDER_PERCENT {
             header.push_str(&format!(" render_percent={}", self.settings.render_percent));
+        }
+        if self.settings.metalfx_spatial {
+            header.push_str(" metalfx_spatial=on");
         }
         if !self.settings.game_mode {
             header.push_str(" game_mode=off");

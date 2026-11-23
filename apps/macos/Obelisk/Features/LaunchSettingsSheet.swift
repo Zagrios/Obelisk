@@ -224,6 +224,10 @@ struct LaunchSettingsSheet: View {
                                 ObeliskCardDivider()
                                 rayTracingRow(settings)
                             }
+                            if model.graphicsOffer?.options.contains(.metalFxSpatial) == true {
+                                ObeliskCardDivider()
+                                metalfxSpatialRow(settings)
+                            }
                             if let lowest = model.engineOffer?.lowestRenderPercent {
                                 ObeliskCardDivider()
                                 renderPercentRow(settings, lowest: lowest)
@@ -372,6 +376,22 @@ struct LaunchSettingsSheet: View {
                 .labelsHidden()
                 .pointerCursor()
                 .accessibilityIdentifier("launch-settings-ray-tracing")
+        }
+    }
+
+    private func metalfxSpatialRow(_ settings: LaunchSettings) -> some View {
+        ObeliskRow(title: L10n.string("ui.launch_settings.metalfx_spatial")) {
+            SymbolTile(name: "arrow.up.left.and.arrow.down.right", colors: TileColors.blue)
+        } detail: {
+            Text(L10n.string("ui.launch_settings.metalfx_spatial_detail"))
+        } accessory: {
+            Toggle(L10n.string("ui.launch_settings.metalfx_spatial"),
+                   isOn: Binding(get: { settings.metalfxSpatial },
+                                 set: { metalfxSpatial in model.choose { $0.metalfxSpatial = metalfxSpatial } }))
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .pointerCursor()
+                .accessibilityIdentifier("launch-settings-metalfx-spatial")
         }
     }
 

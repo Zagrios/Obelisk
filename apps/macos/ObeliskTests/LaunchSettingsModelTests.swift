@@ -8,6 +8,7 @@ final class LaunchSettingsModelTests: XCTestCase {
             engine: engine, graphics: engine == .rosetta ? choices.graphics ?? .d3dMetal : .dxmt, rayTracing: true,
             compatibility: engine == .rosetta && choices.compatibility == true,
             renderPercent: engine == .linux ? choices.renderPercent ?? RenderPercent.native : RenderPercent.native,
+            metalfxSpatial: engine == .rosetta && choices.graphics == .dxmt && choices.metalfxSpatial,
             performanceHud: choices.performanceHud, gameMode: engine != .linux || choices.gameMode ?? true,
             choices: choices, defaultEngine: .rosetta,
             engines: [
@@ -15,7 +16,7 @@ final class LaunchSettingsModelTests: XCTestCase {
                     engine: .rosetta, translator: .rosetta, defaultGraphics: .d3dMetal,
                     graphics: [
                         LaunchGraphicsOffer(graphics: .d3dMetal, options: [.rayTracing]),
-                        LaunchGraphicsOffer(graphics: .dxmt, options: []),
+                        LaunchGraphicsOffer(graphics: .dxmt, options: [.metalFxSpatial]),
                     ],
                     lowestRenderPercent: nil, gameMode: false, compatibility: true
                 ),
@@ -77,6 +78,24 @@ final class LaunchSettingsModelTests: XCTestCase {
         try await waitUntil { model.settings?.compatibility == false }
         XCTAssertEqual(saved.last, LaunchChoices(graphics: .dxmt))
         XCTAssertEqual(model.graphicsOffer?.graphics, .dxmt)
+    }
+
+    @MainActor
+    func testMetalFxSpatialIsOfferedBehindRosettaSDxmtAndTurnsOn() async throws {
+        var saved: [LaunchChoices] = []
+        let model = LaunchSettingsModel(
+            load: { Self.settings(choices: LaunchChoices(graphics: .dxmt)) },
+            save: { choices in
+                saved.append(choices)
+                return Self.settings(choices: choices, engine: choices.engine ?? .rosetta)
+            }
+        )
+        await model.appear()
+        XCTAssertEqual(model.graphicsOffer?.options, [.metalFxSpatial])
+
+        model.choose { $0.metalfxSpatial = true }
+        try await waitUntil { model.settings?.metalfxSpatial == true }
+        XCTAssertEqual(saved.last, LaunchChoices(graphics: .dxmt, metalfxSpatial: true))
     }
 
     @MainActor

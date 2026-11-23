@@ -77,6 +77,7 @@ static FACTS: Facts = Facts {
             "D3DM_SUPPORT_DXR",
             "WINE_D3D_CONFIG",
             "D3DM_MAX_FPS",
+            "DXMT_METALFX_SPATIAL_SWAPCHAIN",
             "CX_HIDE_BUILTIN_VERSION_RESOURCES",
             // The Game session adds these to the game's own.
             crate::input::SOCKET,
@@ -383,6 +384,10 @@ fn environment(config: &Config) -> HashMap<String, String> {
     {
         // Direct3D 12 offers DirectX Raytracing unless D3DMetal is told not to.
         environment.insert("D3DM_SUPPORT_DXR".into(), "0".into());
+    }
+    // DXMT upscales its swapchain's picture through MetalFX.
+    if config.settings.metalfx_spatial {
+        environment.insert("DXMT_METALFX_SPATIAL_SWAPCHAIN".into(), "1".into());
     }
     // D3DMetal's own frame cap; DXMT's is in its options.
     if let Some(cap) = config.settings.frame_cap {

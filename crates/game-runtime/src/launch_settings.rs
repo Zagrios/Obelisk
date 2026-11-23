@@ -71,6 +71,10 @@ pub struct Settings {
     /// The share of the screen's pixels the game renders at; always one `engine` offers.
     #[serde(default = "full_render_percent")]
     pub render_percent: u32,
+    /// MetalFX Spatial upscales the game's picture on its way to the screen;
+    /// true only where its backend offers it.
+    #[serde(default)]
+    pub metalfx_spatial: bool,
     /// macOS may turn its Game Mode on for the game; false only on an engine
     /// that can keep it off.
     #[serde(default = "game_mode")]
@@ -98,6 +102,15 @@ impl Default for Settings {
 }
 
 impl Settings {
+    /// Whether its backend takes `option` on its engine; none does in
+    /// compatibility mode.
+    pub(crate) fn takes(&self, option: GraphicsOption) -> bool {
+        !self.compatibility
+            && offer(self.engine)
+                .graphics(self.graphics)
+                .is_some_and(|offer| offer.options.contains(&option))
+    }
+
     /// What starts for `target` inside `install`: `target`, or the program
     /// the profile names instead, or the installation's Easy Anti-Cheat
     /// bootstrapper when the engine cannot run `target`, with the same
@@ -281,6 +294,9 @@ pub struct Choices {
     /// A plain integer, so an older build still reads the file.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub render_percent: Option<u32>,
+    /// MetalFX Spatial upscales the game's picture on its way to the screen.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub metalfx_spatial: bool,
     /// Metal's Performance HUD shows over the game, whatever renders it.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub performance_hud: bool,
@@ -306,6 +322,8 @@ pub enum Translator {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GraphicsOption {
     RayTracing,
+    /// MetalFX Spatial upscales the picture its swapchain presents.
+    MetalFxSpatial,
 }
 
 /// What one engine offers, in the order the player sees it.
@@ -334,7 +352,7 @@ pub struct GraphicsOffer {
 }
 
 /// Every engine, the translator it has and the backends it renders with.
-/// Rosetta's Wine takes D3DMetal's options and no render resolution, and
+/// Rosetta's Wine takes D3DMetal's and DXMT's options and no render resolution, and
 /// macOS never takes its games for games, and its Wine renders through
 /// OpenGL too; the Linux engine's render servers take no options yet, and its
 /// Wine has Neptune's Direct3D alone.
@@ -349,7 +367,7 @@ pub const ENGINES: [EngineOffer; 2] = [
             },
             GraphicsOffer {
                 graphics: Graphics::Dxmt,
-                options: &[],
+                options: &[GraphicsOption::MetalFxSpatial],
             },
         ],
         lowest_render_percent: None,
@@ -414,13 +432,14 @@ impl Choices {
             .filter(|graphics| offered.graphics(*graphics).is_some())
             .unwrap_or(default_graphics(profile, engine));
         let options = default_options(profile, engine, graphics);
-        Settings {
+        let mut settings = Settings {
             engine,
             graphics,
             options: GraphicsOptions {
                 ray_tracing: self.ray_tracing.unwrap_or(options.ray_tracing),
             },
             compatibility: self.compatibility == Some(true) && offered.compatibility,
+            metalfx_spatial: false,
             executable: profile.executable.map(str::to_owned),
             bootstrapper: profile.bootstrapper.clone(),
             profile_arguments: profile.arguments.to_vec(),
@@ -438,7 +457,10 @@ impl Choices {
                 .unwrap_or(default_game_mode(profile, engine)),
             frame_cap: None,
             locale: None,
-        }
+        };
+        settings.metalfx_spatial =
+            self.metalfx_spatial && settings.takes(GraphicsOption::MetalFxSpatial);
+        settings
     }
 
     /// These choices without those `profile` already gives, or the chosen
@@ -461,6 +483,7 @@ impl Choices {
             compatibility: applied.compatibility.then_some(true),
             render_percent: (applied.render_percent != FULL_RENDER_PERCENT)
                 .then_some(applied.render_percent),
+            metalfx_spatial: applied.metalfx_spatial,
             performance_hud: self.performance_hud,
             game_mode: (applied.game_mode != default_game_mode(profile, applied.engine))
                 .then_some(applied.game_mode),

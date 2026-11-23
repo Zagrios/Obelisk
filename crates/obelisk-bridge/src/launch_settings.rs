@@ -22,6 +22,9 @@ pub struct LaunchSettings {
     pub compatibility: bool,
     /// The share of the screen's pixels the game renders at, in whole percent.
     pub render_percent: u32,
+    /// MetalFX Spatial upscales the game's picture on its way to the screen.
+    #[uniffi(default = false)]
+    pub metalfx_spatial: bool,
     /// Metal's Performance HUD shows over the game, whatever renders it.
     pub performance_hud: bool,
     /// macOS may turn its Game Mode on for the game.
@@ -55,6 +58,8 @@ pub struct LaunchChoices {
     pub compatibility: Option<bool>,
     #[uniffi(default = None)]
     pub render_percent: Option<u32>,
+    #[uniffi(default = false)]
+    pub metalfx_spatial: bool,
     #[uniffi(default = false)]
     pub performance_hud: bool,
     #[uniffi(default = None)]
@@ -90,6 +95,7 @@ pub enum LaunchTranslator {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum LaunchGraphicsOption {
     RayTracing,
+    MetalFxSpatial,
 }
 
 /// One engine's offer.
@@ -128,6 +134,7 @@ impl From<View> for LaunchSettings {
             ray_tracing: view.settings.options.ray_tracing,
             compatibility: view.settings.compatibility,
             render_percent: view.settings.render_percent,
+            metalfx_spatial: view.settings.metalfx_spatial,
             performance_hud: view.settings.performance_hud,
             game_mode: view.settings.game_mode,
             frame_cap: view.settings.frame_cap,
@@ -166,6 +173,7 @@ fn graphics_offer(offer: &GraphicsOffer) -> LaunchGraphicsOffer {
             .iter()
             .map(|option| match option {
                 GraphicsOption::RayTracing => LaunchGraphicsOption::RayTracing,
+                GraphicsOption::MetalFxSpatial => LaunchGraphicsOption::MetalFxSpatial,
             })
             .collect(),
     }
@@ -180,6 +188,7 @@ impl From<Choices> for LaunchChoices {
             ray_tracing: choices.ray_tracing,
             compatibility: choices.compatibility,
             render_percent: choices.render_percent,
+            metalfx_spatial: choices.metalfx_spatial,
             performance_hud: choices.performance_hud,
             game_mode: choices.game_mode,
             frame_cap: choices.frame_cap,
@@ -196,6 +205,7 @@ impl From<LaunchChoices> for launch_settings::Choices {
             ray_tracing: choices.ray_tracing,
             compatibility: choices.compatibility,
             render_percent: choices.render_percent,
+            metalfx_spatial: choices.metalfx_spatial,
             performance_hud: choices.performance_hud,
             game_mode: choices.game_mode,
             frame_cap: choices.frame_cap,
@@ -330,6 +340,40 @@ mod tests {
         assert!(!linux.compatibility);
         assert_eq!(linux.choices.compatibility, None);
         assert!(!linux.engines[1].compatibility);
+    }
+
+    #[test]
+    fn metalfx_spatial_crosses_both_ways_behind_rosetta_s_dxmt_alone() {
+        let library = tempfile::tempdir().unwrap();
+        let choose = |engine, graphics| {
+            LaunchSettings::from(
+                launch_settings::choose(
+                    library.path(),
+                    profile::Game::Steam { app_id: 42 },
+                    std::path::Path::new("/nowhere"),
+                    None,
+                    None,
+                    LaunchChoices {
+                        engine: Some(engine),
+                        graphics: Some(graphics),
+                        metalfx_spatial: true,
+                        ..LaunchChoices::default()
+                    }
+                    .into(),
+                )
+                .unwrap(),
+            )
+        };
+
+        let dxmt = choose(LaunchEngine::Rosetta, LaunchGraphics::Dxmt);
+        assert!(dxmt.metalfx_spatial);
+        assert!(dxmt.choices.metalfx_spatial);
+        assert_eq!(
+            dxmt.engines[0].graphics[1].options,
+            [LaunchGraphicsOption::MetalFxSpatial]
+        );
+        assert!(!choose(LaunchEngine::Rosetta, LaunchGraphics::D3dMetal).metalfx_spatial);
+        assert!(!choose(LaunchEngine::Linux, LaunchGraphics::Dxmt).metalfx_spatial);
     }
 
     #[test]

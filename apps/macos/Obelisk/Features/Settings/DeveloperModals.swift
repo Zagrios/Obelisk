@@ -112,6 +112,11 @@ struct DeveloperModal: Identifiable {
                 symbol: "slider.horizontal.3",
                 variants: [
                     Variant("Loaded") { $0.launchSettings { DeveloperModals.launchSettings() } },
+                    Variant("MetalFX upscaling") {
+                        $0.launchSettings {
+                            DeveloperModals.launchSettings(LaunchChoices(graphics: .dxmt, metalfxSpatial: true))
+                        }
+                    },
                     Variant("Frame cap") {
                         $0.launchSettings { DeveloperModals.launchSettings(LaunchChoices(frameCap: 60)) }
                     },
@@ -367,7 +372,7 @@ final class DeveloperModals {
         let engines = [
             LaunchEngineOffer(engine: .rosetta, translator: .rosetta, defaultGraphics: .d3dMetal, graphics: [
                 LaunchGraphicsOffer(graphics: .d3dMetal, options: [.rayTracing]),
-                LaunchGraphicsOffer(graphics: .dxmt, options: []),
+                LaunchGraphicsOffer(graphics: .dxmt, options: [.metalFxSpatial]),
             ], lowestRenderPercent: nil, gameMode: false, compatibility: true, frameCap: true),
             LaunchEngineOffer(engine: .linux, translator: .fex, defaultGraphics: .dxmt,
                               graphics: [LaunchGraphicsOffer(graphics: .dxmt, options: [])],
@@ -381,7 +386,9 @@ final class DeveloperModals {
             ? RenderPercent.native : (choices.renderPercent ?? RenderPercent.native)
         return LaunchSettings(engine: engine, graphics: graphics, rayTracing: choices.rayTracing ?? false,
                               compatibility: offer.compatibility && choices.compatibility == true,
-                              renderPercent: renderPercent, performanceHud: choices.performanceHud,
+                              renderPercent: renderPercent,
+                              metalfxSpatial: engine == .rosetta && graphics == .dxmt && choices.metalfxSpatial,
+                              performanceHud: choices.performanceHud,
                               gameMode: !offer.gameMode || choices.gameMode ?? true,
                               frameCap: offer.frameCap ? choices.frameCap.map { $0 == FrameCap.display ? 120 : $0 } : nil,
                               choices: choices, defaultEngine: .rosetta, engines: engines)

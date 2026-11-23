@@ -824,6 +824,33 @@ fn a_frame_cap_reaches_d3dmetal_and_dxmt_before_the_profile_s_dxmt_options() {
 }
 
 #[test]
+fn metalfx_spatial_reaches_dxmt_s_swapchain_and_the_log() {
+    let (_directory, root) = installation();
+    let config = config(&root);
+    assert!(!environment(&config).contains_key("DXMT_METALFX_SPATIAL_SWAPCHAIN"));
+    let upscaled = Config {
+        settings: Settings {
+            graphics: Graphics::Dxmt,
+            metalfx_spatial: true,
+            ..config.settings.clone()
+        },
+        ..config
+    };
+
+    assert_eq!(
+        environment(&upscaled)["DXMT_METALFX_SPATIAL_SWAPCHAIN"],
+        "1"
+    );
+    assert!(upscaled.log_header().contains(" metalfx_spatial=on"));
+    assert!(
+        Engine::Rosetta
+            .reserved()
+            .variables
+            .contains(&"DXMT_METALFX_SPATIAL_SWAPCHAIN")
+    );
+}
+
+#[test]
 fn compatibility_mode_leaves_direct3d_to_wine_s_own_over_opengl() {
     let (_directory, root) = installation();
     let config = config(&root);
@@ -1453,6 +1480,7 @@ fn a_configuration_reaches_its_game_session_whole() {
             render_percent: 50,
             game_mode: false,
             frame_cap: Some(60),
+            metalfx_spatial: true,
             locale: Some("it_IT".into()),
         },
     };
@@ -1474,6 +1502,13 @@ fn a_configuration_reaches_its_game_session_whole() {
             "frame_cap",
             Settings {
                 frame_cap: None,
+                ..config.settings.clone()
+            },
+        ),
+        (
+            "metalfx_spatial",
+            Settings {
+                metalfx_spatial: false,
                 ..config.settings.clone()
             },
         ),

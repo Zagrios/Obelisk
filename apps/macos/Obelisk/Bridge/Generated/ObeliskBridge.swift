@@ -7091,6 +7091,7 @@ public struct LaunchChoices: Equatable, Hashable {
     public var rayTracing: Bool?
     public var compatibility: Bool?
     public var renderPercent: UInt32?
+    public var metalfxSpatial: Bool
     public var performanceHud: Bool
     public var gameMode: Bool?
     /**
@@ -7103,7 +7104,7 @@ public struct LaunchChoices: Equatable, Hashable {
     public init(
         /**
          * What the player adds to the game's command line, as typed.
-         */arguments: String? = nil, engine: LaunchEngine? = nil, graphics: LaunchGraphics? = nil, rayTracing: Bool? = nil, compatibility: Bool? = nil, renderPercent: UInt32? = nil, performanceHud: Bool = false, gameMode: Bool? = nil, 
+         */arguments: String? = nil, engine: LaunchEngine? = nil, graphics: LaunchGraphics? = nil, rayTracing: Bool? = nil, compatibility: Bool? = nil, renderPercent: UInt32? = nil, metalfxSpatial: Bool = false, performanceHud: Bool = false, gameMode: Bool? = nil, 
         /**
          * The most frames a second, 0 for the screen's refresh rate.
          */frameCap: UInt32? = nil) {
@@ -7113,6 +7114,7 @@ public struct LaunchChoices: Equatable, Hashable {
         self.rayTracing = rayTracing
         self.compatibility = compatibility
         self.renderPercent = renderPercent
+        self.metalfxSpatial = metalfxSpatial
         self.performanceHud = performanceHud
         self.gameMode = gameMode
         self.frameCap = frameCap
@@ -7140,6 +7142,7 @@ public struct FfiConverterTypeLaunchChoices: FfiConverterRustBuffer {
                 rayTracing: FfiConverterOptionBool.read(from: &buf), 
                 compatibility: FfiConverterOptionBool.read(from: &buf), 
                 renderPercent: FfiConverterOptionUInt32.read(from: &buf), 
+                metalfxSpatial: FfiConverterBool.read(from: &buf), 
                 performanceHud: FfiConverterBool.read(from: &buf), 
                 gameMode: FfiConverterOptionBool.read(from: &buf), 
                 frameCap: FfiConverterOptionUInt32.read(from: &buf)
@@ -7153,6 +7156,7 @@ public struct FfiConverterTypeLaunchChoices: FfiConverterRustBuffer {
         FfiConverterOptionBool.write(value.rayTracing, into: &buf)
         FfiConverterOptionBool.write(value.compatibility, into: &buf)
         FfiConverterOptionUInt32.write(value.renderPercent, into: &buf)
+        FfiConverterBool.write(value.metalfxSpatial, into: &buf)
         FfiConverterBool.write(value.performanceHud, into: &buf)
         FfiConverterOptionBool.write(value.gameMode, into: &buf)
         FfiConverterOptionUInt32.write(value.frameCap, into: &buf)
@@ -7366,6 +7370,10 @@ public struct LaunchSettings: Equatable, Hashable {
      */
     public var renderPercent: UInt32
     /**
+     * MetalFX Spatial upscales the game's picture on its way to the screen.
+     */
+    public var metalfxSpatial: Bool
+    /**
      * Metal's Performance HUD shows over the game, whatever renders it.
      */
     public var performanceHud: Bool
@@ -7406,6 +7414,9 @@ public struct LaunchSettings: Equatable, Hashable {
          * The share of the screen's pixels the game renders at, in whole percent.
          */renderPercent: UInt32, 
         /**
+         * MetalFX Spatial upscales the game's picture on its way to the screen.
+         */metalfxSpatial: Bool = false, 
+        /**
          * Metal's Performance HUD shows over the game, whatever renders it.
          */performanceHud: Bool, 
         /**
@@ -7430,6 +7441,7 @@ public struct LaunchSettings: Equatable, Hashable {
         self.rayTracing = rayTracing
         self.compatibility = compatibility
         self.renderPercent = renderPercent
+        self.metalfxSpatial = metalfxSpatial
         self.performanceHud = performanceHud
         self.gameMode = gameMode
         self.frameCap = frameCap
@@ -7459,6 +7471,7 @@ public struct FfiConverterTypeLaunchSettings: FfiConverterRustBuffer {
                 rayTracing: FfiConverterBool.read(from: &buf), 
                 compatibility: FfiConverterBool.read(from: &buf), 
                 renderPercent: FfiConverterUInt32.read(from: &buf), 
+                metalfxSpatial: FfiConverterBool.read(from: &buf), 
                 performanceHud: FfiConverterBool.read(from: &buf), 
                 gameMode: FfiConverterBool.read(from: &buf), 
                 frameCap: FfiConverterOptionUInt32.read(from: &buf), 
@@ -7474,6 +7487,7 @@ public struct FfiConverterTypeLaunchSettings: FfiConverterRustBuffer {
         FfiConverterBool.write(value.rayTracing, into: &buf)
         FfiConverterBool.write(value.compatibility, into: &buf)
         FfiConverterUInt32.write(value.renderPercent, into: &buf)
+        FfiConverterBool.write(value.metalfxSpatial, into: &buf)
         FfiConverterBool.write(value.performanceHud, into: &buf)
         FfiConverterBool.write(value.gameMode, into: &buf)
         FfiConverterOptionUInt32.write(value.frameCap, into: &buf)
@@ -11856,6 +11870,7 @@ public func FfiConverterTypeLaunchGraphics_lower(_ value: LaunchGraphics) -> Rus
 public enum LaunchGraphicsOption: Equatable, Hashable {
     
     case rayTracing
+    case metalFxSpatial
 
 
 
@@ -11879,6 +11894,8 @@ public struct FfiConverterTypeLaunchGraphicsOption: FfiConverterRustBuffer {
         
         case 1: return .rayTracing
         
+        case 2: return .metalFxSpatial
+        
         default: throw UniffiInternalError.unexpectedEnumCase
         }
     }
@@ -11889,6 +11906,10 @@ public struct FfiConverterTypeLaunchGraphicsOption: FfiConverterRustBuffer {
         
         case .rayTracing:
             writeInt(&buf, Int32(1))
+        
+        
+        case .metalFxSpatial:
+            writeInt(&buf, Int32(2))
         
         }
     }

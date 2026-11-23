@@ -121,6 +121,7 @@ fn every_kind_of_choices() -> [Choices; 5] {
             performance_hud: false,
             game_mode: Some(true),
             frame_cap: None,
+            metalfx_spatial: false,
         },
         Choices {
             arguments: Some("-dx11 \"+exec autoexec.cfg\"".into()),
@@ -436,7 +437,7 @@ fn an_unoffered_render_resolution_on_disk_runs_at_all_pixels_and_loses_no_other_
 }
 
 #[test]
-fn each_engine_has_its_translator_and_only_rosetta_s_d3dmetal_takes_options() {
+fn each_engine_has_its_translator_and_each_backend_its_options() {
     assert_eq!(offer(Engine::Rosetta).translator, Translator::Rosetta);
     assert_eq!(offer(Engine::Linux).translator, Translator::Fex);
     for engine in [Engine::Rosetta, Engine::Linux] {
@@ -444,6 +445,7 @@ fn each_engine_has_its_translator_and_only_rosetta_s_d3dmetal_takes_options() {
             let options = offer(engine).graphics(graphics).unwrap().options;
             let expected: &[GraphicsOption] = match (engine, graphics) {
                 (Engine::Rosetta, Graphics::D3DMetal) => &[GraphicsOption::RayTracing],
+                (Engine::Rosetta, Graphics::Dxmt) => &[GraphicsOption::MetalFxSpatial],
                 _ => &[],
             };
             assert_eq!(options, expected, "{engine:?} {graphics:?}");
@@ -841,6 +843,43 @@ fn only_rosetta_s_wine_renders_in_compatibility_mode_and_only_on_is_kept() {
 }
 
 #[test]
+fn only_rosetta_s_dxmt_upscales_through_metalfx_spatial_and_only_on_is_kept() {
+    let directory = tempfile::tempdir().unwrap();
+    let library = directory.path();
+    let install = Path::new("/library/Games/game");
+    let chosen = |engine, graphics, compatibility| {
+        choose(
+            library,
+            OTHER,
+            install,
+            None,
+            None,
+            Choices {
+                engine: Some(engine),
+                graphics: Some(graphics),
+                compatibility,
+                metalfx_spatial: true,
+                ..Choices::default()
+            },
+        )
+        .unwrap()
+    };
+
+    let view = chosen(Engine::Rosetta, Graphics::Dxmt, None);
+    assert!(view.settings.metalfx_spatial);
+    assert!(view.choices.metalfx_spatial);
+    for (engine, graphics, compatibility) in [
+        (Engine::Rosetta, Graphics::D3DMetal, None),
+        (Engine::Rosetta, Graphics::Dxmt, Some(true)),
+        (Engine::Linux, Graphics::Dxmt, None),
+    ] {
+        let view = chosen(engine, graphics, compatibility);
+        assert!(!view.settings.metalfx_spatial, "{engine:?} {graphics:?}");
+        assert!(!view.choices.metalfx_spatial, "{engine:?} {graphics:?}");
+    }
+}
+
+#[test]
 fn a_frame_cap_snaps_to_whole_refreshes_per_frame_at_or_below_it() {
     for (cap, rate, expected) in [
         (60, Some(120), Some(60)),
@@ -945,6 +984,7 @@ fn every_choice() -> Choices {
         performance_hud: true,
         game_mode: Some(false),
         frame_cap: Some(60),
+        metalfx_spatial: true,
     }
 }
 
