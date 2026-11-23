@@ -11,6 +11,7 @@ struct ObeliskApp: App {
         // before AppModel, whose Rust side starts threads. The test host
         // starts no game, and its environment stays as it is.
         if !AppIdentity.isTestHost { GameLocale.adopt() }
+        NetworkPath.start()
         let model = AppModel()
         // Nor does the test host count as a start of Obelisk.
         if !AppIdentity.isTestHost { model.support.countStart() }

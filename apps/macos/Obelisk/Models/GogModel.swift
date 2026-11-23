@@ -33,7 +33,7 @@ extension GogGames: WebStorefront {
     }
     @MainActor static func describe(_ error: Error) -> String {
         switch error {
-        case WebAccountError.Network: L10n.string("model.gog.network")
+        case WebAccountError.Network: L10n.unreachable(L10n.string("model.gog.network"))
         case WebAccountError.Unauthorized: L10n.string("model.gog.unauthorized")
         case WebAccountError.InvalidCode: L10n.string("model.gog.invalidCode")
         case WebAccountError.InvalidResponse: L10n.string("model.gog.invalidResponse")

@@ -35538,6 +35538,59 @@
         }
       }
     },
+    "model.network.blocked": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ Wenn Ihre Verbindung funktioniert, blockiert womöglich eine Firewall-App wie LuLu oder Little Snitch oder ein Netzwerkfilter Obelisk."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ If your connection works, a firewall app such as LuLu or Little Snitch, or a network filter, may be blocking Obelisk."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ Si tu conexión funciona, puede que una app de cortafuegos como LuLu o Little Snitch, o un filtro de red, esté bloqueando Obelisk."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ Si votre connexion fonctionne, une app de pare-feu comme LuLu ou Little Snitch, ou un filtre réseau, bloque peut-être Obelisk."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ Se la connessione funziona, un'app firewall come LuLu o Little Snitch, o un filtro di rete, potrebbe bloccare Obelisk."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@接続に問題がない場合は、LuLu や Little Snitch などのファイアウォールアプリ、またはネットワークフィルタが Obelisk をブロックしている可能性があります。"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ Se a sua conexão estiver funcionando, um app de firewall como LuLu ou Little Snitch, ou um filtro de rede, pode estar bloqueando o Obelisk."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@如果网络连接正常，可能是 LuLu 或 Little Snitch 等防火墙应用或网络过滤器阻止了 Obelisk。"
+          }
+        }
+      }
+    },
     "model.gog.unauthorized": {
       "extractionState": "manual",
       "localizations": {

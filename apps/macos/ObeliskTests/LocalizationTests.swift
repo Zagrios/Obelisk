@@ -155,4 +155,17 @@ final class LocalizationTests: XCTestCase {
         let path = try JSONSerialization.data(withJSONObject: ["key": "backend.steam.content.unsafePath", "args": [filename]])
         XCTAssertEqual(LocalizedStrings(language: "en").message(try XCTUnwrap(String(data: path, encoding: .utf8))), "Unsafe download path: \(filename)")
     }
+
+    /// Rust spells the directory's reason as serde_json orders an object's keys.
+    @MainActor
+    func testOnlySteamServicesThatDidNotAnswerNameWhatMayBlockThem() {
+        for reason in ["backend.steam.auth.network", "backend.steam.cm.timeout",
+                       #"{"args":["error sending request"],"key":"backend.steam.cm.directory"}"#] {
+            XCTAssertTrue(SteamModel.unreachable(reason), reason)
+        }
+        for reason in ["backend.steam.cm.directoryUnavailable", "backend.steam.auth.invalidPassword",
+                       #"{"args":["backend.steam.cm.directory"],"key":"backend.steam.content.invalid"}"#] {
+            XCTAssertFalse(SteamModel.unreachable(reason), reason)
+        }
+    }
 }

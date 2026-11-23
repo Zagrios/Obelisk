@@ -1061,8 +1061,16 @@ final class SteamModel {
             return L10n.string("backend.steam.friends.authenticationRequired")
         }
         if case SteamError.Cancelled = error { return L10n.string("backend.steam.content.cancelled") }
-        if case let SteamError.Failure(reason) = error { return L10n.message(reason) }
+        if case let SteamError.Failure(reason) = error {
+            return unreachable(reason) ? L10n.unreachable(L10n.message(reason)) : L10n.message(reason)
+        }
         return error.localizedDescription
+    }
+
+    /// Whether `reason` says a Steam service did not answer.
+    static func unreachable(_ reason: String) -> Bool {
+        ["backend.steam.auth.network", "backend.steam.cm.timeout"].contains(reason)
+            || reason.contains(#""key":"backend.steam.cm.directory""#)
     }
 }
 

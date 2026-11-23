@@ -1,4 +1,6 @@
 import Foundation
+import Network
+import Synchronization
 
 /// One language choice for SwiftUI, AppKit and messages received from Rust.
 enum L10n {
@@ -32,6 +34,30 @@ enum L10n {
     static func message(_ value: String) -> String {
         strings.message(value, locale: locale)
     }
+
+    /// `message`, with a firewall hint while the Mac is online.
+    static func unreachable(_ message: String) -> String {
+        guard NetworkPath.isOnline else { return message }
+        // Some reasons end in a transport error, without a full stop.
+        let sentence = message.last.map { $0.isLetter || $0.isNumber } == true ? message + "." : message
+        return string("model.network.blocked", sentence)
+    }
+}
+
+/// Whether the Mac has a usable network path, as macOS tells it.
+enum NetworkPath {
+    private static let online = Mutex(false)
+    private static let monitor: NWPathMonitor = {
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { path in NetworkPath.online.withLock { $0 = path.status == .satisfied } }
+        monitor.start(queue: DispatchQueue(label: "com.zagrios.obelisk.network-path"))
+        return monitor
+    }()
+
+    /// Starts following the path, whose first state arrives shortly after.
+    static func start() { _ = monitor }
+
+    static var isOnline: Bool { online.withLock { $0 } }
 }
 
 /// The language games start in. A Finder-launched app has no `LANG`, and a
