@@ -1310,6 +1310,74 @@ pub(crate) fn calls(root: &Path) -> Vec<String> {
 }
 
 #[test]
+fn wine_s_tools_run_in_the_game_s_prefix_with_its_environment_and_create_it_first() {
+    let (_directory, root) = installation();
+    let locations = locations(&root);
+    record_calls(&locations.voile.join("current"));
+    let windows = windows_of(&locations, OTHER, &root.join("Games/game"));
+    let environment = windows.environment(&locations).unwrap();
+    assert!(environment.is_sorted());
+
+    let command = windows
+        .tool(&locations, Tool::Configuration)
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(calls(&locations.wine_prefixes), ["wineboot --init"]);
+    assert_eq!(
+        command.get_program(),
+        locations.voile.join("current/bin/wine")
+    );
+    assert_eq!(
+        command.get_args().collect::<Vec<_>>(),
+        [std::ffi::OsStr::new("winecfg")]
+    );
+    let set: Vec<_> = command
+        .get_envs()
+        .filter_map(|(name, value)| Some((name.to_str()?, value?.to_str()?)))
+        .collect();
+    for (name, value) in &environment {
+        assert!(
+            set.contains(&(name.as_str(), value.as_str())),
+            "{name}={value}"
+        );
+    }
+    assert!(set.contains(&("WINEPREFIX", windows.prefix().to_str().unwrap())));
+    assert!(set.contains(&("HOME", locations.home.to_str().unwrap())));
+}
+
+#[test]
+fn the_linux_engine_opens_no_tool_and_tells_its_guest_s_environment() {
+    let (_directory, root) = installation();
+    let locations = locations(&root);
+    engine_runtime(&locations);
+    let windows = windows_of(&locations, ELDEN_RING, &root.join("Games/game"));
+
+    assert_eq!(windows.engine(), Engine::Linux);
+    for tool in Tool::ALL {
+        assert!(windows.tool(&locations, tool).unwrap().is_none());
+    }
+    let environment = windows.environment(&locations).unwrap();
+    assert!(environment.contains(&("WINEARCH".to_owned(), "win64".to_owned())));
+}
+
+#[test]
+fn no_tool_opens_before_voile_is_installed() {
+    let (_directory, root) = installation();
+    let locations = locations(&root);
+    let windows = windows_of(&locations, OTHER, &root.join("Games/game"));
+
+    assert_eq!(
+        windows.tool(&locations, Tool::Registry).err(),
+        Some(Error::WineUnavailable)
+    );
+    assert_eq!(
+        windows.environment(&locations).err(),
+        Some(Error::WineUnavailable)
+    );
+}
+
+#[test]
 fn a_windows_installation_runs_in_the_prefix_named_after_its_folder_whatever_the_storefront() {
     let locations = crate::Locations::new(
         Path::new("/library"),
