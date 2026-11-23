@@ -50,6 +50,9 @@ const INSTALLED: [i32; 3] = [0, 1638, 3010];
 /// DXMT's options, `key=value` each, separated by `;`.
 const DXMT_CONFIG: &str = "DXMT_CONFIG";
 
+/// The folder of the prefix where DXMT keeps the game's compiled shaders.
+const DXMT_SHADER_CACHE: &str = "obelisk-dxmt-cache";
+
 /// Wine for macOS, under Rosetta.
 pub(super) struct RosettaWine;
 
@@ -80,6 +83,7 @@ static FACTS: Facts = Facts {
             "DXMT_METALFX_SPATIAL_SWAPCHAIN",
             "WINE_OBELISK_EMULATE_MODES",
             super::SCROLL_PERCENT,
+            "DXMT_SHADER_CACHE_PATH",
             "CX_HIDE_BUILTIN_VERSION_RESOURCES",
             // The Game session adds these to the game's own.
             crate::input::SOCKET,
@@ -399,6 +403,16 @@ fn environment(config: &Config) -> HashMap<String, String> {
     if let Some((name, value)) = super::scroll_percent(config) {
         environment.insert(name, value);
     }
+    // DXMT keeps the game's compiled shaders in its prefix, which goes with
+    // the game, instead of beside every other game's under one name.
+    environment.insert(
+        "DXMT_SHADER_CACHE_PATH".into(),
+        config
+            .prefix
+            .join(DXMT_SHADER_CACHE)
+            .to_string_lossy()
+            .into_owned(),
+    );
     // D3DMetal's own frame cap; DXMT's is in its options.
     if let Some(cap) = config.settings.frame_cap {
         environment.insert("D3DM_MAX_FPS".into(), cap.to_string());

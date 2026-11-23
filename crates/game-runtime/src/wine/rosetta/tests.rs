@@ -138,6 +138,25 @@ fn the_profile_s_dxmt_options_follow_obelisk_s_own_so_that_its_value_of_a_key_wi
 }
 
 #[test]
+fn dxmt_keeps_the_game_s_shaders_in_its_prefix() {
+    let (_directory, root) = crate::wine::tests::installation();
+    let config = crate::wine::tests::config(&root);
+
+    let environment = environment(&config);
+
+    assert_eq!(
+        environment["DXMT_SHADER_CACHE_PATH"],
+        config.prefix.join("obelisk-dxmt-cache").to_str().unwrap()
+    );
+    assert!(
+        crate::wine::Engine::Rosetta
+            .reserved()
+            .variables
+            .contains(&"DXMT_SHADER_CACHE_PATH")
+    );
+}
+
+#[test]
 fn a_profile_s_dxmt_options_reach_dxmt_whole() {
     let (_directory, root) = installation();
     let mut config = recording_runtime(&root);

@@ -109,6 +109,9 @@ static FACTS: Facts = Facts {
             "NPT_WSD_PACING",
             "NPT_MAX_FRAME_LATENCY",
             super::SCROLL_PERCENT,
+            // The launcher sets them for DXMT's render server alone.
+            "DXMT_APP_NAME",
+            "DXMT_SHADER_CACHE_PATH",
             "LD_PRELOAD",
         ],
         dlls: &[
@@ -243,6 +246,11 @@ impl Adapter for LinuxEngine {
         }
         if let Some(cap) = config.settings.frame_cap {
             arguments.extend(["--frame-rate".to_owned(), cap.to_string()]);
+        }
+        // DXMT picks its fixes for a game by its program's name, which its
+        // render server, outside the guest, cannot see.
+        if let Some(name) = program.file_name() {
+            arguments.extend(["--program".to_owned(), name.to_string_lossy().into_owned()]);
         }
         for (path, folder) in &guest.binds {
             arguments.push("--bind".to_owned());

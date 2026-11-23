@@ -278,6 +278,46 @@ fn a_frame_cap_reaches_the_window_server_and_holds_the_guest_s_frames_to_it() {
 }
 
 #[test]
+fn dxmt_s_render_server_knows_the_game_s_program_and_keeps_its_shaders_per_game() {
+    let (_directory, root) = installation();
+    let install = root.join("install");
+    fs::create_dir_all(install.join("Game")).unwrap();
+    fs::write(install.join("Game/Game.exe"), pe()).unwrap();
+    let target = wine::target::<Plain>(
+        &linux_config(&root),
+        &game(&install),
+        &launch_target(&install.join("Game/Game.exe"), &[]),
+        HashMap::new(),
+    )
+    .unwrap();
+    assert_eq!(options(&target, "--program"), ["Game.exe"]);
+
+    let (_, server) = run_launcher(
+        &root,
+        &["--program", "Game.exe"],
+        &[("OBELISK_APP_NAME", "My Game")],
+    );
+    let lines: Vec<&str> = server.lines().collect();
+    assert_eq!(lines[3], "Game.exe");
+    assert!(
+        lines[4].starts_with('/')
+            && lines[4].ends_with("/com.zagrios.obelisk.game.My-Game.dxmt/dxmt"),
+        "{}",
+        lines[4]
+    );
+
+    // D3DMetal's server is no DXMT, and a launch that names no program
+    // leaves DXMT its own.
+    for options in [
+        &["--graphics", "d3dmetal", "--program", "Game.exe"][..],
+        &[],
+    ] {
+        let (_, server) = run_launcher(&root, options, &[]);
+        assert_eq!(server.lines().nth(3), Some("unset"), "{options:?}");
+    }
+}
+
+#[test]
 fn low_input_delay_reaches_neptune_s_swapchain_in_the_guest() {
     let (_directory, root) = installation();
     let install = root.join("install");
@@ -433,7 +473,7 @@ fn recording_runtime(root: &Path) -> PathBuf {
         r#"printf '%s\n' "$@" > "$OBELISK_TEST_ROOT/wsd.txt"
 exec /usr/bin/nc -lU "$2/wsd.sock""#,
     );
-    let server = r#"printf '%s\n' "$NPT_BACKEND $NPT_D3D12_LIBRARY_PATH" "$RENDER_SERVER_EXEC_PATH" "residency set ${DMN_RESIDENCY_SET-default}" > "$OBELISK_TEST_ROOT/server.txt"
+    let server = r#"printf '%s\n' "$NPT_BACKEND $NPT_D3D12_LIBRARY_PATH" "$RENDER_SERVER_EXEC_PATH" "residency set ${DMN_RESIDENCY_SET-default}" "${DXMT_APP_NAME-unset}" "${DXMT_SHADER_CACHE_PATH-unset}" > "$OBELISK_TEST_ROOT/server.txt"
 exec /usr/bin/nc -lU "$4""#;
     script("graphics/bin/virgl_test_server", server);
     script("graphics/x86_64/bin/virgl_test_server", server);
