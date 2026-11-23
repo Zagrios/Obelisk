@@ -75,6 +75,10 @@ pub struct Settings {
     /// true only where its backend offers it.
     #[serde(default)]
     pub metalfx_spatial: bool,
+    /// The game queues at most one frame ahead of the screen, for less input
+    /// delay; true only where its backend offers it.
+    #[serde(default)]
+    pub low_latency: bool,
     /// macOS may turn its Game Mode on for the game; false only on an engine
     /// that can keep it off.
     #[serde(default = "game_mode")]
@@ -297,6 +301,9 @@ pub struct Choices {
     /// MetalFX Spatial upscales the game's picture on its way to the screen.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub metalfx_spatial: bool,
+    /// The game queues at most one frame ahead of the screen.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub low_latency: bool,
     /// Metal's Performance HUD shows over the game, whatever renders it.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub performance_hud: bool,
@@ -324,6 +331,8 @@ pub enum GraphicsOption {
     RayTracing,
     /// MetalFX Spatial upscales the picture its swapchain presents.
     MetalFxSpatial,
+    /// Its swapchain queues at most one frame ahead of the screen.
+    LowLatency,
 }
 
 /// What one engine offers, in the order the player sees it.
@@ -367,7 +376,7 @@ pub const ENGINES: [EngineOffer; 2] = [
             },
             GraphicsOffer {
                 graphics: Graphics::Dxmt,
-                options: &[GraphicsOption::MetalFxSpatial],
+                options: &[GraphicsOption::MetalFxSpatial, GraphicsOption::LowLatency],
             },
         ],
         lowest_render_percent: None,
@@ -381,11 +390,11 @@ pub const ENGINES: [EngineOffer; 2] = [
         graphics: &[
             GraphicsOffer {
                 graphics: Graphics::Dxmt,
-                options: &[],
+                options: &[GraphicsOption::LowLatency],
             },
             GraphicsOffer {
                 graphics: Graphics::D3DMetal,
-                options: &[],
+                options: &[GraphicsOption::LowLatency],
             },
         ],
         // wsd keeps the desktop at 640x480 pixels or more: on a Retina MacBook, below about 25 gives the same one.
@@ -440,6 +449,7 @@ impl Choices {
             },
             compatibility: self.compatibility == Some(true) && offered.compatibility,
             metalfx_spatial: false,
+            low_latency: false,
             executable: profile.executable.map(str::to_owned),
             bootstrapper: profile.bootstrapper.clone(),
             profile_arguments: profile.arguments.to_vec(),
@@ -460,6 +470,7 @@ impl Choices {
         };
         settings.metalfx_spatial =
             self.metalfx_spatial && settings.takes(GraphicsOption::MetalFxSpatial);
+        settings.low_latency = self.low_latency && settings.takes(GraphicsOption::LowLatency);
         settings
     }
 
@@ -484,6 +495,7 @@ impl Choices {
             render_percent: (applied.render_percent != FULL_RENDER_PERCENT)
                 .then_some(applied.render_percent),
             metalfx_spatial: applied.metalfx_spatial,
+            low_latency: applied.low_latency,
             performance_hud: self.performance_hud,
             game_mode: (applied.game_mode != default_game_mode(profile, applied.engine))
                 .then_some(applied.game_mode),

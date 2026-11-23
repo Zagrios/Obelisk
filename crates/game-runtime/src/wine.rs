@@ -203,6 +203,9 @@ impl Config {
         if self.settings.metalfx_spatial {
             header.push_str(" metalfx_spatial=on");
         }
+        if self.settings.low_latency {
+            header.push_str(" low_latency=on");
+        }
         if !self.settings.game_mode {
             header.push_str(" game_mode=off");
         }

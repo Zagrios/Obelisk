@@ -117,6 +117,11 @@ struct DeveloperModal: Identifiable {
                             DeveloperModals.launchSettings(LaunchChoices(graphics: .dxmt, metalfxSpatial: true))
                         }
                     },
+                    Variant("Low input delay") {
+                        $0.launchSettings {
+                            DeveloperModals.launchSettings(LaunchChoices(engine: .linux, lowLatency: true))
+                        }
+                    },
                     Variant("Frame cap") {
                         $0.launchSettings { DeveloperModals.launchSettings(LaunchChoices(frameCap: 60)) }
                     },
@@ -372,10 +377,10 @@ final class DeveloperModals {
         let engines = [
             LaunchEngineOffer(engine: .rosetta, translator: .rosetta, defaultGraphics: .d3dMetal, graphics: [
                 LaunchGraphicsOffer(graphics: .d3dMetal, options: [.rayTracing]),
-                LaunchGraphicsOffer(graphics: .dxmt, options: [.metalFxSpatial]),
+                LaunchGraphicsOffer(graphics: .dxmt, options: [.metalFxSpatial, .lowLatency]),
             ], lowestRenderPercent: nil, gameMode: false, compatibility: true, frameCap: true),
             LaunchEngineOffer(engine: .linux, translator: .fex, defaultGraphics: .dxmt,
-                              graphics: [LaunchGraphicsOffer(graphics: .dxmt, options: [])],
+                              graphics: [LaunchGraphicsOffer(graphics: .dxmt, options: [.lowLatency])],
                               lowestRenderPercent: 1, gameMode: true, frameCap: true),
         ]
         let engine = choices.engine ?? .rosetta
@@ -388,6 +393,7 @@ final class DeveloperModals {
                               compatibility: offer.compatibility && choices.compatibility == true,
                               renderPercent: renderPercent,
                               metalfxSpatial: engine == .rosetta && graphics == .dxmt && choices.metalfxSpatial,
+                              lowLatency: (engine == .linux || graphics == .dxmt) && choices.lowLatency,
                               performanceHud: choices.performanceHud,
                               gameMode: !offer.gameMode || choices.gameMode ?? true,
                               frameCap: offer.frameCap ? choices.frameCap.map { $0 == FrameCap.display ? 120 : $0 } : nil,

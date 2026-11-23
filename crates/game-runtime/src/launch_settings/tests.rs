@@ -122,6 +122,7 @@ fn every_kind_of_choices() -> [Choices; 5] {
             game_mode: Some(true),
             frame_cap: None,
             metalfx_spatial: false,
+            low_latency: false,
         },
         Choices {
             arguments: Some("-dx11 \"+exec autoexec.cfg\"".into()),
@@ -445,8 +446,10 @@ fn each_engine_has_its_translator_and_each_backend_its_options() {
             let options = offer(engine).graphics(graphics).unwrap().options;
             let expected: &[GraphicsOption] = match (engine, graphics) {
                 (Engine::Rosetta, Graphics::D3DMetal) => &[GraphicsOption::RayTracing],
-                (Engine::Rosetta, Graphics::Dxmt) => &[GraphicsOption::MetalFxSpatial],
-                _ => &[],
+                (Engine::Rosetta, Graphics::Dxmt) => {
+                    &[GraphicsOption::MetalFxSpatial, GraphicsOption::LowLatency]
+                }
+                (Engine::Linux, _) => &[GraphicsOption::LowLatency],
             };
             assert_eq!(options, expected, "{engine:?} {graphics:?}");
         }
@@ -880,6 +883,31 @@ fn only_rosetta_s_dxmt_upscales_through_metalfx_spatial_and_only_on_is_kept() {
 }
 
 #[test]
+fn low_input_delay_is_kept_where_its_backend_takes_it() {
+    let directory = tempfile::tempdir().unwrap();
+    let library = directory.path();
+    let install = Path::new("/library/Games/game");
+    for (engine, graphics, compatibility, taken) in [
+        (Engine::Rosetta, Graphics::Dxmt, None, true),
+        (Engine::Linux, Graphics::Dxmt, None, true),
+        (Engine::Linux, Graphics::D3DMetal, None, true),
+        (Engine::Rosetta, Graphics::D3DMetal, None, false),
+        (Engine::Rosetta, Graphics::Dxmt, Some(true), false),
+    ] {
+        let choices = Choices {
+            engine: Some(engine),
+            graphics: Some(graphics),
+            compatibility,
+            low_latency: true,
+            ..Choices::default()
+        };
+        let view = choose(library, OTHER, install, None, None, choices).unwrap();
+        assert_eq!(view.settings.low_latency, taken, "{engine:?} {graphics:?}");
+        assert_eq!(view.choices.low_latency, taken, "{engine:?} {graphics:?}");
+    }
+}
+
+#[test]
 fn a_frame_cap_snaps_to_whole_refreshes_per_frame_at_or_below_it() {
     for (cap, rate, expected) in [
         (60, Some(120), Some(60)),
@@ -985,6 +1013,7 @@ fn every_choice() -> Choices {
         game_mode: Some(false),
         frame_cap: Some(60),
         metalfx_spatial: true,
+        low_latency: true,
     }
 }
 

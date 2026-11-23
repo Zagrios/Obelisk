@@ -46956,6 +46956,112 @@
         }
       }
     },
+    "ui.launch_settings.low_latency": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geringe Eingabeverzögerung"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Low input delay"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Baja latencia de entrada"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Faible latence d'entrée"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bassa latenza di input"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "低入力遅延"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Baixa latência de entrada"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "低输入延迟"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.low_latency_detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Spiel bereitet nur ein Bild im Voraus vor, damit Eingaben schneller ankommen. Kann die Bildrate etwas senken."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The game prepares only one frame ahead, so your input shows sooner. May lower the frame rate a little."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El juego prepara solo un fotograma por adelantado, así tus acciones se ven antes. Puede bajar un poco los fotogramas."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le jeu ne prépare qu'une image à l'avance, vos actions s'affichent plus tôt. Peut réduire un peu la fréquence d'images."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Il gioco prepara un solo fotogramma in anticipo, così i comandi si vedono prima. Può ridurre un po' i fotogrammi."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ゲームが先読みするフレームを 1 つに抑え、操作がより早く画面に反映されます。フレームレートが少し下がることがあります。"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O jogo prepara só um quadro adiantado, então seus comandos aparecem antes. Pode reduzir um pouco os quadros."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "游戏只提前准备一帧，操作会更快显示在屏幕上。帧率可能会略有下降。"
+          }
+        }
+      }
+    },
     "ui.launch_settings.render_percent": {
       "extractionState": "manual",
       "localizations": {

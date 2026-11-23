@@ -411,6 +411,9 @@ fn dxmt_options(config: &Config) -> Vec<String> {
     if let Some(cap) = config.settings.frame_cap {
         options.push(format!("d3d11.preferredMaxFrameRate={cap}"));
     }
+    if config.settings.low_latency {
+        options.push("dxgi.maxFrameLatency=1".to_owned());
+    }
     options
 }
 

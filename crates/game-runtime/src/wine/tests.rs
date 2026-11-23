@@ -851,6 +851,31 @@ fn metalfx_spatial_reaches_dxmt_s_swapchain_and_the_log() {
 }
 
 #[test]
+fn low_input_delay_reaches_dxmt_before_the_profile_s_options() {
+    let (_directory, root) = installation();
+    let config = config(&root);
+    let quick = Config {
+        settings: Settings {
+            graphics: Graphics::Dxmt,
+            low_latency: true,
+            frame_cap: Some(60),
+            variables: BTreeMap::from([(
+                "DXMT_CONFIG".to_owned(),
+                "dxgi.maxFrameLatency=2".to_owned(),
+            )]),
+            ..config.settings.clone()
+        },
+        ..config
+    };
+
+    assert_eq!(
+        environment(&quick)["DXMT_CONFIG"],
+        "d3d11.preferredMaxFrameRate=60;dxgi.maxFrameLatency=1;dxgi.maxFrameLatency=2"
+    );
+    assert!(quick.log_header().contains(" low_latency=on"));
+}
+
+#[test]
 fn compatibility_mode_leaves_direct3d_to_wine_s_own_over_opengl() {
     let (_directory, root) = installation();
     let config = config(&root);
@@ -1481,6 +1506,7 @@ fn a_configuration_reaches_its_game_session_whole() {
             game_mode: false,
             frame_cap: Some(60),
             metalfx_spatial: true,
+            low_latency: true,
             locale: Some("it_IT".into()),
         },
     };
@@ -1509,6 +1535,13 @@ fn a_configuration_reaches_its_game_session_whole() {
             "metalfx_spatial",
             Settings {
                 metalfx_spatial: false,
+                ..config.settings.clone()
+            },
+        ),
+        (
+            "low_latency",
+            Settings {
+                low_latency: false,
                 ..config.settings.clone()
             },
         ),

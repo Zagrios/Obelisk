@@ -25,6 +25,9 @@ pub struct LaunchSettings {
     /// MetalFX Spatial upscales the game's picture on its way to the screen.
     #[uniffi(default = false)]
     pub metalfx_spatial: bool,
+    /// The game queues at most one frame ahead of the screen.
+    #[uniffi(default = false)]
+    pub low_latency: bool,
     /// Metal's Performance HUD shows over the game, whatever renders it.
     pub performance_hud: bool,
     /// macOS may turn its Game Mode on for the game.
@@ -61,6 +64,8 @@ pub struct LaunchChoices {
     #[uniffi(default = false)]
     pub metalfx_spatial: bool,
     #[uniffi(default = false)]
+    pub low_latency: bool,
+    #[uniffi(default = false)]
     pub performance_hud: bool,
     #[uniffi(default = None)]
     pub game_mode: Option<bool>,
@@ -96,6 +101,7 @@ pub enum LaunchTranslator {
 pub enum LaunchGraphicsOption {
     RayTracing,
     MetalFxSpatial,
+    LowLatency,
 }
 
 /// One engine's offer.
@@ -135,6 +141,7 @@ impl From<View> for LaunchSettings {
             compatibility: view.settings.compatibility,
             render_percent: view.settings.render_percent,
             metalfx_spatial: view.settings.metalfx_spatial,
+            low_latency: view.settings.low_latency,
             performance_hud: view.settings.performance_hud,
             game_mode: view.settings.game_mode,
             frame_cap: view.settings.frame_cap,
@@ -174,6 +181,7 @@ fn graphics_offer(offer: &GraphicsOffer) -> LaunchGraphicsOffer {
             .map(|option| match option {
                 GraphicsOption::RayTracing => LaunchGraphicsOption::RayTracing,
                 GraphicsOption::MetalFxSpatial => LaunchGraphicsOption::MetalFxSpatial,
+                GraphicsOption::LowLatency => LaunchGraphicsOption::LowLatency,
             })
             .collect(),
     }
@@ -189,6 +197,7 @@ impl From<Choices> for LaunchChoices {
             compatibility: choices.compatibility,
             render_percent: choices.render_percent,
             metalfx_spatial: choices.metalfx_spatial,
+            low_latency: choices.low_latency,
             performance_hud: choices.performance_hud,
             game_mode: choices.game_mode,
             frame_cap: choices.frame_cap,
@@ -206,6 +215,7 @@ impl From<LaunchChoices> for launch_settings::Choices {
             compatibility: choices.compatibility,
             render_percent: choices.render_percent,
             metalfx_spatial: choices.metalfx_spatial,
+            low_latency: choices.low_latency,
             performance_hud: choices.performance_hud,
             game_mode: choices.game_mode,
             frame_cap: choices.frame_cap,
@@ -370,10 +380,41 @@ mod tests {
         assert!(dxmt.choices.metalfx_spatial);
         assert_eq!(
             dxmt.engines[0].graphics[1].options,
-            [LaunchGraphicsOption::MetalFxSpatial]
+            [
+                LaunchGraphicsOption::MetalFxSpatial,
+                LaunchGraphicsOption::LowLatency
+            ]
         );
         assert!(!choose(LaunchEngine::Rosetta, LaunchGraphics::D3dMetal).metalfx_spatial);
         assert!(!choose(LaunchEngine::Linux, LaunchGraphics::Dxmt).metalfx_spatial);
+    }
+
+    #[test]
+    fn low_input_delay_crosses_both_ways() {
+        let library = tempfile::tempdir().unwrap();
+        let view = launch_settings::choose(
+            library.path(),
+            profile::Game::Steam { app_id: 42 },
+            std::path::Path::new("/nowhere"),
+            None,
+            None,
+            LaunchChoices {
+                engine: Some(LaunchEngine::Linux),
+                low_latency: true,
+                ..LaunchChoices::default()
+            }
+            .into(),
+        )
+        .unwrap();
+
+        let settings = LaunchSettings::from(view);
+
+        assert!(settings.low_latency);
+        assert!(settings.choices.low_latency);
+        assert_eq!(
+            settings.engines[1].graphics[0].options,
+            [LaunchGraphicsOption::LowLatency]
+        );
     }
 
     #[test]

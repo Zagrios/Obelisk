@@ -228,6 +228,10 @@ struct LaunchSettingsSheet: View {
                                 ObeliskCardDivider()
                                 metalfxSpatialRow(settings)
                             }
+                            if model.graphicsOffer?.options.contains(.lowLatency) == true {
+                                ObeliskCardDivider()
+                                lowLatencyRow(settings)
+                            }
                             if let lowest = model.engineOffer?.lowestRenderPercent {
                                 ObeliskCardDivider()
                                 renderPercentRow(settings, lowest: lowest)
@@ -392,6 +396,22 @@ struct LaunchSettingsSheet: View {
                 .labelsHidden()
                 .pointerCursor()
                 .accessibilityIdentifier("launch-settings-metalfx-spatial")
+        }
+    }
+
+    private func lowLatencyRow(_ settings: LaunchSettings) -> some View {
+        ObeliskRow(title: L10n.string("ui.launch_settings.low_latency")) {
+            SymbolTile(name: "hand.tap", colors: TileColors.green)
+        } detail: {
+            Text(L10n.string("ui.launch_settings.low_latency_detail"))
+        } accessory: {
+            Toggle(L10n.string("ui.launch_settings.low_latency"),
+                   isOn: Binding(get: { settings.lowLatency },
+                                 set: { lowLatency in model.choose { $0.lowLatency = lowLatency } }))
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .pointerCursor()
+                .accessibilityIdentifier("launch-settings-low-latency")
         }
     }
 

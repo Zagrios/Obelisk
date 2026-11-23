@@ -277,6 +277,40 @@ fn a_frame_cap_reaches_the_window_server_and_holds_the_guest_s_frames_to_it() {
     assert_eq!(locks, ["WINE_GL_FRAME_LOCK=48", "WINE_GL_FRAME_LOCK=75"]);
 }
 
+#[test]
+fn low_input_delay_reaches_neptune_s_swapchain_in_the_guest() {
+    let (_directory, root) = installation();
+    let install = root.join("install");
+    fs::create_dir_all(&install).unwrap();
+    fs::write(install.join("Game.exe"), pe()).unwrap();
+    let mut config = linux_config(&root);
+    let mut started = |low_latency| {
+        config.settings.low_latency = low_latency;
+        wine::target::<Plain>(
+            &config,
+            &game(&install),
+            &launch_target(&install.join("Game.exe"), &[]),
+            HashMap::new(),
+        )
+        .unwrap()
+    };
+
+    let (on, off) = (started(true), started(false));
+
+    assert!(options(&on, "--env").contains(&"NPT_MAX_FRAME_LATENCY=1"));
+    assert!(
+        !options(&off, "--env")
+            .iter()
+            .any(|variable| variable.starts_with("NPT_MAX_FRAME_LATENCY="))
+    );
+    assert!(
+        wine::Engine::Linux
+            .reserved()
+            .variables
+            .contains(&"NPT_MAX_FRAME_LATENCY")
+    );
+}
+
 /// A Steam game whose program is `Game/start_protected_game.exe`, in a
 /// runtime that carries steam-hostpid.so when `host_pid`.
 fn steam_target(root: &Path, host_pid: bool) -> (wine::Config, Target) {

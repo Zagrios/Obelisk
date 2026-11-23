@@ -107,6 +107,7 @@ static FACTS: Facts = Facts {
             "VTEST_SOCKET_NAME",
             "NPT_DEBUG",
             "NPT_WSD_PACING",
+            "NPT_MAX_FRAME_LATENCY",
             "LD_PRELOAD",
         ],
         dlls: &[
@@ -402,9 +403,15 @@ fn guest_environment(config: &Config) -> Vec<(String, String)> {
         let gl_frame_lock = (cap >= 20).then(|| ("WINE_GL_FRAME_LOCK".to_owned(), cap.to_string()));
         std::iter::once(("NPT_WSD_PACING".to_owned(), "latch".to_owned())).chain(gl_frame_lock)
     });
+    // Neptune's swapchain lets the game queue one frame ahead, not three.
+    let low_latency = config
+        .settings
+        .low_latency
+        .then(|| ("NPT_MAX_FRAME_LATENCY".to_owned(), "1".to_owned()));
     own.into_iter()
         .map(|(name, value)| (name.to_owned(), value))
         .chain(frame_cap)
+        .chain(low_latency)
         .chain(locale)
         .chain(config.settings.variables.clone())
         .collect()

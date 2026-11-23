@@ -16,7 +16,7 @@ final class LaunchSettingsModelTests: XCTestCase {
                     engine: .rosetta, translator: .rosetta, defaultGraphics: .d3dMetal,
                     graphics: [
                         LaunchGraphicsOffer(graphics: .d3dMetal, options: [.rayTracing]),
-                        LaunchGraphicsOffer(graphics: .dxmt, options: [.metalFxSpatial]),
+                        LaunchGraphicsOffer(graphics: .dxmt, options: [.metalFxSpatial, .lowLatency]),
                     ],
                     lowestRenderPercent: nil, gameMode: false, compatibility: true
                 ),
@@ -91,7 +91,7 @@ final class LaunchSettingsModelTests: XCTestCase {
             }
         )
         await model.appear()
-        XCTAssertEqual(model.graphicsOffer?.options, [.metalFxSpatial])
+        XCTAssertEqual(model.graphicsOffer?.options, [.metalFxSpatial, .lowLatency])
 
         model.choose { $0.metalfxSpatial = true }
         try await waitUntil { model.settings?.metalfxSpatial == true }
