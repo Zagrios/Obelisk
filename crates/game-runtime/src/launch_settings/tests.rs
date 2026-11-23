@@ -903,7 +903,7 @@ fn a_frame_cap_is_kept_as_chosen_and_applies_as_the_screen_allows() {
         ..capped(60, None)
     };
     let view = choose(library, OTHER, install, None, Some(120), linux).unwrap();
-    assert_eq!(view.settings.frame_cap, None);
+    assert_eq!(view.settings.frame_cap, Some(60));
     assert_eq!(view.choices.frame_cap, Some(60));
 
     // Wine's own Direct3D has none, and the cap waits for the backend.

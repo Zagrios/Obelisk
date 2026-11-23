@@ -353,7 +353,7 @@ mod tests {
 
         assert_eq!(settings.frame_cap, Some(48));
         assert_eq!(settings.choices.frame_cap, Some(60));
-        assert!(settings.engines[0].frame_cap);
+        assert!(settings.engines.iter().all(|offer| offer.frame_cap));
     }
 
     #[test]

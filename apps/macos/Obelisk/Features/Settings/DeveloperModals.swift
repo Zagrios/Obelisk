@@ -371,7 +371,7 @@ final class DeveloperModals {
             ], lowestRenderPercent: nil, gameMode: false, compatibility: true, frameCap: true),
             LaunchEngineOffer(engine: .linux, translator: .fex, defaultGraphics: .dxmt,
                               graphics: [LaunchGraphicsOffer(graphics: .dxmt, options: [])],
-                              lowestRenderPercent: 1, gameMode: true),
+                              lowestRenderPercent: 1, gameMode: true, frameCap: true),
         ]
         let engine = choices.engine ?? .rosetta
         let offer = engines.first { $0.engine == engine } ?? engines[0]

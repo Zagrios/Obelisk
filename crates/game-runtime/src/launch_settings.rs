@@ -374,7 +374,7 @@ pub const ENGINES: [EngineOffer; 2] = [
         lowest_render_percent: Some(1),
         game_mode: true,
         compatibility: false,
-        frame_cap: false,
+        frame_cap: true,
     },
 ];
 

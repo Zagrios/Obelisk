@@ -106,6 +106,7 @@ static FACTS: Facts = Facts {
             "WINEDLLOVERRIDES",
             "VTEST_SOCKET_NAME",
             "NPT_DEBUG",
+            "NPT_WSD_PACING",
             "LD_PRELOAD",
         ],
         dlls: &[
@@ -237,6 +238,9 @@ impl Adapter for LinuxEngine {
         // Without it, macOS turns Game Mode on while the game is full screen.
         if !config.settings.game_mode {
             arguments.extend(["--game-mode".to_owned(), "off".to_owned()]);
+        }
+        if let Some(cap) = config.settings.frame_cap {
+            arguments.extend(["--frame-rate".to_owned(), cap.to_string()]);
         }
         for (path, folder) in &guest.binds {
             arguments.push("--bind".to_owned());
@@ -391,8 +395,16 @@ fn guest_environment(config: &Config) -> Vec<(String, String)> {
         ("VTEST_SOCKET_NAME", "/run/obelisk/vtest.sock".into()),
         ("NPT_DEBUG", "force_vtest".into()),
     ];
+    // wsd holds a game to its frame cap: Neptune's swapchain waits for it
+    // even without vsync, and OpenGL asks for the same rate through
+    // WINE_GL_FRAME_LOCK, which reads a value under 20 as a divisor.
+    let frame_cap = config.settings.frame_cap.into_iter().flat_map(|cap| {
+        let gl_frame_lock = (cap >= 20).then(|| ("WINE_GL_FRAME_LOCK".to_owned(), cap.to_string()));
+        std::iter::once(("NPT_WSD_PACING".to_owned(), "latch".to_owned())).chain(gl_frame_lock)
+    });
     own.into_iter()
         .map(|(name, value)| (name.to_owned(), value))
+        .chain(frame_cap)
         .chain(locale)
         .chain(config.settings.variables.clone())
         .collect()

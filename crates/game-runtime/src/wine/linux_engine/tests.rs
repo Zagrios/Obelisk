@@ -218,6 +218,65 @@ fn game_mode_kept_off_reaches_the_launcher() {
     assert_eq!(options(&off, "--game-mode"), ["off"]);
 }
 
+#[test]
+fn a_frame_cap_reaches_the_window_server_and_holds_the_guest_s_frames_to_it() {
+    let (_directory, root) = installation();
+    let install = root.join("install");
+    fs::create_dir_all(&install).unwrap();
+    fs::write(install.join("Game.exe"), pe()).unwrap();
+    let mut config = linux_config(&root);
+    let mut started = |frame_cap, variables: &[(&str, &str)]| {
+        config.settings.frame_cap = frame_cap;
+        config.settings.variables = variables
+            .iter()
+            .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+            .collect();
+        wine::target::<Plain>(
+            &config,
+            &game(&install),
+            &launch_target(&install.join("Game.exe"), &[]),
+            HashMap::new(),
+        )
+        .unwrap()
+    };
+
+    let uncapped = started(None, &[]);
+    assert!(options(&uncapped, "--frame-rate").is_empty());
+    assert!(
+        !options(&uncapped, "--env")
+            .iter()
+            .any(|variable| variable.starts_with("NPT_WSD_PACING=")
+                || variable.starts_with("WINE_GL_FRAME_LOCK="))
+    );
+
+    let capped = started(Some(48), &[]);
+    assert_eq!(options(&capped, "--frame-rate"), ["48"]);
+    let variables = options(&capped, "--env");
+    assert!(variables.contains(&"NPT_WSD_PACING=latch"), "{variables:?}");
+    assert!(
+        variables.contains(&"WINE_GL_FRAME_LOCK=48"),
+        "{variables:?}"
+    );
+    // The OpenGL frame lock would read 15 as a divisor.
+    let slow = started(Some(15), &[]);
+    let variables = options(&slow, "--env");
+    assert!(variables.contains(&"NPT_WSD_PACING=latch"), "{variables:?}");
+    assert!(
+        !variables
+            .iter()
+            .any(|variable| variable.starts_with("WINE_GL_FRAME_LOCK=")),
+        "{variables:?}"
+    );
+
+    // A profile's OpenGL frame lock comes after, and the guest keeps the last.
+    let profile = started(Some(48), &[("WINE_GL_FRAME_LOCK", "75")]);
+    let locks: Vec<_> = options(&profile, "--env")
+        .into_iter()
+        .filter(|variable| variable.starts_with("WINE_GL_FRAME_LOCK="))
+        .collect();
+    assert_eq!(locks, ["WINE_GL_FRAME_LOCK=48", "WINE_GL_FRAME_LOCK=75"]);
+}
+
 /// A Steam game whose program is `Game/start_protected_game.exe`, in a
 /// runtime that carries steam-hostpid.so when `host_pid`.
 fn steam_target(root: &Path, host_pid: bool) -> (wine::Config, Target) {
@@ -446,8 +505,12 @@ fn the_launcher_hands_the_guest_its_binds_its_variables_and_the_session_s_values
 }
 
 #[test]
-fn the_launcher_starts_the_window_server_with_the_render_resolution_it_was_given() {
-    for options in [&[][..], &["--render-percent", "50"]] {
+fn the_launcher_starts_the_window_server_with_the_render_resolution_and_frame_rate_it_was_given() {
+    for options in [
+        &[][..],
+        &["--render-percent", "50"],
+        &["--render-percent", "50", "--frame-rate", "60"],
+    ] {
         let (_directory, root) = installation();
 
         let (engine, _) = run_launcher(&root, options, &[]);
@@ -458,9 +521,10 @@ fn the_launcher_starts_the_window_server_with_the_render_resolution_it_was_given
         assert_eq!(lines[0], "--dir", "{options:?}");
         assert!(lines[1].starts_with("obelisk-engine-"), "{options:?}");
         assert_eq!(lines[2..], *options, "{options:?}");
-        // The render resolution is the window server's alone: the guest and
-        // its Wine never see it.
+        // The render resolution and the frame rate are the window server's
+        // alone: the guest and its Wine never see them.
         assert!(!engine.contains("--render-percent"), "{engine}");
+        assert!(!engine.contains("--frame-rate"), "{engine}");
     }
 }
 
