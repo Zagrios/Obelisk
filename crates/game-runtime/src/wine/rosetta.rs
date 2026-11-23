@@ -47,6 +47,8 @@ const GSTREAMER_REGISTRY: &str = "obelisk-gstreamer-registry.bin";
 const PREREQUISITE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 /// Success, "a newer version is already installed" and "restart required".
 const INSTALLED: [i32; 3] = [0, 1638, 3010];
+/// DXMT's options, `key=value` each, separated by `;`.
+const DXMT_CONFIG: &str = "DXMT_CONFIG";
 
 /// Wine for macOS, under Rosetta.
 pub(super) struct RosettaWine;
@@ -372,7 +374,29 @@ fn environment(config: &Config) -> HashMap<String, String> {
     // The profile's variables come last, so that they may replace Obelisk's
     // own for their game.
     environment.extend(config.settings.variables.clone());
+    let profile = config.settings.variables.get(DXMT_CONFIG);
+    if let Some(options) = dxmt_config(&dxmt_options(config), profile.map(String::as_str)) {
+        environment.insert(DXMT_CONFIG.into(), options);
+    }
     environment
+}
+
+/// Obelisk's own options for DXMT, as `key=value`.
+fn dxmt_options(_config: &Config) -> Vec<String> {
+    Vec::new()
+}
+
+/// One `DXMT_CONFIG` of Obelisk's `own` options and the `profile`'s: DXMT
+/// reads them in order and keeps the last value of a key, so the profile's
+/// replaces Obelisk's own key by key rather than all of them.
+fn dxmt_config(own: &[String], profile: Option<&str>) -> Option<String> {
+    let options: Vec<&str> = own
+        .iter()
+        .map(String::as_str)
+        .chain(profile)
+        .filter(|options| !options.is_empty())
+        .collect();
+    (!options.is_empty()).then(|| options.join(";"))
 }
 
 /// `folders` as one search path, or `None` when there are none.
