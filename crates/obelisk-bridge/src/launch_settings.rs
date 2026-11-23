@@ -28,6 +28,9 @@ pub struct LaunchSettings {
     /// The game queues at most one frame ahead of the screen.
     #[uniffi(default = false)]
     pub low_latency: bool,
+    /// Wine lists the common display modes the screen lacks.
+    #[uniffi(default = false)]
+    pub emulate_modes: bool,
     /// Metal's Performance HUD shows over the game, whatever renders it.
     pub performance_hud: bool,
     /// macOS may turn its Game Mode on for the game.
@@ -65,6 +68,8 @@ pub struct LaunchChoices {
     pub metalfx_spatial: bool,
     #[uniffi(default = false)]
     pub low_latency: bool,
+    #[uniffi(default = false)]
+    pub emulate_modes: bool,
     #[uniffi(default = false)]
     pub performance_hud: bool,
     #[uniffi(default = None)]
@@ -123,6 +128,9 @@ pub struct LaunchEngineOffer {
     /// Whether it can cap a game's frame rate.
     #[uniffi(default = false)]
     pub frame_cap: bool,
+    /// Whether its Wine can list display modes the screen lacks.
+    #[uniffi(default = false)]
+    pub emulate_modes: bool,
 }
 
 /// One backend's offer on one engine.
@@ -142,6 +150,7 @@ impl From<View> for LaunchSettings {
             render_percent: view.settings.render_percent,
             metalfx_spatial: view.settings.metalfx_spatial,
             low_latency: view.settings.low_latency,
+            emulate_modes: view.settings.emulate_modes,
             performance_hud: view.settings.performance_hud,
             game_mode: view.settings.game_mode,
             frame_cap: view.settings.frame_cap,
@@ -169,6 +178,7 @@ fn engine_offer(offer: &EngineOffer, default: Graphics) -> LaunchEngineOffer {
         game_mode: offer.game_mode,
         compatibility: offer.compatibility,
         frame_cap: offer.frame_cap,
+        emulate_modes: offer.emulate_modes,
     }
 }
 
@@ -198,6 +208,7 @@ impl From<Choices> for LaunchChoices {
             render_percent: choices.render_percent,
             metalfx_spatial: choices.metalfx_spatial,
             low_latency: choices.low_latency,
+            emulate_modes: choices.emulate_modes,
             performance_hud: choices.performance_hud,
             game_mode: choices.game_mode,
             frame_cap: choices.frame_cap,
@@ -216,6 +227,7 @@ impl From<LaunchChoices> for launch_settings::Choices {
             render_percent: choices.render_percent,
             metalfx_spatial: choices.metalfx_spatial,
             low_latency: choices.low_latency,
+            emulate_modes: choices.emulate_modes,
             performance_hud: choices.performance_hud,
             game_mode: choices.game_mode,
             frame_cap: choices.frame_cap,
@@ -387,6 +399,35 @@ mod tests {
         );
         assert!(!choose(LaunchEngine::Rosetta, LaunchGraphics::D3dMetal).metalfx_spatial);
         assert!(!choose(LaunchEngine::Linux, LaunchGraphics::Dxmt).metalfx_spatial);
+    }
+
+    #[test]
+    fn emulated_display_modes_cross_both_ways_on_rosetta_alone() {
+        let library = tempfile::tempdir().unwrap();
+        let view = launch_settings::choose(
+            library.path(),
+            profile::Game::Steam { app_id: 42 },
+            std::path::Path::new("/nowhere"),
+            None,
+            None,
+            LaunchChoices {
+                emulate_modes: true,
+                ..LaunchChoices::default()
+            }
+            .into(),
+        )
+        .unwrap();
+
+        let settings = LaunchSettings::from(view);
+
+        assert!(settings.emulate_modes);
+        assert!(settings.choices.emulate_modes);
+        let offered: Vec<bool> = settings
+            .engines
+            .iter()
+            .map(|offer| offer.emulate_modes)
+            .collect();
+        assert_eq!(offered, [true, false]);
     }
 
     #[test]

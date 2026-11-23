@@ -78,6 +78,7 @@ static FACTS: Facts = Facts {
             "WINE_D3D_CONFIG",
             "D3DM_MAX_FPS",
             "DXMT_METALFX_SPATIAL_SWAPCHAIN",
+            "WINE_OBELISK_EMULATE_MODES",
             "CX_HIDE_BUILTIN_VERSION_RESOURCES",
             // The Game session adds these to the game's own.
             crate::input::SOCKET,
@@ -388,6 +389,11 @@ fn environment(config: &Config) -> HashMap<String, String> {
     // DXMT upscales its swapchain's picture through MetalFX.
     if config.settings.metalfx_spatial {
         environment.insert("DXMT_METALFX_SPATIAL_SWAPCHAIN".into(), "1".into());
+    }
+    // winemac lists 640x480 and the other common modes the screen lacks,
+    // and scales a full-screen game at one of them.
+    if config.settings.emulate_modes {
+        environment.insert("WINE_OBELISK_EMULATE_MODES".into(), "1".into());
     }
     // D3DMetal's own frame cap; DXMT's is in its options.
     if let Some(cap) = config.settings.frame_cap {

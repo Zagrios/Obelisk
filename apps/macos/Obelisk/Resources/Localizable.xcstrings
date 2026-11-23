@@ -47062,6 +47062,112 @@
         }
       }
     },
+    "ui.launch_settings.emulate_modes": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Klassische Auflösungen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Classic resolutions"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resoluciones clásicas"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Résolutions classiques"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Risoluzioni classiche"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クラシック解像度"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resoluções clássicas"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "经典分辨率"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.emulate_modes_detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bietet älteren Spielen Auflösungen wie 800×600 oder 1024×768 an, die der Bildschirm nicht kennt. macOS skaliert das Bild im Vollbild. Am besten funktioniert das mit DXMT."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Offers older games resolutions like 800×600 or 1024×768 that the display does not list. macOS scales the picture in full screen. It works best with DXMT."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ofrece a los juegos antiguos resoluciones como 800×600 o 1024×768 que la pantalla no incluye. macOS escala la imagen en pantalla completa. Funciona mejor con DXMT."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Propose aux jeux anciens des résolutions comme 800×600 ou 1024×768 que l'écran ne liste pas. macOS met l'image à l'échelle en plein écran. Fonctionne mieux avec DXMT."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Offre ai giochi meno recenti risoluzioni come 800×600 o 1024×768 che lo schermo non elenca. macOS scala l'immagine a schermo intero. Funziona meglio con DXMT."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ディスプレイにない 800×600 や 1024×768 などの解像度を古いゲームに提供します。フルスクリーンでは macOS が画面に合わせて拡大します。DXMT での使用が最適です。"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Oferece a jogos antigos resoluções como 800×600 ou 1024×768 que a tela não lista. O macOS ajusta a imagem em tela cheia. Funciona melhor com DXMT."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "为老游戏提供显示器未列出的分辨率，例如 800×600 或 1024×768。全屏时由 macOS 缩放画面。搭配 DXMT 效果最佳。"
+          }
+        }
+      }
+    },
     "ui.launch_settings.render_percent": {
       "extractionState": "manual",
       "localizations": {

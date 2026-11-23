@@ -7093,6 +7093,7 @@ public struct LaunchChoices: Equatable, Hashable {
     public var renderPercent: UInt32?
     public var metalfxSpatial: Bool
     public var lowLatency: Bool
+    public var emulateModes: Bool
     public var performanceHud: Bool
     public var gameMode: Bool?
     /**
@@ -7105,7 +7106,7 @@ public struct LaunchChoices: Equatable, Hashable {
     public init(
         /**
          * What the player adds to the game's command line, as typed.
-         */arguments: String? = nil, engine: LaunchEngine? = nil, graphics: LaunchGraphics? = nil, rayTracing: Bool? = nil, compatibility: Bool? = nil, renderPercent: UInt32? = nil, metalfxSpatial: Bool = false, lowLatency: Bool = false, performanceHud: Bool = false, gameMode: Bool? = nil, 
+         */arguments: String? = nil, engine: LaunchEngine? = nil, graphics: LaunchGraphics? = nil, rayTracing: Bool? = nil, compatibility: Bool? = nil, renderPercent: UInt32? = nil, metalfxSpatial: Bool = false, lowLatency: Bool = false, emulateModes: Bool = false, performanceHud: Bool = false, gameMode: Bool? = nil, 
         /**
          * The most frames a second, 0 for the screen's refresh rate.
          */frameCap: UInt32? = nil) {
@@ -7117,6 +7118,7 @@ public struct LaunchChoices: Equatable, Hashable {
         self.renderPercent = renderPercent
         self.metalfxSpatial = metalfxSpatial
         self.lowLatency = lowLatency
+        self.emulateModes = emulateModes
         self.performanceHud = performanceHud
         self.gameMode = gameMode
         self.frameCap = frameCap
@@ -7146,6 +7148,7 @@ public struct FfiConverterTypeLaunchChoices: FfiConverterRustBuffer {
                 renderPercent: FfiConverterOptionUInt32.read(from: &buf), 
                 metalfxSpatial: FfiConverterBool.read(from: &buf), 
                 lowLatency: FfiConverterBool.read(from: &buf), 
+                emulateModes: FfiConverterBool.read(from: &buf), 
                 performanceHud: FfiConverterBool.read(from: &buf), 
                 gameMode: FfiConverterOptionBool.read(from: &buf), 
                 frameCap: FfiConverterOptionUInt32.read(from: &buf)
@@ -7161,6 +7164,7 @@ public struct FfiConverterTypeLaunchChoices: FfiConverterRustBuffer {
         FfiConverterOptionUInt32.write(value.renderPercent, into: &buf)
         FfiConverterBool.write(value.metalfxSpatial, into: &buf)
         FfiConverterBool.write(value.lowLatency, into: &buf)
+        FfiConverterBool.write(value.emulateModes, into: &buf)
         FfiConverterBool.write(value.performanceHud, into: &buf)
         FfiConverterOptionBool.write(value.gameMode, into: &buf)
         FfiConverterOptionUInt32.write(value.frameCap, into: &buf)
@@ -7211,6 +7215,10 @@ public struct LaunchEngineOffer: Equatable, Hashable {
      * Whether it can cap a game's frame rate.
      */
     public var frameCap: Bool
+    /**
+     * Whether its Wine can list display modes the screen lacks.
+     */
+    public var emulateModes: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -7230,7 +7238,10 @@ public struct LaunchEngineOffer: Equatable, Hashable {
          */compatibility: Bool = false, 
         /**
          * Whether it can cap a game's frame rate.
-         */frameCap: Bool = false) {
+         */frameCap: Bool = false, 
+        /**
+         * Whether its Wine can list display modes the screen lacks.
+         */emulateModes: Bool = false) {
         self.engine = engine
         self.translator = translator
         self.defaultGraphics = defaultGraphics
@@ -7239,6 +7250,7 @@ public struct LaunchEngineOffer: Equatable, Hashable {
         self.gameMode = gameMode
         self.compatibility = compatibility
         self.frameCap = frameCap
+        self.emulateModes = emulateModes
     }
 
     
@@ -7264,7 +7276,8 @@ public struct FfiConverterTypeLaunchEngineOffer: FfiConverterRustBuffer {
                 lowestRenderPercent: FfiConverterOptionUInt32.read(from: &buf), 
                 gameMode: FfiConverterBool.read(from: &buf), 
                 compatibility: FfiConverterBool.read(from: &buf), 
-                frameCap: FfiConverterBool.read(from: &buf)
+                frameCap: FfiConverterBool.read(from: &buf), 
+                emulateModes: FfiConverterBool.read(from: &buf)
         )
     }
 
@@ -7277,6 +7290,7 @@ public struct FfiConverterTypeLaunchEngineOffer: FfiConverterRustBuffer {
         FfiConverterBool.write(value.gameMode, into: &buf)
         FfiConverterBool.write(value.compatibility, into: &buf)
         FfiConverterBool.write(value.frameCap, into: &buf)
+        FfiConverterBool.write(value.emulateModes, into: &buf)
     }
 }
 
@@ -7382,6 +7396,10 @@ public struct LaunchSettings: Equatable, Hashable {
      */
     public var lowLatency: Bool
     /**
+     * Wine lists the common display modes the screen lacks.
+     */
+    public var emulateModes: Bool
+    /**
      * Metal's Performance HUD shows over the game, whatever renders it.
      */
     public var performanceHud: Bool
@@ -7428,6 +7446,9 @@ public struct LaunchSettings: Equatable, Hashable {
          * The game queues at most one frame ahead of the screen.
          */lowLatency: Bool = false, 
         /**
+         * Wine lists the common display modes the screen lacks.
+         */emulateModes: Bool = false, 
+        /**
          * Metal's Performance HUD shows over the game, whatever renders it.
          */performanceHud: Bool, 
         /**
@@ -7454,6 +7475,7 @@ public struct LaunchSettings: Equatable, Hashable {
         self.renderPercent = renderPercent
         self.metalfxSpatial = metalfxSpatial
         self.lowLatency = lowLatency
+        self.emulateModes = emulateModes
         self.performanceHud = performanceHud
         self.gameMode = gameMode
         self.frameCap = frameCap
@@ -7485,6 +7507,7 @@ public struct FfiConverterTypeLaunchSettings: FfiConverterRustBuffer {
                 renderPercent: FfiConverterUInt32.read(from: &buf), 
                 metalfxSpatial: FfiConverterBool.read(from: &buf), 
                 lowLatency: FfiConverterBool.read(from: &buf), 
+                emulateModes: FfiConverterBool.read(from: &buf), 
                 performanceHud: FfiConverterBool.read(from: &buf), 
                 gameMode: FfiConverterBool.read(from: &buf), 
                 frameCap: FfiConverterOptionUInt32.read(from: &buf), 
@@ -7502,6 +7525,7 @@ public struct FfiConverterTypeLaunchSettings: FfiConverterRustBuffer {
         FfiConverterUInt32.write(value.renderPercent, into: &buf)
         FfiConverterBool.write(value.metalfxSpatial, into: &buf)
         FfiConverterBool.write(value.lowLatency, into: &buf)
+        FfiConverterBool.write(value.emulateModes, into: &buf)
         FfiConverterBool.write(value.performanceHud, into: &buf)
         FfiConverterBool.write(value.gameMode, into: &buf)
         FfiConverterOptionUInt32.write(value.frameCap, into: &buf)

@@ -79,6 +79,10 @@ pub struct Settings {
     /// delay; true only where its backend offers it.
     #[serde(default)]
     pub low_latency: bool,
+    /// Wine lists the common display modes a screen lacks, and macOS scales
+    /// a full-screen game at one of them to the screen.
+    #[serde(default)]
+    pub emulate_modes: bool,
     /// macOS may turn its Game Mode on for the game; false only on an engine
     /// that can keep it off.
     #[serde(default = "game_mode")]
@@ -304,6 +308,9 @@ pub struct Choices {
     /// The game queues at most one frame ahead of the screen.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub low_latency: bool,
+    /// Wine lists the common display modes a screen lacks.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub emulate_modes: bool,
     /// Metal's Performance HUD shows over the game, whatever renders it.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub performance_hud: bool,
@@ -351,6 +358,8 @@ pub struct EngineOffer {
     pub compatibility: bool,
     /// Whether it can cap a game's frame rate.
     pub frame_cap: bool,
+    /// Whether its Wine can list display modes the screen lacks.
+    pub emulate_modes: bool,
 }
 
 /// What one graphics backend offers on one engine.
@@ -383,6 +392,7 @@ pub const ENGINES: [EngineOffer; 2] = [
         game_mode: false,
         compatibility: true,
         frame_cap: true,
+        emulate_modes: true,
     },
     EngineOffer {
         engine: Engine::Linux,
@@ -402,6 +412,7 @@ pub const ENGINES: [EngineOffer; 2] = [
         game_mode: true,
         compatibility: false,
         frame_cap: true,
+        emulate_modes: false,
     },
 ];
 
@@ -450,6 +461,7 @@ impl Choices {
             compatibility: self.compatibility == Some(true) && offered.compatibility,
             metalfx_spatial: false,
             low_latency: false,
+            emulate_modes: self.emulate_modes && offered.emulate_modes,
             executable: profile.executable.map(str::to_owned),
             bootstrapper: profile.bootstrapper.clone(),
             profile_arguments: profile.arguments.to_vec(),
@@ -496,6 +508,7 @@ impl Choices {
                 .then_some(applied.render_percent),
             metalfx_spatial: applied.metalfx_spatial,
             low_latency: applied.low_latency,
+            emulate_modes: applied.emulate_modes,
             performance_hud: self.performance_hud,
             game_mode: (applied.game_mode != default_game_mode(profile, applied.engine))
                 .then_some(applied.game_mode),

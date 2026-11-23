@@ -236,6 +236,10 @@ struct LaunchSettingsSheet: View {
                                 ObeliskCardDivider()
                                 renderPercentRow(settings, lowest: lowest)
                             }
+                            if model.engineOffer?.emulateModes == true {
+                                ObeliskCardDivider()
+                                emulateModesRow(settings)
+                            }
                             if model.engineOffer?.frameCap == true, !settings.compatibility {
                                 ObeliskCardDivider()
                                 frameCapRow(settings)
@@ -396,6 +400,22 @@ struct LaunchSettingsSheet: View {
                 .labelsHidden()
                 .pointerCursor()
                 .accessibilityIdentifier("launch-settings-metalfx-spatial")
+        }
+    }
+
+    private func emulateModesRow(_ settings: LaunchSettings) -> some View {
+        ObeliskRow(title: L10n.string("ui.launch_settings.emulate_modes")) {
+            SymbolTile(name: "rectangle.on.rectangle", colors: TileColors.violet)
+        } detail: {
+            Text(L10n.string("ui.launch_settings.emulate_modes_detail"))
+        } accessory: {
+            Toggle(L10n.string("ui.launch_settings.emulate_modes"),
+                   isOn: Binding(get: { settings.emulateModes },
+                                 set: { emulateModes in model.choose { $0.emulateModes = emulateModes } }))
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .pointerCursor()
+                .accessibilityIdentifier("launch-settings-emulate-modes")
         }
     }
 

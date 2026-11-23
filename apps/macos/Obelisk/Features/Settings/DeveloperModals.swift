@@ -122,6 +122,9 @@ struct DeveloperModal: Identifiable {
                             DeveloperModals.launchSettings(LaunchChoices(engine: .linux, lowLatency: true))
                         }
                     },
+                    Variant("Emulated display modes") {
+                        $0.launchSettings { DeveloperModals.launchSettings(LaunchChoices(emulateModes: true)) }
+                    },
                     Variant("Frame cap") {
                         $0.launchSettings { DeveloperModals.launchSettings(LaunchChoices(frameCap: 60)) }
                     },
@@ -378,7 +381,8 @@ final class DeveloperModals {
             LaunchEngineOffer(engine: .rosetta, translator: .rosetta, defaultGraphics: .d3dMetal, graphics: [
                 LaunchGraphicsOffer(graphics: .d3dMetal, options: [.rayTracing]),
                 LaunchGraphicsOffer(graphics: .dxmt, options: [.metalFxSpatial, .lowLatency]),
-            ], lowestRenderPercent: nil, gameMode: false, compatibility: true, frameCap: true),
+            ], lowestRenderPercent: nil, gameMode: false, compatibility: true, frameCap: true,
+               emulateModes: true),
             LaunchEngineOffer(engine: .linux, translator: .fex, defaultGraphics: .dxmt,
                               graphics: [LaunchGraphicsOffer(graphics: .dxmt, options: [.lowLatency])],
                               lowestRenderPercent: 1, gameMode: true, frameCap: true),
@@ -394,6 +398,7 @@ final class DeveloperModals {
                               renderPercent: renderPercent,
                               metalfxSpatial: engine == .rosetta && graphics == .dxmt && choices.metalfxSpatial,
                               lowLatency: (engine == .linux || graphics == .dxmt) && choices.lowLatency,
+                              emulateModes: offer.emulateModes && choices.emulateModes,
                               performanceHud: choices.performanceHud,
                               gameMode: !offer.gameMode || choices.gameMode ?? true,
                               frameCap: offer.frameCap ? choices.frameCap.map { $0 == FrameCap.display ? 120 : $0 } : nil,

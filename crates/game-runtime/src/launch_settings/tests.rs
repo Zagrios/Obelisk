@@ -123,6 +123,7 @@ fn every_kind_of_choices() -> [Choices; 5] {
             frame_cap: None,
             metalfx_spatial: false,
             low_latency: false,
+            emulate_modes: false,
         },
         Choices {
             arguments: Some("-dx11 \"+exec autoexec.cfg\"".into()),
@@ -908,6 +909,23 @@ fn low_input_delay_is_kept_where_its_backend_takes_it() {
 }
 
 #[test]
+fn only_rosetta_s_wine_emulates_display_modes_and_only_on_is_kept() {
+    let directory = tempfile::tempdir().unwrap();
+    let library = directory.path();
+    let install = Path::new("/library/Games/game");
+    for (engine, taken) in [(Engine::Rosetta, true), (Engine::Linux, false)] {
+        let choices = Choices {
+            engine: Some(engine),
+            emulate_modes: true,
+            ..Choices::default()
+        };
+        let view = choose(library, OTHER, install, None, None, choices).unwrap();
+        assert_eq!(view.settings.emulate_modes, taken, "{engine:?}");
+        assert_eq!(view.choices.emulate_modes, taken, "{engine:?}");
+    }
+}
+
+#[test]
 fn a_frame_cap_snaps_to_whole_refreshes_per_frame_at_or_below_it() {
     for (cap, rate, expected) in [
         (60, Some(120), Some(60)),
@@ -1014,6 +1032,7 @@ fn every_choice() -> Choices {
         frame_cap: Some(60),
         metalfx_spatial: true,
         low_latency: true,
+        emulate_modes: true,
     }
 }
 

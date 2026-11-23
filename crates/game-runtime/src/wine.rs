@@ -206,6 +206,9 @@ impl Config {
         if self.settings.low_latency {
             header.push_str(" low_latency=on");
         }
+        if self.settings.emulate_modes {
+            header.push_str(" emulate_modes=on");
+        }
         if !self.settings.game_mode {
             header.push_str(" game_mode=off");
         }

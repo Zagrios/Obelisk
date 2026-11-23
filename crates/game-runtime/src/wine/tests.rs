@@ -876,6 +876,29 @@ fn low_input_delay_reaches_dxmt_before_the_profile_s_options() {
 }
 
 #[test]
+fn emulated_display_modes_reach_wine_and_the_log() {
+    let (_directory, root) = installation();
+    let config = config(&root);
+    assert!(!environment(&config).contains_key("WINE_OBELISK_EMULATE_MODES"));
+    let emulated = Config {
+        settings: Settings {
+            emulate_modes: true,
+            ..config.settings.clone()
+        },
+        ..config
+    };
+
+    assert_eq!(environment(&emulated)["WINE_OBELISK_EMULATE_MODES"], "1");
+    assert!(emulated.log_header().contains(" emulate_modes=on"));
+    assert!(
+        Engine::Rosetta
+            .reserved()
+            .variables
+            .contains(&"WINE_OBELISK_EMULATE_MODES")
+    );
+}
+
+#[test]
 fn compatibility_mode_leaves_direct3d_to_wine_s_own_over_opengl() {
     let (_directory, root) = installation();
     let config = config(&root);
@@ -1507,6 +1530,7 @@ fn a_configuration_reaches_its_game_session_whole() {
             frame_cap: Some(60),
             metalfx_spatial: true,
             low_latency: true,
+            emulate_modes: true,
             locale: Some("it_IT".into()),
         },
     };
@@ -1542,6 +1566,13 @@ fn a_configuration_reaches_its_game_session_whole() {
             "low_latency",
             Settings {
                 low_latency: false,
+                ..config.settings.clone()
+            },
+        ),
+        (
+            "emulate_modes",
+            Settings {
+                emulate_modes: false,
                 ..config.settings.clone()
             },
         ),
