@@ -331,6 +331,23 @@ impl Adapter for LinuxEngine {
         folders
     }
 
+    fn environment(&self, config: &Config) -> Vec<(String, String)> {
+        let mut environment = guest_environment(config);
+        environment.sort();
+        environment
+    }
+
+    /// Wine's programs need the window server the launcher starts for a
+    /// game.
+    fn tool(
+        &self,
+        _config: &Config,
+        _home: &Path,
+        _program: &str,
+    ) -> Result<Option<Command>, Error> {
+        Ok(None)
+    }
+
     fn remove(
         &self,
         _locations: &crate::Locations,

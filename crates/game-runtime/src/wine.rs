@@ -294,6 +294,14 @@ trait Adapter {
         environment: &HashMap<String, String>,
         pid: Option<u32>,
     ) -> Vec<PathBuf>;
+    /// What every Wine command of config's prefix runs with, by name:
+    /// Obelisk's own variables, then the launch settings', inside the
+    /// engine's guest for an engine that has one.
+    fn environment(&self, config: &Config) -> Vec<(String, String)>;
+    /// The command that starts Wine's `program`, such as winecfg, in
+    /// config's prefix, which it creates first when the game never ran;
+    /// none on an engine whose Wine starts only through its launcher.
+    fn tool(&self, config: &Config, home: &Path, program: &str) -> Result<Option<Command>, Error>;
     /// Deletes `prefix`, its prefix of an uninstalled installation. A missing
     /// one is already gone; a link in its place is never followed.
     fn remove(
@@ -589,6 +597,59 @@ impl Installation {
             log: self.log.clone(),
             settings: self.settings.clone(),
         })
+    }
+}
+
+/// One of Wine's own programs, opened in an installation's prefix.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Tool {
+    /// winecfg: the Windows version Wine reports, its drives, its audio and
+    /// its DLL overrides.
+    Configuration,
+    /// regedit: the prefix's registry.
+    Registry,
+    /// winedbg: Wine's debugger, which reads and writes a terminal.
+    Debugger,
+}
+
+impl Tool {
+    pub const ALL: [Self; 3] = [Self::Configuration, Self::Registry, Self::Debugger];
+
+    /// The program Wine starts for it.
+    pub fn program(self) -> &'static str {
+        match self {
+            Self::Configuration => "winecfg",
+            Self::Registry => "regedit",
+            Self::Debugger => "winedbg",
+        }
+    }
+}
+
+impl Installation {
+    /// The engine its game runs on.
+    pub fn engine(&self) -> Engine {
+        self.settings.engine
+    }
+
+    /// What every Wine command of its prefix runs with, by name, once Voile
+    /// is installed.
+    pub fn environment(
+        &self,
+        locations: &crate::Locations,
+    ) -> Result<Vec<(String, String)>, Error> {
+        let config = self.runtime(locations)?;
+        Ok(config.adapter().environment(&config))
+    }
+
+    /// The command that starts Wine's `tool` in its prefix, as its game's
+    /// Wine runs, once Voile is installed: the prefix is created first when
+    /// the game never ran. None on the Linux engine, whose Wine starts only
+    /// through its launcher.
+    pub fn tool(&self, locations: &crate::Locations, tool: Tool) -> Result<Option<Command>, Error> {
+        let config = self.runtime(locations)?;
+        config
+            .adapter()
+            .tool(&config, &locations.home, tool.program())
     }
 }
 

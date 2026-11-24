@@ -71,6 +71,8 @@ What Obelisk tells players about particular games is in `crates/game-runtime/not
 
 Logs are in `~/Library/Logs/Obelisk`, one folder per store. A file named `winedebug` at the root of an installed Voile runtime replaces Obelisk's default Wine debug channels, for example `err+all,+steamclient`.
 
+`cargo run -p game-runtime --bin obelisk-cli -- <command>` does for one installed game what Obelisk does, from a terminal, with the library `OBELISK_LIBRARY_DIRECTORY` names: `list` the installations, print a game's Wine `env` or `prefix` (`--open` shows it in Finder), run `wine <game> winecfg`, `regedit` or `winedbg` in its prefix, or `run` a GOG game through its supervisor, as Obelisk launches it, with `--app` naming the Obelisk build whose helpers run it. Quit Obelisk before `run`: both write the receipt book. A game is named by its installation's ID, its store's ID or its name. A Steam or Epic game launches only from Obelisk, which holds its account's session. A release build of the tool refuses to run.
+
 ## Project layout
 
 ```text

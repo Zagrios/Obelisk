@@ -208,6 +208,25 @@ impl Adapter for RosettaWine {
         folders
     }
 
+    fn environment(&self, config: &Config) -> Vec<(String, String)> {
+        let mut environment: Vec<_> = self::environment(config).into_iter().collect();
+        environment.sort();
+        environment
+    }
+
+    /// Wine's programs run as the game does, with the Mac's environment
+    /// under Wine's own, in a prefix created and updated as a launch does.
+    fn tool(&self, config: &Config, home: &Path, program: &str) -> Result<Option<Command>, Error> {
+        boot(config, home)?;
+        let mut command = Command::new(wine(config));
+        command
+            .arg(program)
+            .env_clear()
+            .envs(crate::native::environment(home))
+            .envs(environment(config));
+        Ok(Some(command))
+    }
+
     fn remove(
         &self,
         locations: &crate::Locations,
