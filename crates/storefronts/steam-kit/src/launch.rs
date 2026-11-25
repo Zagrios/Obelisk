@@ -57,10 +57,9 @@ pub(crate) fn configuration(app: &AppInfo, platform: Platform) -> Option<&Launch
         .iter()
         .filter(|config| supports_platform(&config.os_list, platform))
         .filter(|config| {
-            config
-                .beta_key
-                .as_deref()
-                .is_none_or(|branch| branch.eq_ignore_ascii_case("public"))
+            config.beta_key.as_deref().is_none_or(|branch| {
+                branch.eq_ignore_ascii_case("public") || branch.eq_ignore_ascii_case("default")
+            })
         })
         .filter_map(|config| launch_rank(config).map(|rank| (config, rank)))
         .min_by_key(|(config, rank)| {
@@ -164,6 +163,33 @@ mod tests {
 
         let public = app(vec![on("Public", "Game.exe")]);
         assert!(configuration(&public, Platform::Windows).is_some());
+    }
+
+    #[test]
+    fn selects_outlast_trials_protected_launcher_on_default_branch() {
+        let root = tempfile::tempdir().unwrap();
+        file(root.path(), "start_protected_game.exe");
+
+        let on = |branch: &str, executable: &str| {
+            let mut option = config(executable, "windows", "default");
+            option.arguments.clear();
+            option.os_list.clear();
+            option.beta_key = Some(branch.into());
+            option
+        };
+        let mut game = app(vec![
+            on("oppqa", "TOTClient.exe"),
+            on("default", "start_protected_game.exe"),
+            on("oppqa-eac", "start_protected_game.exe"),
+        ]);
+        game.app_id = 1304930;
+
+        let plan = plan(&game, Platform::Windows, root.path()).unwrap();
+        assert_eq!(plan.app_id, 1304930);
+        assert_eq!(
+            Path::new(&plan.target.executable).file_name().unwrap(),
+            "start_protected_game.exe"
+        );
     }
 
     #[test]
