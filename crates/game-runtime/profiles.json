@@ -391,6 +391,11 @@
       "engine": "Linux",
       "graphics": "D3DMetal",
       "game_mode": false
+    },
+    {
+      "name": "Grand Theft Auto V",
+      "note": "Its Story Mode should run, though it hasn't been tried with Obelisk yet. GTA Online does not, since Rockstar's BattlEye runs only in online sessions and is a Windows kernel driver that Rockstar enables on no other platform. Nothing here changes how it runs: the entry records what is known of the game, and leaves the rest to the defaults until its Story Mode is tried here.",
+      "steam": 271590
     }
   ]
 }

@@ -94,6 +94,14 @@
         "en": "ROB RUN can't be played on a Mac with Obelisk yet: its studio hasn't turned Easy Anti-Cheat on for Wine and Linux, so the anti-cheat finds no module to load. Only the studio can do it.",
         "fr": "ROB RUN n'est pas encore jouable sur Mac avec Obelisk : son studio n'a pas activé Easy Anti-Cheat pour Wine et Linux, l'anti-triche ne trouve donc aucun module à charger. Seul le studio peut le faire."
       }
+    },
+    {
+      "name": "Grand Theft Auto V",
+      "steam": 271590,
+      "text": {
+        "en": "Story Mode should run, though it hasn't been tried with Obelisk yet. GTA Online does not: its BattlEye anti-cheat runs only in online sessions and is a Windows kernel driver, which Rockstar enables on no other platform, so Obelisk never starts it. Obelisk never modifies or bypasses an anti-cheat.",
+        "it": "La Story Mode dovrebbe funzionare, anche se non è ancora stata provata con Obelisk. GTA Online no: il suo anti-cheat BattlEye gira solo nelle sessioni online ed è un driver kernel di Windows, che Rockstar non abilita su nessun'altra piattaforma, quindi Obelisk non lo avvia mai. Obelisk non modifica né aggira mai un anti-cheat."
+      }
     }
   ]
 }
