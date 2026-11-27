@@ -219,7 +219,6 @@ Obelisk has no account of its own and does not track what you do in it. It talks
 ## Known limitations
 
 - Only games you own through Steam, Epic Games or GOG appear. Adding other games by hand is not supported yet.
-- Games install in Obelisk's library folder, shown in **Settings → Storage**. Another location cannot be chosen yet.
 - Steam: Workshop content and beta branches are not available yet.
 - GOG: Cloud saves, friends and GOG Galaxy's online features are not available yet. Games only offered in GOG's older download format cannot be installed yet.
 - Games whose anti-cheat does not accept Wine or Linux do not run yet (see [Windows games](#windows-games)).
@@ -241,7 +240,7 @@ Obelisk never saves your password. Your Steam password goes to Steam to sign in 
 <details>
 <summary><b>Where are my games installed?</b></summary>
 <br>
-In <code>~/Library/Application Support/com.zagrios.obelisk/Games</code>. <b>Settings → Storage → Show in Finder</b> opens the folder.
+In <code>~/Library/Application Support/com.zagrios.obelisk/Games</code> unless you chose another folder, such as one on an external disk, in <b>Settings → Storage → Games folder</b>. Its <b>Show in Finder</b> button opens the folder.
 </details>
 
 <details>
