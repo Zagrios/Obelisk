@@ -1,6 +1,4 @@
 import Foundation
-import Network
-import Synchronization
 
 /// One language choice for SwiftUI, AppKit and messages received from Rust.
 enum L10n {
@@ -34,30 +32,6 @@ enum L10n {
     static func message(_ value: String) -> String {
         strings.message(value, locale: locale)
     }
-
-    /// `message`, with a firewall hint while the Mac is online.
-    static func unreachable(_ message: String) -> String {
-        guard NetworkPath.isOnline else { return message }
-        // Some reasons end in a transport error, without a full stop.
-        let sentence = message.last.map { $0.isLetter || $0.isNumber } == true ? message + "." : message
-        return string("model.network.blocked", sentence)
-    }
-}
-
-/// Whether the Mac has a usable network path, as macOS tells it.
-enum NetworkPath {
-    private static let online = Mutex(false)
-    private static let monitor: NWPathMonitor = {
-        let monitor = NWPathMonitor()
-        monitor.pathUpdateHandler = { path in NetworkPath.online.withLock { $0 = path.status == .satisfied } }
-        monitor.start(queue: DispatchQueue(label: "com.zagrios.obelisk.network-path"))
-        return monitor
-    }()
-
-    /// Starts following the path, whose first state arrives shortly after.
-    static func start() { _ = monitor }
-
-    static var isOnline: Bool { online.withLock { $0 } }
 }
 
 /// The language games start in. A Finder-launched app has no `LANG`, and a
@@ -179,14 +153,22 @@ struct LocalizedStrings {
     /// and models reuse storefront errors for their own `model.` keys. Other values are
     /// filenames or diagnostics supplied by the OS or a remote service.
     func message(_ value: String, locale: Locale? = nil) -> String {
+        guard let payload = Self.payload(value) else { return value }
+        let arguments: [CVarArg] = payload.args.map { message($0, locale: locale) }
+        return string(payload.key, arguments: arguments, locale: locale)
+    }
+
+    /// The key of a message from Rust, alone or with its arguments; none for any other value.
+    static func key(of value: String) -> String? { payload(value)?.key }
+
+    private static func payload(_ value: String) -> Message? {
         if value.hasPrefix("backend.") || value.hasPrefix("model."), !value.contains(where: \.isWhitespace) {
-            return string(value, locale: locale)
+            return Message(key: value, args: [])
         }
         guard value.hasPrefix("{"), let data = value.data(using: .utf8),
               let payload = try? JSONDecoder().decode(Message.self, from: data),
-              payload.key.hasPrefix("backend.") else { return value }
-        let arguments: [CVarArg] = payload.args.map { message($0, locale: locale) }
-        return string(payload.key, arguments: arguments, locale: locale)
+              payload.key.hasPrefix("backend.") else { return nil }
+        return payload
     }
 
     private struct Message: Decodable {

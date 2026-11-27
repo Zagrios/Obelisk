@@ -156,16 +156,26 @@ final class LocalizationTests: XCTestCase {
         XCTAssertEqual(LocalizedStrings(language: "en").message(try XCTUnwrap(String(data: path, encoding: .utf8))), "Unsafe download path: \(filename)")
     }
 
-    /// Rust spells the directory's reason as serde_json orders an object's keys.
     @MainActor
     func testOnlySteamServicesThatDidNotAnswerNameWhatMayBlockThem() {
         for reason in ["backend.steam.auth.network", "backend.steam.cm.timeout",
-                       #"{"args":["error sending request"],"key":"backend.steam.cm.directory"}"#] {
-            XCTAssertTrue(SteamModel.unreachable(reason), reason)
+                       #"{"key":"backend.steam.cm.directory","args":["error sending request"]}"#] {
+            XCTAssertTrue(SteamModel.didNotAnswer(reason), reason)
         }
         for reason in ["backend.steam.cm.directoryUnavailable", "backend.steam.auth.invalidPassword",
-                       #"{"args":["backend.steam.cm.directory"],"key":"backend.steam.content.invalid"}"#] {
-            XCTAssertFalse(SteamModel.unreachable(reason), reason)
+                       #"{"key":"backend.steam.content.invalid","args":["backend.steam.cm.directory"]}"#] {
+            XCTAssertFalse(SteamModel.didNotAnswer(reason), reason)
         }
+    }
+
+    @MainActor
+    func testAStoreThatDidNotAnswerNamesWhatMayBlockObeliskOnlyWhileTheMacIsOnline() {
+        XCTAssertEqual(NetworkPath.blocked("No answer.", online: false), "No answer.")
+        XCTAssertEqual(NetworkPath.blocked("No answer.", online: true), L10n.string("model.network.blocked", "No answer."))
+        // A reason that ends in a transport error gets its full stop.
+        XCTAssertEqual(NetworkPath.blocked("No answer: timed out", online: true),
+                       L10n.string("model.network.blocked", "No answer: timed out."))
+        // The test host follows no network.
+        XCTAssertFalse(NetworkPath.isOnline)
     }
 }

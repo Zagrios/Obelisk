@@ -63,7 +63,7 @@ final class EpicDownloadTests: XCTestCase {
         }
 
         try await eventually { fixture.model.errorMessage != nil }
-        XCTAssertEqual(fixture.model.errorMessage, L10n.unreachable(L10n.string("model.epic.network")))
+        XCTAssertEqual(fixture.model.errorMessage, L10n.string("model.epic.network"))
         XCTAssertEqual(fixture.model.installations.selectedAction?.title, L10n.string("model.game.resume"))
         fixture.model.installations.selectedAction?.perform()
         XCTAssertEqual(fixture.backend.actions, [.install(fixture.offer)], "Rust resumes the Transfer")

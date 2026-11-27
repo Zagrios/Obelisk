@@ -139,6 +139,7 @@
 		D5BF97F85976EEE31C65AB71 /* MarkdownTextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2678704B6E887A4E1BD40552 /* MarkdownTextTests.swift */; };
 		D79952394F300AACEEB217CD /* StorefrontSignInPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7ADEAD7043D166CF386F56F /* StorefrontSignInPage.swift */; };
 		D80830B5508E48BBB3109CC4 /* GameActionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9F07DBF720396724A3E565A /* GameActionTests.swift */; };
+		D8BD905FF798431822DA706E /* NetworkPath.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35656B6C12EE9FED8555CF88 /* NetworkPath.swift */; };
 		D8EE14B16F57B7C52C4E99BE /* GameOverlayHotKey.swift in Sources */ = {isa = PBXBuildFile; fileRef = B46590F05420EDE9DB1CCE94 /* GameOverlayHotKey.swift */; };
 		D91F4281F5D572559DF29945 /* AppUpdates.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEEB63EF32B787422D72070A /* AppUpdates.swift */; };
 		D9573A92EA91EF347F971378 /* AppAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33402992E2BE7F752EAEFFF9 /* AppAppearance.swift */; };
@@ -217,6 +218,7 @@
 		335270F46EDAB725B750C311 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		34D0AC14A10FF0653AADFEEB /* DownloadsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadsView.swift; sourceTree = "<group>"; };
 		35308BA1F6A2821AB98F06BC /* GameActionButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameActionButton.swift; sourceTree = "<group>"; };
+		35656B6C12EE9FED8555CF88 /* NetworkPath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkPath.swift; sourceTree = "<group>"; };
 		365954DE5A28680867FD2CA8 /* SteamKeychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SteamKeychain.swift; sourceTree = "<group>"; };
 		392C8304CA5920C60F184A09 /* AppIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIdentity.swift; sourceTree = "<group>"; };
 		3C0880046EB4E1E1E0E37E50 /* RememberedSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RememberedSession.swift; sourceTree = "<group>"; };
@@ -430,6 +432,7 @@
 				C9F93405BDF3BA503EAD4854 /* GameOverlayPanel.swift */,
 				E009587C3E3ED73645B48BDA /* GameOverlayToast.swift */,
 				6B7436ED3349489C9B7701E9 /* L10n.swift */,
+				35656B6C12EE9FED8555CF88 /* NetworkPath.swift */,
 				CD235A942C8DFCAA1ED0EBE4 /* ObeliskApp.swift */,
 				45A1D760D0A711F14D7D5347 /* ReleaseReturn.swift */,
 				2C14FE47CD2D41668ED13588 /* SteamInviteNotifier.swift */,
@@ -1006,6 +1009,7 @@
 				C30672EF4297252D52DBD1A4 /* LibrarySection.swift in Sources */,
 				2D9F4C074E2AD68BB3D5FE19 /* LibraryTile.swift in Sources */,
 				88BC05B9F0A049AA41CD7719 /* MarkdownText.swift in Sources */,
+				D8BD905FF798431822DA706E /* NetworkPath.swift in Sources */,
 				E8B9DF1A5C3098A3F2C6719C /* ObeliskApp.swift in Sources */,
 				4F2E7ADCF151628CAC75717D /* ObeliskBridge.swift in Sources */,
 				5FFAFD709594994546AAFA97 /* ObeliskCards.swift in Sources */,
