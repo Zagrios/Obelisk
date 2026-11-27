@@ -391,6 +391,19 @@
       "engine": "Linux",
       "graphics": "D3DMetal",
       "game_mode": false
+    },
+    {
+      "name": "Selaco",
+      "note": "Its Windows launch entries are batch files, SELACO.bat and the Vulkan and OpenGL ones beside it, and Obelisk starts programs only: each runs WorkshopDownloader.exe, the game's launcher and achievements plugin, which fetches the player's Workshop items through Steam and starts SELACO.exe with the arguments it was given. Rosetta's Wine has no Vulkan driver, so it renders with OpenGL, as SELACO_OpenGL.bat asks. GZDoom asks for OpenGL core contexts without the forward-compatible flag that macOS requires, and Wine's Mac driver refuses them until CX_FWD_COMPAT_GL_CTX makes it add the flag; without a context the game crashes reading its OpenGL extensions.",
+      "steam": 1592280,
+      "executable": "WorkshopDownloader.exe",
+      "arguments": [
+        "+vid_preferbackend",
+        "0"
+      ],
+      "variables": {
+        "CX_FWD_COMPAT_GL_CTX": "1"
+      }
     }
   ]
 }
