@@ -153,14 +153,22 @@ struct LocalizedStrings {
     /// and models reuse storefront errors for their own `model.` keys. Other values are
     /// filenames or diagnostics supplied by the OS or a remote service.
     func message(_ value: String, locale: Locale? = nil) -> String {
+        guard let payload = Self.payload(value) else { return value }
+        let arguments: [CVarArg] = payload.args.map { message($0, locale: locale) }
+        return string(payload.key, arguments: arguments, locale: locale)
+    }
+
+    /// The key of a message from Rust, alone or with its arguments; none for any other value.
+    static func key(of value: String) -> String? { payload(value)?.key }
+
+    private static func payload(_ value: String) -> Message? {
         if value.hasPrefix("backend.") || value.hasPrefix("model."), !value.contains(where: \.isWhitespace) {
-            return string(value, locale: locale)
+            return Message(key: value, args: [])
         }
         guard value.hasPrefix("{"), let data = value.data(using: .utf8),
               let payload = try? JSONDecoder().decode(Message.self, from: data),
-              payload.key.hasPrefix("backend.") else { return value }
-        let arguments: [CVarArg] = payload.args.map { message($0, locale: locale) }
-        return string(payload.key, arguments: arguments, locale: locale)
+              payload.key.hasPrefix("backend.") else { return nil }
+        return payload
     }
 
     private struct Message: Decodable {

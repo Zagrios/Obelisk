@@ -1061,8 +1061,17 @@ final class SteamModel {
             return L10n.string("backend.steam.friends.authenticationRequired")
         }
         if case SteamError.Cancelled = error { return L10n.string("backend.steam.content.cancelled") }
-        if case let SteamError.Failure(reason) = error { return L10n.message(reason) }
+        if case let SteamError.Failure(reason) = error {
+            let message = L10n.message(reason)
+            return didNotAnswer(reason) ? NetworkPath.blocked(message) : message
+        }
         return error.localizedDescription
+    }
+
+    /// Whether `reason` says a Steam service did not answer.
+    static func didNotAnswer(_ reason: String) -> Bool {
+        ["backend.steam.auth.network", "backend.steam.cm.timeout", "backend.steam.cm.directory"]
+            .contains(LocalizedStrings.key(of: reason))
     }
 }
 

@@ -44,7 +44,7 @@ extension EpicGames: WebStorefront {
     }
     @MainActor static func describe(_ error: Error) -> String {
         switch error {
-        case WebAccountError.Network: L10n.string("model.epic.network")
+        case WebAccountError.Network: NetworkPath.blocked(L10n.string("model.epic.network"))
         case WebAccountError.Unauthorized: L10n.string("model.epic.unauthorized")
         case WebAccountError.InvalidCode: L10n.string("model.epic.invalidCode")
         case WebAccountError.InvalidResponse: L10n.string("model.epic.invalidResponse")

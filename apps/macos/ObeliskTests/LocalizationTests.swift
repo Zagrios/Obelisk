@@ -155,4 +155,27 @@ final class LocalizationTests: XCTestCase {
         let path = try JSONSerialization.data(withJSONObject: ["key": "backend.steam.content.unsafePath", "args": [filename]])
         XCTAssertEqual(LocalizedStrings(language: "en").message(try XCTUnwrap(String(data: path, encoding: .utf8))), "Unsafe download path: \(filename)")
     }
+
+    @MainActor
+    func testOnlySteamServicesThatDidNotAnswerNameWhatMayBlockThem() {
+        for reason in ["backend.steam.auth.network", "backend.steam.cm.timeout",
+                       #"{"key":"backend.steam.cm.directory","args":["error sending request"]}"#] {
+            XCTAssertTrue(SteamModel.didNotAnswer(reason), reason)
+        }
+        for reason in ["backend.steam.cm.directoryUnavailable", "backend.steam.auth.invalidPassword",
+                       #"{"key":"backend.steam.content.invalid","args":["backend.steam.cm.directory"]}"#] {
+            XCTAssertFalse(SteamModel.didNotAnswer(reason), reason)
+        }
+    }
+
+    @MainActor
+    func testAStoreThatDidNotAnswerNamesWhatMayBlockObeliskOnlyWhileTheMacIsOnline() {
+        XCTAssertEqual(NetworkPath.blocked("No answer.", online: false), "No answer.")
+        XCTAssertEqual(NetworkPath.blocked("No answer.", online: true), L10n.string("model.network.blocked", "No answer."))
+        // A reason that ends in a transport error gets its full stop.
+        XCTAssertEqual(NetworkPath.blocked("No answer: timed out", online: true),
+                       L10n.string("model.network.blocked", "No answer: timed out."))
+        // The test host follows no network.
+        XCTAssertFalse(NetworkPath.isOnline)
+    }
 }
