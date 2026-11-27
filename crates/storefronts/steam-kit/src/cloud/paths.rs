@@ -179,8 +179,8 @@ impl Rule {
         Ok(Some(suffix))
     }
 
-    /// The name a file at `path`, under this rule, has on the storefront.
-    fn remote(&self, path: &Path) -> Result<String, CloudError> {
+    /// The file at `path`, under this rule, as the storefront names it.
+    fn file(&self, path: &Path) -> Result<LocalCloudFile, CloudError> {
         let suffix = path
             .strip_prefix(&self.destination)
             .map_err(|_| CloudError::Storage)?
@@ -188,7 +188,11 @@ impl Rule {
             .ok_or(CloudError::Invalid("Auto-Cloud filename encoding"))?;
         let suffix = relative(suffix, false)?;
         let separator = if self.source.is_empty() { "" } else { "/" };
-        Ok(format!("%{}%{}{separator}{suffix}", self.root, self.source))
+        Ok(LocalCloudFile {
+            name: format!("%{}%{}{separator}{suffix}", self.root, self.source),
+            path: path.to_owned(),
+            platforms: self.platforms,
+        })
     }
 }
 
@@ -256,14 +260,15 @@ fn sibling_extensions(save: &CloudMetadata) -> Result<Vec<String>, CloudError> {
     let list = field
         .text()
         .ok_or(CloudError::Invalid("Auto-Cloud siblings"))?;
-    // An extension is bare: the probe builds the rest of the name. A list that
-    // repeats one probes the same file twice, which costs nothing.
+    // An extension is bare: the probe builds the rest of the name, which
+    // `relative` then reads. A list that repeats one probes the same file
+    // twice, which costs nothing.
     list.split(';')
         .map(|extension| extension.trim().trim_start_matches('.'))
         .filter(|extension| !extension.is_empty())
         .map(|extension| {
             if extension.len() > 16
-                || extension.contains(['.', '/', '\\', '*', '?', '[', ']', '{', '}', '%'])
+                || extension.contains(['.', '/', '\\', ':', '*', '?', '[', ']', '{', '}', '%'])
                 || extension.chars().any(char::is_control)
             {
                 return Err(CloudError::Invalid("unsupported Auto-Cloud sibling"));
@@ -632,7 +637,15 @@ impl AutoCloudPaths {
             }
         }
         let known_paths: BTreeSet<_> = selected.keys().cloned().collect();
+        let foreign = |path: &Path| excluded.contains(path) && !known_paths.contains(path);
         let mut visited = 0;
+        let mut visit = || {
+            visited += 1;
+            if visited > 100_000 {
+                return Err(CloudError::Invalid("Auto-Cloud scan size"));
+            }
+            Ok(())
+        };
         for rule in &self.rules {
             let mut pending = vec![(rule.destination.clone(), 0)];
             while let Some((directory, depth)) = pending.pop() {
@@ -649,13 +662,10 @@ impl AutoCloudPaths {
                     return Err(CloudError::Storage);
                 }
                 for entry in fs::read_dir(&directory).map_err(|_| CloudError::Storage)? {
-                    visited += 1;
-                    if visited > 100_000 {
-                        return Err(CloudError::Invalid("Auto-Cloud scan size"));
-                    }
+                    visit()?;
                     let entry = entry.map_err(|_| CloudError::Storage)?;
                     let path = entry.path();
-                    if excluded.contains(&path) && !known_paths.contains(&path) {
+                    if foreign(&path) {
                         continue;
                     }
                     let metadata = fs::symlink_metadata(&path).map_err(|_| CloudError::Storage)?;
@@ -683,64 +693,26 @@ impl AutoCloudPaths {
                     if !wildcard(&rule.pattern, &name) {
                         continue;
                     }
-                    if !metadata.is_file() || metadata.nlink() != 1 {
-                        return Err(CloudError::Invalid("Auto-Cloud file alias"));
-                    }
-                    let remote = rule.remote(&path)?;
-                    if let Some(previous) = selected.get(&path) {
-                        if !known_paths.contains(&path)
-                            && (previous.name != remote || previous.platforms != rule.platforms)
-                        {
-                            return Err(CloudError::Invalid("ambiguous Auto-Cloud source"));
-                        }
-                        continue;
-                    }
-                    selected.insert(
-                        path.clone(),
-                        LocalCloudFile {
-                            name: remote,
-                            path: path.clone(),
-                            platforms: rule.platforms,
-                        },
-                    );
+                    take(&mut selected, &known_paths, rule, &path, &metadata)?;
                     // Steam takes a rule's siblings beside each match: the same
                     // name with another extension, in the match's own folder. A
-                    // sibling is not part of the managed set, so one that is
-                    // missing or a symlink is passed over rather than failing the
-                    // game's whole sync. Its probe counts towards the scan's size.
+                    // sibling is no match of the rule, so one that is missing,
+                    // or a symlink the scan does not refuse by itself, is
+                    // passed over rather than failing the game's whole sync.
+                    // Its probe counts towards the scan's size.
                     for extension in &rule.siblings {
-                        let mut sibling = path.clone();
-                        sibling.set_extension(extension);
-                        if sibling == path
-                            || selected.contains_key(&sibling)
-                            || (excluded.contains(&sibling) && !known_paths.contains(&sibling))
-                        {
+                        let sibling = path.with_extension(extension);
+                        if foreign(&sibling) {
                             continue;
                         }
-                        visited += 1;
-                        if visited > 100_000 {
-                            return Err(CloudError::Invalid("Auto-Cloud scan size"));
-                        }
+                        visit()?;
                         let metadata = match fs::symlink_metadata(&sibling) {
+                            Ok(metadata) if metadata.file_type().is_symlink() => continue,
                             Ok(metadata) => metadata,
                             Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
                             Err(_) => return Err(CloudError::Storage),
                         };
-                        if metadata.file_type().is_symlink() {
-                            continue;
-                        }
-                        if !metadata.is_file() || metadata.nlink() != 1 {
-                            return Err(CloudError::Invalid("Auto-Cloud file alias"));
-                        }
-                        let name = rule.remote(&sibling)?;
-                        selected.insert(
-                            sibling.clone(),
-                            LocalCloudFile {
-                                name,
-                                path: sibling,
-                                platforms: rule.platforms,
-                            },
-                        );
+                        take(&mut selected, &known_paths, rule, &sibling, &metadata)?;
                     }
                 }
             }
@@ -763,6 +735,30 @@ impl AutoCloudPaths {
         }
         Ok(selected.into_values().collect())
     }
+}
+
+/// Adds the regular file at `path` to `selected`, as `rule` names it. One the
+/// set already holds stays as it is: a `known` file keeps the identity it
+/// synced with, and any other must be the same file to every rule.
+fn take(
+    selected: &mut BTreeMap<PathBuf, LocalCloudFile>,
+    known: &BTreeSet<PathBuf>,
+    rule: &Rule,
+    path: &Path,
+    metadata: &fs::Metadata,
+) -> Result<(), CloudError> {
+    if !metadata.is_file() || metadata.nlink() != 1 {
+        return Err(CloudError::Invalid("Auto-Cloud file alias"));
+    }
+    let file = rule.file(path)?;
+    match selected.get(path) {
+        None => {
+            selected.insert(path.to_owned(), file);
+        }
+        Some(previous) if known.contains(path) || *previous == file => {}
+        Some(_) => return Err(CloudError::Invalid("ambiguous Auto-Cloud source")),
+    }
+    Ok(())
 }
 
 pub(super) fn plain_path(path: &Path) -> Result<bool, CloudError> {
@@ -1009,48 +1005,59 @@ mod tests {
         );
         assert!(files.iter().all(|f| f.platforms == u32::MAX));
     }
-    // Portal's rule, as published: its saves, and the .tga thumbnails beside them.
-    fn siblings_rule(extensions: &str) -> CloudMetadata {
-        object(vec![(
-            "savefiles",
-            object(vec![(
-                "0",
-                object(vec![
+    // Game-install rules of one Windows build, under Id1: (pattern, siblings,
+    // recursive).
+    fn sibling_rules(
+        rules: &[(&str, &str, &str)],
+        install: &Path,
+    ) -> Result<AutoCloudPaths, CloudError> {
+        let entries = rules
+            .iter()
+            .enumerate()
+            .map(|(index, (pattern, siblings, recursive))| {
+                let rule = object(vec![
                     ("path", value("Id1")),
-                    ("pattern", value("*.sav")),
+                    ("pattern", value(pattern)),
+                    ("recursive", value(recursive)),
                     ("root", value("gameinstall")),
-                    ("siblings", value(extensions)),
-                ]),
-            )]),
-        )])
+                    ("siblings", value(siblings)),
+                ]);
+                (index.to_string(), rule)
+            })
+            .collect::<Vec<_>>();
+        let metadata = object(vec![("savefiles", CloudMetadata::Object(entries))]);
+        let platform = CloudPlatform::Windows {
+            profile: install.to_owned(),
+        };
+        AutoCloudPaths::new(&metadata, 0x011000010000002a, &platform, install)
     }
 
-    fn sibling_resolver(root: &Path, extensions: &str) -> Result<AutoCloudPaths, CloudError> {
-        AutoCloudPaths::new(
-            &siblings_rule(extensions),
-            0x011000010000002a,
-            &CloudPlatform::Windows {
-                profile: root.to_owned(),
-            },
-            root,
-        )
+    // An install folder whose Id1 holds `files`.
+    fn id1(files: &[&str]) -> (tempfile::TempDir, PathBuf) {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().canonicalize().unwrap();
+        for name in files {
+            let path = root.join("Id1").join(name);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, b"fixture").unwrap();
+        }
+        (tmp, root)
+    }
+
+    fn names(files: &[LocalCloudFile]) -> Vec<&str> {
+        let mut names = files.iter().map(|f| f.name.as_str()).collect::<Vec<_>>();
+        names.sort();
+        names
     }
 
     #[test]
     fn a_rule_takes_the_siblings_it_names_beside_each_match() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path().canonicalize().unwrap();
-        fs::create_dir(root.join("Id1")).unwrap();
-        // c.tga has no save beside it, and so is not a sibling of one.
-        for name in ["a.sav", "a.tga", "b.sav", "c.tga"] {
-            fs::write(root.join("Id1").join(name), b"fixture").unwrap();
-        }
-        let resolver = sibling_resolver(&root, "tga").unwrap();
-        let files = resolver.local_files(&[]).unwrap();
-        let mut names = files.iter().map(|f| f.name.as_str()).collect::<Vec<_>>();
-        names.sort();
+        // Portal's rule: its saves, and the thumbnails beside them. c.tga has
+        // no save beside it, and so is not a sibling of one.
+        let (_tmp, root) = id1(&["a.sav", "a.tga", "b.sav", "c.tga"]);
+        let resolver = sibling_rules(&[("*.sav", "tga", "0")], &root).unwrap();
         assert_eq!(
-            names,
+            names(&resolver.local_files(&[]).unwrap()),
             [
                 "%GameInstall%Id1/a.sav",
                 "%GameInstall%Id1/a.tga",
@@ -1067,171 +1074,70 @@ mod tests {
     }
 
     #[test]
-    fn a_sibling_list_is_split_on_semicolons() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path().canonicalize().unwrap();
-        fs::create_dir(root.join("Id1")).unwrap();
-        for name in ["a.sav", "a.txt", "a.tga"] {
-            fs::write(root.join("Id1").join(name), b"fixture").unwrap();
-        }
+    fn a_sibling_list_is_split_on_semicolons_and_an_empty_one_adds_nothing() {
+        let (_tmp, root) = id1(&["a.sav", "a.txt", "a.tga"]);
         // Quake 4's own field.
-        let resolver = sibling_resolver(&root, "txt;tga").unwrap();
-        let files = resolver.local_files(&[]).unwrap();
-        let mut names = files.iter().map(|f| f.name.as_str()).collect::<Vec<_>>();
-        names.sort();
+        let resolver = sibling_rules(&[("*.sav", "txt;tga", "0")], &root).unwrap();
         assert_eq!(
-            names,
+            names(&resolver.local_files(&[]).unwrap()),
             [
                 "%GameInstall%Id1/a.sav",
                 "%GameInstall%Id1/a.tga",
                 "%GameInstall%Id1/a.txt",
             ]
         );
+        let resolver = sibling_rules(&[("*.sav", "", "0")], &root).unwrap();
+        assert_eq!(
+            names(&resolver.local_files(&[]).unwrap()),
+            ["%GameInstall%Id1/a.sav"]
+        );
     }
 
     #[test]
     fn a_sibling_another_rule_matches_is_taken_once() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path().canonicalize().unwrap();
-        fs::create_dir(root.join("Id1")).unwrap();
-        fs::write(root.join("Id1/a.sav"), b"fixture").unwrap();
-        fs::write(root.join("Id1/a.tga"), b"fixture").unwrap();
-        let metadata = object(vec![(
-            "savefiles",
-            object(vec![
-                (
-                    "0",
-                    object(vec![
-                        ("path", value("Id1")),
-                        ("pattern", value("*.sav")),
-                        ("root", value("gameinstall")),
-                        // A sibling the rule's own pattern already takes adds nothing.
-                        ("siblings", value("sav;tga")),
-                    ]),
-                ),
-                (
-                    "1",
-                    object(vec![
-                        ("path", value("Id1")),
-                        ("pattern", value("*.tga")),
-                        ("root", value("gameinstall")),
-                    ]),
-                ),
-            ]),
-        )]);
-        let resolver = AutoCloudPaths::new(
-            &metadata,
-            0x011000010000002a,
-            &CloudPlatform::Windows {
-                profile: root.clone(),
-            },
-            &root,
-        )
-        .unwrap();
-        let files = resolver.local_files(&[]).unwrap();
-        let mut names = files.iter().map(|f| f.name.as_str()).collect::<Vec<_>>();
-        names.sort();
-        assert_eq!(names, ["%GameInstall%Id1/a.sav", "%GameInstall%Id1/a.tga"]);
+        let (_tmp, root) = id1(&["a.sav", "a.tga"]);
+        // A sibling the rule's own pattern already takes adds nothing either.
+        let rules = [("*.sav", "sav;tga", "0"), ("*.tga", "", "0")];
+        let resolver = sibling_rules(&rules, &root).unwrap();
+        assert_eq!(
+            names(&resolver.local_files(&[]).unwrap()),
+            ["%GameInstall%Id1/a.sav", "%GameInstall%Id1/a.tga"]
+        );
     }
 
     #[test]
-    fn an_empty_sibling_list_adds_nothing() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path().canonicalize().unwrap();
-        fs::create_dir(root.join("Id1")).unwrap();
-        fs::write(root.join("Id1/a.sav"), b"fixture").unwrap();
-        fs::write(root.join("Id1/a.tga"), b"fixture").unwrap();
-        let resolver = sibling_resolver(&root, "").unwrap();
-        let files = resolver.local_files(&[]).unwrap();
-        assert_eq!(files.len(), 1);
-        assert_eq!(files[0].name, "%GameInstall%Id1/a.sav");
+    fn a_save_already_synced_brings_the_sibling_it_gets_later() {
+        let (_tmp, root) = id1(&["a.sav", "a.tga"]);
+        let resolver = sibling_rules(&[("*.sav", "tga", "0")], &root).unwrap();
+        let known = [file("%GameInstall%Id1/a.sav")];
+        assert_eq!(
+            names(&resolver.local_files(&known).unwrap()),
+            ["%GameInstall%Id1/a.sav", "%GameInstall%Id1/a.tga"]
+        );
     }
 
     #[test]
     fn a_sibling_that_is_not_a_bare_extension_is_refused() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path().canonicalize().unwrap();
-        fs::create_dir(root.join("Id1")).unwrap();
-        for extensions in ["../tga", "a/tga", "t?ga", "[tga]", "{tga}", "%tga%"] {
+        let install = Path::new("/Games/example");
+        for extensions in ["../tga", "a/tga", "t?ga", "[tga]", "{tga}", "%tga%", "t:ga"] {
             assert!(
-                sibling_resolver(&root, extensions).is_err(),
+                sibling_rules(&[("*.sav", extensions, "0")], install).is_err(),
                 "{extensions} was accepted"
             );
         }
     }
 
     #[test]
-    fn a_sibling_symlink_is_passed_over_rather_than_failing_the_sync() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path().canonicalize().unwrap();
-        fs::create_dir(root.join("Id1")).unwrap();
-        fs::write(root.join("Id1/a.sav"), b"fixture").unwrap();
+    fn a_sibling_symlink_is_passed_over_until_it_is_a_synced_file() {
+        let (_tmp, root) = id1(&["a.sav"]);
         fs::write(root.join("elsewhere.tga"), b"fixture").unwrap();
         std::os::unix::fs::symlink(root.join("elsewhere.tga"), root.join("Id1/a.tga")).unwrap();
-        let resolver = sibling_resolver(&root, "tga").unwrap();
+        let resolver = sibling_rules(&[("*.sav", "tga", "0")], &root).unwrap();
         // The save syncs; the sibling it cannot take is left out, as Steam does.
-        let files = resolver.local_files(&[]).unwrap();
-        assert_eq!(files.len(), 1);
-        assert_eq!(files[0].name, "%GameInstall%Id1/a.sav");
-    }
-
-    #[test]
-    fn a_recursive_rule_takes_a_sibling_in_the_subfolder_of_its_match() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path().canonicalize().unwrap();
-        fs::create_dir_all(root.join("Id1/sub")).unwrap();
-        fs::write(root.join("Id1/sub/a.sav"), b"fixture").unwrap();
-        fs::write(root.join("Id1/sub/a.tga"), b"fixture").unwrap();
-        // A sibling follows its match, so this one has no save beside it.
-        fs::write(root.join("Id1/a.tga"), b"fixture").unwrap();
-        let metadata = object(vec![(
-            "savefiles",
-            object(vec![(
-                "0",
-                object(vec![
-                    ("path", value("Id1")),
-                    ("pattern", value("*.sav")),
-                    ("root", value("gameinstall")),
-                    ("recursive", value("1")),
-                    ("siblings", value("tga")),
-                ]),
-            )]),
-        )]);
-        let resolver = AutoCloudPaths::new(
-            &metadata,
-            0x011000010000002a,
-            &CloudPlatform::Windows {
-                profile: root.clone(),
-            },
-            &root,
-        )
-        .unwrap();
-        let files = resolver.local_files(&[]).unwrap();
-        let mut names = files.iter().map(|f| f.name.as_str()).collect::<Vec<_>>();
-        names.sort();
         assert_eq!(
-            names,
-            ["%GameInstall%Id1/sub/a.sav", "%GameInstall%Id1/sub/a.tga",]
+            names(&resolver.local_files(&[]).unwrap()),
+            ["%GameInstall%Id1/a.sav"]
         );
-        // The sibling maps back through the recursive rule, so a later sync
-        // finds it where its match is.
-        assert_eq!(
-            resolver
-                .existing_file(&file("%GameInstall%Id1/sub/a.tga"))
-                .unwrap(),
-            Some(root.join("Id1/sub/a.tga"))
-        );
-    }
-
-    #[test]
-    fn a_sibling_already_synced_that_becomes_a_symlink_is_refused() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path().canonicalize().unwrap();
-        fs::create_dir(root.join("Id1")).unwrap();
-        fs::write(root.join("Id1/a.sav"), b"fixture").unwrap();
-        fs::write(root.join("elsewhere.tga"), b"fixture").unwrap();
-        std::os::unix::fs::symlink(root.join("elsewhere.tga"), root.join("Id1/a.tga")).unwrap();
-        let resolver = sibling_resolver(&root, "tga").unwrap();
         // Once synced, a sibling is a managed file like any other: passing it
         // over would read as a remote deletion, so a symlink there fails the
         // sync rather than dropping the file from the set.
@@ -1240,6 +1146,17 @@ mod tests {
             resolver.local_files(&known),
             Err(CloudError::Invalid("Auto-Cloud symlink"))
         ));
+    }
+
+    #[test]
+    fn a_recursive_rule_takes_a_sibling_in_the_subfolder_of_its_match() {
+        // A sibling follows its match, so Id1/a.tga has no save beside it.
+        let (_tmp, root) = id1(&["sub/a.sav", "sub/a.tga", "a.tga"]);
+        let resolver = sibling_rules(&[("*.sav", "tga", "1")], &root).unwrap();
+        assert_eq!(
+            names(&resolver.local_files(&[]).unwrap()),
+            ["%GameInstall%Id1/sub/a.sav", "%GameInstall%Id1/sub/a.tga"]
+        );
     }
 
     #[test]
