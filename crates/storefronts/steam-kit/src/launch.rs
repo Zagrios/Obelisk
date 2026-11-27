@@ -56,12 +56,7 @@ pub(crate) fn configuration(app: &AppInfo, platform: Platform) -> Option<&Launch
     app.launch_configs
         .iter()
         .filter(|config| supports_platform(&config.os_list, platform))
-        .filter(|config| {
-            config
-                .beta_key
-                .as_deref()
-                .is_none_or(|branch| branch.eq_ignore_ascii_case("public"))
-        })
+        .filter(|config| config.beta_key.as_deref().is_none_or(installed_branch))
         .filter_map(|config| launch_rank(config).map(|rank| (config, rank)))
         .min_by_key(|(config, rank)| {
             (
@@ -71,6 +66,14 @@ pub(crate) fn configuration(app: &AppInfo, platform: Platform) -> Option<&Launch
             )
         })
         .map(|(config, _)| config)
+}
+
+/// Whether a launch option's branch is the one Obelisk installs, which
+/// publishers name `public` or, as The Outlast Trials does, `default`.
+fn installed_branch(branch: &str) -> bool {
+    ["public", "default"]
+        .iter()
+        .any(|name| branch.eq_ignore_ascii_case(name))
 }
 
 /// Steam joins launch paths onto the install folder, so publishers may write
@@ -162,8 +165,17 @@ mod tests {
         let chosen = configuration(&game, Platform::Windows).unwrap();
         assert_eq!(chosen.executable, "Game.exe");
 
-        let public = app(vec![on("Public", "Game.exe")]);
-        assert!(configuration(&public, Platform::Windows).is_some());
+        // The Outlast Trials names its public program's branch `default`,
+        // between those of two test branches.
+        for branch in ["Public", "default"] {
+            let public = app(vec![
+                on("oppqa", "TOTClient.exe"),
+                on(branch, "start_protected_game.exe"),
+                on("oppqa-eac", "start_protected_game.exe"),
+            ]);
+            let chosen = configuration(&public, Platform::Windows).unwrap();
+            assert_eq!(chosen.beta_key.as_deref(), Some(branch));
+        }
     }
 
     #[test]
