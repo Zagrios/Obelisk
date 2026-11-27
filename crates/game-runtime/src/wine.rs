@@ -178,18 +178,17 @@ impl Config {
     /// reads the log, such as a bug report's reader. Of the arguments, only
     /// those its player adds: a storefront's may carry credentials.
     pub(crate) fn log_header(&self) -> String {
+        let graphics = match self.settings.compatibility {
+            true => "wined3d",
+            false => self.settings.graphics.name(),
+        };
         let mut header = format!(
-            "obelisk: engine={} graphics={}",
+            "obelisk: engine={} graphics={graphics}",
             self.adapter().facts().name,
-            self.settings.graphics.name()
         );
-        let ray_tracing = crate::launch_settings::offer(self.settings.engine)
-            .graphics(self.settings.graphics)
-            .is_some_and(|offer| {
-                offer
-                    .options
-                    .contains(&crate::launch_settings::GraphicsOption::RayTracing)
-            });
+        let ray_tracing = self
+            .settings
+            .takes(crate::launch_settings::GraphicsOption::RayTracing);
         if ray_tracing {
             let state = if self.settings.options.ray_tracing {
                 "on"
@@ -201,8 +200,23 @@ impl Config {
         if self.settings.render_percent != crate::launch_settings::FULL_RENDER_PERCENT {
             header.push_str(&format!(" render_percent={}", self.settings.render_percent));
         }
+        if self.settings.metalfx_spatial {
+            header.push_str(" metalfx_spatial=on");
+        }
+        if self.settings.low_latency {
+            header.push_str(" low_latency=on");
+        }
+        if self.settings.emulate_modes {
+            header.push_str(" emulate_modes=on");
+        }
+        if self.settings.scroll_percent != crate::launch_settings::NORMAL_SCROLL_PERCENT {
+            header.push_str(&format!(" scroll_percent={}", self.settings.scroll_percent));
+        }
         if !self.settings.game_mode {
             header.push_str(" game_mode=off");
+        }
+        if let Some(cap) = self.settings.frame_cap {
+            header.push_str(&format!(" frame_cap={cap}"));
         }
         // Only a development runtime has no manifest.
         let voile = crate::voile::release_of(&self.runtime);
@@ -809,6 +823,17 @@ fn typed(arguments: &[String]) -> String {
         })
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+/// How far Wine scrolls a mouse wheel's notch, in whole percent, on either
+/// engine.
+const SCROLL_PERCENT: &str = "WINE_OBELISK_SCROLL_PERCENT";
+
+/// `SCROLL_PERCENT` for a scroll speed other than Wine's own.
+fn scroll_percent(config: &Config) -> Option<(String, String)> {
+    let percent = config.settings.scroll_percent;
+    (percent != crate::launch_settings::NORMAL_SCROLL_PERCENT)
+        .then(|| (SCROLL_PERCENT.to_owned(), percent.to_string()))
 }
 
 #[cfg(test)]

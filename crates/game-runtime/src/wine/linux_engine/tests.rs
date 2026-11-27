@@ -218,6 +218,148 @@ fn game_mode_kept_off_reaches_the_launcher() {
     assert_eq!(options(&off, "--game-mode"), ["off"]);
 }
 
+#[test]
+fn a_frame_cap_reaches_the_window_server_and_holds_the_guest_s_frames_to_it() {
+    let (_directory, root) = installation();
+    let install = root.join("install");
+    fs::create_dir_all(&install).unwrap();
+    fs::write(install.join("Game.exe"), pe()).unwrap();
+    let mut config = linux_config(&root);
+    let mut started = |frame_cap, variables: &[(&str, &str)]| {
+        config.settings.frame_cap = frame_cap;
+        config.settings.variables = variables
+            .iter()
+            .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+            .collect();
+        wine::target::<Plain>(
+            &config,
+            &game(&install),
+            &launch_target(&install.join("Game.exe"), &[]),
+            HashMap::new(),
+        )
+        .unwrap()
+    };
+
+    let uncapped = started(None, &[]);
+    assert!(options(&uncapped, "--frame-rate").is_empty());
+    assert!(
+        !options(&uncapped, "--env")
+            .iter()
+            .any(|variable| variable.starts_with("NPT_WSD_PACING=")
+                || variable.starts_with("WINE_GL_FRAME_LOCK="))
+    );
+
+    let capped = started(Some(48), &[]);
+    assert_eq!(options(&capped, "--frame-rate"), ["48"]);
+    let variables = options(&capped, "--env");
+    assert!(variables.contains(&"NPT_WSD_PACING=latch"), "{variables:?}");
+    assert!(
+        variables.contains(&"WINE_GL_FRAME_LOCK=48"),
+        "{variables:?}"
+    );
+    // The OpenGL frame lock would read 15 as a divisor.
+    let slow = started(Some(15), &[]);
+    let variables = options(&slow, "--env");
+    assert!(variables.contains(&"NPT_WSD_PACING=latch"), "{variables:?}");
+    assert!(
+        !variables
+            .iter()
+            .any(|variable| variable.starts_with("WINE_GL_FRAME_LOCK=")),
+        "{variables:?}"
+    );
+
+    // A profile's OpenGL frame lock comes after, and the guest keeps the last.
+    let profile = started(Some(48), &[("WINE_GL_FRAME_LOCK", "75")]);
+    let locks: Vec<_> = options(&profile, "--env")
+        .into_iter()
+        .filter(|variable| variable.starts_with("WINE_GL_FRAME_LOCK="))
+        .collect();
+    assert_eq!(locks, ["WINE_GL_FRAME_LOCK=48", "WINE_GL_FRAME_LOCK=75"]);
+}
+
+#[test]
+fn dxmt_s_render_server_knows_the_game_s_program_and_keeps_its_shaders_per_game() {
+    let (_directory, root) = installation();
+    let install = root.join("install");
+    fs::create_dir_all(install.join("Game")).unwrap();
+    fs::write(install.join("Game/Game.exe"), pe()).unwrap();
+    let target = wine::target::<Plain>(
+        &linux_config(&root),
+        &game(&install),
+        &launch_target(&install.join("Game/Game.exe"), &[]),
+        HashMap::new(),
+    )
+    .unwrap();
+    assert_eq!(options(&target, "--program"), ["Game.exe"]);
+
+    let (_, server) = run_launcher(
+        &root,
+        &["--program", "Game.exe"],
+        &[("OBELISK_APP_NAME", "My Game")],
+    );
+    let lines: Vec<&str> = server.lines().collect();
+    assert_eq!(lines[3], "Game.exe");
+    assert!(
+        lines[4].starts_with('/')
+            && lines[4].ends_with("/com.zagrios.obelisk.game.My-Game.dxmt/dxmt"),
+        "{}",
+        lines[4]
+    );
+
+    // D3DMetal's server is no DXMT, and a launch that names no program
+    // leaves DXMT its own.
+    for options in [
+        &["--graphics", "d3dmetal", "--program", "Game.exe"][..],
+        &[],
+    ] {
+        let (_, server) = run_launcher(&root, options, &[]);
+        assert_eq!(server.lines().nth(3), Some("unset"), "{options:?}");
+    }
+}
+
+#[test]
+fn low_input_delay_reaches_neptune_s_swapchain_in_the_guest() {
+    let (_directory, root) = installation();
+    let install = root.join("install");
+    fs::create_dir_all(&install).unwrap();
+    fs::write(install.join("Game.exe"), pe()).unwrap();
+    let mut config = linux_config(&root);
+    let mut started = |low_latency| {
+        config.settings.low_latency = low_latency;
+        wine::target::<Plain>(
+            &config,
+            &game(&install),
+            &launch_target(&install.join("Game.exe"), &[]),
+            HashMap::new(),
+        )
+        .unwrap()
+    };
+
+    let (on, off) = (started(true), started(false));
+
+    assert!(options(&on, "--env").contains(&"NPT_MAX_FRAME_LATENCY=1"));
+    config.settings.scroll_percent = 50;
+    let slower = wine::target::<Plain>(
+        &config,
+        &game(&install),
+        &launch_target(&install.join("Game.exe"), &[]),
+        HashMap::new(),
+    )
+    .unwrap();
+    assert!(options(&slower, "--env").contains(&"WINE_OBELISK_SCROLL_PERCENT=50"));
+    assert!(
+        !options(&off, "--env")
+            .iter()
+            .any(|variable| variable.starts_with("NPT_MAX_FRAME_LATENCY="))
+    );
+    assert!(
+        wine::Engine::Linux
+            .reserved()
+            .variables
+            .contains(&"NPT_MAX_FRAME_LATENCY")
+    );
+}
+
 /// A Steam game whose program is `Game/start_protected_game.exe`, in a
 /// runtime that carries steam-hostpid.so when `host_pid`.
 fn steam_target(root: &Path, host_pid: bool) -> (wine::Config, Target) {
@@ -331,7 +473,7 @@ fn recording_runtime(root: &Path) -> PathBuf {
         r#"printf '%s\n' "$@" > "$OBELISK_TEST_ROOT/wsd.txt"
 exec /usr/bin/nc -lU "$2/wsd.sock""#,
     );
-    let server = r#"printf '%s\n' "$NPT_BACKEND $NPT_D3D12_LIBRARY_PATH" "$RENDER_SERVER_EXEC_PATH" "residency set ${DMN_RESIDENCY_SET-default}" > "$OBELISK_TEST_ROOT/server.txt"
+    let server = r#"printf '%s\n' "$NPT_BACKEND $NPT_D3D12_LIBRARY_PATH" "$RENDER_SERVER_EXEC_PATH" "residency set ${DMN_RESIDENCY_SET-default}" "${DXMT_APP_NAME-unset}" "${DXMT_SHADER_CACHE_PATH-unset}" > "$OBELISK_TEST_ROOT/server.txt"
 exec /usr/bin/nc -lU "$4""#;
     script("graphics/bin/virgl_test_server", server);
     script("graphics/x86_64/bin/virgl_test_server", server);
@@ -446,8 +588,12 @@ fn the_launcher_hands_the_guest_its_binds_its_variables_and_the_session_s_values
 }
 
 #[test]
-fn the_launcher_starts_the_window_server_with_the_render_resolution_it_was_given() {
-    for options in [&[][..], &["--render-percent", "50"]] {
+fn the_launcher_starts_the_window_server_with_the_render_resolution_and_frame_rate_it_was_given() {
+    for options in [
+        &[][..],
+        &["--render-percent", "50"],
+        &["--render-percent", "50", "--frame-rate", "60"],
+    ] {
         let (_directory, root) = installation();
 
         let (engine, _) = run_launcher(&root, options, &[]);
@@ -458,9 +604,10 @@ fn the_launcher_starts_the_window_server_with_the_render_resolution_it_was_given
         assert_eq!(lines[0], "--dir", "{options:?}");
         assert!(lines[1].starts_with("obelisk-engine-"), "{options:?}");
         assert_eq!(lines[2..], *options, "{options:?}");
-        // The render resolution is the window server's alone: the guest and
-        // its Wine never see it.
+        // The render resolution and the frame rate are the window server's
+        // alone: the guest and its Wine never see them.
         assert!(!engine.contains("--render-percent"), "{engine}");
+        assert!(!engine.contains("--frame-rate"), "{engine}");
     }
 }
 

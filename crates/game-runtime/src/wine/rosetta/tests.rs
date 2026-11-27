@@ -111,3 +111,74 @@ fn a_missing_program_leaves_its_prerequisite_pending() {
     assert!(calls(&root).is_empty());
     assert!(!config.prefix.join(PREREQUISITES).exists());
 }
+
+#[test]
+fn the_profile_s_dxmt_options_follow_obelisk_s_own_so_that_its_value_of_a_key_wins() {
+    let own = [
+        "d3d11.preferredMaxFrameRate=60".to_owned(),
+        "dxgi.maxFrameLatency=1".to_owned(),
+    ];
+
+    assert_eq!(dxmt_config(&[], None), None);
+    assert_eq!(dxmt_config(&[], Some("")), None);
+    assert_eq!(
+        dxmt_config(&[], Some("d3d11.metalSpatialUpscaleFactor=1.5")).as_deref(),
+        Some("d3d11.metalSpatialUpscaleFactor=1.5")
+    );
+    assert_eq!(
+        dxmt_config(&own, None).as_deref(),
+        Some("d3d11.preferredMaxFrameRate=60;dxgi.maxFrameLatency=1")
+    );
+    assert_eq!(
+        dxmt_config(&own, Some("d3d11.preferredMaxFrameRate=30;")).as_deref(),
+        Some(
+            "d3d11.preferredMaxFrameRate=60;dxgi.maxFrameLatency=1;d3d11.preferredMaxFrameRate=30;"
+        )
+    );
+}
+
+#[test]
+fn only_the_game_starts_from_its_bundle_and_wine_s_own_commands_do_not() {
+    let (_directory, root) = installation();
+    let config = crate::wine::tests::config(&root);
+    let unix = config.runtime.join(WINE_UNIX);
+    fs::create_dir_all(&unix).unwrap();
+    fs::write(unix.join("wine"), "loader").unwrap();
+
+    assert!(!environment(&config).contains_key(GAME_BUNDLE_VARIABLE));
+    assert!(!config.prefix.join(GAME_BUNDLE).exists());
+}
+
+#[test]
+fn dxmt_keeps_the_game_s_shaders_in_its_prefix() {
+    let (_directory, root) = crate::wine::tests::installation();
+    let config = crate::wine::tests::config(&root);
+
+    let environment = environment(&config);
+
+    assert_eq!(
+        environment["DXMT_SHADER_CACHE_PATH"],
+        config.prefix.join("obelisk-dxmt-cache").to_str().unwrap()
+    );
+    assert!(
+        crate::wine::Engine::Rosetta
+            .reserved()
+            .variables
+            .contains(&"DXMT_SHADER_CACHE_PATH")
+    );
+}
+
+#[test]
+fn a_profile_s_dxmt_options_reach_dxmt_whole() {
+    let (_directory, root) = installation();
+    let mut config = recording_runtime(&root);
+    config.settings.variables = std::collections::BTreeMap::from([(
+        DXMT_CONFIG.to_owned(),
+        "d3d11.metalSpatialUpscaleFactor=1.5".to_owned(),
+    )]);
+
+    assert_eq!(
+        environment(&config)[DXMT_CONFIG],
+        "d3d11.metalSpatialUpscaleFactor=1.5"
+    );
+}

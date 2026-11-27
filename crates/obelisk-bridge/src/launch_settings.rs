@@ -16,12 +16,32 @@ pub struct LaunchSettings {
     pub graphics: LaunchGraphics,
     /// Direct3D 12 offers DirectX Raytracing, on D3DMetal.
     pub ray_tracing: bool,
+    /// Wine's own Direct3D renders the game through OpenGL instead of
+    /// `graphics`.
+    #[uniffi(default = false)]
+    pub compatibility: bool,
     /// The share of the screen's pixels the game renders at, in whole percent.
     pub render_percent: u32,
+    /// MetalFX Spatial upscales the game's picture on its way to the screen.
+    #[uniffi(default = false)]
+    pub metalfx_spatial: bool,
+    /// The game queues at most one frame ahead of the screen.
+    #[uniffi(default = false)]
+    pub low_latency: bool,
+    /// Wine lists the common display modes the screen lacks.
+    #[uniffi(default = false)]
+    pub emulate_modes: bool,
+    /// How far a mouse wheel's notch scrolls, in whole percent of Wine's own.
+    #[uniffi(default = 100)]
+    pub scroll_percent: u16,
     /// Metal's Performance HUD shows over the game, whatever renders it.
     pub performance_hud: bool,
     /// macOS may turn its Game Mode on for the game.
     pub game_mode: bool,
+    /// The most frames a second the game shows, for the screen it starts on;
+    /// None when uncapped.
+    #[uniffi(default = None)]
+    pub frame_cap: Option<u32>,
     /// What the player changed from what Obelisk knows of the game.
     pub choices: LaunchChoices,
     /// The engine the game runs on without choices.
@@ -44,11 +64,24 @@ pub struct LaunchChoices {
     #[uniffi(default = None)]
     pub ray_tracing: Option<bool>,
     #[uniffi(default = None)]
+    pub compatibility: Option<bool>,
+    #[uniffi(default = None)]
     pub render_percent: Option<u32>,
+    #[uniffi(default = false)]
+    pub metalfx_spatial: bool,
+    #[uniffi(default = false)]
+    pub low_latency: bool,
+    #[uniffi(default = false)]
+    pub emulate_modes: bool,
+    #[uniffi(default = None)]
+    pub scroll_percent: Option<u16>,
     #[uniffi(default = false)]
     pub performance_hud: bool,
     #[uniffi(default = None)]
     pub game_mode: Option<bool>,
+    /// The most frames a second, 0 for the screen's refresh rate.
+    #[uniffi(default = None)]
+    pub frame_cap: Option<u32>,
 }
 
 /// What runs a Windows game's Wine.
@@ -77,6 +110,8 @@ pub enum LaunchTranslator {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum LaunchGraphicsOption {
     RayTracing,
+    MetalFxSpatial,
+    LowLatency,
 }
 
 /// One engine's offer.
@@ -92,6 +127,15 @@ pub struct LaunchEngineOffer {
     pub lowest_render_percent: Option<u32>,
     /// Whether it can keep macOS's Game Mode off a game.
     pub game_mode: bool,
+    /// Whether Wine's own Direct3D can render a game there, through OpenGL.
+    #[uniffi(default = false)]
+    pub compatibility: bool,
+    /// Whether it can cap a game's frame rate.
+    #[uniffi(default = false)]
+    pub frame_cap: bool,
+    /// Whether its Wine can list display modes the screen lacks.
+    #[uniffi(default = false)]
+    pub emulate_modes: bool,
 }
 
 /// One backend's offer on one engine.
@@ -107,9 +151,15 @@ impl From<View> for LaunchSettings {
             engine: view.settings.engine.into(),
             graphics: view.settings.graphics.into(),
             ray_tracing: view.settings.options.ray_tracing,
+            compatibility: view.settings.compatibility,
             render_percent: view.settings.render_percent,
+            metalfx_spatial: view.settings.metalfx_spatial,
+            low_latency: view.settings.low_latency,
+            emulate_modes: view.settings.emulate_modes,
+            scroll_percent: view.settings.scroll_percent,
             performance_hud: view.settings.performance_hud,
             game_mode: view.settings.game_mode,
+            frame_cap: view.settings.frame_cap,
             choices: view.choices.into(),
             default_engine: view.default_engine.into(),
             engines: ENGINES
@@ -132,6 +182,9 @@ fn engine_offer(offer: &EngineOffer, default: Graphics) -> LaunchEngineOffer {
         graphics: offer.graphics.iter().map(graphics_offer).collect(),
         lowest_render_percent: offer.lowest_render_percent,
         game_mode: offer.game_mode,
+        compatibility: offer.compatibility,
+        frame_cap: offer.frame_cap,
+        emulate_modes: offer.emulate_modes,
     }
 }
 
@@ -143,6 +196,8 @@ fn graphics_offer(offer: &GraphicsOffer) -> LaunchGraphicsOffer {
             .iter()
             .map(|option| match option {
                 GraphicsOption::RayTracing => LaunchGraphicsOption::RayTracing,
+                GraphicsOption::MetalFxSpatial => LaunchGraphicsOption::MetalFxSpatial,
+                GraphicsOption::LowLatency => LaunchGraphicsOption::LowLatency,
             })
             .collect(),
     }
@@ -155,9 +210,15 @@ impl From<Choices> for LaunchChoices {
             engine: choices.engine.map(Into::into),
             graphics: choices.graphics.map(Into::into),
             ray_tracing: choices.ray_tracing,
+            compatibility: choices.compatibility,
             render_percent: choices.render_percent,
+            metalfx_spatial: choices.metalfx_spatial,
+            low_latency: choices.low_latency,
+            emulate_modes: choices.emulate_modes,
+            scroll_percent: choices.scroll_percent,
             performance_hud: choices.performance_hud,
             game_mode: choices.game_mode,
+            frame_cap: choices.frame_cap,
         }
     }
 }
@@ -169,11 +230,24 @@ impl From<LaunchChoices> for launch_settings::Choices {
             engine: choices.engine.map(Into::into),
             graphics: choices.graphics.map(Into::into),
             ray_tracing: choices.ray_tracing,
+            compatibility: choices.compatibility,
             render_percent: choices.render_percent,
+            metalfx_spatial: choices.metalfx_spatial,
+            low_latency: choices.low_latency,
+            emulate_modes: choices.emulate_modes,
+            scroll_percent: choices.scroll_percent,
             performance_hud: choices.performance_hud,
             game_mode: choices.game_mode,
+            frame_cap: choices.frame_cap,
         }
     }
+}
+
+/// Keeps the refresh rate of the Mac's main screen, in hertz, which the frame
+/// caps of the games launched from now on divide; 0 while it is unknown.
+#[uniffi::export]
+pub fn set_display_refresh_rate(hertz: u32) {
+    launch_settings::set_display_rate(hertz);
 }
 
 impl From<Engine> for LaunchEngine {
@@ -224,6 +298,7 @@ mod tests {
             profile::Game::Steam { app_id: 42 },
             std::path::Path::new("/nowhere"),
             None,
+            None,
         );
 
         let settings = LaunchSettings::from(view);
@@ -267,6 +342,178 @@ mod tests {
     }
 
     #[test]
+    fn compatibility_mode_crosses_both_ways_on_rosetta_alone() {
+        let library = tempfile::tempdir().unwrap();
+        let choose = |engine| {
+            let view = launch_settings::choose(
+                library.path(),
+                profile::Game::Steam { app_id: 42 },
+                std::path::Path::new("/nowhere"),
+                None,
+                None,
+                LaunchChoices {
+                    engine,
+                    compatibility: Some(true),
+                    ..LaunchChoices::default()
+                }
+                .into(),
+            )
+            .unwrap();
+            LaunchSettings::from(view)
+        };
+
+        let rosetta = choose(None);
+        assert!(rosetta.compatibility);
+        assert_eq!(rosetta.choices.compatibility, Some(true));
+        assert!(rosetta.engines[0].compatibility);
+        let linux = choose(Some(LaunchEngine::Linux));
+        assert!(!linux.compatibility);
+        assert_eq!(linux.choices.compatibility, None);
+        assert!(!linux.engines[1].compatibility);
+    }
+
+    #[test]
+    fn metalfx_spatial_crosses_both_ways_behind_rosetta_s_dxmt_alone() {
+        let library = tempfile::tempdir().unwrap();
+        let choose = |engine, graphics| {
+            LaunchSettings::from(
+                launch_settings::choose(
+                    library.path(),
+                    profile::Game::Steam { app_id: 42 },
+                    std::path::Path::new("/nowhere"),
+                    None,
+                    None,
+                    LaunchChoices {
+                        engine: Some(engine),
+                        graphics: Some(graphics),
+                        metalfx_spatial: true,
+                        ..LaunchChoices::default()
+                    }
+                    .into(),
+                )
+                .unwrap(),
+            )
+        };
+
+        let dxmt = choose(LaunchEngine::Rosetta, LaunchGraphics::Dxmt);
+        assert!(dxmt.metalfx_spatial);
+        assert!(dxmt.choices.metalfx_spatial);
+        assert_eq!(
+            dxmt.engines[0].graphics[1].options,
+            [
+                LaunchGraphicsOption::MetalFxSpatial,
+                LaunchGraphicsOption::LowLatency
+            ]
+        );
+        assert!(!choose(LaunchEngine::Rosetta, LaunchGraphics::D3dMetal).metalfx_spatial);
+        assert!(!choose(LaunchEngine::Linux, LaunchGraphics::Dxmt).metalfx_spatial);
+    }
+
+    #[test]
+    fn emulated_display_modes_cross_both_ways_on_rosetta_alone() {
+        let library = tempfile::tempdir().unwrap();
+        let view = launch_settings::choose(
+            library.path(),
+            profile::Game::Steam { app_id: 42 },
+            std::path::Path::new("/nowhere"),
+            None,
+            None,
+            LaunchChoices {
+                emulate_modes: true,
+                ..LaunchChoices::default()
+            }
+            .into(),
+        )
+        .unwrap();
+
+        let settings = LaunchSettings::from(view);
+
+        assert!(settings.emulate_modes);
+        assert!(settings.choices.emulate_modes);
+        let offered: Vec<bool> = settings
+            .engines
+            .iter()
+            .map(|offer| offer.emulate_modes)
+            .collect();
+        assert_eq!(offered, [true, false]);
+    }
+
+    #[test]
+    fn a_scroll_speed_crosses_both_ways() {
+        let library = tempfile::tempdir().unwrap();
+        let view = launch_settings::choose(
+            library.path(),
+            profile::Game::Steam { app_id: 42 },
+            std::path::Path::new("/nowhere"),
+            None,
+            None,
+            LaunchChoices {
+                scroll_percent: Some(200),
+                ..LaunchChoices::default()
+            }
+            .into(),
+        )
+        .unwrap();
+
+        let settings = LaunchSettings::from(view);
+
+        assert_eq!(settings.scroll_percent, 200);
+        assert_eq!(settings.choices.scroll_percent, Some(200));
+    }
+
+    #[test]
+    fn low_input_delay_crosses_both_ways() {
+        let library = tempfile::tempdir().unwrap();
+        let view = launch_settings::choose(
+            library.path(),
+            profile::Game::Steam { app_id: 42 },
+            std::path::Path::new("/nowhere"),
+            None,
+            None,
+            LaunchChoices {
+                engine: Some(LaunchEngine::Linux),
+                low_latency: true,
+                ..LaunchChoices::default()
+            }
+            .into(),
+        )
+        .unwrap();
+
+        let settings = LaunchSettings::from(view);
+
+        assert!(settings.low_latency);
+        assert!(settings.choices.low_latency);
+        assert_eq!(
+            settings.engines[1].graphics[0].options,
+            [LaunchGraphicsOption::LowLatency]
+        );
+    }
+
+    #[test]
+    fn a_frame_cap_crosses_as_chosen_and_as_the_game_runs() {
+        let library = tempfile::tempdir().unwrap();
+        let view = launch_settings::choose(
+            library.path(),
+            profile::Game::Steam { app_id: 42 },
+            std::path::Path::new("/nowhere"),
+            None,
+            Some(144),
+            LaunchChoices {
+                frame_cap: Some(60),
+                ..LaunchChoices::default()
+            }
+            .into(),
+        )
+        .unwrap();
+
+        let settings = LaunchSettings::from(view);
+
+        assert_eq!(settings.frame_cap, Some(48));
+        assert_eq!(settings.choices.frame_cap, Some(60));
+        assert!(settings.engines.iter().all(|offer| offer.frame_cap));
+    }
+
+    #[test]
     fn a_render_resolution_crosses_both_ways_and_only_the_linux_engine_keeps_it() {
         let library = tempfile::tempdir().unwrap();
         let choose = |choices: LaunchChoices| {
@@ -274,6 +521,7 @@ mod tests {
                 library.path(),
                 profile::Game::Steam { app_id: 42 },
                 std::path::Path::new("/nowhere"),
+                None,
                 None,
                 choices.into(),
             )

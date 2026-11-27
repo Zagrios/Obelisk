@@ -471,6 +471,22 @@ private let UNIFFI_CALLBACK_UNEXPECTED_ERROR: Int32 = 2
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterUInt16: FfiConverterPrimitive {
+    typealias FfiType = UInt16
+    typealias SwiftType = UInt16
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UInt16 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterUInt32: FfiConverterPrimitive {
     typealias FfiType = UInt32
     typealias SwiftType = UInt32
@@ -7089,23 +7105,41 @@ public struct LaunchChoices: Equatable, Hashable {
     public var engine: LaunchEngine?
     public var graphics: LaunchGraphics?
     public var rayTracing: Bool?
+    public var compatibility: Bool?
     public var renderPercent: UInt32?
+    public var metalfxSpatial: Bool
+    public var lowLatency: Bool
+    public var emulateModes: Bool
+    public var scrollPercent: UInt16?
     public var performanceHud: Bool
     public var gameMode: Bool?
+    /**
+     * The most frames a second, 0 for the screen's refresh rate.
+     */
+    public var frameCap: UInt32?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
     public init(
         /**
          * What the player adds to the game's command line, as typed.
-         */arguments: String? = nil, engine: LaunchEngine? = nil, graphics: LaunchGraphics? = nil, rayTracing: Bool? = nil, renderPercent: UInt32? = nil, performanceHud: Bool = false, gameMode: Bool? = nil) {
+         */arguments: String? = nil, engine: LaunchEngine? = nil, graphics: LaunchGraphics? = nil, rayTracing: Bool? = nil, compatibility: Bool? = nil, renderPercent: UInt32? = nil, metalfxSpatial: Bool = false, lowLatency: Bool = false, emulateModes: Bool = false, scrollPercent: UInt16? = nil, performanceHud: Bool = false, gameMode: Bool? = nil, 
+        /**
+         * The most frames a second, 0 for the screen's refresh rate.
+         */frameCap: UInt32? = nil) {
         self.arguments = arguments
         self.engine = engine
         self.graphics = graphics
         self.rayTracing = rayTracing
+        self.compatibility = compatibility
         self.renderPercent = renderPercent
+        self.metalfxSpatial = metalfxSpatial
+        self.lowLatency = lowLatency
+        self.emulateModes = emulateModes
+        self.scrollPercent = scrollPercent
         self.performanceHud = performanceHud
         self.gameMode = gameMode
+        self.frameCap = frameCap
     }
 
     
@@ -7128,9 +7162,15 @@ public struct FfiConverterTypeLaunchChoices: FfiConverterRustBuffer {
                 engine: FfiConverterOptionTypeLaunchEngine.read(from: &buf), 
                 graphics: FfiConverterOptionTypeLaunchGraphics.read(from: &buf), 
                 rayTracing: FfiConverterOptionBool.read(from: &buf), 
+                compatibility: FfiConverterOptionBool.read(from: &buf), 
                 renderPercent: FfiConverterOptionUInt32.read(from: &buf), 
+                metalfxSpatial: FfiConverterBool.read(from: &buf), 
+                lowLatency: FfiConverterBool.read(from: &buf), 
+                emulateModes: FfiConverterBool.read(from: &buf), 
+                scrollPercent: FfiConverterOptionUInt16.read(from: &buf), 
                 performanceHud: FfiConverterBool.read(from: &buf), 
-                gameMode: FfiConverterOptionBool.read(from: &buf)
+                gameMode: FfiConverterOptionBool.read(from: &buf), 
+                frameCap: FfiConverterOptionUInt32.read(from: &buf)
         )
     }
 
@@ -7139,9 +7179,15 @@ public struct FfiConverterTypeLaunchChoices: FfiConverterRustBuffer {
         FfiConverterOptionTypeLaunchEngine.write(value.engine, into: &buf)
         FfiConverterOptionTypeLaunchGraphics.write(value.graphics, into: &buf)
         FfiConverterOptionBool.write(value.rayTracing, into: &buf)
+        FfiConverterOptionBool.write(value.compatibility, into: &buf)
         FfiConverterOptionUInt32.write(value.renderPercent, into: &buf)
+        FfiConverterBool.write(value.metalfxSpatial, into: &buf)
+        FfiConverterBool.write(value.lowLatency, into: &buf)
+        FfiConverterBool.write(value.emulateModes, into: &buf)
+        FfiConverterOptionUInt16.write(value.scrollPercent, into: &buf)
         FfiConverterBool.write(value.performanceHud, into: &buf)
         FfiConverterOptionBool.write(value.gameMode, into: &buf)
+        FfiConverterOptionUInt32.write(value.frameCap, into: &buf)
     }
 }
 
@@ -7181,6 +7227,18 @@ public struct LaunchEngineOffer: Equatable, Hashable {
      * Whether it can keep macOS's Game Mode off a game.
      */
     public var gameMode: Bool
+    /**
+     * Whether Wine's own Direct3D can render a game there, through OpenGL.
+     */
+    public var compatibility: Bool
+    /**
+     * Whether it can cap a game's frame rate.
+     */
+    public var frameCap: Bool
+    /**
+     * Whether its Wine can list display modes the screen lacks.
+     */
+    public var emulateModes: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -7194,13 +7252,25 @@ public struct LaunchEngineOffer: Equatable, Hashable {
          */lowestRenderPercent: UInt32?, 
         /**
          * Whether it can keep macOS's Game Mode off a game.
-         */gameMode: Bool) {
+         */gameMode: Bool, 
+        /**
+         * Whether Wine's own Direct3D can render a game there, through OpenGL.
+         */compatibility: Bool = false, 
+        /**
+         * Whether it can cap a game's frame rate.
+         */frameCap: Bool = false, 
+        /**
+         * Whether its Wine can list display modes the screen lacks.
+         */emulateModes: Bool = false) {
         self.engine = engine
         self.translator = translator
         self.defaultGraphics = defaultGraphics
         self.graphics = graphics
         self.lowestRenderPercent = lowestRenderPercent
         self.gameMode = gameMode
+        self.compatibility = compatibility
+        self.frameCap = frameCap
+        self.emulateModes = emulateModes
     }
 
     
@@ -7224,7 +7294,10 @@ public struct FfiConverterTypeLaunchEngineOffer: FfiConverterRustBuffer {
                 defaultGraphics: FfiConverterTypeLaunchGraphics.read(from: &buf), 
                 graphics: FfiConverterSequenceTypeLaunchGraphicsOffer.read(from: &buf), 
                 lowestRenderPercent: FfiConverterOptionUInt32.read(from: &buf), 
-                gameMode: FfiConverterBool.read(from: &buf)
+                gameMode: FfiConverterBool.read(from: &buf), 
+                compatibility: FfiConverterBool.read(from: &buf), 
+                frameCap: FfiConverterBool.read(from: &buf), 
+                emulateModes: FfiConverterBool.read(from: &buf)
         )
     }
 
@@ -7235,6 +7308,9 @@ public struct FfiConverterTypeLaunchEngineOffer: FfiConverterRustBuffer {
         FfiConverterSequenceTypeLaunchGraphicsOffer.write(value.graphics, into: &buf)
         FfiConverterOptionUInt32.write(value.lowestRenderPercent, into: &buf)
         FfiConverterBool.write(value.gameMode, into: &buf)
+        FfiConverterBool.write(value.compatibility, into: &buf)
+        FfiConverterBool.write(value.frameCap, into: &buf)
+        FfiConverterBool.write(value.emulateModes, into: &buf)
     }
 }
 
@@ -7323,9 +7399,30 @@ public struct LaunchSettings: Equatable, Hashable {
      */
     public var rayTracing: Bool
     /**
+     * Wine's own Direct3D renders the game through OpenGL instead of
+     * `graphics`.
+     */
+    public var compatibility: Bool
+    /**
      * The share of the screen's pixels the game renders at, in whole percent.
      */
     public var renderPercent: UInt32
+    /**
+     * MetalFX Spatial upscales the game's picture on its way to the screen.
+     */
+    public var metalfxSpatial: Bool
+    /**
+     * The game queues at most one frame ahead of the screen.
+     */
+    public var lowLatency: Bool
+    /**
+     * Wine lists the common display modes the screen lacks.
+     */
+    public var emulateModes: Bool
+    /**
+     * How far a mouse wheel's notch scrolls, in whole percent of Wine's own.
+     */
+    public var scrollPercent: UInt16
     /**
      * Metal's Performance HUD shows over the game, whatever renders it.
      */
@@ -7334,6 +7431,11 @@ public struct LaunchSettings: Equatable, Hashable {
      * macOS may turn its Game Mode on for the game.
      */
     public var gameMode: Bool
+    /**
+     * The most frames a second the game shows, for the screen it starts on;
+     * None when uncapped.
+     */
+    public var frameCap: UInt32?
     /**
      * What the player changed from what Obelisk knows of the game.
      */
@@ -7355,14 +7457,34 @@ public struct LaunchSettings: Equatable, Hashable {
          * Direct3D 12 offers DirectX Raytracing, on D3DMetal.
          */rayTracing: Bool, 
         /**
+         * Wine's own Direct3D renders the game through OpenGL instead of
+         * `graphics`.
+         */compatibility: Bool = false, 
+        /**
          * The share of the screen's pixels the game renders at, in whole percent.
          */renderPercent: UInt32, 
+        /**
+         * MetalFX Spatial upscales the game's picture on its way to the screen.
+         */metalfxSpatial: Bool = false, 
+        /**
+         * The game queues at most one frame ahead of the screen.
+         */lowLatency: Bool = false, 
+        /**
+         * Wine lists the common display modes the screen lacks.
+         */emulateModes: Bool = false, 
+        /**
+         * How far a mouse wheel's notch scrolls, in whole percent of Wine's own.
+         */scrollPercent: UInt16 = UInt16(100), 
         /**
          * Metal's Performance HUD shows over the game, whatever renders it.
          */performanceHud: Bool, 
         /**
          * macOS may turn its Game Mode on for the game.
          */gameMode: Bool, 
+        /**
+         * The most frames a second the game shows, for the screen it starts on;
+         * None when uncapped.
+         */frameCap: UInt32? = nil, 
         /**
          * What the player changed from what Obelisk knows of the game.
          */choices: LaunchChoices, 
@@ -7376,9 +7498,15 @@ public struct LaunchSettings: Equatable, Hashable {
         self.engine = engine
         self.graphics = graphics
         self.rayTracing = rayTracing
+        self.compatibility = compatibility
         self.renderPercent = renderPercent
+        self.metalfxSpatial = metalfxSpatial
+        self.lowLatency = lowLatency
+        self.emulateModes = emulateModes
+        self.scrollPercent = scrollPercent
         self.performanceHud = performanceHud
         self.gameMode = gameMode
+        self.frameCap = frameCap
         self.choices = choices
         self.defaultEngine = defaultEngine
         self.engines = engines
@@ -7403,9 +7531,15 @@ public struct FfiConverterTypeLaunchSettings: FfiConverterRustBuffer {
                 engine: FfiConverterTypeLaunchEngine.read(from: &buf), 
                 graphics: FfiConverterTypeLaunchGraphics.read(from: &buf), 
                 rayTracing: FfiConverterBool.read(from: &buf), 
+                compatibility: FfiConverterBool.read(from: &buf), 
                 renderPercent: FfiConverterUInt32.read(from: &buf), 
+                metalfxSpatial: FfiConverterBool.read(from: &buf), 
+                lowLatency: FfiConverterBool.read(from: &buf), 
+                emulateModes: FfiConverterBool.read(from: &buf), 
+                scrollPercent: FfiConverterUInt16.read(from: &buf), 
                 performanceHud: FfiConverterBool.read(from: &buf), 
                 gameMode: FfiConverterBool.read(from: &buf), 
+                frameCap: FfiConverterOptionUInt32.read(from: &buf), 
                 choices: FfiConverterTypeLaunchChoices.read(from: &buf), 
                 defaultEngine: FfiConverterTypeLaunchEngine.read(from: &buf), 
                 engines: FfiConverterSequenceTypeLaunchEngineOffer.read(from: &buf)
@@ -7416,9 +7550,15 @@ public struct FfiConverterTypeLaunchSettings: FfiConverterRustBuffer {
         FfiConverterTypeLaunchEngine.write(value.engine, into: &buf)
         FfiConverterTypeLaunchGraphics.write(value.graphics, into: &buf)
         FfiConverterBool.write(value.rayTracing, into: &buf)
+        FfiConverterBool.write(value.compatibility, into: &buf)
         FfiConverterUInt32.write(value.renderPercent, into: &buf)
+        FfiConverterBool.write(value.metalfxSpatial, into: &buf)
+        FfiConverterBool.write(value.lowLatency, into: &buf)
+        FfiConverterBool.write(value.emulateModes, into: &buf)
+        FfiConverterUInt16.write(value.scrollPercent, into: &buf)
         FfiConverterBool.write(value.performanceHud, into: &buf)
         FfiConverterBool.write(value.gameMode, into: &buf)
+        FfiConverterOptionUInt32.write(value.frameCap, into: &buf)
         FfiConverterTypeLaunchChoices.write(value.choices, into: &buf)
         FfiConverterTypeLaunchEngine.write(value.defaultEngine, into: &buf)
         FfiConverterSequenceTypeLaunchEngineOffer.write(value.engines, into: &buf)
@@ -11798,6 +11938,8 @@ public func FfiConverterTypeLaunchGraphics_lower(_ value: LaunchGraphics) -> Rus
 public enum LaunchGraphicsOption: Equatable, Hashable {
     
     case rayTracing
+    case metalFxSpatial
+    case lowLatency
 
 
 
@@ -11821,6 +11963,10 @@ public struct FfiConverterTypeLaunchGraphicsOption: FfiConverterRustBuffer {
         
         case 1: return .rayTracing
         
+        case 2: return .metalFxSpatial
+        
+        case 3: return .lowLatency
+        
         default: throw UniffiInternalError.unexpectedEnumCase
         }
     }
@@ -11831,6 +11977,14 @@ public struct FfiConverterTypeLaunchGraphicsOption: FfiConverterRustBuffer {
         
         case .rayTracing:
             writeInt(&buf, Int32(1))
+        
+        
+        case .metalFxSpatial:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .lowLatency:
+            writeInt(&buf, Int32(3))
         
         }
     }
@@ -13505,6 +13659,30 @@ public func FfiConverterTypeWebAccountGames_lower(_ value: WebAccountGames) -> R
     return FfiConverterTypeWebAccountGames.lower(value)
 }
 
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionUInt16: FfiConverterRustBuffer {
+    typealias SwiftType = UInt16?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterUInt16.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterUInt16.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
@@ -15360,6 +15538,17 @@ public func gogLoginUrl() -> String  {
 })
 }
 /**
+ * Keeps the refresh rate of the Mac's main screen, in hertz, which the frame
+ * caps of the games launched from now on divide; 0 while it is unknown.
+ */
+public func setDisplayRefreshRate(hertz: UInt32)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_obelisk_bridge_fn_func_set_display_refresh_rate(
+        FfiConverterUInt32.lower(hertz),uniffiCallStatus
+    )
+}
+}
+/**
  * Ends the Windows game processes an Obelisk that died left frozen. Runs
  * once at startup, before any launch.
  */
@@ -15486,6 +15675,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_func_gog_login_url() != 21271) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_func_set_display_refresh_rate() != 4347) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_func_end_orphaned_windows_games() != 9000) {

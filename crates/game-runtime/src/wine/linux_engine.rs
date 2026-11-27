@@ -41,7 +41,7 @@ fn window_server(environment: &HashMap<String, String>, pid: u32) -> PathBuf {
 pub(crate) const APP_NAME: &str = "OBELISK_APP_NAME";
 /// A store title as an application name: without the trademark signs stores
 /// add ("Rocket League®"), which Mac apps leave out.
-fn app_name(title: &str) -> String {
+pub(super) fn app_name(title: &str) -> String {
     title
         .chars()
         .filter(|c| !matches!(c, '®' | '™' | '©'))
@@ -106,6 +106,12 @@ static FACTS: Facts = Facts {
             "WINEDLLOVERRIDES",
             "VTEST_SOCKET_NAME",
             "NPT_DEBUG",
+            "NPT_WSD_PACING",
+            "NPT_MAX_FRAME_LATENCY",
+            super::SCROLL_PERCENT,
+            // The launcher sets them for DXMT's render server alone.
+            "DXMT_APP_NAME",
+            "DXMT_SHADER_CACHE_PATH",
             "LD_PRELOAD",
         ],
         dlls: &[
@@ -237,6 +243,14 @@ impl Adapter for LinuxEngine {
         // Without it, macOS turns Game Mode on while the game is full screen.
         if !config.settings.game_mode {
             arguments.extend(["--game-mode".to_owned(), "off".to_owned()]);
+        }
+        if let Some(cap) = config.settings.frame_cap {
+            arguments.extend(["--frame-rate".to_owned(), cap.to_string()]);
+        }
+        // DXMT picks its fixes for a game by its program's name, which its
+        // render server, outside the guest, cannot see.
+        if let Some(name) = program.file_name() {
+            arguments.extend(["--program".to_owned(), name.to_string_lossy().into_owned()]);
         }
         for (path, folder) in &guest.binds {
             arguments.push("--bind".to_owned());
@@ -391,8 +405,23 @@ fn guest_environment(config: &Config) -> Vec<(String, String)> {
         ("VTEST_SOCKET_NAME", "/run/obelisk/vtest.sock".into()),
         ("NPT_DEBUG", "force_vtest".into()),
     ];
+    // wsd holds a game to its frame cap: Neptune's swapchain waits for it
+    // even without vsync, and OpenGL asks for the same rate through
+    // WINE_GL_FRAME_LOCK, which reads a value under 20 as a divisor.
+    let frame_cap = config.settings.frame_cap.into_iter().flat_map(|cap| {
+        let gl_frame_lock = (cap >= 20).then(|| ("WINE_GL_FRAME_LOCK".to_owned(), cap.to_string()));
+        std::iter::once(("NPT_WSD_PACING".to_owned(), "latch".to_owned())).chain(gl_frame_lock)
+    });
+    // Neptune's swapchain lets the game queue one frame ahead, not three.
+    let low_latency = config
+        .settings
+        .low_latency
+        .then(|| ("NPT_MAX_FRAME_LATENCY".to_owned(), "1".to_owned()));
     own.into_iter()
         .map(|(name, value)| (name.to_owned(), value))
+        .chain(frame_cap)
+        .chain(low_latency)
+        .chain(super::scroll_percent(config))
         .chain(locale)
         .chain(config.settings.variables.clone())
         .collect()

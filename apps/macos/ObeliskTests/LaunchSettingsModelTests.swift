@@ -5,18 +5,20 @@ final class LaunchSettingsModelTests: XCTestCase {
     private static func settings(choices: LaunchChoices = LaunchChoices(),
                                  engine: LaunchEngine = .rosetta) -> LaunchSettings {
         LaunchSettings(
-            engine: engine, graphics: engine == .rosetta ? .d3dMetal : .dxmt, rayTracing: true,
+            engine: engine, graphics: engine == .rosetta ? choices.graphics ?? .d3dMetal : .dxmt, rayTracing: true,
+            compatibility: engine == .rosetta && choices.compatibility == true,
             renderPercent: engine == .linux ? choices.renderPercent ?? RenderPercent.native : RenderPercent.native,
-            performanceHud: choices.performanceHud, gameMode: engine != .linux || choices.gameMode ?? true,
+            metalfxSpatial: engine == .rosetta && choices.graphics == .dxmt && choices.metalfxSpatial,
+            performanceHud: choices.performanceHud, gameMode: choices.gameMode ?? true,
             choices: choices, defaultEngine: .rosetta,
             engines: [
                 LaunchEngineOffer(
                     engine: .rosetta, translator: .rosetta, defaultGraphics: .d3dMetal,
                     graphics: [
                         LaunchGraphicsOffer(graphics: .d3dMetal, options: [.rayTracing]),
-                        LaunchGraphicsOffer(graphics: .dxmt, options: []),
+                        LaunchGraphicsOffer(graphics: .dxmt, options: [.metalFxSpatial, .lowLatency]),
                     ],
-                    lowestRenderPercent: nil, gameMode: false
+                    lowestRenderPercent: nil, gameMode: true, compatibility: true
                 ),
                 LaunchEngineOffer(
                     engine: .linux, translator: .fex, defaultGraphics: .dxmt,
@@ -55,7 +57,7 @@ final class LaunchSettingsModelTests: XCTestCase {
     }
 
     @MainActor
-    func testGameModeIsOfferedByTheLinuxEngineOnlyAndTurnsOff() async throws {
+    func testCompatibilityModeIsAThirdRendererAndABackendEndsIt() async throws {
         var saved: [LaunchChoices] = []
         let model = LaunchSettingsModel(
             load: { Self.settings() },
@@ -65,15 +67,58 @@ final class LaunchSettingsModelTests: XCTestCase {
             }
         )
         await model.appear()
-        XCTAssertEqual(model.engineOffer?.gameMode, false)
 
-        model.choose { $0.engine = .linux }
-        try await waitUntil { model.settings?.engine == .linux }
+        model.choose(.compatibility)
+        try await waitUntil { model.settings?.compatibility == true }
+        XCTAssertEqual(saved.last, LaunchChoices(compatibility: true))
+        XCTAssertNil(model.graphicsOffer)
+        XCTAssertEqual(model.settings.map(GraphicsRenderer.init), .compatibility)
+
+        model.choose(.backend(.dxmt))
+        try await waitUntil { model.settings?.compatibility == false }
+        XCTAssertEqual(saved.last, LaunchChoices(graphics: .dxmt))
+        XCTAssertEqual(model.graphicsOffer?.graphics, .dxmt)
+    }
+
+    @MainActor
+    func testMetalFxSpatialIsOfferedBehindRosettaSDxmtAndTurnsOn() async throws {
+        var saved: [LaunchChoices] = []
+        let model = LaunchSettingsModel(
+            load: { Self.settings(choices: LaunchChoices(graphics: .dxmt)) },
+            save: { choices in
+                saved.append(choices)
+                return Self.settings(choices: choices, engine: choices.engine ?? .rosetta)
+            }
+        )
+        await model.appear()
+        XCTAssertEqual(model.graphicsOffer?.options, [.metalFxSpatial, .lowLatency])
+
+        model.choose { $0.metalfxSpatial = true }
+        try await waitUntil { model.settings?.metalfxSpatial == true }
+        XCTAssertEqual(saved.last, LaunchChoices(graphics: .dxmt, metalfxSpatial: true))
+    }
+
+    @MainActor
+    func testGameModeIsOfferedByBothEnginesAndTurnsOff() async throws {
+        var saved: [LaunchChoices] = []
+        let model = LaunchSettingsModel(
+            load: { Self.settings() },
+            save: { choices in
+                saved.append(choices)
+                return Self.settings(choices: choices, engine: choices.engine ?? .rosetta)
+            }
+        )
+        await model.appear()
         XCTAssertEqual(model.engineOffer?.gameMode, true)
         XCTAssertEqual(model.settings?.gameMode, true)
 
         model.choose { $0.gameMode = false }
         try await waitUntil { model.settings?.gameMode == false }
+        XCTAssertEqual(saved.last, LaunchChoices(gameMode: false))
+
+        model.choose { $0.engine = .linux }
+        try await waitUntil { model.settings?.engine == .linux }
+        XCTAssertEqual(model.engineOffer?.gameMode, true)
         XCTAssertEqual(saved.last, LaunchChoices(engine: .linux, gameMode: false))
     }
 

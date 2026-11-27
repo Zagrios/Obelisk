@@ -17,6 +17,10 @@
 //! It is no profile field, since a build that reads the profile table from
 //! `main` refuses an entry with a field it does not know. A Voile release that
 //! predates `--render-percent` ignores it.
+//!
+//! A frame cap holds the game to the screen's refresh rate over a whole
+//! number of refreshes, which Obelisk tells the launch settings as the
+//! screens change, so that each frame shows for about as many refreshes.
 use crate::{
     profile::{self, Profile},
     wine::{Engine, Graphics, GraphicsOptions},
@@ -27,6 +31,7 @@ use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
+    sync::atomic::{AtomicU32, Ordering},
 };
 
 /// How one Windows installation runs from its next launch: its game's
@@ -40,6 +45,10 @@ pub struct Settings {
     pub graphics: Graphics,
     /// What it asks of that backend.
     pub options: GraphicsOptions,
+    /// Wine's own Direct3D renders it instead, through OpenGL; only on an
+    /// engine that offers it.
+    #[serde(default)]
+    pub compatibility: bool,
     /// The program its profile starts instead of its publisher's, relative
     /// to the installation.
     pub executable: Option<String>,
@@ -62,10 +71,29 @@ pub struct Settings {
     /// The share of the screen's pixels the game renders at; always one `engine` offers.
     #[serde(default = "full_render_percent")]
     pub render_percent: u32,
+    /// MetalFX Spatial upscales the game's picture on its way to the screen;
+    /// true only where its backend offers it.
+    #[serde(default)]
+    pub metalfx_spatial: bool,
+    /// The game queues at most one frame ahead of the screen, for less input
+    /// delay; true only where its backend offers it.
+    #[serde(default)]
+    pub low_latency: bool,
+    /// Wine lists the common display modes a screen lacks, and macOS scales
+    /// a full-screen game at one of them to the screen.
+    #[serde(default)]
+    pub emulate_modes: bool,
+    /// How far a mouse wheel's notch scrolls, in whole percent of Wine's own.
+    #[serde(default = "normal_scroll_percent")]
+    pub scroll_percent: u16,
     /// macOS may turn its Game Mode on for the game; false only on an engine
     /// that can keep it off.
     #[serde(default = "game_mode")]
     pub game_mode: bool,
+    /// The most frames a second it shows, the screen's refresh rate over a
+    /// whole number of refreshes; None when uncapped.
+    #[serde(default)]
+    pub frame_cap: Option<u32>,
     /// The player's locale, such as `it_IT`, as `of` and `choose` were given
     /// it. The Linux engine's guest takes its Windows locale from it: the
     /// supervisor that builds an Epic or GOG target has no environment of
@@ -85,6 +113,15 @@ impl Default for Settings {
 }
 
 impl Settings {
+    /// Whether its backend takes `option` on its engine; none does in
+    /// compatibility mode.
+    pub(crate) fn takes(&self, option: GraphicsOption) -> bool {
+        !self.compatibility
+            && offer(self.engine)
+                .graphics(self.graphics)
+                .is_some_and(|offer| offer.options.contains(&option))
+    }
+
     /// What starts for `target` inside `install`: `target`, or the program
     /// the profile names instead, or the installation's Easy Anti-Cheat
     /// bootstrapper when the engine cannot run `target`, with the same
@@ -123,10 +160,54 @@ impl Settings {
 /// All of the screen's pixels, which a game renders at without a choice.
 pub const FULL_RENDER_PERCENT: u32 = 100;
 
+/// How far a notch scrolls without a choice, as in Wine itself.
+pub const NORMAL_SCROLL_PERCENT: u16 = 100;
+
+/// The scroll speeds a player may choose, in whole percent.
+const SCROLL_PERCENTS: std::ops::RangeInclusive<u16> = 25..=400;
+
+/// The serde default of `Settings::scroll_percent`.
+fn normal_scroll_percent() -> u16 {
+    NORMAL_SCROLL_PERCENT
+}
+
 /// The serde default of `Settings::render_percent`, which a handoff that
 /// predates it lacks: a derived default would be 0.
 fn full_render_percent() -> u32 {
     FULL_RENDER_PERCENT
+}
+
+/// The frame cap that follows the screen's refresh rate.
+pub const DISPLAY_FRAME_CAP: u32 = 0;
+
+/// The refresh rate of the Mac's main screen in hertz, 0 while unknown.
+static DISPLAY_RATE: AtomicU32 = AtomicU32::new(0);
+
+/// Keeps the refresh rate of the Mac's main screen, in hertz, which the frame
+/// caps of the games launched from now on divide.
+pub fn set_display_rate(hertz: u32) {
+    DISPLAY_RATE.store(hertz, Ordering::Relaxed);
+}
+
+/// The refresh rate of the Mac's main screen, once Obelisk told it.
+pub(crate) fn display_rate() -> Option<u32> {
+    Some(DISPLAY_RATE.load(Ordering::Relaxed)).filter(|&hertz| hertz > 0)
+}
+
+/// The rate a frame `cap` holds a game to on a screen refreshing at
+/// `display_rate`: the refresh rate over the fewest whole refreshes per frame
+/// that keep it at or below the cap, or the refresh rate itself for
+/// `DISPLAY_FRAME_CAP`. Without a known refresh rate, the cap as
+/// chosen, and none for `DISPLAY_FRAME_CAP`.
+fn frame_cap(cap: u32, display_rate: Option<u32>) -> Option<u32> {
+    let Some(rate) = display_rate else {
+        return (cap != DISPLAY_FRAME_CAP).then_some(cap);
+    };
+    let cap = match cap {
+        DISPLAY_FRAME_CAP => rate,
+        cap => cap.min(rate),
+    };
+    Some(rate / rate.div_ceil(cap))
 }
 
 /// The serde default of `Settings::game_mode`, which a handoff that predates
@@ -137,31 +218,38 @@ fn game_mode() -> bool {
 
 /// The launch settings of the Windows installation of `game` in `install`,
 /// by its profile and the choices kept for it in Obelisk's `library`, for a
-/// player whose locale is `locale`, such as `it_IT`. An installation without
-/// choices, or whose file cannot be read, runs as its profile says. It reads
-/// the installation's folders for Easy Anti-Cheat, so it blocks on a slow
-/// disk.
-pub fn of(library: &Path, game: profile::Game<'_>, install: &Path, locale: Option<&str>) -> View {
+/// player whose locale is `locale`, such as `it_IT`, on a screen that
+/// refreshes at `display_rate`. An installation without choices, or whose
+/// file cannot be read, runs as its profile says. It reads the installation's
+/// folders for Easy Anti-Cheat, so it blocks on a slow disk.
+pub fn of(
+    library: &Path,
+    game: profile::Game<'_>,
+    install: &Path,
+    locale: Option<&str>,
+    display_rate: Option<u32>,
+) -> View {
     let profile = profile::of(game, install);
-    View::new(game, &profile, load(library, install), locale)
+    View::new(game, &profile, load(library, install), locale, display_rate)
 }
 
 /// Keeps `choices` for that installation, without those its profile or its
 /// engine already gives, and returns its launch settings from its next
-/// launch on, for a player whose locale is `locale`. No choice at all leaves
-/// no file. It reads the installation's folders for Easy Anti-Cheat, so it
-/// blocks on a slow disk.
+/// launch on, for a player whose locale is `locale`, on a screen that
+/// refreshes at `display_rate`. No choice at all leaves no file. It reads the
+/// installation's folders for Easy Anti-Cheat, so it blocks on a slow disk.
 pub fn choose(
     library: &Path,
     game: profile::Game<'_>,
     install: &Path,
     locale: Option<&str>,
+    display_rate: Option<u32>,
     choices: Choices,
 ) -> std::io::Result<View> {
     let profile = profile::of(game, install);
     let choices = choices.normalized(&profile);
     save(library, install, &choices)?;
-    Ok(View::new(game, &profile, choices, locale))
+    Ok(View::new(game, &profile, choices, locale, display_rate))
 }
 
 /// The engine the Windows installation of `game` in `install` runs on from
@@ -221,9 +309,26 @@ pub struct Choices {
     pub graphics: Option<Graphics>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ray_tracing: Option<bool>,
+    /// Wine's own Direct3D over OpenGL instead of the backend. Apart from
+    /// `graphics`, so a file that keeps it still opens in an older build.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub compatibility: Option<bool>,
     /// A plain integer, so an older build still reads the file.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub render_percent: Option<u32>,
+    /// MetalFX Spatial upscales the game's picture on its way to the screen.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub metalfx_spatial: bool,
+    /// The game queues at most one frame ahead of the screen.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub low_latency: bool,
+    /// Wine lists the common display modes a screen lacks.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub emulate_modes: bool,
+    /// How far a mouse wheel's notch scrolls, in whole percent; a plain
+    /// integer, so an older build still reads the file.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scroll_percent: Option<u16>,
     /// Metal's Performance HUD shows over the game, whatever renders it.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub performance_hud: bool,
@@ -231,6 +336,11 @@ pub struct Choices {
     /// profile keeps it off: only what differs from the profile is kept.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub game_mode: Option<bool>,
+    /// The most frames a second the player wants, `DISPLAY_FRAME_CAP` for
+    /// the screen's refresh rate, as chosen: the screen may change before
+    /// the game starts.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub frame_cap: Option<u32>,
 }
 
 /// What translates a game's x86 code on one engine.
@@ -244,6 +354,10 @@ pub enum Translator {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GraphicsOption {
     RayTracing,
+    /// MetalFX Spatial upscales the picture its swapchain presents.
+    MetalFxSpatial,
+    /// Its swapchain queues at most one frame ahead of the screen.
+    LowLatency,
 }
 
 /// What one engine offers, in the order the player sees it.
@@ -257,6 +371,13 @@ pub struct EngineOffer {
     pub lowest_render_percent: Option<u32>,
     /// Whether it can keep macOS's Game Mode off a game.
     pub game_mode: bool,
+    /// Whether Wine's own Direct3D can render a game instead of a backend,
+    /// through OpenGL.
+    pub compatibility: bool,
+    /// Whether it can cap a game's frame rate.
+    pub frame_cap: bool,
+    /// Whether its Wine can list display modes the screen lacks.
+    pub emulate_modes: bool,
 }
 
 /// What one graphics backend offers on one engine.
@@ -267,9 +388,10 @@ pub struct GraphicsOffer {
 }
 
 /// Every engine, the translator it has and the backends it renders with.
-/// Rosetta's Wine takes D3DMetal's options and no render resolution, and
-/// macOS never takes its games for games; the Linux engine's render servers
-/// take no options yet.
+/// Rosetta's Wine takes D3DMetal's and DXMT's options and no render
+/// resolution, and its Wine renders through OpenGL too; the Linux engine's
+/// render servers take low input delay alone, and its Wine has Neptune's
+/// Direct3D alone.
 pub const ENGINES: [EngineOffer; 2] = [
     EngineOffer {
         engine: Engine::Rosetta,
@@ -281,11 +403,14 @@ pub const ENGINES: [EngineOffer; 2] = [
             },
             GraphicsOffer {
                 graphics: Graphics::Dxmt,
-                options: &[],
+                options: &[GraphicsOption::MetalFxSpatial, GraphicsOption::LowLatency],
             },
         ],
         lowest_render_percent: None,
-        game_mode: false,
+        game_mode: true,
+        compatibility: true,
+        frame_cap: true,
+        emulate_modes: true,
     },
     EngineOffer {
         engine: Engine::Linux,
@@ -293,16 +418,19 @@ pub const ENGINES: [EngineOffer; 2] = [
         graphics: &[
             GraphicsOffer {
                 graphics: Graphics::Dxmt,
-                options: &[],
+                options: &[GraphicsOption::LowLatency],
             },
             GraphicsOffer {
                 graphics: Graphics::D3DMetal,
-                options: &[],
+                options: &[GraphicsOption::LowLatency],
             },
         ],
         // wsd keeps the desktop at 640x480 pixels or more: on a Retina MacBook, below about 25 gives the same one.
         lowest_render_percent: Some(1),
         game_mode: true,
+        compatibility: false,
+        frame_cap: true,
+        emulate_modes: false,
     },
 ];
 
@@ -342,12 +470,20 @@ impl Choices {
             .filter(|graphics| offered.graphics(*graphics).is_some())
             .unwrap_or(default_graphics(profile, engine));
         let options = default_options(profile, engine, graphics);
-        Settings {
+        let mut settings = Settings {
             engine,
             graphics,
             options: GraphicsOptions {
                 ray_tracing: self.ray_tracing.unwrap_or(options.ray_tracing),
             },
+            compatibility: self.compatibility == Some(true) && offered.compatibility,
+            metalfx_spatial: false,
+            low_latency: false,
+            emulate_modes: self.emulate_modes && offered.emulate_modes,
+            scroll_percent: self
+                .scroll_percent
+                .filter(|percent| SCROLL_PERCENTS.contains(percent))
+                .unwrap_or(NORMAL_SCROLL_PERCENT),
             executable: profile.executable.map(str::to_owned),
             bootstrapper: profile.bootstrapper.clone(),
             profile_arguments: profile.arguments.to_vec(),
@@ -363,8 +499,13 @@ impl Choices {
                 .game_mode
                 .filter(|_| offered.game_mode)
                 .unwrap_or(default_game_mode(profile, engine)),
+            frame_cap: None,
             locale: None,
-        }
+        };
+        settings.metalfx_spatial =
+            self.metalfx_spatial && settings.takes(GraphicsOption::MetalFxSpatial);
+        settings.low_latency = self.low_latency && settings.takes(GraphicsOption::LowLatency);
+        settings
     }
 
     /// These choices without those `profile` already gives, or the chosen
@@ -384,11 +525,18 @@ impl Choices {
             graphics: (applied.graphics != graphics).then_some(applied.graphics),
             ray_tracing: (applied.options.ray_tracing != options.ray_tracing)
                 .then_some(applied.options.ray_tracing),
+            compatibility: applied.compatibility.then_some(true),
             render_percent: (applied.render_percent != FULL_RENDER_PERCENT)
                 .then_some(applied.render_percent),
+            metalfx_spatial: applied.metalfx_spatial,
+            low_latency: applied.low_latency,
+            emulate_modes: applied.emulate_modes,
+            scroll_percent: (applied.scroll_percent != NORMAL_SCROLL_PERCENT)
+                .then_some(applied.scroll_percent),
             performance_hud: self.performance_hud,
             game_mode: (applied.game_mode != default_game_mode(profile, applied.engine))
                 .then_some(applied.game_mode),
+            frame_cap: self.frame_cap,
         }
     }
 
@@ -489,15 +637,22 @@ pub struct View {
 
 impl View {
     /// The launch settings of `game`, whose profile is `profile`, with
-    /// `choices`, for a player whose locale is `locale`.
+    /// `choices`, for a player whose locale is `locale`, on a screen that
+    /// refreshes at `display_rate`. Wine's own Direct3D has no frame cap,
+    /// and the player's stays for an engine that has one.
     fn new(
         game: profile::Game<'_>,
         profile: &Profile,
         choices: Choices,
         locale: Option<&str>,
+        display_rate: Option<u32>,
     ) -> Self {
         let mut settings = choices.apply(profile);
         settings.locale = locale.map(str::to_owned);
+        settings.frame_cap = choices
+            .frame_cap
+            .filter(|_| offer(settings.engine).frame_cap && !settings.compatibility)
+            .and_then(|cap| frame_cap(cap, display_rate));
         let language =
             locale.and_then(|locale| language_argument(game, &settings.arguments, locale));
         settings.profile_arguments.extend(language);

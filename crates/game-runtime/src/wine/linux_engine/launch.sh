@@ -15,6 +15,9 @@
 #   --render-percent N        the share of the screen's pixels per axis that the game sees (default 100, all of them;
 #                             wsd keeps it from 1 to 100): macOS scales the picture up to the screen
 #   --game-mode on|off        whether macOS turns Game Mode on while the game is full screen (default on)
+#   --frame-rate N            the most frames a second wsd shows the game, the screen's refresh rate over a whole
+#                             number of refreshes (default: every frame)
+#   --program NAME            the file name of the game's program, for DXMT's per-game options
 #   --bind GUEST=HOST[:ro]    a folder the guest also sees, at GUEST, whose parent exists in the root
 #   --env NAME=VALUE          a variable of the guest
 #   --pass NAME               this script's variable NAME, when set, as a variable of the guest
@@ -25,13 +28,15 @@ set -u
 unset DYLD_INSERT_LIBRARIES
 runtime=$1 home=$2 install=$3 cwd=$4
 shift 4
-graphics=dxmt render_percent= game_mode=on binds= guest_env=()
+graphics=dxmt render_percent= game_mode=on frame_rate= program= binds= guest_env=()
 while [ $# -gt 0 ] && [ "$1" != "--" ]; do
     [ $# -ge 2 ] || exit 2
     case $1 in
     --graphics) graphics=$2 ;;
     --render-percent) render_percent=$2 ;;
     --game-mode) game_mode=$2 ;;
+    --frame-rate) frame_rate=$2 ;;
+    --program) program=$2 ;;
     --bind) binds="$binds;$2" ;;
     --env) guest_env+=(--env "$2") ;;
     --pass)
@@ -164,7 +169,8 @@ else
     render=$(render_server "$runtime/graphics/libexec/virgl_render_server" dxmt) || exit 1
 fi
 
-"$app/Contents/MacOS/wsd" --dir "$sockets" ${render_percent:+--render-percent "$render_percent"} &
+"$app/Contents/MacOS/wsd" --dir "$sockets" ${render_percent:+--render-percent "$render_percent"} \
+    ${frame_rate:+--frame-rate "$frame_rate"} &
 helpers+=($!)
 if [ "$graphics" = d3dmetal ]; then
     # D3DMetal is an Intel library: the Intel render server runs it under Rosetta. d3dmetal-native loads the
@@ -180,7 +186,11 @@ if [ "$graphics" = d3dmetal ]; then
         "$server/bin/virgl_test_server" --no-virgl --no-fork --socket-path "$sockets/vtest.sock" &
 else
     dxmt="$runtime/graphics/dxmt-native.framework/Versions/A/dxmt-native"
-    RENDER_SERVER_EXEC_PATH="$render" NPT_BACKEND=dxmt \
+    # DXMT runs outside the guest: it learns the game's program from here, and keeps its compiled shaders beside
+    # Metal's for the helper's bundle rather than under the name of the render server every game shares.
+    env ${program:+"DXMT_APP_NAME=$program"} \
+        DXMT_SHADER_CACHE_PATH="$(getconf DARWIN_USER_CACHE_DIR)com.zagrios.obelisk.game.$app_id.dxmt/dxmt" \
+        RENDER_SERVER_EXEC_PATH="$render" NPT_BACKEND=dxmt \
         NPT_D3D11_LIBRARY_PATH="$dxmt" NPT_DXGI_LIBRARY_PATH="$dxmt" NPT_D3D12_LIBRARY_PATH="$dxmt" \
         "$runtime/graphics/bin/virgl_test_server" --no-virgl --no-fork --socket-path "$sockets/vtest.sock" &
 fi

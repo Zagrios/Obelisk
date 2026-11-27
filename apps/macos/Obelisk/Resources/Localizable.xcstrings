@@ -46691,6 +46691,112 @@
         }
       }
     },
+    "ui.launch_settings.graphics.compatibility": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenGL (Kompatibilität)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenGL (compatibility)"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenGL (compatibilidad)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenGL (compatibilité)"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenGL (compatibilità)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenGL（互換モード）"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenGL (compatibilidade)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenGL（兼容模式）"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.graphics.compatibility_detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Für DirectX-10- und -11-Spiele, die sonst nicht starten. Wine rendert sie über OpenGL, langsamer, und ohne DirectX 12."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "For DirectX 10 and 11 games that fail to start otherwise. Slower, through OpenGL, and without DirectX 12."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Para juegos DirectX 10 y 11 que no arrancan de otro modo. Wine los renderiza con OpenGL, más despacio y sin DirectX 12."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pour les jeux DirectX 10 et 11 qui ne démarrent pas autrement. Wine les affiche via OpenGL, plus lentement, et sans DirectX 12."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Per i giochi DirectX 10 e 11 che altrimenti non si avviano. Wine li renderizza con OpenGL, più lentamente e senza DirectX 12."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ほかの方法では起動しない DirectX 10/11 のゲーム向けです。Wine が OpenGL で描画するため遅くなり、DirectX 12 は使えません。"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Para jogos DirectX 10 e 11 que não abrem de outro jeito. O Wine os renderiza via OpenGL, mais devagar e sem DirectX 12."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "适用于无法以其他方式启动的 DirectX 10 和 11 游戏。Wine 通过 OpenGL 渲染，速度较慢，且不支持 DirectX 12。"
+          }
+        }
+      }
+    },
     "ui.launch_settings.ray_tracing": {
       "extractionState": "manual",
       "localizations": {
@@ -46793,6 +46899,483 @@
           "stringUnit": {
             "state": "translated",
             "value": "支持 DirectX 12 光线追踪的游戏可以在自己的设置中开启。如果游戏因此崩溃或画面异常，请关闭此项。"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.metalfx_spatial": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MetalFX-Hochskalierung"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MetalFX upscaling"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escalado MetalFX"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mise à l'échelle MetalFX"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upscaling MetalFX"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MetalFX アップスケーリング"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upscaling MetalFX"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MetalFX 超分辨率"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.metalfx_spatial_detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MetalFX skaliert das Bild des Spiels auf das Doppelte hoch. Stellen Sie im Spiel die halbe Auflösung Ihres Bildschirms ein: mehr Bilder pro Sekunde, etwas weniger Schärfe."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MetalFX scales the game's picture up 2×. Set the game to half your screen's resolution: more frames, slightly less sharpness."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MetalFX amplía 2× la imagen del juego. Pon el juego a la mitad de la resolución de tu pantalla: más fotogramas, algo menos de nitidez."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MetalFX agrandit l'image du jeu 2×. Réglez le jeu sur la moitié de la résolution de votre écran : plus d'images par seconde, un peu moins de netteté."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MetalFX ingrandisce 2× l'immagine del gioco. Imposta il gioco a metà della risoluzione dello schermo: più fotogrammi, un po' meno nitidezza."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MetalFX がゲームの画面を 2 倍に拡大します。ゲームの解像度を画面の半分に設定してください。フレームレートは上がり、鮮明さは少し下がります。"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O MetalFX amplia a imagem do jogo em 2×. Configure o jogo para a metade da resolução da sua tela: mais quadros, um pouco menos de nitidez."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MetalFX 将游戏画面放大 2 倍。请把游戏分辨率设为屏幕的一半：帧率更高，清晰度略有降低。"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.low_latency": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geringe Eingabeverzögerung"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Low input delay"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Baja latencia de entrada"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Faible latence d'entrée"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bassa latenza di input"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "低入力遅延"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Baixa latência de entrada"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "低输入延迟"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.low_latency_detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Spiel bereitet nur ein Bild im Voraus vor, damit Eingaben schneller ankommen. Kann die Bildrate etwas senken."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The game prepares only one frame ahead, so your input shows sooner. May lower the frame rate a little."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El juego prepara solo un fotograma por adelantado, así tus acciones se ven antes. Puede bajar un poco los fotogramas."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le jeu ne prépare qu'une image à l'avance, vos actions s'affichent plus tôt. Peut réduire un peu la fréquence d'images."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Il gioco prepara un solo fotogramma in anticipo, così i comandi si vedono prima. Può ridurre un po' i fotogrammi."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ゲームが先読みするフレームを 1 つに抑え、操作がより早く画面に反映されます。フレームレートが少し下がることがあります。"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O jogo prepara só um quadro adiantado, então seus comandos aparecem antes. Pode reduzir um pouco os quadros."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "游戏只提前准备一帧，操作会更快显示在屏幕上。帧率可能会略有下降。"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.emulate_modes": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Klassische Auflösungen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Classic resolutions"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resoluciones clásicas"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Résolutions classiques"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Risoluzioni classiche"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クラシック解像度"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resoluções clássicas"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "经典分辨率"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.emulate_modes_detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bietet älteren Spielen Auflösungen wie 800×600 oder 1024×768 an, die der Bildschirm nicht kennt. macOS skaliert das Bild im Vollbild. Am besten funktioniert das mit DXMT."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Offers older games resolutions like 800×600 or 1024×768 that the display does not list. macOS scales the picture in full screen. It works best with DXMT."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ofrece a los juegos antiguos resoluciones como 800×600 o 1024×768 que la pantalla no incluye. macOS escala la imagen en pantalla completa. Funciona mejor con DXMT."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Propose aux jeux anciens des résolutions comme 800×600 ou 1024×768 que l'écran ne liste pas. macOS met l'image à l'échelle en plein écran. Fonctionne mieux avec DXMT."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Offre ai giochi meno recenti risoluzioni come 800×600 o 1024×768 che lo schermo non elenca. macOS scala l'immagine a schermo intero. Funziona meglio con DXMT."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ディスプレイにない 800×600 や 1024×768 などの解像度を古いゲームに提供します。フルスクリーンでは macOS が画面に合わせて拡大します。DXMT での使用が最適です。"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Oferece a jogos antigos resoluções como 800×600 ou 1024×768 que a tela não lista. O macOS ajusta a imagem em tela cheia. Funciona melhor com DXMT."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "为老游戏提供显示器未列出的分辨率，例如 800×600 或 1024×768。全屏时由 macOS 缩放画面。搭配 DXMT 效果最佳。"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.scroll_percent": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollgeschwindigkeit"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scroll speed"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Velocidad de desplazamiento"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vitesse de défilement"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Velocità di scorrimento"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スクロール速度"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Velocidade de rolagem"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "滚动速度"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.scroll_percent_detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wie weit ein Schritt des Mausrads oder eine Wischbewegung im Spiel scrollt."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "How far a notch of the mouse wheel or a swipe scrolls in the game."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cuánto se desplaza el juego con cada paso de la rueda del ratón o con un deslizamiento."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jusqu'où un cran de molette ou un balayage fait défiler le jeu."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Di quanto scorre il gioco a ogni scatto della rotellina o con uno scorrimento."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マウスホイールの 1 段階やスワイプでゲーム内がどれだけスクロールするか。"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quanto o jogo rola a cada clique da roda do mouse ou com um deslize."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "鼠标滚轮每格或一次滑动在游戏中滚动的距离。"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.scroll_percent.normal": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Normal"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Normal"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Normal"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Normale"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Normale"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "標準"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Normal"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正常"
           }
         }
       }
@@ -46952,6 +47535,324 @@
           "stringUnit": {
             "state": "translated",
             "value": "原生"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.frame_cap": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bildratenlimit"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Frame rate limit"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Límite de fotogramas"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Limite d'images par seconde"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Limite di fotogrammi"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フレームレート上限"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Limite de quadros"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "帧率上限"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.frame_cap_detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weniger Bilder pro Sekunde schonen Akku und Temperatur. Das Limit wird an die Bildwiederholrate des Bildschirms angepasst."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fewer frames save battery and keep the Mac cooler. The limit is fitted to the display's refresh rate."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Menos fotogramas ahorran batería y mantienen el Mac más fresco. El límite se ajusta a la frecuencia de la pantalla."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moins d'images par seconde économisent la batterie et gardent le Mac plus frais. La limite s'adapte à la fréquence de l'écran."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meno fotogrammi risparmiano batteria e tengono il Mac più fresco. Il limite si adatta alla frequenza dello schermo."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フレーム数を抑えるとバッテリーが長持ちし、Mac の発熱も減ります。上限はディスプレイのリフレッシュレートに合わせて調整されます。"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Menos quadros economizam bateria e deixam o Mac mais frio. O limite se ajusta à taxa de atualização da tela."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "减少帧数可以省电，并让 Mac 更凉爽。上限会根据显示器的刷新率调整。"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.frame_cap_detail_fitted": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weniger Bilder pro Sekunde schonen Akku und Temperatur. Auf dem Hauptbildschirm ergibt das Limit %lld FPS."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fewer frames save battery and keep the Mac cooler. On the main display the limit comes to %lld FPS."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Menos fotogramas ahorran batería y mantienen el Mac más fresco. En la pantalla principal el límite queda en %lld FPS."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moins d'images par seconde économisent la batterie et gardent le Mac plus frais. Sur l'écran principal, la limite est de %lld FPS."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meno fotogrammi risparmiano batteria e tengono il Mac più fresco. Sullo schermo principale il limite è di %lld FPS."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フレーム数を抑えるとバッテリーが長持ちし、Mac の発熱も減ります。メインディスプレイでは上限は %lld FPS になります。"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Menos quadros economizam bateria e deixam o Mac mais frio. Na tela principal o limite fica em %lld FPS."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "减少帧数可以省电，并让 Mac 更凉爽。在主显示器上，上限为 %lld FPS。"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.frame_cap.off": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aus"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Off"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desactivado"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Désactivée"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disattivato"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オフ"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desativado"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.frame_cap.fps": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld FPS"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld FPS"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld FPS"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld FPS"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld FPS"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld FPS"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld FPS"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld FPS"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.frame_cap.display": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bildwiederholrate"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Display rate"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Frecuencia de la pantalla"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fréquence de l'écran"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Frequenza dello schermo"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ディスプレイのレート"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Taxa da tela"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示器刷新率"
           }
         }
       }

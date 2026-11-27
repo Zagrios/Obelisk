@@ -137,10 +137,25 @@ final class LaunchSettingsModel: Identifiable {
         settings.flatMap { settings in settings.engines.first { $0.engine == settings.engine } }
     }
 
-    /// What the chosen backend offers on the chosen engine.
+    /// What the chosen backend offers on the chosen engine; nothing in
+    /// compatibility mode, where Wine's own Direct3D renders.
     var graphicsOffer: LaunchGraphicsOffer? {
-        guard let settings else { return nil }
+        guard let settings, !settings.compatibility else { return nil }
         return engineOffer?.graphics.first { $0.graphics == settings.graphics }
+    }
+
+    /// Picks what renders the game: a backend, which ends compatibility
+    /// mode, or compatibility mode, which keeps the backend for later.
+    func choose(_ renderer: GraphicsRenderer) {
+        choose { choices in
+            switch renderer {
+            case .backend(let graphics):
+                choices.graphics = graphics
+                choices.compatibility = nil
+            case .compatibility:
+                choices.compatibility = true
+            }
+        }
     }
 }
 
@@ -199,6 +214,7 @@ struct LaunchSettingsSheet: View {
                             gameModeRow(settings)
                         }
                     }
+                    ObeliskCard { scrollPercentRow(settings) }
                     SheetSection(title: L10n.string("ui.launch_settings.cpu")) {
                         ObeliskCard { translatorRow }
                     }
@@ -209,9 +225,25 @@ struct LaunchSettingsSheet: View {
                                 ObeliskCardDivider()
                                 rayTracingRow(settings)
                             }
+                            if model.graphicsOffer?.options.contains(.metalFxSpatial) == true {
+                                ObeliskCardDivider()
+                                metalfxSpatialRow(settings)
+                            }
+                            if model.graphicsOffer?.options.contains(.lowLatency) == true {
+                                ObeliskCardDivider()
+                                lowLatencyRow(settings)
+                            }
                             if let lowest = model.engineOffer?.lowestRenderPercent {
                                 ObeliskCardDivider()
                                 renderPercentRow(settings, lowest: lowest)
+                            }
+                            if model.engineOffer?.emulateModes == true {
+                                ObeliskCardDivider()
+                                emulateModesRow(settings)
+                            }
+                            if model.engineOffer?.frameCap == true, !settings.compatibility {
+                                ObeliskCardDivider()
+                                frameCapRow(settings)
                             }
                             ObeliskCardDivider()
                             performanceHudRow(settings)
@@ -316,20 +348,24 @@ struct LaunchSettingsSheet: View {
     @ViewBuilder
     private func graphicsRow(_ settings: LaunchSettings) -> some View {
         if let engine = model.engineOffer {
+            let renderer = GraphicsRenderer(settings)
             ObeliskRow(title: L10n.string("ui.launch_settings.backend")) {
                 SymbolTile(name: "square.3.layers.3d", colors: TileColors.green)
             } detail: {
-                Text(Self.detail(of: settings.graphics))
+                Text(Self.detail(of: renderer))
             } accessory: {
                 GlassMenuPicker(title: L10n.string("ui.launch_settings.backend"),
-                                value: marked(Self.name(of: settings.graphics),
-                                              isDefault: settings.graphics == engine.defaultGraphics),
-                                selection: Binding(get: { settings.graphics },
-                                                   set: { graphics in model.choose { $0.graphics = graphics } }),
+                                value: marked(Self.name(of: renderer),
+                                              isDefault: renderer == .backend(engine.defaultGraphics)),
+                                selection: Binding(get: { renderer }, set: { model.choose($0) }),
                                 identifier: "launch-settings-graphics") {
                     ForEach(engine.graphics, id: \.graphics) { offer in
                         Text(marked(Self.name(of: offer.graphics), isDefault: offer.graphics == engine.defaultGraphics))
-                            .tag(offer.graphics)
+                            .tag(GraphicsRenderer.backend(offer.graphics))
+                    }
+                    if engine.compatibility {
+                        Text(Self.name(of: GraphicsRenderer.compatibility))
+                            .tag(GraphicsRenderer.compatibility)
                     }
                 }
             }
@@ -352,6 +388,76 @@ struct LaunchSettingsSheet: View {
         }
     }
 
+    private func metalfxSpatialRow(_ settings: LaunchSettings) -> some View {
+        ObeliskRow(title: L10n.string("ui.launch_settings.metalfx_spatial")) {
+            SymbolTile(name: "arrow.up.left.and.arrow.down.right", colors: TileColors.blue)
+        } detail: {
+            Text(L10n.string("ui.launch_settings.metalfx_spatial_detail"))
+        } accessory: {
+            Toggle(L10n.string("ui.launch_settings.metalfx_spatial"),
+                   isOn: Binding(get: { settings.metalfxSpatial },
+                                 set: { metalfxSpatial in model.choose { $0.metalfxSpatial = metalfxSpatial } }))
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .pointerCursor()
+                .accessibilityIdentifier("launch-settings-metalfx-spatial")
+        }
+    }
+
+    private func scrollPercentRow(_ settings: LaunchSettings) -> some View {
+        ObeliskRow(title: L10n.string("ui.launch_settings.scroll_percent")) {
+            SymbolTile(name: "computermouse", colors: TileColors.grey)
+        } detail: {
+            Text(L10n.string("ui.launch_settings.scroll_percent_detail"))
+        } accessory: {
+            GlassMenuPicker(title: L10n.string("ui.launch_settings.scroll_percent"),
+                            value: ScrollPercent.name(of: settings.scrollPercent),
+                            selection: Binding(get: { settings.scrollPercent },
+                                               set: { percent in
+                                                   model.choose {
+                                                       $0.scrollPercent = percent == ScrollPercent.normal ? nil : percent
+                                                   }
+                                               }),
+                            identifier: "launch-settings-scroll-percent") {
+                ForEach(ScrollPercent.steps, id: \.self) { percent in
+                    Text(ScrollPercent.name(of: percent)).tag(percent)
+                }
+            }
+        }
+    }
+
+    private func emulateModesRow(_ settings: LaunchSettings) -> some View {
+        ObeliskRow(title: L10n.string("ui.launch_settings.emulate_modes")) {
+            SymbolTile(name: "rectangle.on.rectangle", colors: TileColors.violet)
+        } detail: {
+            Text(L10n.string("ui.launch_settings.emulate_modes_detail"))
+        } accessory: {
+            Toggle(L10n.string("ui.launch_settings.emulate_modes"),
+                   isOn: Binding(get: { settings.emulateModes },
+                                 set: { emulateModes in model.choose { $0.emulateModes = emulateModes } }))
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .pointerCursor()
+                .accessibilityIdentifier("launch-settings-emulate-modes")
+        }
+    }
+
+    private func lowLatencyRow(_ settings: LaunchSettings) -> some View {
+        ObeliskRow(title: L10n.string("ui.launch_settings.low_latency")) {
+            SymbolTile(name: "hand.tap", colors: TileColors.green)
+        } detail: {
+            Text(L10n.string("ui.launch_settings.low_latency_detail"))
+        } accessory: {
+            Toggle(L10n.string("ui.launch_settings.low_latency"),
+                   isOn: Binding(get: { settings.lowLatency },
+                                 set: { lowLatency in model.choose { $0.lowLatency = lowLatency } }))
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .pointerCursor()
+                .accessibilityIdentifier("launch-settings-low-latency")
+        }
+    }
+
     private func renderPercentRow(_ settings: LaunchSettings, lowest: UInt32) -> some View {
         wideRow(title: L10n.string("ui.launch_settings.render_percent")) {
             SymbolTile(name: "display", colors: TileColors.blue)
@@ -360,6 +466,33 @@ struct LaunchSettingsSheet: View {
         } control: {
             RenderPercentSlider(model: model, percent: model.renderPercent ?? settings.renderPercent, lowest: lowest)
         }
+    }
+
+    private func frameCapRow(_ settings: LaunchSettings) -> some View {
+        ObeliskRow(title: L10n.string("ui.launch_settings.frame_cap")) {
+            SymbolTile(name: "speedometer", colors: TileColors.gold)
+        } detail: {
+            Text(Self.frameCapDetail(settings))
+        } accessory: {
+            GlassMenuPicker(title: L10n.string("ui.launch_settings.frame_cap"),
+                            value: FrameCap.name(of: settings.choices.frameCap),
+                            selection: Binding(get: { settings.choices.frameCap },
+                                               set: { cap in model.choose { $0.frameCap = cap } }),
+                            identifier: "launch-settings-frame-cap") {
+                ForEach(FrameCap.choices, id: \.self) { cap in
+                    Text(FrameCap.name(of: cap)).tag(cap)
+                }
+            }
+        }
+    }
+
+    /// What the limit is for, and the rate it comes to on the main display,
+    /// where a game starts, when that is not the one picked: 60 is 50 at 100 Hz.
+    private static func frameCapDetail(_ settings: LaunchSettings) -> String {
+        guard let fitted = settings.frameCap, fitted != settings.choices.frameCap else {
+            return L10n.string("ui.launch_settings.frame_cap_detail")
+        }
+        return L10n.string("ui.launch_settings.frame_cap_detail_fitted", Int(fitted))
     }
 
     private func performanceHudRow(_ settings: LaunchSettings) -> some View {
@@ -437,6 +570,61 @@ struct LaunchSettingsSheet: View {
         case .d3dMetal: L10n.string("ui.launch_settings.graphics.d3dmetal_detail")
         case .dxmt: L10n.string("ui.launch_settings.graphics.dxmt_detail")
         }
+    }
+
+    static func name(of renderer: GraphicsRenderer) -> String {
+        switch renderer {
+        case .backend(let graphics): name(of: graphics)
+        case .compatibility: L10n.string("ui.launch_settings.graphics.compatibility")
+        }
+    }
+
+    static func detail(of renderer: GraphicsRenderer) -> String {
+        switch renderer {
+        case .backend(let graphics): detail(of: graphics)
+        case .compatibility: L10n.string("ui.launch_settings.graphics.compatibility_detail")
+        }
+    }
+}
+
+/// What renders a game's Direct3D, as the GPU menu offers it: a graphics
+/// backend, or Wine's own Direct3D through OpenGL, which Rust keeps apart
+/// from the backend.
+enum GraphicsRenderer: Hashable {
+    case backend(LaunchGraphics)
+    case compatibility
+
+    init(_ settings: LaunchSettings) {
+        self = settings.compatibility ? .compatibility : .backend(settings.graphics)
+    }
+}
+
+/// The frame caps the player picks from, in frames a second: none, two
+/// fixed ones and the screen's refresh rate. Rust holds the game to the
+/// refresh rate over the fewest whole refreshes a frame that stay at or
+/// below the one picked.
+enum FrameCap {
+    /// The screen's refresh rate, as Rust spells it.
+    static let display: UInt32 = 0
+    static let choices: [UInt32?] = [nil, 30, 60, display]
+
+    static func name(of cap: UInt32?) -> String {
+        switch cap {
+        case nil: L10n.string("ui.launch_settings.frame_cap.off")
+        case display: L10n.string("ui.launch_settings.frame_cap.display")
+        case let cap?: L10n.string("ui.launch_settings.frame_cap.fps", Int(cap))
+        }
+    }
+}
+
+/// How far a mouse wheel's notch scrolls, in whole percent of Wine's own.
+enum ScrollPercent {
+    static let normal: UInt16 = 100
+    static let steps: [UInt16] = [50, 75, normal, 150, 200, 300]
+
+    static func name(of percent: UInt16) -> String {
+        percent == normal ? L10n.string("ui.launch_settings.scroll_percent.normal")
+            : DownloadFormatting.percent(Double(percent) / 100)
     }
 }
 

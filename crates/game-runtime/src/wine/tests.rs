@@ -37,7 +37,7 @@ pub(crate) fn windows_of(
     game: crate::profile::Game<'_>,
     install: &Path,
 ) -> Installation {
-    let launch_settings = crate::launch_settings::of(&locations.library, game, install, None);
+    let launch_settings = crate::launch_settings::of(&locations.library, game, install, None, None);
     Installation::new(locations, game, install, launch_settings).unwrap()
 }
 
@@ -456,7 +456,8 @@ fn a_missing_runtime_is_reported_before_any_prefix_is_created_on_either_engine()
             engine: Some(offer.engine),
             ..Default::default()
         };
-        crate::launch_settings::choose(&locations.library, OTHER, &install, None, choices).unwrap();
+        crate::launch_settings::choose(&locations.library, OTHER, &install, None, None, choices)
+            .unwrap();
         let windows = windows_of(&locations, OTHER, &install);
 
         assert!(matches!(
@@ -796,6 +797,259 @@ fn a_game_s_backend_comes_before_wine_s_own_dlls_with_dxmt_behind_d3dmetal() {
 }
 
 #[test]
+fn a_frame_cap_reaches_d3dmetal_and_dxmt_before_the_profile_s_dxmt_options() {
+    let (_directory, root) = installation();
+    let config = config(&root);
+    assert!(!environment(&config).contains_key("DXMT_CONFIG"));
+    let capped = Config {
+        settings: Settings {
+            frame_cap: Some(60),
+            variables: BTreeMap::from([(
+                "DXMT_CONFIG".to_owned(),
+                "d3d11.metalSpatialUpscaleFactor=1.5".to_owned(),
+            )]),
+            ..config.settings.clone()
+        },
+        ..config
+    };
+
+    let environment = environment(&capped);
+
+    assert_eq!(environment["D3DM_MAX_FPS"], "60");
+    assert_eq!(
+        environment["DXMT_CONFIG"],
+        "d3d11.preferredMaxFrameRate=60;d3d11.metalSpatialUpscaleFactor=1.5"
+    );
+    assert!(capped.log_header().contains(" frame_cap=60 "));
+}
+
+#[test]
+fn metalfx_spatial_reaches_dxmt_s_swapchain_and_the_log() {
+    let (_directory, root) = installation();
+    let config = config(&root);
+    assert!(!environment(&config).contains_key("DXMT_METALFX_SPATIAL_SWAPCHAIN"));
+    let upscaled = Config {
+        settings: Settings {
+            graphics: Graphics::Dxmt,
+            metalfx_spatial: true,
+            ..config.settings.clone()
+        },
+        ..config
+    };
+
+    assert_eq!(
+        environment(&upscaled)["DXMT_METALFX_SPATIAL_SWAPCHAIN"],
+        "1"
+    );
+    assert!(upscaled.log_header().contains(" metalfx_spatial=on"));
+    assert!(
+        Engine::Rosetta
+            .reserved()
+            .variables
+            .contains(&"DXMT_METALFX_SPATIAL_SWAPCHAIN")
+    );
+}
+
+#[test]
+fn low_input_delay_reaches_dxmt_before_the_profile_s_options() {
+    let (_directory, root) = installation();
+    let config = config(&root);
+    let quick = Config {
+        settings: Settings {
+            graphics: Graphics::Dxmt,
+            low_latency: true,
+            frame_cap: Some(60),
+            variables: BTreeMap::from([(
+                "DXMT_CONFIG".to_owned(),
+                "dxgi.maxFrameLatency=2".to_owned(),
+            )]),
+            ..config.settings.clone()
+        },
+        ..config
+    };
+
+    assert_eq!(
+        environment(&quick)["DXMT_CONFIG"],
+        "d3d11.preferredMaxFrameRate=60;dxgi.maxFrameLatency=1;dxgi.maxFrameLatency=2"
+    );
+    assert!(quick.log_header().contains(" low_latency=on"));
+}
+
+#[test]
+fn emulated_display_modes_reach_wine_and_the_log() {
+    let (_directory, root) = installation();
+    let config = config(&root);
+    assert!(!environment(&config).contains_key("WINE_OBELISK_EMULATE_MODES"));
+    let emulated = Config {
+        settings: Settings {
+            emulate_modes: true,
+            ..config.settings.clone()
+        },
+        ..config
+    };
+
+    assert_eq!(environment(&emulated)["WINE_OBELISK_EMULATE_MODES"], "1");
+    assert!(emulated.log_header().contains(" emulate_modes=on"));
+    assert!(
+        Engine::Rosetta
+            .reserved()
+            .variables
+            .contains(&"WINE_OBELISK_EMULATE_MODES")
+    );
+}
+
+#[test]
+fn a_scroll_speed_reaches_wine_on_both_engines_and_the_log() {
+    let (_directory, root) = installation();
+    for config in [config(&root), linux_config(&root)] {
+        let engine = config.settings.engine;
+        assert!(
+            engine
+                .reserved()
+                .variables
+                .contains(&"WINE_OBELISK_SCROLL_PERCENT"),
+            "{engine:?}"
+        );
+        assert_eq!(scroll_percent(&config), None, "{engine:?}");
+        let faster = Config {
+            settings: Settings {
+                scroll_percent: 200,
+                ..config.settings.clone()
+            },
+            ..config
+        };
+        assert_eq!(
+            scroll_percent(&faster),
+            Some(("WINE_OBELISK_SCROLL_PERCENT".to_owned(), "200".to_owned())),
+            "{engine:?}"
+        );
+        assert!(
+            faster.log_header().contains(" scroll_percent=200"),
+            "{engine:?}"
+        );
+    }
+    let rosetta = Config {
+        settings: Settings {
+            scroll_percent: 200,
+            ..config(&root).settings
+        },
+        ..config(&root)
+    };
+    assert_eq!(environment(&rosetta)["WINE_OBELISK_SCROLL_PERCENT"], "200");
+}
+
+/// A runtime of `config` with Wine's loader and its ntdll.so, each holding
+/// `loader`.
+fn with_loader(config: &Config, loader: &str) {
+    let unix = config.runtime.join("lib/wine/x86_64-unix");
+    fs::create_dir_all(&unix).unwrap();
+    fs::write(unix.join("wine"), loader).unwrap();
+    fs::write(unix.join("ntdll.so"), "ntdll").unwrap();
+}
+
+#[test]
+fn rosetta_s_wine_starts_the_game_from_its_own_bundle_in_its_prefix() {
+    let (_directory, root) = installation();
+    let mut config = config(&root);
+    assert!(!environment(&config).contains_key("WINE_OBELISK_GAME_BUNDLE"));
+    with_loader(&config, "loader 1");
+
+    let environment_of = |config: &Config| environment(config)["WINE_OBELISK_GAME_BUNDLE"].clone();
+    let bundle = PathBuf::from(environment_of(&config));
+
+    assert_eq!(bundle, config.prefix.join("obelisk-game.app"));
+    let contents = bundle.join("Contents");
+    assert_eq!(
+        fs::read_to_string(contents.join("MacOS/wine")).unwrap(),
+        "loader 1"
+    );
+    assert_eq!(
+        fs::read_link(contents.join("MacOS/ntdll.so")).unwrap(),
+        config.runtime.join("lib/wine/x86_64-unix/ntdll.so")
+    );
+    let names: Vec<_> = fs::read_dir(&contents)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(names.len(), 2, "{names:?}");
+    let plist = fs::read_to_string(contents.join("Info.plist")).unwrap();
+    for line in [
+        "<key>CFBundleExecutable</key><string>wine</string>",
+        "<key>CFBundleIdentifier</key><string>com.zagrios.obelisk.rosetta.prefix</string>",
+        "<key>CFBundleName</key><string>Game</string>",
+        "<key>CFBundlePackageType</key><string>APPL</string>",
+        "<key>LSApplicationCategoryType</key><string>public.app-category.games</string>",
+        "<key>LSSupportsGameMode</key><true/>",
+        "<key>GCSupportsGameMode</key><true/>",
+        "<key>LSUIElement</key><string>1</string>",
+        "<key>NSPrincipalClass</key><string>WineApplication</string>",
+    ] {
+        assert!(plist.contains(line), "{line}\n{plist}");
+    }
+
+    // A new runtime's loader replaces the clone, and Game Mode kept off
+    // reaches the Info.plist.
+    with_loader(&config, "loader 2");
+    config.settings.game_mode = false;
+    environment_of(&config);
+    assert_eq!(
+        fs::read_to_string(contents.join("MacOS/wine")).unwrap(),
+        "loader 2"
+    );
+    let plist = fs::read_to_string(contents.join("Info.plist")).unwrap();
+    assert!(
+        plist.contains("<key>LSSupportsGameMode</key><false/>"),
+        "{plist}"
+    );
+    assert!(
+        plist.contains("<key>GCSupportsGameMode</key><false/>"),
+        "{plist}"
+    );
+    assert!(
+        Engine::Rosetta
+            .reserved()
+            .variables
+            .contains(&"WINE_OBELISK_GAME_BUNDLE")
+    );
+}
+
+#[test]
+fn compatibility_mode_leaves_direct3d_to_wine_s_own_over_opengl() {
+    let (_directory, root) = installation();
+    let config = config(&root);
+    backends_runtime(&config);
+    let compatibility = Config {
+        settings: Settings {
+            compatibility: true,
+            options: GraphicsOptions { ray_tracing: false },
+            ..config.settings.clone()
+        },
+        ..config
+    };
+
+    let environment = environment(&compatibility);
+
+    assert_eq!(environment["WINE_D3D_CONFIG"], "renderer=gl");
+    for name in [
+        "WINEDLLPATH_PREPEND",
+        "CX_ACTIVE_GRAPHICS_BACKEND",
+        "D3DM_SUPPORT_DXR",
+    ] {
+        assert!(!environment.contains_key(name), "{name}");
+    }
+    assert!(
+        Engine::Rosetta
+            .reserved()
+            .variables
+            .contains(&"WINE_D3D_CONFIG")
+    );
+    assert_eq!(
+        compatibility.log_header(),
+        "obelisk: engine=wine-macos graphics=wined3d voile=development\n"
+    );
+}
+
+#[test]
 fn a_runtime_with_d3dmetal_over_wine_s_dlls_searches_wine_s_folder_alone() {
     let (_directory, root) = installation();
     let config = config(&root);
@@ -898,7 +1152,8 @@ fn launch_settings_move_a_game_to_the_engine_and_backend_its_player_chose() {
         performance_hud: true,
         ..Default::default()
     };
-    crate::launch_settings::choose(&locations.library, OTHER, &install, None, choices).unwrap();
+    crate::launch_settings::choose(&locations.library, OTHER, &install, None, None, choices)
+        .unwrap();
 
     let windows = windows_of(&locations, OTHER, &install);
 
@@ -1328,7 +1583,7 @@ fn a_windows_installation_runs_in_the_prefix_named_after_its_folder_whatever_the
         );
     }
     let root = Path::new("/");
-    let launch_settings = crate::launch_settings::of(&locations.library, OTHER, root, None);
+    let launch_settings = crate::launch_settings::of(&locations.library, OTHER, root, None, None);
     assert!(
         Installation::new(&locations, OTHER, root, launch_settings).is_err(),
         "no folder names no prefix"
@@ -1377,6 +1632,7 @@ fn a_configuration_reaches_its_game_session_whole() {
             engine: Engine::Linux,
             graphics: Graphics::Dxmt,
             options: GraphicsOptions::default(),
+            compatibility: true,
             executable: Some("Binaries/Game.exe".into()),
             bootstrapper: Some("Binaries/start_protected_game.exe".into()),
             profile_arguments: vec!["-windowed".into()],
@@ -1386,6 +1642,11 @@ fn a_configuration_reaches_its_game_session_whole() {
             performance_hud: true,
             render_percent: 50,
             game_mode: false,
+            frame_cap: Some(60),
+            metalfx_spatial: true,
+            low_latency: true,
+            emulate_modes: true,
+            scroll_percent: 150,
             locale: Some("it_IT".into()),
         },
     };
@@ -1393,9 +1654,51 @@ fn a_configuration_reaches_its_game_session_whole() {
     let again: Config = serde_json::from_slice(&serde_json::to_vec(&config).unwrap()).unwrap();
 
     assert_eq!(again, config);
-    // A handoff that predates the locale, the render resolution or Game Mode
-    // still opens, without one.
+    // A handoff that predates the locale, the render resolution, Game Mode
+    // or a later setting still opens, without one.
     for (field, expected) in [
+        (
+            "compatibility",
+            Settings {
+                compatibility: false,
+                ..config.settings.clone()
+            },
+        ),
+        (
+            "frame_cap",
+            Settings {
+                frame_cap: None,
+                ..config.settings.clone()
+            },
+        ),
+        (
+            "metalfx_spatial",
+            Settings {
+                metalfx_spatial: false,
+                ..config.settings.clone()
+            },
+        ),
+        (
+            "low_latency",
+            Settings {
+                low_latency: false,
+                ..config.settings.clone()
+            },
+        ),
+        (
+            "emulate_modes",
+            Settings {
+                emulate_modes: false,
+                ..config.settings.clone()
+            },
+        ),
+        (
+            "scroll_percent",
+            Settings {
+                scroll_percent: 100,
+                ..config.settings.clone()
+            },
+        ),
         (
             "locale",
             Settings {
@@ -1498,8 +1801,15 @@ fn uninstalling_removes_both_engines_prefixes_and_the_launch_settings() {
         engine: Some(Engine::Rosetta),
         ..Default::default()
     };
-    crate::launch_settings::choose(&locations.library, ELDEN_RING, &install, None, choices)
-        .unwrap();
+    crate::launch_settings::choose(
+        &locations.library,
+        ELDEN_RING,
+        &install,
+        None,
+        None,
+        choices,
+    )
+    .unwrap();
     let settings = locations
         .library
         .join("LaunchSettings/steam-1245620-windows.json");

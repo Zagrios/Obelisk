@@ -47,6 +47,17 @@ const GSTREAMER_REGISTRY: &str = "obelisk-gstreamer-registry.bin";
 const PREREQUISITE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 /// Success, "a newer version is already installed" and "restart required".
 const INSTALLED: [i32; 3] = [0, 1638, 3010];
+/// DXMT's options, `key=value` each, separated by `;`.
+const DXMT_CONFIG: &str = "DXMT_CONFIG";
+
+/// The folder of the prefix where DXMT keeps the game's compiled shaders.
+const DXMT_SHADER_CACHE: &str = "obelisk-dxmt-cache";
+/// The game's application bundle, in its prefix.
+const GAME_BUNDLE: &str = "obelisk-game.app";
+/// The runtime's folder of Wine's loader and the ntdll.so it loads.
+const WINE_UNIX: &str = "lib/wine/x86_64-unix";
+/// Wine starts the game again from its bundle's loader, at this path.
+const GAME_BUNDLE_VARIABLE: &str = "WINE_OBELISK_GAME_BUNDLE";
 
 /// Wine for macOS, under Rosetta.
 pub(super) struct RosettaWine;
@@ -73,6 +84,13 @@ static FACTS: Facts = Facts {
             "WINEDLLPATH_PREPEND",
             "CX_ACTIVE_GRAPHICS_BACKEND",
             "D3DM_SUPPORT_DXR",
+            "WINE_D3D_CONFIG",
+            "D3DM_MAX_FPS",
+            "DXMT_METALFX_SPATIAL_SWAPCHAIN",
+            "WINE_OBELISK_EMULATE_MODES",
+            super::SCROLL_PERCENT,
+            "DXMT_SHADER_CACHE_PATH",
+            GAME_BUNDLE_VARIABLE,
             "CX_HIDE_BUILTIN_VERSION_RESOURCES",
             // The Game session adds these to the game's own.
             crate::input::SOCKET,
@@ -136,6 +154,19 @@ impl Adapter for RosettaWine {
         arguments.extend(launched.arguments.iter().cloned());
         let mut environment = environment;
         environment.extend(self::environment(config));
+        let name = match (
+            super::linux_engine::app_name(game.title),
+            Path::new(&launched.executable).file_stem(),
+        ) {
+            (name, Some(stem)) if name.is_empty() => stem.to_string_lossy().into_owned(),
+            (name, _) => name,
+        };
+        if let Some(bundle) = game_bundle(config, &name) {
+            environment.insert(
+                GAME_BUNDLE_VARIABLE.into(),
+                bundle.to_string_lossy().into_owned(),
+            );
+        }
         Ok(Target {
             executable: wine(config),
             arguments,
@@ -174,7 +205,12 @@ impl Adapter for RosettaWine {
             .args(["taskkill", "/T", "/IM"])
             .arg(program?.file_name()?)
             .env_clear()
-            .envs(environment);
+            // Taskkill is no part of the game's app.
+            .envs(
+                environment
+                    .iter()
+                    .filter(|(name, _)| *name != GAME_BUNDLE_VARIABLE),
+            );
         Some(command)
     }
 
@@ -228,6 +264,88 @@ fn wine(config: &Config) -> PathBuf {
     config.runtime.join("bin/wine")
 }
 
+/// The game's own application bundle in its prefix, named `name`, around a
+/// clone of Wine's loader beside a link to the runtime's ntdll.so: macOS takes
+/// the game's name, its category and whether Game Mode may come on from the
+/// bundle's Info.plist, and only from the one on disk. Each file is written
+/// again only once it differs, as after a runtime update, which the loader
+/// must follow. None without the loader or when the bundle cannot be made:
+/// the game then starts as before. No Frameworks or lib folder: D3DMetal
+/// would look for its libraries there.
+fn game_bundle(config: &Config, name: &str) -> Option<PathBuf> {
+    if !config.prefix.is_absolute() {
+        return None;
+    }
+    let unix = config.runtime.join(WINE_UNIX);
+    let loader = fs::read(unix.join("wine")).ok()?;
+    let bundle = config.prefix.join(GAME_BUNDLE);
+    let contents = bundle.join("Contents");
+    let macos = contents.join("MacOS");
+    fs::create_dir_all(&macos).ok()?;
+    let clone = macos.join("wine");
+    if fs::read(&clone).ok().as_ref() != Some(&loader) {
+        let _ = fs::remove_file(&clone);
+        // A clone on APFS, as `cp -c` makes.
+        fs::copy(unix.join("wine"), &clone).ok()?;
+    }
+    let ntdll = macos.join("ntdll.so");
+    let library = unix.join("ntdll.so");
+    if fs::read_link(&ntdll).ok().as_ref() != Some(&library) {
+        let _ = fs::remove_file(&ntdll);
+        std::os::unix::fs::symlink(&library, &ntdll).ok()?;
+    }
+    let id = config.prefix.file_name()?.to_string_lossy().into_owned();
+    let plist = info_plist(name, &id, config.settings.game_mode);
+    let info = contents.join("Info.plist");
+    if fs::read(&info).ok().as_deref() != Some(plist.as_bytes()) {
+        fs::write(&info, plist).ok()?;
+        // macOS reads a bundle's Info.plist again only once its folder is
+        // newer than what it read.
+        fs::File::open(&bundle)
+            .and_then(|folder| folder.set_modified(std::time::SystemTime::now()))
+            .ok()?;
+    }
+    Some(bundle)
+}
+
+/// The Info.plist of the bundle of a game named `name` in the prefix `id`,
+/// whose Game Mode macOS may turn on when `game_mode`: Wine's own loader's,
+/// in the games category.
+fn info_plist(name: &str, id: &str, game_mode: bool) -> String {
+    let id: String = id
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    let name = name
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;");
+    let game_mode = if game_mode { "<true/>" } else { "<false/>" };
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleAllowMixedLocalizations</key><true/>
+  <key>CFBundleDevelopmentRegion</key><string>English</string>
+  <key>CFBundleExecutable</key><string>wine</string>
+  <key>CFBundleIdentifier</key><string>com.zagrios.obelisk.rosetta.{id}</string>
+  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+  <key>CFBundleName</key><string>{name}</string>
+  <key>CFBundleDisplayName</key><string>{name}</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleSignature</key><string>????</string>
+  <key>LSApplicationCategoryType</key><string>public.app-category.games</string>
+  <key>LSSupportsGameMode</key>{game_mode}
+  <key>GCSupportsGameMode</key>{game_mode}
+  <key>LSUIElement</key><string>1</string>
+  <key>NSPrincipalClass</key><string>WineApplication</string>
+</dict>
+</plist>
+"#
+    )
+}
+
 /// Whether the runtime is in place.
 fn installed(config: &Config) -> bool {
     wine(config).is_file()
@@ -249,8 +367,12 @@ fn backends(config: &Config) -> Vec<PathBuf> {
 
 /// The folders Wine searches before its own for the game's DLLs: its
 /// backend's, then, behind D3DMetal, DXMT's for the 32-bit programs D3DMetal
-/// does not run.
+/// does not run. None in compatibility mode, where Wine's own Direct3D
+/// renders.
 fn graphics_folders(config: &Config) -> Vec<PathBuf> {
+    if config.settings.compatibility {
+        return Vec::new();
+    }
     match config.settings.graphics {
         Graphics::D3DMetal => backends(config),
         Graphics::Dxmt => dll_folders(config, &[DXMT_DLLS]),
@@ -270,6 +392,9 @@ fn dll_folders(config: &Config, folders: &[&str]) -> Vec<PathBuf> {
 /// it: Wine reports the hardware scheduling D3D12 expects from D3DMetal
 /// alone.
 fn active_graphics(config: &Config) -> Option<&'static str> {
+    if config.settings.compatibility {
+        return None;
+    }
     let carried = match config.settings.graphics {
         Graphics::D3DMetal => d3dmetal(config).is_some(),
         Graphics::Dxmt => config.runtime.join(DXMT_DLLS).is_dir(),
@@ -365,14 +490,75 @@ fn environment(config: &Config) -> HashMap<String, String> {
     if let Some(active) = active_graphics(config) {
         environment.insert("CX_ACTIVE_GRAPHICS_BACKEND".into(), active.into());
     }
-    // Direct3D 12 offers DirectX Raytracing unless D3DMetal is told not to.
-    if config.settings.graphics == Graphics::D3DMetal && !config.settings.options.ray_tracing {
+    if config.settings.compatibility {
+        // wined3d renders through OpenGL, as for Direct3D 9 games.
+        environment.insert("WINE_D3D_CONFIG".into(), "renderer=gl".into());
+    } else if config.settings.graphics == Graphics::D3DMetal && !config.settings.options.ray_tracing
+    {
+        // Direct3D 12 offers DirectX Raytracing unless D3DMetal is told not to.
         environment.insert("D3DM_SUPPORT_DXR".into(), "0".into());
+    }
+    // DXMT upscales its swapchain's picture through MetalFX.
+    if config.settings.metalfx_spatial {
+        environment.insert("DXMT_METALFX_SPATIAL_SWAPCHAIN".into(), "1".into());
+    }
+    // winemac lists 640x480 and the other common modes the screen lacks,
+    // and scales a full-screen game at one of them.
+    if config.settings.emulate_modes {
+        environment.insert("WINE_OBELISK_EMULATE_MODES".into(), "1".into());
+    }
+    if let Some((name, value)) = super::scroll_percent(config) {
+        environment.insert(name, value);
+    }
+    // DXMT keeps the game's compiled shaders in its prefix, which goes with
+    // the game, instead of beside every other game's under one name.
+    environment.insert(
+        "DXMT_SHADER_CACHE_PATH".into(),
+        config
+            .prefix
+            .join(DXMT_SHADER_CACHE)
+            .to_string_lossy()
+            .into_owned(),
+    );
+    // D3DMetal's own frame cap; DXMT's is in its options.
+    if let Some(cap) = config.settings.frame_cap {
+        environment.insert("D3DM_MAX_FPS".into(), cap.to_string());
     }
     // The profile's variables come last, so that they may replace Obelisk's
     // own for their game.
     environment.extend(config.settings.variables.clone());
+    let profile = config.settings.variables.get(DXMT_CONFIG);
+    if let Some(options) = dxmt_config(&dxmt_options(config), profile.map(String::as_str)) {
+        environment.insert(DXMT_CONFIG.into(), options);
+    }
     environment
+}
+
+/// Obelisk's own options for DXMT, as `key=value`. They apply behind
+/// D3DMetal too, to the 32-bit programs DXMT renders there.
+fn dxmt_options(config: &Config) -> Vec<String> {
+    let mut options = Vec::new();
+    // Metal paces each Present to the cap, with or without vsync.
+    if let Some(cap) = config.settings.frame_cap {
+        options.push(format!("d3d11.preferredMaxFrameRate={cap}"));
+    }
+    if config.settings.low_latency {
+        options.push("dxgi.maxFrameLatency=1".to_owned());
+    }
+    options
+}
+
+/// One `DXMT_CONFIG` of Obelisk's `own` options and the `profile`'s: DXMT
+/// reads them in order and keeps the last value of a key, so the profile's
+/// replaces Obelisk's own key by key rather than all of them.
+fn dxmt_config(own: &[String], profile: Option<&str>) -> Option<String> {
+    let options: Vec<&str> = own
+        .iter()
+        .map(String::as_str)
+        .chain(profile)
+        .filter(|options| !options.is_empty())
+        .collect();
+    (!options.is_empty()).then(|| options.join(";"))
 }
 
 /// `folders` as one search path, or `None` when there are none.
