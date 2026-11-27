@@ -90,6 +90,12 @@ struct LibraryHeroDetail: Identifiable {
     }
 }
 
+extension EnvironmentValues {
+    /// How tall a hero's logo stands: a game's page shows it smaller than a
+    /// library's hero, beside the game's cover.
+    @Entry var heroLogoHeight: CGFloat = 120
+}
+
 extension View {
     /// Frames a page's hero: a library hero's height below the floating bar,
     /// reaching up under it, light on its dark artwork in both appearances.
@@ -168,6 +174,7 @@ private struct TrailingIconLabelStyle: LabelStyle {
 struct LibraryHeroLogo: View {
     let url: URL?
     let title: String
+    @Environment(\.heroLogoHeight) private var height
 
     var body: some View {
         Group {
@@ -184,7 +191,7 @@ struct LibraryHeroLogo: View {
                 titleText
             }
         }
-        .frame(width: 360, height: 120, alignment: .bottomLeading)
+        .frame(width: height * 3, height: height, alignment: .bottomLeading)
     }
 
     private var titleText: some View {

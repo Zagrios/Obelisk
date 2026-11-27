@@ -1,8 +1,9 @@
 import SwiftUI
 
 /// A storefront's game page: the game's wide artwork reaching under the
-/// browser's glass bar, its cover overlapping the artwork's lower edge, its
-/// launch row and metrics beside the cover, then what only the storefront shows.
+/// browser's glass bar, its cover overlapping the artwork's lower edge with the
+/// game's logo and headline beside it, its launch row and metrics under them,
+/// then what only the storefront shows, over a backdrop tinted by the artwork.
 /// Opened from the library, the page reveals itself around the cover flying
 /// in: the artwork settles, then the header and the content rise.
 struct GameDetailPage<Model: LibraryStorefront, HeroArtwork: View, Cover: View, Content: View>: View {
@@ -12,12 +13,16 @@ struct GameDetailPage<Model: LibraryStorefront, HeroArtwork: View, Cover: View, 
     /// Whether a game never played says so, rather than showing no last
     /// played date and no playtime.
     let showsUnplayed: Bool
+    /// What the page says of the game at a glance.
+    let headline: GameHeadline
     private let context: GamePageContext<HeroArtwork, Cover>
     private let content: Content
     @State private var appeared = false
     /// The launch settings sheet of the installed Windows build, while open.
     @State private var launchSettings: LaunchSettingsModel?
     @State private var isCompact = false
+    /// The hero artwork's average color, once it loads.
+    @State private var artworkColor: NSColor?
     @Environment(\.gameTransition) private var transition
     @Environment(\.storefrontBar) private var bar
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -35,6 +40,7 @@ struct GameDetailPage<Model: LibraryStorefront, HeroArtwork: View, Cover: View, 
         context: GamePageContext<HeroArtwork, Cover>,
         size: String?,
         showsUnplayed: Bool = false,
+        headline: GameHeadline = GameHeadline(),
         @ViewBuilder content: () -> Content
     ) {
         self.model = model
@@ -42,6 +48,7 @@ struct GameDetailPage<Model: LibraryStorefront, HeroArtwork: View, Cover: View, 
         self.context = context
         self.size = size
         self.showsUnplayed = showsUnplayed
+        self.headline = headline
         self.content = content()
     }
 
@@ -83,7 +90,16 @@ struct GameDetailPage<Model: LibraryStorefront, HeroArtwork: View, Cover: View, 
         .onGeometryChange(for: Bool.self, of: { $0.size.width < 760 }) { isCompact = $0 }
         // Hides the library beneath while the page is revealed, and leaving.
         .background {
-            ObeliskPalette(colorScheme: colorScheme).background
+            ZStack {
+                ObeliskPalette(colorScheme: colorScheme).background
+                if let tint {
+                    // Strongest under the artwork, fading down the page.
+                    LinearGradient(colors: [tint, tint.opacity(colorScheme == .dark ? 0.55 : 0.35)],
+                                   startPoint: .top, endPoint: .bottom)
+                        .transition(.opacity)
+                }
+            }
+            .animation(.easeOut(duration: 0.4), value: artworkColor)
                 .opacity(isRevealed ? 1 : 0)
                 .animation(reveal(0), value: isRevealed)
                 .ignoresSafeArea()
@@ -102,11 +118,17 @@ struct GameDetailPage<Model: LibraryStorefront, HeroArtwork: View, Cover: View, 
     private var hero: some View {
         HeroBackdrop {
             context.heroArtwork
+                .environment(\.artworkTint) { artworkColor = $0 }
                 // The artwork settles from a little closer as it sharpens.
                 .scaleEffect(isRevealed || reduceMotion ? 1 : 1.08)
                 .blur(radius: isRevealed || reduceMotion ? 0 : 16)
                 .opacity(isRevealed ? 1 : 0)
                 .animation(reveal(0), value: isRevealed)
+        }
+        .overlay {
+            LinearGradient(stops: [.init(color: .clear, location: 0.45), .init(color: .black.opacity(0.55), location: 1)],
+                           startPoint: .top, endPoint: .bottom)
+                .allowsHitTesting(false)
         }
         .heroFrame()
     }
@@ -117,10 +139,23 @@ struct GameDetailPage<Model: LibraryStorefront, HeroArtwork: View, Cover: View, 
         HStack(alignment: .top, spacing: isCompact ? 20 : 28) {
             coverView
             VStack(alignment: .leading, spacing: 0) {
-                // The part of the cover over the artwork.
-                Color.clear.frame(height: Self.coverOverlap)
+                // Beside the part of the cover over the artwork: the game's
+                // logo, then its headline.
+                VStack(alignment: .leading, spacing: 10) {
+                    context.heroLogo
+                        .environment(\.heroLogoHeight, isCompact ? 72 : 92)
+                        .shadow(color: .black.opacity(0.35), radius: 14, y: 4)
+                        .accessibilityHidden(true)
+                    GameByline(headline: headline)
+                }
+                .environment(\.colorScheme, .dark)
+                .padding(.bottom, 16)
+                .frame(height: Self.coverOverlap, alignment: .bottomLeading)
+                .opacity(isRevealed ? 1 : 0)
+                .animation(reveal(0.05), value: isRevealed)
                 GameLaunchRow(metrics: metrics, note: note) {
-                    GamePageAction(installations: installations, gameName: name)
+                    GamePageAction(installations: installations, gameName: name,
+                                   subtitle: installations.selectedReceipt == nil ? size : nil)
                     if let choice = installations.selectedBuildChoice {
                         GameBuildSwitch(choice: choice, choose: installations.chooseBuild)
                     }
@@ -163,6 +198,12 @@ struct GameDetailPage<Model: LibraryStorefront, HeroArtwork: View, Cover: View, 
                 .opacity(isRevealed ? 1 : 0)
                 .offset(y: isRevealed || reduceMotion ? 0 : 24)
                 .animation(reveal(0.07), value: isRevealed)
+                if !headline.features.isEmpty {
+                    GameFeatureChips(features: headline.features)
+                        .padding(.top, 16)
+                        .opacity(isRevealed ? 1 : 0)
+                        .animation(reveal(0.09), value: isRevealed)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -198,6 +239,17 @@ struct GameDetailPage<Model: LibraryStorefront, HeroArtwork: View, Cover: View, 
             .accessibilityAddTraits(.isHeader)
     }
 
+    /// The page's backdrop: the artwork's hue, deep in the dark appearance
+    /// and pale in the light one, so text reads on it as on the plain page.
+    private var tint: Color? {
+        guard let color = artworkColor?.usingColorSpace(.sRGB) else { return nil }
+        var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
+        color.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+        return colorScheme == .dark
+            ? Color(hue: hue, saturation: min(saturation * 1.1, 0.6), brightness: 0.2)
+            : Color(hue: hue, saturation: min(saturation * 0.6, 0.18), brightness: 0.96)
+    }
+
     private var lastPlayed: String? {
         let date = model.library.lastPlayed(of: game)
         return showsUnplayed ? GameFormatting.lastPlayed(date) : date.map(GameFormatting.lastPlayed)
@@ -216,7 +268,7 @@ struct GameDetailPage<Model: LibraryStorefront, HeroArtwork: View, Cover: View, 
     private var metrics: GameMetrics {
         GameMetrics(
             isInstalled: installations.selectedReceipt != nil,
-            size: size,
+            size: installations.selectedReceipt == nil ? nil : size,
             lastPlayed: lastPlayed,
             playtime: playtime,
             cloud: installations.cloudIndicator.map {
@@ -248,10 +300,13 @@ struct GameDetailPage<Model: LibraryStorefront, HeroArtwork: View, Cover: View, 
 private struct GamePageAction<Store: InstallationStorefront>: View {
     let installations: GameInstallations<Store>
     let gameName: String
+    /// The space a download needs, under the button's title.
+    let subtitle: String?
 
     var body: some View {
         if let action = installations.selectedAction {
-            GameActionButton(action: action, gameName: gameName)
+            GameActionButton(action: action, gameName: gameName,
+                             subtitle: action.launches ? nil : subtitle, translucent: true)
         }
     }
 }

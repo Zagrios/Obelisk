@@ -7,6 +7,7 @@
 mod atomic_file;
 pub mod build_choice;
 pub mod date;
+pub mod encyclopedia;
 pub mod install;
 pub mod installation;
 pub mod launch;

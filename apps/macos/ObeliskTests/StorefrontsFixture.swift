@@ -112,7 +112,7 @@ final class StorefrontsFixture {
                 if failing.contains(.steam) { throw SteamError.Failure(reason: "Fixture: the connection fails") }
                 return steamSession
             },
-            news: { _ in [] },
+            news: { _ in [] }, storePage: { _, _ in nil }, article: { _, _ in nil },
             webCookies: { _ in [] },
             beginLogin: { _ in
                 await logins.record()

@@ -7,8 +7,9 @@ use serde::Deserialize;
 
 const MAX_NEWS_BYTES: usize = 2 * 1024 * 1024;
 
-/// One pooled client for every news request instead of a TLS setup per game opened.
-fn shared_client() -> Result<reqwest::Client, ClientError> {
+/// One pooled client for every news and store page request instead of a TLS
+/// setup per game opened.
+pub(crate) fn shared_client() -> Result<reqwest::Client, ClientError> {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
     if let Some(client) = CLIENT.get() {
         return Ok(client.clone());
@@ -102,18 +103,43 @@ struct WireNews {
 
 // News are plain excerpts. No remote HTML, script or BBCode is executed by the app.
 fn plain_text(value: &str) -> String {
+    text(value, true)
+}
+
+/// A store page's text as plain text: its HTML goes, but its brackets stay,
+/// since a store page writes no BBCode.
+pub(crate) fn store_text(value: &str) -> String {
+    text(value, false)
+}
+
+/// Tags that style words within a line: removing one leaves no space, so
+/// `<b>Knight</b>!` reads `Knight!`.
+const INLINE_TAGS: &[&str] = &["a", "b", "em", "i", "span", "strong", "u"];
+
+fn text(value: &str, bbcode: bool) -> String {
     let mut text = String::new();
     let mut tag = None;
+    // The tag's element name, such as `b` for `</b>`, read until its
+    // attributes start.
+    let mut name = String::new();
+    let mut in_name = false;
     for c in value.chars() {
         match (tag, c) {
-            (None, '<') => tag = Some('>'),
-            (None, '[') => tag = Some(']'),
+            (None, '<') | (None, '[') if c == '<' || bbcode => {
+                tag = Some(if c == '<' { '>' } else { ']' });
+                name.clear();
+                in_name = true;
+            }
             (Some(end), c) if c == end => {
                 tag = None;
-                text.push(' ');
+                if !INLINE_TAGS.contains(&name.to_ascii_lowercase().as_str()) {
+                    text.push(' ');
+                }
             }
+            (Some(_), '/') if name.is_empty() => {}
+            (Some(_), c) if in_name && c.is_ascii_alphanumeric() => name.push(c),
+            (Some(_), _) => in_name = false,
             (None, c) => text.push(c),
-            _ => {}
         }
     }
     text.replace("&amp;", "&")
@@ -135,6 +161,17 @@ mod tests {
         assert_eq!(
             plain_text("[h1]Patch[/h1]<p>Two &amp; three</p>"),
             "Patch Two & three"
+        );
+    }
+    #[test]
+    fn styled_words_keep_their_punctuation() {
+        assert_eq!(
+            plain_text(r#"<B>Knight</B>! <a href="https://example.com/x">Map</a>.<br/>Next"#),
+            "Knight! Map. Next"
+        );
+        assert_eq!(
+            store_text("[Redacted] <i>edition</i>"),
+            "[Redacted] edition"
         );
     }
     #[tokio::test]
